@@ -97,6 +97,10 @@ class MavlinkBridgeSender(Node):
             Quaternion, "/pixhawk/attitude_quaternion", 10
         )
 
+        self.position_target_local_ned_publisher = self.create_publisher(
+            Vector3, "/pixhawk/POSITION_TARGET_LOCAL_NED", 10
+        )
+
         # self.rc_channel_publisher = self.create_publisher(
         #     RCIn, "/pixhawk/rc_channels", 10
         # )
@@ -191,6 +195,18 @@ class MavlinkBridgeSender(Node):
         )
         self.logger.info("BOTH ATTITUDE request sent (interval=20ms)")
 
+        self.logger.info("Requesting POSITION_TARGET_LOCAL_NED message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            mavutil.mavlink.MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED,  # message ID = 85
+            100000,  # interval in microseconds (100ms = 10Hz)
+            0, 0, 0, 0, 0,
+        )
+        self.logger.info("POSITION_TARGET_LOCAL_NED request sent (interval=100ms)")
+
 
         self.msg_type_counter = {
             "HEARTBEAT": 0,
@@ -258,6 +274,8 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
+                elif msg.get_type() == "POSITION_TARGET_LOCAL_NED":
+                    self.handle_position_target_local_ned(msg)
 
     def message_counter(self, msg_type: str) -> bool:
         """Only process every Nth message per message type."""
@@ -473,6 +491,37 @@ class MavlinkBridgeSender(Node):
 
         self.scaled_pressure_publisher.publish(ros_msg)
         #self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+
+    def handle_position_target_local_ned(self, msg):
+        """Process POSITION_TARGET_LOCAL_NED message and publish x/y/z as Vector3 to ROS2.
+
+        In DEPTH_HOLD only z is a valid setpoint; x/y arrive as NaN or are flagged
+        as ignored via type_mask. We substitute 0.0 for any axis that is NaN or
+        marked ignored so downstream nodes never see NaN.
+        """
+        # type_mask bits: 0=x, 1=y, 2=z (set bit => ignore that axis)
+        type_mask = getattr(msg, "type_mask", 0)
+        ignore_x = bool(type_mask & (1 << 0))
+        ignore_y = bool(type_mask & (1 << 1))
+        ignore_z = bool(type_mask & (1 << 2))
+
+        def _safe(val, ignore):
+            v = float(val)
+            if ignore or math.isnan(v) or math.isinf(v):
+                return 0.0
+            return v
+
+        ros_msg = Vector3()
+        ros_msg.x = _safe(msg.x, ignore_x)
+        ros_msg.y = _safe(msg.y, ignore_y)
+        ros_msg.z = _safe(msg.z, ignore_z)
+        self.position_target_local_ned_publisher.publish(ros_msg)
+        self.logger.debug(
+            f"Published POSITION_TARGET_LOCAL_NED: "
+            f"x={ros_msg.x:.2f}{' (ignored)' if ignore_x else ''}, "
+            f"y={ros_msg.y:.2f}{' (ignored)' if ignore_y else ''}, "
+            f"z={ros_msg.z:.2f}{' (ignored)' if ignore_z else ''}"
+        )
 
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""

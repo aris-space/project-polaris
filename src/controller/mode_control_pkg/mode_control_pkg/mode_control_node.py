@@ -118,8 +118,11 @@ class ModeControlNode(Node):
                     and buttons[JoyControlMapping.MODE_SPARE_1_DPAD_BUTTON_IDX] == 1
                 )
             ):
-                # SPARE MODE 1
-                pass
+                # GUIDED MODE (autonomous, external nav via MAVLink ODOMETRY).
+                # Requires EK3 to have a valid position estimate, otherwise the
+                # Pixhawk will refuse the mode switch.
+                self.current_mode = "guided"
+                self.pixhawk_mode = "GUIDED"
 
             elif (
                 CONTROLLER_LAYOUT == "DESKTOP"
