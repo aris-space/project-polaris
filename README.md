@@ -32,3 +32,14 @@ After approval, merge the feature branch into develop.
 When the develop branch reaches a stable and fully integrated state, it is merged into the main branch.
 If applicable, tag the new version and prepare for deployment.
 Update any relevant documentation.
+
+
+## Branching Strategy
+
+main:          stable, production-ready
+
+develop:       ongoing development
+
+feature/name:  one branch per feature or fix
+
+hotfix/name:   emergency fixes to main
