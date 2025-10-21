@@ -36,7 +36,10 @@ Update any relevant documentation.
 
 Branching Strategy
 
-main             ← stable, production-ready
-develop          ← ongoing development
-feature/xyz      ← one branch per feature or fix
-hotfix/xyz       ← emergency fixes to main
+main:          stable, production-ready
+
+develop:       ongoing development
+
+feature/name:  one branch per feature or fix
+
+hotfix/name:   emergency fixes to main
