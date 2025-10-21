@@ -34,7 +34,7 @@ If applicable, tag the new version and prepare for deployment.
 Update any relevant documentation.
 
 
-Branching Strategy
+## Branching Strategy
 
 main:          stable, production-ready
 
