@@ -19,12 +19,16 @@ class ThrustToPixhawk(Node):
     def thrust_callback(self, msg):
         thrust_value = msg.data
         # Map thrust to PWM (assumes thrust in 0.0..1.0). Adjust ranges if different.
-        min_pwm = 800
+        min_pwm = 1000
         max_pwm = 1900
         normalized = max(0.0, min(1.0, float(thrust_value)))
         pwm = int(min_pwm + normalized * (max_pwm - min_pwm))
         rc_msg = OverrideRCIn()                 # Create empty OverrideRCIn message
         rc_msg.channels = [0] * 8
+        rc_msg.channels[0] = pwm                 # Set the PWM value for the 1st channel
+        rc_msg.channels[1] = pwm                 # Set the PWM value for the 2nd channel
+        rc_msg.channels[2] = pwm                 # Set the PWM value for the 3rd channel
+        rc_msg.channels[3] = pwm                 # Set the PWM value for the 4th channel
         rc_msg.channels[4] = pwm                 # Set the PWM value for the 5th channel
         rc_msg.channels[5] = pwm                 # Set the PWM value for the 6th channel
         rc_msg.channels[6] = pwm                 # Set the PWM value for the 7th channel
