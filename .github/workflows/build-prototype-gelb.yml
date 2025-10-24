@@ -6,7 +6,7 @@ on:
     paths:
       - "prototype_gelb/**"
       - ".github/workflows/build-prototype-gelb.yml"
-  tags: [ "v*" ]
+    tags: [ "v*" ]
   workflow_dispatch: {}
 
 env:
