@@ -12,11 +12,11 @@ WORKDIR /app
 
 # If you also keep a requirements.txt for extra Python libs, copy/install it
 # (optional; safe to leave if empty or remove if unused)
-# COPY prototype_gelb/requirements.txt /app/requirements.txt
+# COPY requirements.txt /app/requirements.txt
 # RUN if [ -s /app/requirements.txt ]; then pip3 install --no-cache-dir -r /app/requirements.txt; fi
 
 # Your node sources
-COPY prototype_gelb/src /app/src
+COPY src app/src
 
 # The ROS images include /ros_entrypoint.sh that sources ROS env for you.
 # We'll keep ENTRYPOINT as in the base image and only set a default CMD.
