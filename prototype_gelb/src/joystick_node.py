@@ -33,7 +33,7 @@ class PS4toThrust(Node):
     def joy_callback(self, msg):
 
         R2_input = msg.axes[5]                            # R2 axis value
-        thrust_value = ((-R2_input + 1) / 2) * 100        # Map R2 input to thrust value [0,100]
+        thrust_value = -R2_input                          # Map R2 input to thrust value [-1,1]
         msg_out = Float32()                               # Create empty Float32 message
         msg_out.data = thrust_value                       # Assign mapped thrust value to  empty message
         self.thrust_publisher.publish(msg_out)            # Publish the thrust command
