@@ -40,18 +40,18 @@ class PS4toPWM(Node):
     def joy_callback(self, msg):
 
         R2_joy_input = msg.axes[5]                            # R2 axis value
-        pwm = self.pwm_mapper(R2_joy_input)                    # Map R2 input to PWM value [1000,1900]
+        pwm = self.pwm_mapper(-R2_joy_input)                    # Map R2 input to PWM value [1000,1900]
 
         msg_out = OverrideRCIn()                            # Create empty OverrideRCIn message
         msg_out.channels = [0] * 8                          # Initialize all channels to zero
         msg_out.channels[0] = pwm                           # Assign mapped thrust value to empty message
-        msg_out.channels[1] = 0                             # Set the PWM value for the 2nd channel
-        msg_out.channels[2] = 0                             # Set the PWM value for the 3rd channel
-        msg_out.channels[3] = 0                             # Set the PWM value for the 4th channel
-        msg_out.channels[4] = 0                             # Set the PWM value for the 5th channel
-        msg_out.channels[5] = 0                             # Set the PWM value for the 6th channel
-        msg_out.channels[6] = 0                             # Set the PWM value for the 7th channel
-        msg_out.channels[7] = 0                             # Set the PWM value for the 8th channel
+        msg_out.channels[1] = pwm                             # Set the PWM value for the 2nd channel
+        msg_out.channels[2] = pwm                             # Set the PWM value for the 3rd channel
+        msg_out.channels[3] = pwm                             # Set the PWM value for the 4th channel
+        msg_out.channels[4] = pwm                             # Set the PWM value for the 5th channel
+        msg_out.channels[5] = pwm                             # Set the PWM value for the 6th channel
+        msg_out.channels[6] = pwm                             # Set the PWM value for the 7th channel
+        msg_out.channels[7] = pwm                             # Set the PWM value for the 8th channel
         
         self.thrust_publisher.publish(msg_out)              # Publish the thrust command
 
