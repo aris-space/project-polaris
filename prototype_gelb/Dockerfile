@@ -12,8 +12,8 @@ WORKDIR /app
 
 # If you also keep a requirements.txt for extra Python libs, copy/install it
 # (optional; safe to leave if empty or remove if unused)
-# COPY requirements.txt /app/requirements.txt
-# RUN if [ -s /app/requirements.txt ]; then pip3 install --no-cache-dir -r /app/requirements.txt; fi
+COPY requirements.txt /app/requirements.txt
+RUN if [ -s /app/requirements.txt ]; then pip3 install --no-cache-dir -r /app/requirements.txt; fi
 
 # Your node sources
 COPY src app/src
