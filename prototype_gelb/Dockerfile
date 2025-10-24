@@ -18,6 +18,9 @@ RUN if [ -s /app/requirements.txt ]; then pip3 install --no-cache-dir -r /app/re
 # Your node sources
 COPY src app/src
 
+# Keep the ROS entrypoint (sets up ROS environment) (for source ...setup.bash)
+ENTRYPOINT ["/ros_entrypoint.sh"]
+
 # The ROS images include /ros_entrypoint.sh that sources ROS env for you.
 # We'll keep ENTRYPOINT as in the base image and only set a default CMD.
 # Default to the joystick node (you can override at docker run).
