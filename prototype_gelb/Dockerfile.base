@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ---- Python dependencies (optional) ----
 # Place your deps in prototype_gelb/requirements.txt (NOT under src/)
 # This installs only if the file exists and is non-empty.
-COPY requirements.txt /app/requirements.txt
+COPY src/requirements.txt /app/src/requirements.txt
 RUN if [ -s /app/requirements.txt ]; then \
       pip3 install --no-cache-dir -r /app/requirements.txt; \
     fi
