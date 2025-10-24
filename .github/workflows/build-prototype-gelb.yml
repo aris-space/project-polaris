@@ -6,7 +6,8 @@ on:
     paths:
       - "prototype_gelb/**"
       - ".github/workflows/build-prototype-gelb.yml"
-    tags: [ "v*" ]
+  tags:
+    - "v*"
   workflow_dispatch: {}
 
 env:
@@ -37,8 +38,11 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
+            # for test branch
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
             type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/test' }}
+
+            # for version tags like v1.2.3
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
