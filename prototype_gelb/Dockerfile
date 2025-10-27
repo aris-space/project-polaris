@@ -1,7 +1,7 @@
-# ROS 2 Jazzy (Ubuntu 24.04). Multi-arch (amd64 + arm64) is available.
+# ROS 2 Jazzy (Ubuntu 24.04). Multi-arch (amd64 + arm64).
 FROM ros:jazzy-ros-base
 
-# System deps: pip and mavros_msgs package (sensor_msgs is already in ros-base)
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-pip \
       ros-jazzy-mavros-msgs \
@@ -10,18 +10,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# If you also keep a requirements.txt for extra Python libs, copy/install it
-# (optional; safe to leave if empty or remove if unused)
+# Python deps (you keep them under src/requirements.txt)
 COPY src/requirements.txt /app/src/requirements.txt
-RUN if [ -s /app/requirements.txt ]; then pip3 install --no-cache-dir -r /app/requirements.txt; fi
+RUN if [ -s /app/src/requirements.txt ]; then \
+      pip3 install --no-cache-dir -r /app/src/requirements.txt; \
+    fi
 
-# Your node sources
-COPY src app/src
+# App sources
+COPY src /app/src
 
-# Keep the ROS entrypoint (sets up ROS environment) (for source ...setup.bash)
+# Keep ROS env
 ENTRYPOINT ["/ros_entrypoint.sh"]
 
-# The ROS images include /ros_entrypoint.sh that sources ROS env for you.
-# We'll keep ENTRYPOINT as in the base image and only set a default CMD.
-# Default to the joystick node (you can override at docker run).
-CMD ["python3", "/app/src/joystick_node.py"]
+# Default: run your launcher (you can override at `docker run ...`)
+CMD ["bash", "/app/src/run_all.sh"]
