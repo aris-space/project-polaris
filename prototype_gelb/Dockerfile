@@ -5,16 +5,17 @@ FROM ros:jazzy-ros-base
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-pip \
       ros-jazzy-mavros-msgs \
+      ros-jazzy-rclpy \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Python deps (you keep them under src/requirements.txt)
-COPY src/requirements.txt /app/src/requirements.txt
-RUN if [ -s /app/src/requirements.txt ]; then \
-      pip3 install --no-cache-dir -r /app/src/requirements.txt; \
-    fi
+# COPY src/requirements.txt /app/src/requirements.txt
+# RUN if [ -s /app/src/requirements.txt ]; then \
+#      pip3 install --no-cache-dir -r /app/src/requirements.txt; \
+#    fi
 
 # App sources
 COPY src /app/src
