@@ -21,7 +21,6 @@ echo "Arming the vehicle and setting to MANUAL mode..."
 # Run service calls in new terminal (so you see feedback)
 gnome-terminal -- bash -c "$ROS_SETUP ros2 service call /mavros/cmd/arming mavros_msgs/srv/CommandBool '{value: true}'; exec bash"
 
-gnome-terminal -- bash -c "$ROS_SETUP ros2 service call /mavros/set_mode mavros_msgs/srv/SetMode '{base_mode: 0, custom_mode: \"MANUAL\"}'; exec bash"
 
 echo "Vehicle armed and set to MANUAL mode."
 echo "You can now control the vehicle using the joystick..."

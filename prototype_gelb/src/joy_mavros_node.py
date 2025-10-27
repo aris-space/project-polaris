@@ -16,9 +16,9 @@ class PS4toPWM(Node):
         self.joy_subscription = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
 
     def pwm_mapper(self, thrust):
-        '''Maps thrust value [1,-1] (value that /joy publishes) to PWM range [1000,1900]'''
+        '''Maps thrust value [1,-1] (value that /joy publishes) to PWM range [1000,2000]'''
         min_pwm = 1000
-        max_pwm = 1900
+        max_pwm = 1900 
         pwm = int((thrust + 1) / 2 * (max_pwm - min_pwm) + min_pwm) 
         return pwm
 
@@ -26,11 +26,13 @@ class PS4toPWM(Node):
 
         r2_joy_input = msg.axes[5]                            # R2 axis value
         # Invert the R2 axis input
-        pwm = self.pwm_mapper(-r2_joy_input)                    # Map R2 input to PWM value [1000,1900]
+        pwm = self.pwm_mapper(-r2_joy_input)                    # Map R2 input to PWM value [1000,2000]
 
         msg_out = OverrideRCIn()                            # Create empty OverrideRCIn message
 
         msg_out.channels[0] = pwm                             # Set the PWM value for the 1st channel
+        msg_out.channels[2] = 0                             # Set the PWM value for the 3
+
 
         # Set all channels to the same PWM value:
         # msg_out.channels = [pwm] * 8
