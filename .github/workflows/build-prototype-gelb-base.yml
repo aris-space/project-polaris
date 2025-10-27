@@ -2,13 +2,13 @@ name: build-prototype-gelb-base
 
 on:
   push:
-    branches: [ "test" ]
+    branches: [ "main" ]
     paths:
-      - "prototype_gelb/requirements.txt"
+      - "prototype_gelb/src/requirements.txt"
       - "prototype_gelb/Dockerfile.base"
       - ".github/workflows/build-prototype-gelb-base.yml"
-    tags:
-      - "v*"
+  tags:
+    - "v*"
   workflow_dispatch: {}
 
 env:
@@ -39,11 +39,11 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            # branch builds (deps-only image)
-            type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
-            type=sha,prefix=deps-sha-,enable=${{ github.ref == 'refs/heads/test' }}
+            # deps-only image for main branch
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=deps-sha-,enable=${{ github.ref == 'refs/heads/main' }}
 
-            # optional: versioned "base" for releases
+            # optional versioned base tags upon release
             type=raw,value=base,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}},prefix=base-,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
