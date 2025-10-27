@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python deps (still reading from src/requirements.txt in repo)
 # COPY src/requirements.txt /app/src/requirements.txt
 # RUN if [ -s /app/src/requirements.txt ]; then \
-      pip3 install --no-cache-dir -r /app/src/requirements.txt; \
-    fi
+#      pip3 install --no-cache-dir -r /app/src/requirements.txt; \
+#    fi
 
 ENTRYPOINT ["/ros_entrypoint.sh"]
 CMD ["bash"]
