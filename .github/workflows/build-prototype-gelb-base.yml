@@ -1,0 +1,60 @@
+name: build-prototype-gelb-base
+
+on:
+  push:
+    branches: [ "test" ]
+    paths:
+      - "prototype_gelb/requirements.txt"
+      - "prototype_gelb/Dockerfile.base"
+      - ".github/workflows/build-prototype-gelb-base.yml"
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/prototype-gelb-base
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # branch builds (deps-only image)
+            type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
+            type=sha,prefix=deps-sha-,enable=${{ github.ref == 'refs/heads/test' }}
+
+            # optional: versioned "base" for releases
+            type=raw,value=base,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}},prefix=base-,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build & Push (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./prototype_gelb
+          file: ./prototype_gelb/Dockerfile.base
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
