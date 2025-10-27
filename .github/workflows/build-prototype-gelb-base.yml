@@ -7,8 +7,8 @@ on:
       - "prototype_gelb/src/requirements.txt"
       - "prototype_gelb/Dockerfile.base"
       - ".github/workflows/build-prototype-gelb-base.yml"
-  tags:
-    - "v*"
+    tags:
+      - "v*"
   workflow_dispatch: {}
 
 env:
