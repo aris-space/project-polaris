@@ -1,0 +1,31 @@
+# prototype_gelb/Dockerfile.base
+# Base runtime: ROS 2 Jazzy (Ubuntu 24.04)
+FROM ros:jazzy-ros-base
+
+# Keep Python output unbuffered
+ENV PYTHONUNBUFFERED=1
+
+# Working directory for your app
+WORKDIR /app
+
+# ---- System & ROS dependencies (no GUI stuff) ----
+# - python3-pip for installing Python deps
+# - ros-jazzy-mavros-msgs if your nodes import mavros_msgs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3-pip \
+      ros-jazzy-mavros-msgs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Python dependencies (optional) ----
+# Place your deps in prototype_gelb/requirements.txt (NOT under src/)
+# This installs only if the file exists and is non-empty.
+COPY src/requirements.txt /app/src/requirements.txt
+RUN if [ -s /app/requirements.txt ]; then \
+      pip3 install --no-cache-dir -r /app/requirements.txt; \
+    fi
+
+# Keep the ROS entrypoint (sources /opt/ros/jazzy/setup.bash)
+ENTRYPOINT ["/ros_entrypoint.sh"]
+
+# Default command: interactive shell (you'll override at `docker run ...`)
+CMD ["bash"]
