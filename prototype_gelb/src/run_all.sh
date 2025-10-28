@@ -1,27 +1,28 @@
 #!/bin/bash
+set -euo pipefail
 
-# Load ROS2 environment in each terminal automatically
-ROS_SETUP="source /opt/ros/jazzy/setup.bash;"
+# Load ROS2 environment
+source /opt/ros/jazzy/setup.bash
 
-# Start joy_node in new terminal
-gnome-terminal -- bash -c "$ROS_SETUP ros2 run joy joy_node; exec bash"
-sleep 5
-echo "Started joy_node."
+# Start pigpiod (only if you want it inside the container;
+# if you run pigpiod on the Pi host, you can comment this out)
+echo "Starting pigpiod..."
+sudo pigpiod || true
 
-# Start custom pwm_node in new terminal
-gnome-terminal -- bash -c "$ROS_SETUP sudo pigpiod; exec bash"
-gnome-terminal -- bash -c "$ROS_SETUP python3 pwm_node.py; exec bash"
+# Start joy_node
+echo "Starting joy_node..."
+ros2 run joy joy_node &
+JOY_PID=$!
 
+# Start custom pwm_node
+echo "Starting pwm_node..."
+python3 /app/src/pwm_node.py &
+PWM_PID=$!
 
+echo "All nodes started. Press Ctrl+C to stop."
 
-echo "All nodes started."
-echo "You can now control the vehicle using the joystick..."
+# Wait for either process to exit
+wait -n
 
-
-'''
-To run this bash file, you first need to make it executable with the command:
-chmod +x run_all.sh
-Then you can execute it with:
-./run_all.sh
-
-'''
+# If one dies, clean up the rest
+kill $JOY_PID $PWM_PID 2>/dev/null || true
