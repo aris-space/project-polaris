@@ -5,9 +5,11 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # System & ROS deps
+# System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-pip \
       ros-jazzy-mavros-msgs \
+      ros-jazzy-joy \        
       python3-pigpio \
     && rm -rf /var/lib/apt/lists/*
 
