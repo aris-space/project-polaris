@@ -11,7 +11,9 @@ class TestNode(Node):
     def joy_callback(self, msg):
         print(f"Read r2 value: {msg.axes[5]}")
         print("")
+        pwm = int(( - msg.axes[5] + 1) / 2 * (1900 - 1000) + 1000)
         print(f"Joystick inputs: {msg.axes}")
+        print(f"Converted PWM value: {pwm}")
 
 def main(args=None):
     rclpy.init(args=args)
