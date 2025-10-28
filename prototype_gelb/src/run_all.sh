@@ -3,9 +3,6 @@
 # Load ROS2 environment in each terminal automatically
 ROS_SETUP="source /opt/ros/jazzy/setup.bash;"
 
-
-sudo apt install pigpio python3-pigpio
-
 # Start joy_node in new terminal
 gnome-terminal -- bash -c "$ROS_SETUP ros2 run joy joy_node; exec bash"
 sleep 5
