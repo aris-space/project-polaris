@@ -5,16 +5,15 @@
 echo "Stopping joy_node..."
 pkill -f "ros2 run joy joy_node"
 
-echo "Stopping joy_mavros_node.py..."
-pkill -f "joy_mavros_node.py"
-
-echo "Stopping MAVROS..."
-pkill -f "ros2 launch mavros"
+echo "Stopping pwm_node.py..."
+pkill -f "pwm_node.py"
 
 sleep 1
 
-echo "Checking for remaining ROS2 or MAVROS processes..."
-ps aux | grep -E "ros2|mavros|python3"
+echo "Stopping pigpiod..."
+sudo service pigpiod stop
+sleep 1
+sudo pkill -f pigpiod
 
 echo "All processes terminated."
 
