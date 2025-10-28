@@ -1,9 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# Load ROS2 environment
-source /opt/ros/jazzy/setup.bash
-
 # Start pigpiod (only if you want it inside the container;
 # if you run pigpiod on the Pi host, you can comment this out)
 echo "Starting pigpiod..."
