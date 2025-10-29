@@ -25,22 +25,32 @@ class PWMNode(Node):
 
     def set_pwm(self, r2_value, l2_value, safety_button):
 
-        min_pwm = 1000  # Minimum pulse width in microseconds
+        min_pwm = 1100  # Minimum pulse width in microseconds
         init_pwm = 1500  # Neutral pulse width in microseconds
         max_pwm = 1900  # Maximum pulse width in microseconds
 
-        r_normalized = max(0.0, min(1.0, (r2_value + 1.0) / 2.0))
-        l_normalized = max(0.0, min(1.0, (l2_value + 1.0) / 2.0))
+        # Normalize trigger inputs from [-1,1] to [0,1]
+        r_normalized = max(0.0, min(1.0, (r2_value + 1.0) / 2.0)) # Normalize r2 input to [0,1]
+        l_normalized = max(0.0, min(1.0, (l2_value + 1.0) / 2.0)) # Normalize l2 input to [0,1]
 
+        # net is positive when R2 > L2 (forward), negative when L2 > R2 (reverse)
         net = r_normalized - l_normalized
 
         if safety_button == 0:
             pwm = init_pwm  # Safety button not pressed, set to neutral
             print("Safety button not pressed, setting PWM to neutral. To throttle, press and hold X button.")
         else:
-            pwm = int(init_pwm + net * (init_pwm - min_pwm)) # Scale PWM based on net input
+            # Use asymmetric scaling around init_pwm:
+            # - For forward (net >= 0) scale up to max_pwm using (max_pwm - init_pwm)
+            # - For reverse (net < 0) scale down toward min_pwm using (init_pwm - min_pwm)
+            if net >= 0:
+                pwm = int(init_pwm + net * (max_pwm - init_pwm))
+            else:
+                pwm = int(init_pwm + net * (init_pwm - min_pwm))
+
+            # Clamp into valid range
             pwm = max(min_pwm, min(max_pwm, pwm))
-            print(f"Setting PWM to {pwm} based on joystick input.")
+            print(f"Setting PWM to {pwm} based on joystick input (net={net}).")
         self.pi.set_servo_pulsewidth(self.pin, pwm)
 
     def joy_callback(self, msg):
@@ -49,7 +59,7 @@ class PWMNode(Node):
         
         #read out ps 4 controller values
         r2_value = - msg.axes[5] # Axis 5 for r2 signal, inverted since r2 is negative when pressed
-        l2_value = - msg.axes[2] # Axis 2 for l2 signal, inverted since l2 is negative when pressed
+        l2_value = - msg.axes[4] # Axis 4 for l2 signal, inverted since l2 is negative when pressed
         safety_button = msg.buttons[0]  # X button as safety button
         self.set_pwm(r2_value, l2_value, safety_button)
 
