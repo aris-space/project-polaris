@@ -19,7 +19,7 @@ class PWMNode(Node):
         if not self.pi.connected:
             self.get_logger().error("Could not connect to pigpio daemon!")
             return
-        self.pin = 18  # Example GPIO pin
+        self.pin = 18  # GPIO pin
         self.joy_subscriber = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
 
     def set_pwm(self, r2_value):
