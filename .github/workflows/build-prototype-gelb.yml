@@ -2,7 +2,7 @@ name: build-prototype-gelb
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "test", "no-blueos-noel" ]
     paths:
       - "prototype_gelb/**"
       - ".github/workflows/build-prototype-gelb.yml"
@@ -38,11 +38,15 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            # branch builds (main)
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
+            # exact branch tags
+            type=raw,value=main,enable=${{ github.ref_name == 'main' }}
+            type=raw,value=test,enable=${{ github.ref_name == 'test' }}
+            type=raw,value=no-blueos-noel,enable=${{ github.ref_name == 'no-blueos-noel' }}
 
-            # versioned releases (vX.Y.Z)
+            # immutable content tag
+            type=sha,format=short,prefix=sha-
+
+            # releases (vX.Y.Z)
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
