@@ -1,0 +1,7 @@
+.git
+.build
+.install
+logs
+.DS_Store
+*.pyc
+*.swp
