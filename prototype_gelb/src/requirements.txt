@@ -1,3 +1,0 @@
-rclpy
-ros jazzy
-pigpio
