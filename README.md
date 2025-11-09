@@ -1,39 +1,37 @@
 # project-polaris
 
 
-<table>
-	<tr>
-		<td width="140" valign="middle">
-			<img src="docs/logo.png" alt="POLARIS logo" width="120" />
-		</td>
-		<td valign="middle">
-			<p style="margin:4px 0 0 0"><strong><em>POLARIS Focus Project 2026</em></strong><br/>
-			Our goal is to develop and deploy an autonomous underwater vehicle that is capable of navigating in frozen lakes, with freezing conditions and take ice-thickness measurements from beneath the ice.</p>
-		</td>
-	</tr>
+<table style="border: none; border-collapse: collapse;">
+ 	<tr>
+        <td valign="middle" style="border: none; padding-left: 12px;">
+ 			<p style="margin:4px 0 0 0"><strong><em>POLARIS Focus Project 2026</em></strong><br/>
+ 			Our goal is to develop and deploy an autonomous underwater vehicle that is capable of navigating in frozen lakes, with freezing conditions and take ice-thickness measurements from beneath the ice.</p>
+ 		</td>
+ 		<td width="140" valign="middle" style="border: none; padding: 0;">
+ 			<img src="docs/logo.png" alt="POLARIS logo" width="120" style="border:none; display:block;" />
+ 		</td>
+ 	</tr>
 </table>
-
 
 ### Getting Started
 
 **0. Prerequisites**
-This repo is made for ROS2-humble, which runs on Ubuntu 22.04.
+ This repo is made for ROS2-humble, which runs on Ubuntu 22.04.
 
 **1. Clone Repository**
-Work in progress...
+ Work in progress...
 
 **2.a Run on local machine**
-Work in progress...
+ Work in progress...
 
 **2.b Run on Docker container**
-Work in progress...
+ Work in progress...
 
 **3. Build ROS2 Packages**
-Work in progress...
+ Work in progress...
 
 ---
 ### Usage
-
 Work in progress...
 
 ---
