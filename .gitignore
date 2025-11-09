@@ -1,0 +1,19 @@
+# Ignore log files
+# Matches any file with .log extension, rotated logs (e.g. file.log.1), and compressed logs
+*.log
+*.log.*
+*.log.gz
+# Common logs directory
+logs/
+
+# Local editor/runtime artifacts (keep common defaults)
+.DS_Store
+__pycache__/
+*.pyc
+venv/
+env/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml

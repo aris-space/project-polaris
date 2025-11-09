@@ -1,0 +1,4 @@
+# Ignore demo package from colcon builds
+demo_package/
+demo_package
+
