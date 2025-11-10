@@ -1,13 +1,15 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
+''' Launch file to start the thrust control node and joystick node single motor thrust control forward and backwards. '''
+
 
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package="prototype_gelb_package",
-            executable="pwm_node_ext",
-            name="pwm_node",
+            package="pt_gelb_pkg",
+            executable="thrust_control_fwbw",
+            name="thrust_control_fwbw",
             output="screen",
         ),
         Node(
@@ -17,4 +19,3 @@ def generate_launch_description():
             output="screen",
         ),
     ])
-
