@@ -1,3 +1,11 @@
+"""
+Configuration Class for global settings.
+USEAGE: 
+from config.config import Config
+pwm_max = Config.get_pwm_max()
+"""
+
+
 class Config:
     pwm={
         "max" : 1900,
