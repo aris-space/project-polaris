@@ -3,6 +3,7 @@ import pigpio
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float32
+from config.config import Config
 
 '''
 ROS2 Node to convert joystick inputs to PWM signals and writing to GPIO Pin using pigpio.
@@ -23,8 +24,8 @@ class PWMNode(Node):
         self.joy_subscriber = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
 
     def set_pwm(self, r2_value):
-        min_pwm = 1000  # Minimum pulse width in microseconds
-        max_pwm = 1900  # Maximum pulse width in microseconds
+        min_pwm = Config.get_pwm_min()  # Minimum pulse width in microseconds
+        max_pwm = Config.get_pwm_max()  # Maximum pulse width in microseconds
         pwm = int((r2_value + 1) / 2 * (max_pwm - min_pwm) + min_pwm)  # Convert r2-input to pwm range
         self.pi.set_servo_pulsewidth(self.pin, pwm)
 
