@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 import os
 from glob import glob
 
-package_name = 'prototype_gelb_package'
+package_name = 'pt_gelb_pkg'
 
 setup(
     name=package_name,
@@ -29,8 +29,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'pwm_node = prototype_gelb_package.pwm_node:main',
-            'pwm_node_ext = prototype_gelb_package.pwm_node_ext:main',
+            'thrust_control_fw = pt_gelb_pkg.thrust_control_fw:main',
+            'thrust_control_fwbw = pt_gelb_pkg.thrust_control_fwbw:main',
         ],
     },
 )
