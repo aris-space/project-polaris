@@ -4,8 +4,8 @@
 <table style="border: none; border-collapse: collapse;">
  	<tr>
         <td valign="middle" style="border: none; padding-left: 12px;">
- 			<p style="margin:4px 0 0 0"><strong><em>POLARIS Focus Project 2026</em></strong><br/>
- 			Our goal is to develop and deploy an autonomous underwater vehicle that is capable of navigating in frozen lakes, with freezing conditions and take ice-thickness measurements from beneath the ice.</p>
+ 			<p style="margin:4px 0 0 0"><strong>POLARIS Focus Project 2026</strong><br/>
+ 			<em>Our goal is to develop and deploy an autonomous underwater vehicle that is capable of navigating in frozen lakes, with freezing conditions and take ice-thickness measurements from beneath the ice.</p>
  		</td>
  		<td width="140" valign="middle" style="border: none; padding: 0;">
  			<img src="docs/logo.png" alt="POLARIS logo" width="120" style="border:none; display:block;" />
@@ -19,12 +19,14 @@
  This repo is made for ROS2-humble, which runs on Ubuntu 22.04.
 
 **1. Clone Repository**
- Work in progress...
+Go to directory where you want to store your repo and clone:
+```bash
+cd Documents/here-i-want-my-repo
+git clone https://github.com/aris-space/project-polaris.git
+```
 
-**2.a Run on local machine**
- Work in progress...
 
-**2.b Run on Docker container**
+**2. Run on Docker container**
  Work in progress...
 
 **3. Build ROS2 Packages**
