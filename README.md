@@ -43,22 +43,40 @@ Work in progress...
 Here your git-specific files are stored that are needed for example to automate workflows.
 
 **config**
-Contains configuration files to collect essential variables that can be adjusted here.
+Contains configuration files to collect essential shared variables that can be adjusted here.
 
-**scripts**
-Drop off your random scripts that are not essential for operation but might come in handy some time.
+**docs**
+Documents that have nothing to do with code, for example pdf's, pictures,...
 
-**src**
-All the main code and ROS2 packages belong here. You can add prototype packages but name them with "pt_..." to mark it as prototype and add it to colconignore.
+**hardware**
+Code that handles sensors, cameras and motors (excluded are packages that have their own directory e.g. navigation)
 
-**tests**
-Here would belong git-standardized test protocols used in CI, for now it should stay empty since no CI is planned.
+**launch**
+Store launch files like (from ROS as example) here, s.t. they don't have to be searched in subfolders.
 
-**.colconignore**
-Add ROS2-packages into this list that should not be built automatically, for example demo_package.
+**measurement**
+Code that handles ice-thickness measurements
+
+**missionplanner**
+Code that handles autonomy, pathfinding,...
+
+**navigation**
+Code that handles navigation which includes sensors needed for localization (pressure, imu, dvl, gnss)
+
+**prototypes**
+Old code packages will be stored here. This directory is basically an archive for old code.
+
+**simulation**
+Code that runs simulations like gazebo is stored here.
+
+**parent-folder/scripts**
+Drop off your random scripts that are not essential for operation but might come in handy some time. Every folder in root should have a script folder. If there's none yet feel free to create it yourself.
+
+**utils**
+Here would belong code that stores classes or functions that make our lives easier.
 
 **.gitignore**
-Everything that is not needed in the main repo should be put on this list. This is done to keep a clean main repo. Examples for files that should be put in this list are: Any kind of log files, pycache folders,...
+Everything that is not needed in the main repo should be put on this list. This is done to keep a clean main repo. Examples for files that should be put in this list are: Any kind of log files, pycache folders, ROS2 artifacts, etc.
 
 ---
 
