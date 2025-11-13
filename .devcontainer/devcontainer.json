@@ -11,7 +11,9 @@
         "--network=host",
         "--privileged",
         "-e",
-        "ROS_DOMAIN_ID=0"
+        "ROS_DOMAIN_ID=0",
+        "--env=DISPLAY",
+        "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw"
         // add --device=/dev/ttyUSB0 etc. here if needed
     ],
     // VS Code will run this once after the container is created
