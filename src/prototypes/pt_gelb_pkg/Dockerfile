@@ -20,7 +20,7 @@ WORKDIR /ros2_ws
 
 # Build context is the OUTER prototype_gelb_package/
 # Copy everything (code + launch) into src as a package dir
-COPY . /ros2_ws/src/prototype_gelb_package/
+COPY . /ros2_ws/src/pt_gelb_pkg/
 
 # Resolve ROS deps from package.xml
 RUN rosdep update && rosdep install --from-paths src --ignore-src -r -y
@@ -37,5 +37,5 @@ RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc && \
 ENTRYPOINT ["/ros_entrypoint.sh"]
 
 # Default command (can override with `docker run ... -- ros2 ...`)
-CMD ["bash", "-lc", "source /ros2_ws/install/setup.bash && ros2 launch prototype_gelb_package gelb_launch.py"]
+CMD ["bash", "-lc", "source /ros2_ws/install/setup.bash && ros2 launch pt_gelb_pkg gelb_launch"]
 
