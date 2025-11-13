@@ -1,0 +1,23 @@
+# Base image with just system/ROS deps (no source code copied)
+FROM ros:jazzy-ros-base
+
+# Use bash in RUN so sourcing works if you add steps later
+SHELL ["/bin/bash", "-lc"]
+
+ENV PYTHONUNBUFFERED=1
+
+# System & ROS packages you need at build/runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3-pip \
+      ros-jazzy-joy \
+      ros-jazzy-mavros-msgs \
+      python3-pigpio \
+    && rm -rf /var/lib/apt/lists/*
+
+# (Optional) If you later add Python deps, uncomment and adjust:
+# COPY requirements.txt /tmp/requirements.txt
+# RUN pip3 install --no-cache-dir -r /tmp/requirements.txt && rm /tmp/requirements.txt
+
+# Keep ROS env
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["bash"]
