@@ -27,7 +27,16 @@ jobs:
       - name: Install colcon and basic tools
         run: |
           sudo apt update
-          sudo apt install -y python3-colcon-common-extensions python3-pip curl gnupg lsb-release
+          sudo apt install -y software-properties-common curl gnupg lsb-release
+
+          # Add ROS 2 key and repo
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list
+
+          sudo apt update
+
+          # Install colcon + ROS 2 Python build tools
+          sudo apt install -y python3-colcon-common-extensions python3-pip
           pip3 install -U colcon-core colcon-ros
 
       - name: Full ROS 2 Setup (main/dev only)
