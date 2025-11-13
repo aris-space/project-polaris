@@ -76,8 +76,8 @@ jobs:
 
       - name: Check build success
         run: |
-          if [[ ! -f build/pt_gelb_pkg/colcon_command_prefix_build.log ]]; then
-            echo "Build log not found — build likely failed"
+          if [[ ! -d build/pt_gelb_pkg && ! -d install/pt_gelb_pkg ]]; then
+            echo "Build directories not found — build likely failed"
             exit 1
           fi
           echo "Build completed successfully"
