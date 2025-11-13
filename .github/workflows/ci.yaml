@@ -1,0 +1,76 @@
+name: CI (colcon build)
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - 'feature/**'
+      - 'test/**'
+      - 'fix/**'
+      - 'test-ci'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install colcon and basic tools
+        run: |
+          sudo apt update
+          sudo apt install -y python3-colcon-common-extensions python3-pip curl gnupg lsb-release
+          pip3 install -U colcon-core colcon-ros
+
+      - name: Full ROS 2 Setup (main/dev only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        run: |
+          sudo apt install -y software-properties-common
+          sudo add-apt-repository universe
+          sudo sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" > /etc/apt/sources.list.d/ros2.list'
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          sudo apt update
+          sudo apt install -y ros-humble-ros-core ros-humble-ros-base python3-rosdep
+          sudo rosdep init || echo "rosdep already initialized"
+          rosdep update
+
+      - name: Install dependencies with rosdep (main/dev only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        run: |
+          source /opt/ros/humble/setup.bash
+          rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+
+      - name: Build with colcon
+        run: |
+          # Always source if available; otherwise use isolated mode
+          if [[ -f /opt/ros/humble/setup.bash ]]; then
+            source /opt/ros/humble/setup.bash
+            echo "Running full colcon build with ROS environment"
+            colcon build --symlink-install
+          else
+            echo "Running lightweight colcon build (no ROS environment)"
+            # Allow building without system deps or ROS
+            colcon build \
+              --symlink-install \
+              --cmake-args -DBUILD_TESTING=OFF \
+              --allow-override \
+              --packages-select pt_gelb_pkg
+          fi
+
+      - name: Check build success
+        run: |
+          if [[ ! -f build/pt_gelb_pkg/colcon_command_prefix_build.log ]]; then
+            echo "Build log not found — build likely failed"
+            exit 1
+          fi
+          echo "Build completed successfully"
+
+      # Optional: Run tests
