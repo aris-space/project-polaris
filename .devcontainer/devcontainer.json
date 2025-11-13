@@ -17,5 +17,33 @@
     // VS Code will run this once after the container is created
     "postCreateCommand": "cd /ros2_ws && colcon build --symlink-install --executor sequential || true",
     // You’re using root in the image
-    "remoteUser": "root"
+    "remoteUser": "root",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                // C/C++
+                "ms-vscode.cpptools-themes", // C/C++ Themes :contentReference[oaicite:0]{index=0}
+                "ms-vscode.cpptools", // C/C++ :contentReference[oaicite:1]{index=1}
+                "ms-vscode.cpptools-extension-pack", // C/C++ Extension Pack :contentReference[oaicite:2]{index=2}
+                "ms-vscode.cmake-tools", // CMake Tools :contentReference[oaicite:3]{index=3}
+                // Dev containers / Docker
+                "ms-vscode-remote.remote-containers", // Dev Containers :contentReference[oaicite:4]{index=4}
+                "ms-azuretools.vscode-containers", // Container Tools :contentReference[oaicite:5]{index=5}
+                "ms-azuretools.vscode-docker", // Docker :contentReference[oaicite:6]{index=6}
+                // Git / GitHub
+                "mhutchie.git-graph", // Git Graph :contentReference[oaicite:7]{index=7}
+                "eamodio.gitlens", // GitLens :contentReference[oaicite:8]{index=8}
+                "GitHub.vscode-pull-request-github", // GitHub Pull Requests & Issues :contentReference[oaicite:9]{index=9}
+                "GitHub.vscode-github-actions", // GitHub Actions :contentReference[oaicite:10]{index=10}
+                // Python
+                "ms-python.python", // Python :contentReference[oaicite:11]{index=11}
+                "ms-python.vscode-pylance", // Pylance :contentReference[oaicite:12]{index=12}
+                "ms-python.debugpy", // Python Debugger :contentReference[oaicite:13]{index=13}
+                "ms-python.vscode-python-envs", // Python Environments :contentReference[oaicite:14]{index=14}
+                "ms-python.black-formatter", // Black Formatter :contentReference[oaicite:15]{index=15}
+                // PlatformIO
+                "platformio.platformio-ide" // PlatformIO IDE :contentReference[oaicite:16]{index=16}
+            ]
+        }
+    }
 }
