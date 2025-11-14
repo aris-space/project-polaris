@@ -45,7 +45,13 @@
                 "ms-python.black-formatter", // Black Formatter :contentReference[oaicite:15]{index=15}
                 // PlatformIO
                 "platformio.platformio-ide" // PlatformIO IDE :contentReference[oaicite:16]{index=16}
-            ]
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter"
+                },
+                "editor.formatOnSave": true
+            }
         }
     }
 }
