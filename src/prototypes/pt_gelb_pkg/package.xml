@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>prototype_gelb_pkg</name>
+  <name>pt_gelb_pkg</name>
   <version>0.0.1</version>
   <description>Code for the first prototype. We can control motor using the controller</description>
   <maintainer email="ridh.choudhury@gmail.com">polaris-rc</maintainer>
@@ -19,6 +19,6 @@
   <test_depend>python3-pytest-cov</test_depend>
 
   <export>
-    <build_type>ament_python</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
