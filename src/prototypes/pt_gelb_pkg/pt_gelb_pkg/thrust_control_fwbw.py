@@ -3,6 +3,7 @@ import pigpio
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
 from std_msgs.msg import Float32
+from config.config import Config
 
 '''
 ROS2 Node to convert joystick inputs to PWM signals and writing to GPIO Pin using pigpio.
@@ -25,9 +26,9 @@ class PWMNode(Node):
 
     def set_pwm(self, r2_value, l2_value, safety_button):
 
-        min_pwm = 1100  # Minimum pulse width in microseconds
-        init_pwm = 1500  # Neutral pulse width in microseconds
-        max_pwm = 1900  # Maximum pulse width in microseconds
+        min_pwm = Config.get_pwm_min()  # Minimum pulse width in microseconds
+        init_pwm = Config.get_pwm_init()  # Neutral pulse width in microseconds
+        max_pwm = Config.get_pwm_max()  # Maximum pulse width in microseconds
 
         # Normalize trigger inputs from [-1,1] to [0,1]
         r_normalized = max(0.0, min(1.0, (r2_value + 1.0) / 2.0)) # Normalize r2 input to [0,1]
@@ -56,11 +57,15 @@ class PWMNode(Node):
     def joy_callback(self, msg):
         # Process joystick input and convert to PWM signals
         self.get_logger().info(f"Joystick axes: {msg.axes}")
+
+        r2_axis = Config.get_joy_r2_axis()
+        l2_axis = Config.get_joy_l2_axis()
+        x_button = Config.get_joy_x_button()
         
         #read out ps 4 controller values
-        r2_value = - msg.axes[5] # Axis 5 for r2 signal, inverted since r2 is negative when pressed
-        l2_value = - msg.axes[4] # Axis 4 for l2 signal, inverted since l2 is negative when pressed
-        safety_button = msg.buttons[0]  # X button as safety button
+        r2_value = - msg.axes[r2_axis] # Axis 5 for r2 signal, inverted since r2 is negative when pressed
+        l2_value = - msg.axes[l2_axis] # Axis 4 for l2 signal, inverted since l2 is negative when pressed
+        safety_button = msg.buttons[x_button]  # X button as safety button
         self.set_pwm(r2_value, l2_value, safety_button)
 
     def destroy_node(self):
