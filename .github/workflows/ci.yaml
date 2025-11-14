@@ -5,10 +5,10 @@ on:
     branches:
       - main
       - dev
+      - test-ci
       - 'feature/**'
       - 'test/**'
       - 'fix/**'
-      - 'test-ci'
   pull_request:
     branches:
       - main
@@ -31,7 +31,8 @@ jobs:
 
           # Add ROS 2 key and repo
           sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list
 
           sudo apt update
 
@@ -39,7 +40,7 @@ jobs:
           sudo apt install -y python3-colcon-common-extensions python3-pip
           pip3 install -U colcon-core colcon-ros
 
-      - name: Full ROS 2 Setup (main/dev only)
+      - name: Full ROS 2 Setup (main/dev/test-ci)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test-ci'
         run: |
           sudo apt install -y software-properties-common
@@ -51,7 +52,7 @@ jobs:
           sudo rosdep init || echo "rosdep already initialized"
           rosdep update
 
-      - name: Install dependencies with rosdep (main/dev only)
+      - name: Install dependencies with rosdep (main/dev/test-ci)
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test-ci'
         run: |
           source /opt/ros/humble/setup.bash
@@ -59,23 +60,14 @@ jobs:
 
       - name: Build with colcon
         run: |
-          set -e  # fail immediately on any real errors
+          set -e
 
-          # Try sourcing ROS if available; otherwise continue in lightweight mode
-          if [[ -f /opt/ros/humble/setup.bash ]]; then
+          if [[ "$GITHUB_REF" == "refs/heads/main" || "$GITHUB_REF" == "refs/heads/dev" || "$GITHUB_REF" == "refs/heads/test-ci" ]]; then
             echo "Running full colcon build with ROS environment"
             source /opt/ros/humble/setup.bash
             colcon build --symlink-install
           else
-            echo "Running lightweight colcon build (no ROS environment)"
-            # If selected packages do not exist or are ignored:
-            # colcon will exit 0 with a 'No packages found' message, which is fine.
-            colcon build \
-              --symlink-install \
-              --cmake-args -DBUILD_TESTING=OFF \
-              --allow-override \
-              --packages-select pt_gelb_pkg || \
-              echo "No matching packages found (not an error)"
+            echo "Running normal colcon build (no ROS environment)"
+            colcon build --symlink-install
           fi
-
       # Optional: Run tests
