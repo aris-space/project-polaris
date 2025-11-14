@@ -52,7 +52,7 @@ jobs:
           rosdep update
 
       - name: Install dependencies with rosdep (main/dev only)
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/test-ci'
         run: |
           source /opt/ros/humble/setup.bash
           rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
