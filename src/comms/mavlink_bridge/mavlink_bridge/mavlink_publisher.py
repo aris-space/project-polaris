@@ -5,7 +5,6 @@ from std_msgs.msg import String
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
-    VFR_HUD,  # VFR_HUD
 )
 from sensor_msgs.msg import (
     Imu,  # ATTITUDE
