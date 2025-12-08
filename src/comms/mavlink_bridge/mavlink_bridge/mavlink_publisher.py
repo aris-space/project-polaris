@@ -1,7 +1,7 @@
+import math
 import rclpy
 from rclpy.node import Node
 from pymavlink import mavutil
-from std_msgs.msg import String
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
@@ -47,8 +47,12 @@ class MavlinkBridgeSender(Node):
         self.timer = self.create_timer(0.5, self.mavlink_callback)
 
     def mavlink_callback(self):
-        """Timer callback - checks for MAVLink messages and routes them"""
-        msg = self.port.recv_match(blocking=False)
+        """Timer callback - drains all buffered MAVLink messages and routes them"""
+        # Process ALL available messages in the buffer (not just one)
+        while True:
+            msg = self.port.recv_match(blocking=False)
+            if msg is None:
+                break  # No more messages in buffer
 
         if msg is not None:
             self.get_logger().info(f"Received: {msg.get_type()}")
@@ -70,13 +74,13 @@ class MavlinkBridgeSender(Node):
         # MAVLink system status (uint8)
         ros_msg.system_status = msg.system_status
 
-        # Mode is a string in ROS2, but an int in MAVLink (custom_mode)
-        ros_msg.mode = str(msg.custom_mode)
+        # Map custom_mode integer to human-readable flight mode name
+        # Using ArduSub mapping (change to mode_mapping_acm for ArduCopter, etc.)
+        mode_mapping = mavutil.mode_mapping_sub
+        ros_msg.mode = mode_mapping.get(msg.custom_mode, f"UNKNOWN({msg.custom_mode})")
 
-        # Armed status is a bit in base_mode (128 = 0b10000000)
-        ros_msg.armed = (msg.base_mode & 128) > 0
-
-        ros_msg.connected = True
+        # Based on the bitmask definition in mavutil
+        ros_msg.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
         self.heartbeat_publisher.publish(ros_msg)
         self.get_logger().info(
@@ -86,16 +90,28 @@ class MavlinkBridgeSender(Node):
     def handle_attitude(self, msg):
         """Process ATTITUDE message and publish to ROS2"""
         ros_msg = Imu()
-        # ROS2 uses quaternions, but we can put Euler angles in for debugging if needed
-        # Or just mapping directly to show the data transfer
-        ros_msg.orientation.x = float(msg.roll)
-        ros_msg.orientation.y = float(msg.pitch)
-        ros_msg.orientation.z = float(msg.yaw)
-        # Note: Proper implementation would convert Euler to Quaternion
+
+        # Convert Euler angles (radians) to Quaternion
+        roll = msg.roll
+        pitch = msg.pitch
+        yaw = msg.yaw
+
+        # Euler to Quaternion conversion
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+
+        ros_msg.orientation.w = cr * cp * cy + sr * sp * sy
+        ros_msg.orientation.x = sr * cp * cy - cr * sp * sy
+        ros_msg.orientation.y = cr * sp * cy + sr * cp * sy
+        ros_msg.orientation.z = cr * cp * sy - sr * sp * cy
 
         self.attitude_publisher.publish(ros_msg)
         self.get_logger().info(
-            f"Published Attitude: Roll={msg.roll:.2f}, Pitch={msg.pitch:.2f}, Yaw={msg.yaw:.2f}"
+            f"Published Attitude: Roll={roll:.2f}, Pitch={pitch:.2f}, Yaw={yaw:.2f}"
         )
 
     def handle_rc_channels(self, msg):
@@ -110,20 +126,24 @@ class MavlinkBridgeSender(Node):
     def handle_battery(self, msg):
         """Process BATTERY_STATUS message and publish to ROS2"""
         ros_msg = BatteryState()
-        # Current battery (cA -> A conversion typically needed, but mapping raw for now)
-        ros_msg.current = float(msg.current_battery)
+        # current_battery is in 10*mA (centiamperes), divide by 100 to get Amperes
+        ros_msg.current = float(msg.current_battery) / 100.0
+        # battery_remaining is percentage (0-100), ROS2 expects 0.0-1.0
+        ros_msg.percentage = float(msg.battery_remaining) / 100.0
 
         self.battery_publisher.publish(ros_msg)
-        self.get_logger().info(f"Published Battery: Current={ros_msg.current}")
+        self.get_logger().info(
+            f"Published Battery: Current={ros_msg.current:.2f}A, Remaining={ros_msg.percentage:.0%}"
+        )
 
     def handle_scaled_pressure(self, msg):
         """Process SCALED_PRESSURE message and publish to ROS2"""
         ros_msg = FluidPressure()
-        # Differential pressure
-        ros_msg.fluid_pressure = float(msg.press_diff)
+        # Differential pressure: MAVLink uses hPa, ROS2 expects Pa (multiply by 100)
+        ros_msg.fluid_pressure = float(msg.press_diff) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
-        self.get_logger().info(f"Published Pressure: Diff={ros_msg.fluid_pressure}")
+        self.get_logger().info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
 
 
 def main(args=None):
