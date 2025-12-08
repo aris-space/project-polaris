@@ -54,19 +54,19 @@ class MavlinkBridgeSender(Node):
             if msg is None:
                 break  # No more messages in buffer
 
-        if msg is not None:
-            self.get_logger().info(f"Received: {msg.get_type()}")
+            if msg is not None:
+                self.get_logger().info(f"Received: {msg.get_type()}")
 
-            if msg.get_type() == "HEARTBEAT":
-                self.handle_heartbeat(msg)
-            elif msg.get_type() == "ATTITUDE":
-                self.handle_attitude(msg)
-            elif msg.get_type() == "RC_CHANNELS":
-                self.handle_rc_channels(msg)
-            elif msg.get_type() == "BATTERY_STATUS":
-                self.handle_battery(msg)
-            elif msg.get_type() == "SCALED_PRESSURE":
-                self.handle_scaled_pressure(msg)
+                if msg.get_type() == "HEARTBEAT":
+                    self.handle_heartbeat(msg)
+                elif msg.get_type() == "ATTITUDE":
+                    self.handle_attitude(msg)
+                elif msg.get_type() == "RC_CHANNELS":
+                    self.handle_rc_channels(msg)
+                elif msg.get_type() == "BATTERY_STATUS":
+                    self.handle_battery(msg)
+                elif msg.get_type() == "SCALED_PRESSURE":
+                    self.handle_scaled_pressure(msg)
 
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
