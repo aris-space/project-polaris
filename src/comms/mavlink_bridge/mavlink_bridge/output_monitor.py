@@ -1,3 +1,4 @@
+import math
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -39,14 +40,34 @@ class OutputMonitor(Node):
         self.timer = self.create_timer(0.5, self.print_dashboard)  # 2Hz refresh rate
 
     def heartbeat_cb(self, msg):
-        self.mode = msg.custom_mode
+        # msg.mode is already a human-readable string (e.g., "STABILIZE", "MANUAL")
+        self.mode = msg.mode
         self.armed = msg.armed
 
     def attitude_cb(self, msg):
-        # Taking orientation.x/y/z directly as mapped in publisher
-        self.roll = msg.orientation.x
-        self.pitch = msg.orientation.y
-        self.yaw = msg.orientation.z
+        # Convert quaternion back to Euler angles for display
+        w = msg.orientation.w
+        x = msg.orientation.x
+        y = msg.orientation.y
+        z = msg.orientation.z
+
+        # Quaternion to Euler angles conversion
+        # Roll (x-axis rotation)
+        sinr_cosp = 2 * (w * x + y * z)
+        cosr_cosp = 1 - 2 * (x * x + y * y)
+        self.roll = math.atan2(sinr_cosp, cosr_cosp)
+
+        # Pitch (y-axis rotation)
+        sinp = 2 * (w * y - z * x)
+        if abs(sinp) >= 1:
+            self.pitch = math.copysign(math.pi / 2, sinp)
+        else:
+            self.pitch = math.asin(sinp)
+
+        # Yaw (z-axis rotation)
+        siny_cosp = 2 * (w * z + x * y)
+        cosy_cosp = 1 - 2 * (y * y + z * z)
+        self.yaw = math.atan2(siny_cosp, cosy_cosp)
 
     def rc_cb(self, msg):
         self.rc_channels = msg.channels
