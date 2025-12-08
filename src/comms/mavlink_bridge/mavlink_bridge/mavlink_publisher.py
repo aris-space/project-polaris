@@ -69,14 +69,18 @@ class MavlinkBridgeSender(Node):
         ros_msg = State()
         # MAVLink system status (uint8)
         ros_msg.system_status = msg.system_status
-        # Base mode bitmap
-        ros_msg.base_mode = msg.base_mode
-        # Custom mode (flight mode)
-        ros_msg.custom_mode = str(msg.custom_mode)
+
+        # Mode is a string in ROS2, but an int in MAVLink (custom_mode)
+        ros_msg.mode = str(msg.custom_mode)
+
+        # Armed status is a bit in base_mode (128 = 0b10000000)
+        ros_msg.armed = (msg.base_mode & 128) > 0
+
+        ros_msg.connected = True
 
         self.heartbeat_publisher.publish(ros_msg)
         self.get_logger().info(
-            f"Published Heartbeat: Status={ros_msg.system_status}, Base={ros_msg.base_mode}, Custom={ros_msg.custom_mode}"
+            f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
         )
 
     def handle_attitude(self, msg):
