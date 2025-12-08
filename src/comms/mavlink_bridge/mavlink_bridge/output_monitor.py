@@ -1,7 +1,6 @@
 import math
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
@@ -14,6 +13,18 @@ from sensor_msgs.msg import (
 
 
 class OutputMonitor(Node):
+    # MAV_STATE mapping (system_status values)
+    SYSTEM_STATUS_MAP = {
+        0: "UNINIT",
+        1: "BOOT",
+        2: "CALIBRATING",
+        3: "STANDBY",
+        4: "ACTIVE",
+        5: "CRITICAL",
+        6: "EMERGENCY",
+        7: "POWEROFF",
+        8: "FLIGHT_TERMINATION",
+    }
 
     def __init__(self):
         super().__init__("output_monitor")
@@ -21,6 +32,7 @@ class OutputMonitor(Node):
         # Initialize state variables
         self.mode = "UNKNOWN"
         self.armed = False
+        self.system_status = "UNKNOWN"
         self.roll = 0.0
         self.pitch = 0.0
         self.yaw = 0.0
@@ -43,6 +55,10 @@ class OutputMonitor(Node):
         # msg.mode is already a human-readable string (e.g., "STABILIZE", "MANUAL")
         self.mode = msg.mode
         self.armed = msg.armed
+        # Map system_status integer to human-readable string
+        self.system_status = self.SYSTEM_STATUS_MAP.get(
+            msg.system_status, f"UNKNOWN({msg.system_status})"
+        )
 
     def attitude_cb(self, msg):
         # Convert quaternion back to Euler angles for display
@@ -86,6 +102,7 @@ class OutputMonitor(Node):
 
         print(f"Mode: {self.mode}")
         print(f"Armed: {self.armed}")
+        print(f"System Status: {self.system_status}")
 
         print(f"Roll: {self.roll}")
         print(f"Pitch: {self.pitch}")

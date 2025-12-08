@@ -70,6 +70,11 @@ class MavlinkBridgeSender(Node):
 
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
+        # Filter: only process heartbeats from actual autopilots, not GCS or other components
+        # MAV_AUTOPILOT_INVALID (8) means it's not an autopilot (e.g., GCS, companion computer)
+        if msg.autopilot == mavutil.mavlink.MAV_AUTOPILOT_INVALID:
+            return  # Skip non-autopilot heartbeats
+
         ros_msg = State()
         # MAVLink system status (uint8)
         ros_msg.system_status = msg.system_status
