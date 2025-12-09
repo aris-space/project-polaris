@@ -94,6 +94,7 @@ class OutputMonitor(Node):
     def pressure_cb(self, msg):
         self.pressure_diff = msg.fluid_pressure
 
+    # this function actually print the dashboard
     def print_dashboard(self):
         # Clear screen code
         print("\033[H\033[J", end="")
@@ -118,7 +119,7 @@ class OutputMonitor(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = OutputMonitor()
-    rclpy.spin(node)
+    rclpy.spin(node)  # keeps the node running
     node.destroy_node()
     rclpy.shutdown()
 
