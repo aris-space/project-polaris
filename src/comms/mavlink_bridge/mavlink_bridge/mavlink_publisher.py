@@ -15,7 +15,7 @@ from sensor_msgs.msg import (
 
 class MavlinkBridgeSender(Node):
     """
-    This node is supposed to publish mavlink data directly from the pixhawk to ROS2 topics
+    This node is supposed to publish mavlink data directly from the pixhawk to ROS2 topics and so that it can be heart by the output monitor
     """
 
     def __init__(self):
@@ -82,7 +82,9 @@ class MavlinkBridgeSender(Node):
         # Map custom_mode integer to human-readable flight mode name
         # Using ArduSub mapping (change to mode_mapping_acm for ArduCopter, etc.)
         mode_mapping = mavutil.mode_mapping_sub
-        ros_msg.mode = mode_mapping.get(msg.custom_mode, f"UNKNOWN({msg.custom_mode})")
+        ros_msg.mode = mode_mapping.get(
+            msg.custom_mode, f"UNKNOWN({msg.custom_mode})"
+        )  # gets the name equivalent of the msg.custom_mode int using mode_mapping.get(). second entry is if its unknown
 
         # Based on the bitmask definition in mavutil
         ros_msg.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
