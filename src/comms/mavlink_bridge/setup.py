@@ -28,6 +28,7 @@ setup(
         "console_scripts": [
             "mavlink_publisher = mavlink_bridge.mavlink_publisher:main",
             "output_monitor = mavlink_bridge.output_monitor:main",
+            "ros2_receiver = mavlink_bridge.ros2_receiver:main",
         ],
     },
 )
