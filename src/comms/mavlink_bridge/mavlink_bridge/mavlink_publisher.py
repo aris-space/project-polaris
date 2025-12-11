@@ -67,7 +67,7 @@ class MavlinkBridgeSender(Node):
         file_handler = logging.FileHandler(log_file)
         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
         file_handler.setFormatter(formatter)
-        self._file_logger.addHandler(logging.FileHandler(file_handler))
+        self._file_logger.addHandler(file_handler)
 
         self.ros_logger = self.get_logger()  # get_logger is the ros logger object
 
