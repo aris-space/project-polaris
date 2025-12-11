@@ -64,7 +64,10 @@ class MavlinkBridgeSender(Node):
         self._file_logger.setLevel(logging.INFO)
 
         # the handler actually writes to the specified file
-        self._file_logger.addHandler(logging.FileHandler(log_file))
+        file_handler = logging.FileHandler(log_file)
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        file_handler.setFormatter(formatter)
+        self._file_logger.addHandler(logging.FileHandler(file_handler))
 
         self.ros_logger = self.get_logger()  # get_logger is the ros logger object
 
