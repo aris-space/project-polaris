@@ -1,7 +1,9 @@
 import math
 import rclpy
+import logging, os
 from rclpy.node import Node
 from pymavlink import mavutil
+from datetime import datetime
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
@@ -12,6 +14,33 @@ from sensor_msgs.msg import (
     FluidPressure,  # SCALED_PRESSURE (depth)
 )
 
+# specifies the directory where logs are saved and the name of the log files
+log_dir = os.path.expanduser("~/polaris_logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"mavlink_{datetime.now():%Y%m%d_%H%M%S}.log")
+
+
+class DualLogger:
+    def __init__(self, ros_logger, file_logger):
+        self._ros = ros_logger
+        self._file = file_logger
+
+    def info(self, msg):
+        self._ros.info(msg)
+        self._file.info(msg)
+
+    def debug(self, msg):
+        self._ros.debug(msg)
+        self._file.debug(msg)
+
+    def warning(self, msg):
+        self._ros.warning(msg)
+        self._file.warning(msg)
+
+    def error(self, msg):
+        self._ros.error(msg)
+        self._file.error(msg)
+
 
 class MavlinkBridgeSender(Node):
     """
@@ -21,12 +50,30 @@ class MavlinkBridgeSender(Node):
     def __init__(self):
         super().__init__("mavlink_bridge_publisher")
 
+        self._file_logger = logging.getLogger(
+            "mavlink"
+        )  # creates or gets logger instance
+
+        # set level defines from what message type onwards the message is logged. the different levels are:
+        # Logging levels (lowest → highest):
+        # DEBUG    = detailed diagnostic data (high-frequency sensor + internal state)
+        # INFO     = normal operational messages (mode changes, summaries)
+        # WARNING  = unexpected situations that do not stop operation
+        # ERROR    = recoverable failures
+        # CRITICAL = unrecoverable failures; system may be unusable
+        self._file_logger.setLevel(logging.INFO)
+
+        # the handler actually writes to the specified file
+        self._file_logger.addHandler(logging.FileHandler(log_file))
+
+        self.ros_logger = self.get_logger()  # get_logger is the ros logger object
+
+        self.logger = DualLogger(self.ros_logger, self._file_logger)
+
         self.port = mavutil.mavlink_connection("udp:10.5.11.50:14600")
 
         self.port.wait_heartbeat()
-        self.get_logger().info(
-            f"Heartbeat received from system {self.port.target_system}"
-        )
+        self.logger.info(f"Heartbeat received from system {self.port.target_system}")
 
         self.heartbeat_publisher = self.create_publisher(State, "pixhawk/heartbeat", 10)
 
@@ -55,7 +102,7 @@ class MavlinkBridgeSender(Node):
                 break  # No more messages in buffer
 
             if msg is not None:
-                self.get_logger().info(f"Received: {msg.get_type()}")
+                self.logger.info(f"Received: {msg.get_type()}")
 
                 if msg.get_type() == "HEARTBEAT":
                     self.handle_heartbeat(msg)
@@ -90,7 +137,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
         self.heartbeat_publisher.publish(ros_msg)
-        self.get_logger().info(
+        self.logger.info(
             f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
         )
 
@@ -117,7 +164,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.orientation.z = cr * cp * sy - sr * sp * cy
 
         self.attitude_publisher.publish(ros_msg)
-        self.get_logger().info(
+        self.logger.info(
             f"Published Attitude: Roll={roll:.2f}, Pitch={pitch:.2f}, Yaw={yaw:.2f}"
         )
 
@@ -128,7 +175,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.channels = [msg.chan1_raw, msg.chan2_raw, msg.chan3_raw, msg.chan4_raw]
 
         self.rc_channel_publisher.publish(ros_msg)
-        self.get_logger().info(f"Published RC: {ros_msg.channels}")
+        self.logger.info(f"Published RC: {ros_msg.channels}")
 
     def handle_battery(self, msg):
         """Process BATTERY_STATUS message and publish to ROS2"""
@@ -139,7 +186,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.percentage = float(msg.battery_remaining) / 100.0
 
         self.battery_publisher.publish(ros_msg)
-        self.get_logger().info(
+        self.logger.info(
             f"Published Battery: Current={ros_msg.current:.2f}A, Remaining={ros_msg.percentage:.0%}"
         )
 
@@ -150,7 +197,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.fluid_pressure = float(msg.press_diff) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
-        self.get_logger().info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+        self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
 
 
 def main(args=None):
