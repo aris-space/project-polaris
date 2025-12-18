@@ -1,4 +1,4 @@
-from ping_sonar.brping import Ping1D
+from .brping import Ping1D
 from rclpy.node import Node
 import rclpy
 import csv
