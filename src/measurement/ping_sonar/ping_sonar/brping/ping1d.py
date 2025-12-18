@@ -8,9 +8,9 @@
 # DO NOT EDIT
 # ~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!~!
 
-from brping import definitions
-from brping import PingDevice
-from brping import pingmessage
+from . import definitions
+from .device import PingDevice
+from . import pingmessage
 
 class Ping1D(PingDevice):
 
