@@ -1,17 +1,24 @@
 """
-Manual control node that translates joystick inputs from Foxglove (/joy topic)
-into a MANUAL_CONTROL message for the Pixhawk (pixhawk/manual_control topic).
-Only active when the current mode (published by mode_control_node) is 'manual_control'.
+Manual control node for 6DOF joystick control of the submarine.
 
-The Int16MultiArray published on pixhawk/manual_control has the following layout:
-  data[0] = x        (forward/back,  -1000 to 1000)
-  data[1] = y        (lateral,       -1000 to 1000)
-  data[2] = z        (throttle/depth, 0 to 1000)
-  data[3] = r        (yaw,           -1000 to 1000)
-  data[4] = s        (roll,          -1000 to 1000)
-  data[5] = t        (pitch,         -1000 to 1000)
-  data[6] = buttons  (bitmask)
-  data[7] = buttons2 (bitmask)
+Subscribes to:
+  - /joy (sensor_msgs/Joy)       : joystick input forwarded by foxglove_bridge
+  - current_mode (std_msgs/String): active mode published by mode_control_node
+
+Publishes:
+  - pixhawk/manual_control (std_msgs/Int16MultiArray): 6-element array consumed
+    by the mavlink_bridge ros2_receiver, which sends it as a MAVLink MANUAL_CONTROL
+    message to the Pixhawk.
+
+Only processes joystick input when current_mode == 'manual_control'.
+
+Int16MultiArray layout (6 values):
+  data[0] = x   (surge:  forward/back,  -1000 to 1000)
+  data[1] = y   (sway:   lateral,       -1000 to 1000)
+  data[2] = z   (heave:  throttle/depth, 0 to 1000, 500 = neutral)
+  data[3] = r   (yaw:    rotation,      -1000 to 1000)
+  data[4] = s   (roll:   MAVLink 2 extension, -1000 to 1000)
+  data[5] = t   (pitch:  MAVLink 2 extension, -1000 to 1000)
 """
 
 import rclpy
@@ -82,8 +89,8 @@ class ManualControlNode(Node):
         joy_msg.axes    -> list of floats (-1.0 to 1.0 for sticks, varies for triggers)
         joy_msg.buttons -> list of ints   (0 or 1)
 
-        Must return Int16MultiArray with 8 values: [x, y, z, r, s, t, buttons, buttons2]
-        All axis values are int16: -1000 to 1000 (z: 0 to 1000)
+        Returns Int16MultiArray with 6 values: [x, y, z, r, s, t]
+        All axis values are int16: -1000 to 1000 (z: 0 to 1000, 500 = neutral)
         """
         mc_msg = Int16MultiArray()
 
