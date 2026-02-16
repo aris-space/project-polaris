@@ -19,7 +19,7 @@ class ModeControlNode(Node):
         self.prev_pixhawk_mode = None
 
         # Publishers & Subscribers
-        self.mode_publisher = self.create_publisher(String, "current_mode", 10)
+        self.mode_publisher = self.create_publisher(String, "mode_control/current_mode", 10)
         self.pixhawk_mode_publisher = self.create_publisher(
             String, "pixhawk/mode_cmd", 10
         )
