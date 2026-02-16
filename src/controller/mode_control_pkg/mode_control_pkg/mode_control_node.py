@@ -80,3 +80,15 @@ class ModeControlNode(Node):
         # For now, we will just return True to allow mode switching
         buttons = msg.buttons
         return buttons[0] == 1  # Assuming button 0 (X) is the safety button
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    mode_control_node = ModeControlNode()
+    rclpy.spin(mode_control_node)
+    mode_control_node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
