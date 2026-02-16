@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'manual_control_node = mode_control_pkg.manual_control_node:main',
         ],
     },
 )
