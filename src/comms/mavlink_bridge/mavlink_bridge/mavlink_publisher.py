@@ -197,7 +197,7 @@ class MavlinkBridgeSender(Node):
         """Process SCALED_PRESSURE message and publish to ROS2"""
         ros_msg = FluidPressure()
         # Differential pressure: MAVLink uses hPa, ROS2 expects Pa (multiply by 100)
-        ros_msg.fluid_pressure = float(msg.press_diff) * 100.0
+        ros_msg.fluid_pressure = float(msg.press_diff + 5) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
         self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
