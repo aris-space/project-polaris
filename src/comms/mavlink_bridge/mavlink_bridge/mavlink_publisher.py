@@ -115,7 +115,7 @@ class MavlinkBridgeSender(Node):
                     self.handle_rc_channels(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
                     self.handle_battery(msg)
-                elif msg.get_type() == "SCALED_PRESSURE":
+                elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
 
     def handle_heartbeat(self, msg):
@@ -194,10 +194,10 @@ class MavlinkBridgeSender(Node):
         )
 
     def handle_scaled_pressure(self, msg):
-        """Process SCALED_PRESSURE message and publish to ROS2"""
+        """Process SCALED_PRESSURE2(this is the bluerobotics pressure sensor) message and publish to ROS2"""
         ros_msg = FluidPressure()
         # Differential pressure: MAVLink uses hPa, ROS2 expects Pa (multiply by 100)
-        ros_msg.fluid_pressure = float(msg.press_diff) * 100.0
+        ros_msg.fluid_pressure = float(msg.press_abs) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
         self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
