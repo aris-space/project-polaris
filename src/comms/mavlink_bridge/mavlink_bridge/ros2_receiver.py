@@ -31,9 +31,13 @@ class MavlinkBridgeReceiver(Node):
             10,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
         )
 
-        # subscribe to the pixhawk/mode_cmd topic and calls depth_hold_cb
-        self.depth_hold_subscriber = self.create_subscription(
-            String, "pixhawk/mode_cmd", self.depth_hold_cb, 10
+        self.manual_control_subscriber = self.create_subscription(
+            String, "pixhawk/manual_control", self.manual_control_cb, 10 #TODO: Change the topic and message type to what gleb defined!
+        )
+
+        # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
+        self.mode_selection_subscriber = self.create_subscription(
+            String, "pixhawk/mode_cmd", self.mode_selection_cb, 10
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
@@ -62,12 +66,53 @@ class MavlinkBridgeReceiver(Node):
             channels[7],
         )
 
-    def depth_hold_cb(self, msg):
+    def manual_control_cb(self, msg):
         """
-        Called when a message arrives in the pixhawk/mode_cmd topic. if the message is mapped to "DEPTH_HOLD" then the sub will perform that function"
+        Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
+        """
+        self.send_6dof_command(msg.data) #TODO: Change this to the correct message type and extract the control input values from the message
+
+        #self.send_4dof_command(msg.data) 
+        
+
+    def send_4dof_command(self, control_input):
+        """
+        Input values: -1000 to 1000 (except heave, see below)
+        """
+        surge, sway, heave, yaw = control_input
+        self.port.mav.manual_control_send(
+            self.port.target_system,
+            int(surge),  # x: Forward/Back
+            int(sway),  # y: Left/Right
+            int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
+            int(yaw),  # r: Yaw
+            0,  # buttons bitmask
+        )
+
+    def send_6dof_command(self, control_input):
+        """
+        Note: Extension fields (s, t) are usually enabled in
+        newer MAVLink 2.0 implementations. This has to be tested!
+        Input values: -1000 to 1000 (except heave, see below)
+        """
+        surge, sway, heave, yaw, roll, pitch = control_input
+        self.port.mav.manual_control_send(
+            self.port.target_system,
+            int(surge),  # x
+            int(sway),  # y
+            int(heave),  # z (0-1000)
+            int(yaw),  # r
+            0,  # buttons
+            int(roll),  # s (Extension 1)
+            int(pitch),  # t (Extension 2)
+        )
+
+    def mode_selection_cb(self, msg):
+        """
+        Called when a message arrives in the pixhawk/mode_cmd topic. if the message is mapped to "ALT_HOLD" then the sub will perform that function"
         """
         self.get_logger().info(f"Received ROS2 RC Mode message: {msg.data}")
-        if msg.data == "DEPTH_HOLD":
+        if msg.data == "ALT_HOLD":
             # Set mode to ALT_HOLD (Depth Hold for ArduSub)
             # id mappings:{'STABILIZE': 0, 'ACRO': 1, 'ALT_HOLD': 2, 'AUTO': 3, 'GUIDED': 4, 'CIRCLE': 7, 'SURFACE': 9, 'POSHOLD': 16, 'MANUAL': 19}
             # Base mode 209 (MAV_MODE_FLAG_CUSTOM_MODE_ENABLED)
@@ -77,7 +122,16 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
-            self.get_logger().info("Sent DEPTH_HOLD mode command")
+            self.get_logger().info("Sent ALT_HOLD mode command")
+
+        elif msg.data == "MANUAL":
+            mode_id = 19
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.get_logger().info("Sent MANUAL mode command")
 
 
 def main(args=None):
