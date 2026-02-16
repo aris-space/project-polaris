@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from pymavlink import mavutil
 from std_msgs.msg import String
+from std_msgs.msg import Bool
 from mavros_msgs.msg import OverrideRCIn
 
 
@@ -32,7 +33,10 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.manual_control_subscriber = self.create_subscription(
-            String, "pixhawk/manual_control", self.manual_control_cb, 10 #TODO: Change the topic and message type to what gleb defined!
+            String,
+            "pixhawk/manual_control",
+            self.manual_control_cb,
+            10,  # TODO: Change the topic and message type to what gleb defined!
         )
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
@@ -40,7 +44,13 @@ class MavlinkBridgeReceiver(Node):
             String, "pixhawk/mode_cmd", self.mode_selection_cb, 10
         )
 
+        self.arm_disarm_subscriber = self.create_subscription(
+            Bool, "pixhawk/arm_cmd", self.arm_disarm_cb, 10
+        )
+
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
+
+    """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
 
     def rc_override_cb(self, msg):
         """
@@ -70,10 +80,63 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        self.send_6dof_command(msg.data) #TODO: Change this to the correct message type and extract the control input values from the message
+        self.send_6dof_command(
+            msg.data
+        )  # TODO: Change this to the correct message type and extract the control input values from the message
 
-        #self.send_4dof_command(msg.data) 
-        
+        # self.send_4dof_command(msg.data)
+
+    def arm_disarm_cb(self, msg):
+        """
+        Called when a message arrives in the pixhawk/arm_cmd topic. The message should contain a Bool (True to arm, False to disarm).
+        """
+        arm_bool = msg.data
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            0,  # Confirmation
+            1 if arm_bool else 0,  # Param 1: 1 to arm, 0 to disarm
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,  # Unused parameters
+        )
+
+        # Wait for acknowledgment
+        ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
+        print(f"Arming status: {ack.result}")  # 0 = Success
+        self.arm_disarm(msg.data)
+
+    def mode_selection_cb(self, msg):
+        """
+        Called when a message arrives in the pixhawk/mode_cmd topic. Example: if the message is mapped to "ALT_HOLD" then the sub will perform that function
+        id mappings:{'STABILIZE': 0, 'ACRO': 1, 'ALT_HOLD': 2, 'AUTO': 3, 'GUIDED': 4, 'CIRCLE': 7, 'SURFACE': 9, 'POSHOLD': 16, 'MANUAL': 19}
+        """
+        self.get_logger().info(f"Received ROS2 RC Mode message: {msg.data}")
+        if msg.data == "ALT_HOLD":
+            # Set mode to ALT_HOLD (Depth Hold for ArduSub)
+            # Base mode 209 (MAV_MODE_FLAG_CUSTOM_MODE_ENABLED)
+            mode_id = 2
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.get_logger().info("Sent ALT_HOLD mode command")
+
+        elif msg.data == "MANUAL":
+            mode_id = 19
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.get_logger().info("Sent MANUAL mode command")
+
+    """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     def send_4dof_command(self, control_input):
         """
@@ -107,31 +170,7 @@ class MavlinkBridgeReceiver(Node):
             int(pitch),  # t (Extension 2)
         )
 
-    def mode_selection_cb(self, msg):
-        """
-        Called when a message arrives in the pixhawk/mode_cmd topic. if the message is mapped to "ALT_HOLD" then the sub will perform that function"
-        """
-        self.get_logger().info(f"Received ROS2 RC Mode message: {msg.data}")
-        if msg.data == "ALT_HOLD":
-            # Set mode to ALT_HOLD (Depth Hold for ArduSub)
-            # id mappings:{'STABILIZE': 0, 'ACRO': 1, 'ALT_HOLD': 2, 'AUTO': 3, 'GUIDED': 4, 'CIRCLE': 7, 'SURFACE': 9, 'POSHOLD': 16, 'MANUAL': 19}
-            # Base mode 209 (MAV_MODE_FLAG_CUSTOM_MODE_ENABLED)
-            mode_id = 2
-            self.port.mav.set_mode_send(
-                self.port.target_system,
-                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                mode_id,
-            )
-            self.get_logger().info("Sent ALT_HOLD mode command")
-
-        elif msg.data == "MANUAL":
-            mode_id = 19
-            self.port.mav.set_mode_send(
-                self.port.target_system,
-                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                mode_id,
-            )
-            self.get_logger().info("Sent MANUAL mode command")
+    """--------------------------------------------- main function ---------------------------------------------"""
 
 
 def main(args=None):
