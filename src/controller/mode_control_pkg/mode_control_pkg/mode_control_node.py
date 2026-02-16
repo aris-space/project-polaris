@@ -53,13 +53,16 @@ class ModeControlNode(Node):
             elif axes[6] == 1.0:  # D-pad Left
                 self.current_mode = "manual_depth_hold"
                 self.pixhawk_mode = "ALT_HOLD"
+
         # 3. Only publish and log if the state has actually changed
         if self.current_mode != self.prev_mode:
             self.publish_mode()
-
             self.prev_mode = self.current_mode
+
+        if self.pixhawk_mode != self.prev_pixhawk_mode:
+            self.publish_pixhawk_mode()
             self.prev_pixhawk_mode = self.pixhawk_mode
-              # Update Pixhawk mode tracking if needed
+            # Update Pixhawk mode tracking if needed
 
     def publish_mode(self):
         mode_msg = String()
@@ -67,6 +70,7 @@ class ModeControlNode(Node):
         self.mode_publisher.publish(mode_msg)
         self.get_logger().info(f"Mode changed! New Mode: {self.current_mode}")
 
+    def publish_pixhawk_mode(self):
         pixhawk_mode_msg = String()
         pixhawk_mode_msg.data = self.pixhawk_mode
         self.pixhawk_mode_publisher.publish(pixhawk_mode_msg)
