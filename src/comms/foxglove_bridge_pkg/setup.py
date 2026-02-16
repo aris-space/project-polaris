@@ -25,6 +25,8 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": [],
+        "console_scripts": [
+            "foxglove_bridge = foxglove_bridge.foxglove_bridge:main"
+        ],
     },
 )
