@@ -38,7 +38,7 @@ class ModeControlNode(Node):
         axes = msg.axes
 
         # 1. High Priority: Emergency Stop (Button 3 / Triangle)
-        if buttons[3] == 1:
+        if buttons[2] == 1:
             self.current_mode = "emergency_stop"
             if self.pixhawk_mode != "MANUAL":
                 self.pixhawk_mode = (
@@ -58,9 +58,8 @@ class ModeControlNode(Node):
             self.publish_mode()
 
             self.prev_mode = self.current_mode
-            self.prev_pixhawk_mode = (
-                self.pixhawk_mode
-            )  # Update Pixhawk mode tracking if needed
+            self.prev_pixhawk_mode = self.pixhawk_mode
+              # Update Pixhawk mode tracking if needed
 
     def publish_mode(self):
         mode_msg = String()
@@ -71,9 +70,6 @@ class ModeControlNode(Node):
         pixhawk_mode_msg = String()
         pixhawk_mode_msg.data = self.pixhawk_mode
         self.pixhawk_mode_publisher.publish(pixhawk_mode_msg)
-        self.get_logger().info(
-            f"Pixhawk Mode changed! New Pixhawk Mode: {self.pixhawk_mode}"
-        )
 
     def safety_button_pressed(self, msg):
         # This function should check the state of the safety button
