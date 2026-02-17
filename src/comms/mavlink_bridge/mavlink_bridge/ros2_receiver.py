@@ -87,6 +87,7 @@ class MavlinkBridgeReceiver(Node):
             self.send_6dof_command(
                 msg.data
             )
+
         elif self.pixhawk_mode == "ALT_HOLD":
             self.send_4dof_command(
                 msg.data
@@ -179,7 +180,7 @@ class MavlinkBridgeReceiver(Node):
             int(yaw),  # r
             0,  # buttons
             0, # buttons 2
-            3,
+            192,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
             int(roll),  # s (Extension 1)
             int(pitch),  # t (Extension 2)
         )
