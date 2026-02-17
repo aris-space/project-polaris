@@ -26,8 +26,8 @@ class JoyPS4:
     # General Button Mapping (0-indexed)
     X = 0
     CIRCLE = 1
-    SQUARE = 2
-    TRIANGLE = 3
+    TRIANGLE = 2
+    SQUARE = 3
     L1 = 4
     R1 = 5
     SHARE_BUTTON = 8
@@ -37,13 +37,13 @@ class JoyPS4:
     R3_BUTTON = 12  # Right stick click
 
     # General Axis Mapping (0-indexed)
-    LEFT_STICK_X_AXIS = 0  # Left = 1.0, Right = -1.0
-    LEFT_STICK_Y_AXIS = 1  # Up = 1.0, Down = -1.0
-    RIGHT_STICK_X_AXIS = 2  # Left = 1.0, Right = -1.0
-    L2_TRIGGER_AXIS = 3  # Fully out = 1.0, Fully in = -1.0
-    R2_TRIGGER_AXIS = 4  # Fully out = 1.0, Fully in = -1.0
-    RIGHT_STICK_Y_AXIS = 5  # Up = 1.0, Down = -1.0
-    DPAD_HORIZONTAL_AXIS = 6  # Left = -1.0, Right = 1.0
+    LEFT_STICK_X_AXIS = 1  # Up = 1.0, Down = -1.0
+    LEFT_STICK_Y_AXIS = 0  # Left = 1.0, Right = -1.0
+    RIGHT_STICK_X_AXIS = 4  # Up = 1.0, Down = -1.0
+    L2_TRIGGER_AXIS = 2  # Fully out = 1.0, Fully in = -1.0
+    R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
+    RIGHT_STICK_Y_AXIS = 3  # Left = 1.0, Right = -1.0
+    DPAD_HORIZONTAL_AXIS = 6  # Left = 1.0, Right = -1.0
     DPAD_VERTICAL_AXIS = 7  # Up = 1.0, Down = -1.0
 
 
