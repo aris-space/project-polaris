@@ -43,7 +43,7 @@ class EmergencyStopModeNode(Node):
         )
 
         # Timer to continuously publish neutral values while in emergency stop
-        self.timer = self.create_timer(0.05, self.timer_callback)
+        self.timer = self.create_timer(0.1, self.timer_callback)
 
         self.get_logger().info('EmergencyStopModeNode: Node has been initialized')
 
