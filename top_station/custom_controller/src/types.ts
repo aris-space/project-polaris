@@ -28,6 +28,7 @@ export interface BarConfig {
   y: number;
   rot: number;
   axis: number;
+  button?: number;
 }
 
 export interface StickConfig {

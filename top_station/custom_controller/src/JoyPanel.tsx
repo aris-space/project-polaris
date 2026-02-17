@@ -192,7 +192,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             stamp: fromDate(new Date()), // TODO: /clock
           },
           axes: gp.axes.map((axis) => -axis),
-          buttons: gp.buttons.map((button) => (button.pressed ? 1 : 0)),
+          buttons: gp.buttons.map((button) => button.value),
         } as Joy;
 
         setJoy(tmpJoy);
@@ -292,7 +292,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       return;
     }
 
-    const axes: number[] = [];
+    // Initialize with proper array sizes to prevent flickering
+    const axes: number[] = [0, 0, 0, 0]; // 4 axes for sticks
     const buttons: number[] = [];
 
     trackedKeys?.forEach((value) => {
@@ -309,16 +310,23 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       }
     });
 
-    const tmpJoy = {
-      header: {
-        frame_id: config.publishFrameId,
-        stamp: fromDate(new Date()), // TODO: /clock
-      },
-      axes,
-      buttons,
-    } as Joy;
-
-    setJoy(tmpJoy);
+    // Only update if values actually changed
+    setJoy((prevJoy) => {
+      const axesChanged = !prevJoy || axes.some((val, idx) => val !== (prevJoy.axes[idx] ?? 0));
+      const buttonsChanged = !prevJoy || buttons.some((val, idx) => val !== (prevJoy.buttons[idx] ?? 0));
+      
+      if (axesChanged || buttonsChanged) {
+        return {
+          header: {
+            frame_id: config.publishFrameId,
+            stamp: fromDate(new Date()), // TODO: /clock
+          },
+          axes,
+          buttons,
+        } as Joy;
+      }
+      return prevJoy;
+    });
   }, [config.dataSource, trackedKeys, config.publishFrameId, kbEnabled]);
 
   // Advertise the topic to publish

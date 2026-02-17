@@ -69,7 +69,11 @@ function generateButton(
 function generateBar(value: number, x: number, y: number, rot: number) {
   const width = 80;
   const height = 10;
-  const fracwidth = ((-value + 1) * width) / 2;
+  // Handle button values (0 to 1) as triggers - fill left to right
+  // Handle axis values (-1 to 1) as bidirectional - fill from center
+  const fracwidth = value >= 0 && value <= 1 
+    ? value * width  // Trigger: 0=empty, 1=full
+    : ((-value + 1) * width) / 2;  // Axis: -1=full, 0=half, 1=empty
 
   const transform =
     "translate(" + x.toString() + "," + y.toString() + ") rotate(" + rot.toString() + ")";
@@ -434,10 +438,14 @@ export function GamepadView(props: {
     } else if (mappingA.type === "bar") {
       const mapping = mappingA as BarConfig;
       const axis = mapping.axis;
+      const button = mapping.button;
       const x = mapping.x;
       const y = mapping.y;
       const rot = mapping.rot;
-      const axVal = joy?.axes[axis] ?? 0;
+      // Read from button if button is specified and axis is -1, otherwise from axis
+      const axVal = (axis === -1 && button !== undefined) 
+        ? (joy?.buttons[button] ?? 0)
+        : (joy?.axes[axis] ?? 0);
       dispItems.push(generateBar(axVal, x, y, rot));
     } else if (mappingA.type === "stick") {
       const mapping = mappingA as StickConfig;
