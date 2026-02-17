@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { GamepadBackground } from "./GamepadBackground";
 import cheapo from "./display-mappings/cheapo.json";
 import ipega9083s from "./display-mappings/ipega-9083s.json";
-import keyboard from "./display-mappings/keyboard.json";
 import ps4 from "./display-mappings/ps4.json";
 import steamdeck from "./display-mappings/steamdeck.json";
 import xbox from "./display-mappings/xbox.json";
@@ -66,7 +65,7 @@ function generateButton(
   );
 }
 
-function generateBar(value: number, x: number, y: number, rot: number) {
+function generateBar(value: number, x: number, y: number, rot: number, text?: string) {
   const width = 80;
   const height = 10;
   // Handle button values (0 to 1) as triggers - fill left to right
@@ -97,6 +96,18 @@ function generateBar(value: number, x: number, y: number, rot: number) {
         stroke={colStroke}
         transform={transform}
       />
+      {text && (
+        <text
+          textAnchor="middle"
+          x={x}
+          y={y - 20}
+          fill="white"
+          dominantBaseline="middle"
+          pointerEvents="none"
+        >
+          {text}
+        </text>
+      )}
     </>
   );
 }
@@ -232,8 +243,6 @@ export function GamepadView(props: {
       setDisplayMapping(ps4);
     } else if (layoutName === "cheapo") {
       setDisplayMapping(cheapo);
-    } else if (layoutName === "keyboard") {
-      setDisplayMapping(keyboard);
     } else {
       setDisplayMapping([]);
     }
@@ -413,7 +422,7 @@ export function GamepadView(props: {
       const text = mapping.text;
       const x = mapping.x;
       const y = mapping.y;
-      const radius = 8;
+      const radius = 12;
       const buttonVal = joy?.buttons[index] ?? 0;
       
       // Only highlight if button is in the current keyboard mapping, or if no keyboard mapping is active
@@ -442,11 +451,12 @@ export function GamepadView(props: {
       const x = mapping.x;
       const y = mapping.y;
       const rot = mapping.rot;
+      const text = mapping.text;
       // Read from button if button is specified and axis is -1, otherwise from axis
       const axVal = (axis === -1 && button !== undefined) 
         ? (joy?.buttons[button] ?? 0)
         : (joy?.axes[axis] ?? 0);
-      dispItems.push(generateBar(axVal, x, y, rot));
+      dispItems.push(generateBar(axVal, x, y, rot, text));
     } else if (mappingA.type === "stick") {
       const mapping = mappingA as StickConfig;
       const axisX = mapping.axisX;

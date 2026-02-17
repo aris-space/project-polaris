@@ -14,8 +14,8 @@ import ReactDOM from "react-dom";
 import { GamepadView } from "./components/GamepadView";
 import { SimpleButtonView } from "./components/SimpleButtonView";
 import kbmapping1 from "./components/kbmapping1.json";
-import kbmappingKeyboardControl from "./components/kbmapping-keyboard_control.json";
-import kbmappingKeyboardMode from "./components/kbmapping-keyboard_mode.json";
+import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
+import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.json";
 import { useGamepad } from "./hooks/useGamepad";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
@@ -38,8 +38,8 @@ type RawKbMap = {
 
 const keyboardMappings: Record<string, Record<string, RawKbMap>> = {
   default: kbmapping1,
-  "keyboard_control": kbmappingKeyboardControl,
-  "keyboard_mode": kbmappingKeyboardMode,
+  "keyboard_movement": kbmappingKeyboardMovement,
+  "keyboard_buttons": kbmappingKeyboardButtons,
 };
 
 function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
@@ -49,7 +49,7 @@ function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
     const k: KbMap = {
       button: value.button,
       axis: value.axis,
-      direction: value.direction === "+" ? 1 : 0,
+      direction: value.direction === "+" ? 1 : (value.direction === "-" ? -1 : 0),
       value: 0,
       toggle: value.toggle ?? false,
       toggled: false,
@@ -302,18 +302,20 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           buttons.push(0);
         }
         buttons[value.button] = value.value;
-      } else if (value.axis >= 0) {
+      } else if (value.axis >= 0 && value.direction !== 0) {
         while (axes.length <= value.axis) {
           axes.push(0);
         }
-        axes[value.axis] += (value.direction > 0 ? 1 : -1) * value.value;
+        // Safe to index because we've grown the array to accommodate
+        const direction = value.direction > 0 ? 1 : -1;
+        axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
       }
     });
 
     // Only update if values actually changed
     setJoy((prevJoy) => {
-      const axesChanged = !prevJoy || axes.some((val, idx) => val !== (prevJoy.axes[idx] ?? 0));
-      const buttonsChanged = !prevJoy || buttons.some((val, idx) => val !== (prevJoy.buttons[idx] ?? 0));
+      const axesChanged = !prevJoy || axes.some((val, idx) => val !== (prevJoy?.axes?.[idx] ?? 0));
+      const buttonsChanged = !prevJoy || buttons.some((val, idx) => val !== (prevJoy?.buttons?.[idx] ?? 0));
       
       if (axesChanged || buttonsChanged) {
         return {
