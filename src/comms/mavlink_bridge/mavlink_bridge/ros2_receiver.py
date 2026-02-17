@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from pymavlink import mavutil
 from std_msgs.msg import String
-from std_msgs.msg import Bool, Int16MultiArray
+from std_msgs.msg import Bool
 from mavros_msgs.msg import OverrideRCIn
 
 
@@ -26,28 +26,21 @@ class MavlinkBridgeReceiver(Node):
             f"Heartbeat received from system {self.port.target_system}"
         )
 
-        # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
+        # Subscribe to RC override messages from ROS2 topic "/pixhawk/rc_override"
         self.rc_override_subscriber = self.create_subscription(
             OverrideRCIn,
-            "pixhawk/rc_override",
+            "/pixhawk/rc_override",
             self.rc_override_cb,
-            10,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
-        )
-
-        self.manual_control_subscriber = self.create_subscription(
-            Int16MultiArray,
-            "pixhawk/manual_control",
-            self.manual_control_cb,
             10,
         )
 
-        # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
+        # subscribe to the /pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
-            String, "pixhawk/mode_cmd", self.mode_selection_cb, 10
+            String, "/pixhawk/mode_cmd", self.mode_selection_cb, 10
         )
 
         self.arm_disarm_subscriber = self.create_subscription(
-            Bool, "pixhawk/arm_cmd", self.arm_disarm_cb, 10
+            Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, 10
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
@@ -56,7 +49,7 @@ class MavlinkBridgeReceiver(Node):
 
     def rc_override_cb(self, msg):
         """
-        Called automatically when a message arrives on "pixhawk/rc_override" topic.
+        Called automatically when a message arrives on "/pixhawk/rc_override" topic.
         Converts the ROS2 OverrideRCIn message to MAVLink RC_OVERRIDE and sends it to Pixhawk.
         """
         self.get_logger().info(f"Received ROS2 RC override: {msg.channels}")
@@ -77,21 +70,6 @@ class MavlinkBridgeReceiver(Node):
             channels[6],
             channels[7],
         )
-
-    def manual_control_cb(self, msg):
-        """
-        Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
-        """
-        if self.pixhawk_mode == "MANUAL":
-            self.send_6dof_command(
-                msg.data
-            )
-        elif self.pixhawk_mode == "ALT_HOLD":
-            self.send_4dof_command(
-                msg.data
-            )  # In ALT_HOLD, we typically control surge, sway, heave, and yaw, but not roll and pitch
-
-        # self.send_4dof_command(msg.data)
 
     def arm_disarm_cb(self, msg):
         """
@@ -144,42 +122,6 @@ class MavlinkBridgeReceiver(Node):
             )
             self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
-
-    """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
-
-    def send_4dof_command(self, control_input):
-        """
-        Input values: -1000 to 1000 (except heave, see below)
-        """
-        surge, sway, heave, yaw = control_input
-        self.port.mav.manual_control_send(
-            self.port.target_system,
-            int(surge),  # x: Forward/Back
-            int(sway),  # y: Left/Right
-            int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
-            int(yaw),  # r: Yaw
-            0,  # buttons bitmask
-        )
-
-    def send_6dof_command(self, control_input):
-        """
-        Note: Extension fields (s, t) are usually enabled in
-        newer MAVLink 2.0 implementations. This has to be tested!
-        Input values: -1000 to 1000 (except heave, see below)
-        """
-        surge, sway, heave, yaw, roll, pitch = control_input
-        self.port.mav.manual_control_send(
-            self.port.target_system,
-            int(surge),  # x
-            int(sway),  # y
-            int(heave),  # z (0-1000)
-            int(yaw),  # r
-            0,  # buttons
-            0, # buttons 2
-            3,
-            int(roll),  # s (Extension 1)
-            int(pitch),  # t (Extension 2)
-        )
 
     """--------------------------------------------- main function ---------------------------------------------"""
 

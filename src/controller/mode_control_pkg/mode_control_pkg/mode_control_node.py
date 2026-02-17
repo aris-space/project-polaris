@@ -21,16 +21,16 @@ class ModeControlNode(Node):
 
         # Publishers & Subscribers
         self.mode_publisher = self.create_publisher(
-            String, "mode_control/current_mode", 10
+            String, "/mode_control/current_mode", 10
         )
         self.pixhawk_mode_publisher = self.create_publisher(
-            String, "pixhawk/mode_cmd", 10
+            String, "/pixhawk/mode_cmd", 10
         )
         self.arm_cmd_publisher = self.create_publisher(
-            Bool, "pixhawk/arm_cmd", 10
+            Bool, "/pixhawk/arm_cmd", 10
         )
         self.joy_subscriber = self.create_subscription(
-            Joy, "joy", self.command_callback, 10
+            Joy, "/joy", self.command_callback, 10
         )
 
         self.get_logger().info("Mode Control Node Started. Default: manual_control")
