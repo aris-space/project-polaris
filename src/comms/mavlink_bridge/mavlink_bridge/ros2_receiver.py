@@ -1,5 +1,8 @@
 import rclpy
 from rclpy.node import Node
+import os
+
+os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
 from std_msgs.msg import Bool, Int16MultiArray
