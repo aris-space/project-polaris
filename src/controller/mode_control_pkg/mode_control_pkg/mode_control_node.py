@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from sensor_msgs.msg import Joy
+from config_pkg.constants import JoyControlMapping
 
 
 class ModeControlNode(Node):
@@ -40,7 +41,7 @@ class ModeControlNode(Node):
         axes = msg.axes
 
         # 1. High Priority: Emergency Stop (Button 3 / Triangle)
-        if buttons[2] == 1:
+        if buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX] == 1:
             self.current_mode = "emergency_stop"
             if self.pixhawk_mode != "MANUAL":
                 self.pixhawk_mode = (
@@ -49,12 +50,12 @@ class ModeControlNode(Node):
 
         # 2. Mode Switching Logic (Requires Safety Button 0 / X)
         elif self.safety_button_pressed(msg):
-            if axes[7] == 1.0:  # D-pad Up
+            if axes[JoyControlMapping.MODE_DPAD_UP_AXIS_IDX] == 1.0:  # D-pad Up
                 self.current_mode = "manual_control"
                 self.pixhawk_mode = "MANUAL"
                 # TODO: here add the option for stabilization mode
 
-            elif axes[6] == 1.0:  # D-pad Left
+            elif axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == 1.0:  # D-pad Left
                 self.current_mode = "manual_depth_hold"
                 self.pixhawk_mode = "ALT_HOLD"
 
@@ -83,7 +84,7 @@ class ModeControlNode(Node):
         # This function should check the state of the safety button
         # For now, we will just return True to allow mode switching
         buttons = msg.buttons
-        return buttons[0] == 1  # Assuming button 0 (X) is the safety button
+        return buttons[JoyControlMapping.SETTING_SAFETY_BUTTON_IDX] == 1  # Assuming button 0 (X) is the safety button
 
 
 def main(args=None):
