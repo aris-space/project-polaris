@@ -31,6 +31,9 @@ from std_msgs.msg import Int16MultiArray
 from sensor_msgs.msg import Joy
 from config.config import Config
 
+# If no /joy message is received for this duration (seconds), send neutral values
+JOY_TIMEOUT = 0.2
+
 
 class ManualAltitudeHoldControlNode(Node):
     def __init__(self):
@@ -38,9 +41,16 @@ class ManualAltitudeHoldControlNode(Node):
 
         self.current_mode = ''
 
-        # Latest control values (neutral defaults), updated by joy_callback
+        # Neutral defaults for 4DOF
+        self.neutral_msg = Int16MultiArray()
+        self.neutral_msg.data = [0, 0, 500, 0]
+
+        # Latest control values, updated by joy_callback
         self.latest_msg = Int16MultiArray()
         self.latest_msg.data = [0, 0, 500, 0]
+
+        # Timestamp of last received /joy message
+        self.last_joy_time = self.get_clock().now()
 
         # Joystick axis / button indices from config
         self.left_stick_horizontal_axis = Config.get_joy_left_stick_horizontal_axis()
@@ -84,18 +94,23 @@ class ManualAltitudeHoldControlNode(Node):
         self.get_logger().info(f'Mode updated: {self.current_mode}')
 
     def joy_callback(self, msg):
-        """Called when a joystick message arrives from /joy. Updates stored values."""
+        """Called when a joystick message arrives from /joy. Updates stored values and timestamp."""
         if self.current_mode != 'manual_depth_hold':
             return
 
+        self.last_joy_time = self.get_clock().now()
         self.latest_msg = self.map_joy_to_manual_control(msg)
 
     def timer_callback(self):
-        """Publishes the latest control values at 20Hz."""
+        """Publishes at 20Hz. Falls back to neutral if /joy times out."""
         if self.current_mode != 'manual_depth_hold':
             return
 
-        self.manual_control_publisher.publish(self.latest_msg)
+        elapsed = (self.get_clock().now() - self.last_joy_time).nanoseconds / 1e9
+        if elapsed > JOY_TIMEOUT:
+            self.manual_control_publisher.publish(self.neutral_msg)
+        else:
+            self.manual_control_publisher.publish(self.latest_msg)
 
     def map_joy_to_manual_control(self, joy_msg):
         """
