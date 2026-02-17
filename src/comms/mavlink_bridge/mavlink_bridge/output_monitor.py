@@ -41,12 +41,12 @@ class OutputMonitor(Node):
         self.pressure_diff = 0.0
 
         # Create subscriptions
-        self.create_subscription(State, "pixhawk/heartbeat", self.heartbeat_cb, 10)
-        self.create_subscription(Imu, "pixhawk/attitude", self.attitude_cb, 10)
-        self.create_subscription(RCIn, "pixhawk/rc_channels", self.rc_cb, 10)
-        self.create_subscription(BatteryState, "pixhawk/battery", self.battery_cb, 10)
+        self.create_subscription(State, "/pixhawk/heartbeat", self.heartbeat_cb, 10)
+        self.create_subscription(Imu, "/pixhawk/attitude", self.attitude_cb, 10)
+        self.create_subscription(RCIn, "/pixhawk/rc_channels", self.rc_cb, 10)
+        self.create_subscription(BatteryState, "/pixhawk/battery", self.battery_cb, 10)
         self.create_subscription(
-            FluidPressure, "pixhawk/scaled_pressure", self.pressure_cb, 10
+            FluidPressure, "/pixhawk/scaled_pressure", self.pressure_cb, 10
         )
 
         self.timer = self.create_timer(0.5, self.print_dashboard)  # 2Hz refresh rate
