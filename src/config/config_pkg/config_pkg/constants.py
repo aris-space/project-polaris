@@ -57,24 +57,24 @@ elif CONTROLLER_LAYOUT == "JETSON":
         CIRCLE = 1
         TRIANGLE = 3
         SQUARE = 2
-        L1 = 4
-        R1 = 5
-        SHARE_BUTTON = 8
-        OPTIONS_BUTTON = 9
-        PS_BUTTON = 10
-        L3_BUTTON = 11  # Left stick click
-        R3_BUTTON = 12  # Right stick click
-        DPAD_UP = 13
-        DPAD_DOWN = 14
-        DPAD_LEFT = 15
-        DPAD_RIGHT = 16
+        L1 = 9
+        R1 = 10
+        SHARE_BUTTON = 4
+        OPTIONS_BUTTON = 6
+        PS_BUTTON = 5
+        L3_BUTTON = 7  # Left stick click
+        R3_BUTTON = 8  # Right stick click
+        DPAD_UP = 11
+        DPAD_DOWN = 12
+        DPAD_LEFT = 13
+        DPAD_RIGHT = 14
 
 
         # General Axis Mapping (0-indexed)
-        LEFT_STICK_X_AXIS = 0  # Left = -1.0, Right = 1.0
-        LEFT_STICK_Y_AXIS = 1  # Up = -1.0, Down = 1.0
-        RIGHT_STICK_X_AXIS = 2  # Left = -1.0, Right = 1.0
-        RIGHT_STICK_Y_AXIS = 3  # Up = -1.0, Down = 1.0
+        LEFT_STICK_X_AXIS = 1  # down = -1.0, up = 1.0
+        LEFT_STICK_Y_AXIS = 0  # left = 1.0, right = -1.0
+        RIGHT_STICK_Y_AXIS = 3  # Left = -1.0, Right = 1.0
+        RIGHT_STICK_X_AXIS = 2  # Up = -1.0, Down = 1.0
         L2_TRIGGER_AXIS = 4  # Fully out = -1.0, Fully in = 1.0
         R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
 
