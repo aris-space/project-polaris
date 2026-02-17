@@ -19,9 +19,10 @@ class MavlinkBridgeReceiver(Node):
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection("udpout:10.5.11.50:15000")
+        self.port_in = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # For receiving messages from Pixhawk (e.g., heartbeats, status)
 
         # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
-        self.port.wait_heartbeat()
+        self.port_in.wait_heartbeat()
         self.get_logger().info(
             f"Heartbeat received from system {self.port.target_system}"
         )
