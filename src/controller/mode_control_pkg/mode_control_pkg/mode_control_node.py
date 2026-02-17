@@ -104,7 +104,7 @@ class ModeControlNode(Node):
         buttons = msg.buttons
         return (
             buttons[JoyControlMapping.MODE_SAFETY_BUTTON_IDX] == 1
-        )  # Assuming button 0 (X) is the safety button
+        )  
 
 
 """--------------------------------------------- main function ---------------------------------------------"""
