@@ -1,61 +1,50 @@
 {
-    "x": {
-        "button": 10,
-        "toggle": false,
-        "axis": -1,
-        "direction": null
-    },
-    "y": {
-        "button": 11,
-        "toggle": false,
-        "axis": -1,
-        "direction": null
-    },
+    
     "w": {
-        "button": 15,
+        "button": -1,
         "toggle": false,
-        "axis": 0,
+        "axis": 1,
         "direction": "+"
     },
     "s": {
-        "button": 25,
+        "button": -1,
+        "toggle": false,
+        "axis": 1,
+        "direction": "-"
+    },
+    "d": {
+        "button": -1,
         "toggle": false,
         "axis": 0,
         "direction": "-"
     },
-    "d": {
-        "button": 26,
+    "a": {
+        "button": -1,
         "toggle": false,
-        "axis": 1,
+        "axis": 0,
         "direction": "+"
     },
-    "a": {
-        "button": 24,
-        "toggle": false,
-        "axis": 1,
-        "direction": "-"
-    },
     "ArrowUp": {
-        "axis": 7,
-        "direction": "+",
-        "button": -1,
+        "axis": -1,
+        "direction": null,
+        "button": 7,
         "toggle": false
     },
     "ArrowDown": {
-        "axis": 7,
-        "direction": "-",
-        "button": -1,
+        "axis": -1,
+        "direction": null,
+        "button": 6,
         "toggle": false
     },
     "ArrowRight": {
-        "axis": 6,
-        "direction": "+",
+        "axis": 2,
+        "direction": "-",
         "button": -1,
         "toggle": false
     },
     "ArrowLeft": {
-        "axis": 6,
-        "direction": "-",
+        "axis": 2,
+        "direction": "+",
         "button": -1,
         "toggle": false
     }

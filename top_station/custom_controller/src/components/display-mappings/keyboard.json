@@ -312,10 +312,29 @@
         "button": 12
     },
     {
-        "type": "d-pad",
-        "axisX": 6,
-        "axisY": 7,
+        "type": "bar",
+        "text": "↑",
+        "axis": -1,
+        "button": 7,
+        "x": 265,
+        "y": 70,
+        "rot": 90
+    },
+    {
+        "type": "bar",
+        "text": "↓",
+        "axis": -1,
+        "button": 6,
+        "x": 315,
+        "y": 70,
+        "rot": 90
+    },
+    {
+        "type": "bar",
+        "text": "←→",
+        "axis": 2,
         "x": 290,
-        "y": 100
+        "y": 130,
+        "rot": 0
     }
 ]

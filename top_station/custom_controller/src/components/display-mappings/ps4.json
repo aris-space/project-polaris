@@ -17,19 +17,19 @@
     },
     {
         "type": "button",
-        "text": "Square",
+        "text": "□",
         "x": 363,
         "y": 242,
         "rot": 0,
-        "button": 3
+        "button": 2
     },
     {
         "type": "button",
-        "text": "Triangle",
+        "text": "△",
         "x": 397,
         "y": 210,
         "rot": 0,
-        "button": 4
+        "button": 3
     },
     {
         "type": "button",
@@ -37,7 +37,7 @@
         "x": 121,
         "y": 131,
         "rot": 0,
-        "button": 6
+        "button": 4
     },
     {
         "type": "button",
@@ -45,23 +45,25 @@
         "x": 393,
         "y": 131,
         "rot": 0,
-        "button": 7
+        "button": 5
     },
     {
-        "type": "button",
+        "type": "bar",
         "text": "L2",
+        "axis": -1,
+        "button": 6,
         "x": 121,
-        "y": 97,
-        "rot": 0,
-        "button": 8
+        "y": 60,
+        "rot": 0
     },
     {
-        "type": "button",
+        "type": "bar",
         "text": "R2",
+        "axis": -1,
+        "button": 7,
         "x": 393,
-        "y": 97,
-        "rot": 0,
-        "button": 9
+        "y": 60,
+        "rot": 0
     },
     {
         "type": "button",
@@ -69,7 +71,7 @@
         "x": 211,
         "y": 242,
         "rot": 0,
-        "button": 10
+        "button": 8
     },
     {
         "type": "button",
@@ -77,16 +79,9 @@
         "x": 302,
         "y": 242,
         "rot": 0,
-        "button": 11
+        "button": 9
     },
-    {
-        "type": "button",
-        "text": "PS",
-        "x": 256,
-        "y": 265,
-        "rot": 0,
-        "button": 12
-    },
+ 
     {
         "type": "button",
         "text": "Touchpad",
@@ -96,24 +91,10 @@
         "button": 2
     },
     {
-        "type": "bar",
-        "axis": 4,
-        "x": 395,
-        "y": 60,
-        "rot": 0
-    },
-    {
-        "type": "bar",
-        "axis": 5,
-        "x": 119,
-        "y": 60,
-        "rot": 0
-    },
-    {
         "type": "stick",
         "axisX": 0,
         "axisY": 1,
-        "button": 13,
+        "button": 10,
         "x": 184,
         "y": 308
     },
@@ -121,15 +102,40 @@
         "type": "stick",
         "axisX": 2,
         "axisY": 3,
-        "button": 14,
+        "button": 11,
         "x": 329,
         "y": 308
     },
     {
-        "type": "d-pad",
-        "axisX": 6,
-        "axisY": 7,
+        "type": "button",
+        "text": "↑",
         "x": 117,
-        "y": 243
+        "y": 218,
+        "rot": 0,
+        "button": 12
+    },
+    {
+        "type": "button",
+        "text": "↓",
+        "x": 117,
+        "y": 268,
+        "rot": 0,
+        "button": 13
+    },
+    {
+        "type": "button",
+        "text": "←",
+        "x": 92,
+        "y": 243,
+        "rot": 0,
+        "button": 14
+    },
+    {
+        "type": "button",
+        "text": "→",
+        "x": 142,
+        "y": 243,
+        "rot": 0,
+        "button": 15
     }
 ]
