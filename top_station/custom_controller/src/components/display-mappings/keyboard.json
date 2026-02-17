@@ -1,94 +1,321 @@
 [
     {
         "type": "button",
+        "text": "1",
+        "x": 35,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "2",
+        "x": 55,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "3",
+        "x": 75,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "4",
+        "x": 95,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "5",
+        "x": 115,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "6",
+        "x": 135,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "7",
+        "x": 155,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "8",
+        "x": 175,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "9",
+        "x": 195,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "0",
+        "x": 215,
+        "y": 40,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "Q",
+        "x": 35,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
         "text": "W",
-        "x": 100,
-        "y": 150,
+        "x": 55,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "E",
+        "x": 75,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "R",
+        "x": 95,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "T",
+        "x": 115,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "Z",
+        "x": 135,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "U",
+        "x": 155,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "I",
+        "x": 175,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "O",
+        "x": 195,
+        "y": 70,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "P",
+        "x": 215,
+        "y": 70,
         "rot": 0,
         "button": -1
     },
     {
         "type": "button",
         "text": "A",
-        "x": 70,
-        "y": 180,
+        "x": 45,
+        "y": 100,
         "rot": 0,
         "button": -1
     },
     {
         "type": "button",
         "text": "S",
-        "x": 100,
-        "y": 180,
+        "x": 65,
+        "y": 100,
         "rot": 0,
         "button": -1
     },
     {
         "type": "button",
         "text": "D",
-        "x": 130,
-        "y": 180,
+        "x": 85,
+        "y": 100,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "F",
+        "x": 105,
+        "y": 100,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "G",
+        "x": 125,
+        "y": 100,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "H",
+        "x": 145,
+        "y": 100,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "J",
+        "x": 165,
+        "y": 100,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "K",
+        "x": 185,
+        "y": 100,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "L",
+        "x": 205,
+        "y": 100,
         "rot": 0,
         "button": -1
     },
     {
         "type": "button",
         "text": "Shift",
-        "x": 35,
-        "y": 210,
+        "x": 25,
+        "y": 130,
         "rot": 0,
         "button": 3
     },
     {
         "type": "button",
-        "text": "Space",
-        "x": 256,
-        "y": 280,
+        "text": "Y",
+        "x": 55,
+        "y": 130,
         "rot": 0,
-        "button": 12
+        "button": 11
     },
     {
         "type": "button",
-        "text": "Ctrl+X",
-        "x": 180,
-        "y": 120,
+        "text": "X",
+        "x": 75,
+        "y": 130,
         "rot": 0,
         "button": 10
     },
     {
         "type": "button",
-        "text": "Ctrl+Y",
-        "x": 210,
-        "y": 120,
+        "text": "C",
+        "x": 95,
+        "y": 130,
         "rot": 0,
-        "button": 11
+        "button": -1
     },
     {
-        "type": "bar",
-        "axis": 4,
-        "x": 160,
-        "y": 90,
-        "rot": 90
+        "type": "button",
+        "text": "V",
+        "x": 115,
+        "y": 130,
+        "rot": 0,
+        "button": -1
     },
     {
-        "type": "bar",
-        "axis": 5,
-        "x": 190,
-        "y": 90,
-        "rot": 90
+        "type": "button",
+        "text": "B",
+        "x": 135,
+        "y": 130,
+        "rot": 0,
+        "button": -1
     },
     {
-        "type": "d-pad",
-        "axisX": 2,
-        "axisY": 3,
-        "x": 330,
-        "y": 150
+        "type": "button",
+        "text": "N",
+        "x": 155,
+        "y": 130,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "M",
+        "x": 175,
+        "y": 130,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "Ctrl",
+        "x": 25,
+        "y": 160,
+        "rot": 0,
+        "button": -1
+    },
+    {
+        "type": "button",
+        "text": "Space",
+        "x": 110,
+        "y": 160,
+        "rot": 0,
+        "button": 12
     },
     {
         "type": "d-pad",
         "axisX": 6,
         "axisY": 7,
-        "x": 400,
-        "y": 150
+        "x": 290,
+        "y": 100
     }
 ]
