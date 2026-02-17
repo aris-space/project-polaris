@@ -24,6 +24,7 @@ export interface ButtonConfig {
 
 export interface BarConfig {
   type: string;
+  text?: string;
   x: number;
   y: number;
   rot: number;
