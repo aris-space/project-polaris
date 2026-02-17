@@ -14,8 +14,8 @@ import ReactDOM from "react-dom";
 import { GamepadView } from "./components/GamepadView";
 import { SimpleButtonView } from "./components/SimpleButtonView";
 import kbmapping1 from "./components/kbmapping1.json";
-import kbmappingCustomA from "./components/kbmapping-custom-a.json";
-import kbmappingCustomB from "./components/kbmapping-custom-b.json";
+import kbmappingKeyboardControl from "./components/kbmapping-keyboard_control.json";
+import kbmappingKeyboardMode from "./components/kbmapping-keyboard_mode.json";
 import { useGamepad } from "./hooks/useGamepad";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
@@ -35,8 +35,8 @@ type RawKbMap = {
 
 const keyboardMappings: Record<string, Record<string, RawKbMap>> = {
   default: kbmapping1,
-  "custom-a": kbmappingCustomA,
-  "custom-b": kbmappingCustomB,
+  "keyboard_control": kbmappingKeyboardControl,
+  "keyboard_mode": kbmappingKeyboardMode,
 };
 
 function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
