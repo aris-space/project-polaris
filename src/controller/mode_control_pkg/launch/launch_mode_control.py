@@ -1,3 +1,20 @@
+"""
+Launch file for the mode control system.
+
+Starts all mode-related nodes:
+  - mode_control_node:                  Listens to joystick mode-switch inputs and publishes
+                                        the active mode on 'current_mode'. Also sends the
+                                        corresponding Pixhawk flight mode via 'pixhawk/mode_cmd'.
+  - manual_control_node:                6DOF joystick control (active in 'manual_control' mode).
+  - manual_altitude_hold_control_node:  4DOF joystick control with depth hold
+                                        (active in 'manual_depth_hold' mode).
+  - emergency_stop_mode_node:           Sends neutral commands to stop all thrusters
+                                        (active in 'emergency_stop' mode).
+
+All mode nodes publish on the shared 'pixhawk/manual_control' topic, but only the
+node matching the current mode will actually send data at any given time.
+"""
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -5,11 +22,28 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription(
         [
-            # 1. Your Mode Control Node
             Node(
                 package="mode_control_pkg",
                 executable="mode_control_node",
                 name="mode_control_node",
+                output="screen",
+            ),
+            Node(
+                package="mode_control_pkg",
+                executable="manual_control_node",
+                name="manual_control_node",
+                output="screen",
+            ),
+            Node(
+                package="mode_control_pkg",
+                executable="manual_altitude_hold_control_node",
+                name="manual_altitude_hold_control_node",
+                output="screen",
+            ),
+            Node(
+                package="mode_control_pkg",
+                executable="emergency_stop_mode_node",
+                name="emergency_stop_mode_node",
                 output="screen",
             ),
         ]
