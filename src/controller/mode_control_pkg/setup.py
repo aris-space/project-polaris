@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'manual_control_node = mode_control_pkg.manual_control_node:main',
+            'manual_altitude_hold_control_node = mode_control_pkg.manual_altitude_hold_control_node:main',
         ],
     },
 )
