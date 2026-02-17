@@ -175,6 +175,8 @@ class MavlinkBridgeReceiver(Node):
             int(heave),  # z (0-1000)
             int(yaw),  # r
             0,  # buttons
+            0, # buttons 2
+            3,
             int(roll),  # s (Extension 1)
             int(pitch),  # t (Extension 2)
         )
