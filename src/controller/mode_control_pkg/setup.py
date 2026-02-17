@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'manual_control_node = mode_control_pkg.manual_control_node:main',
             'manual_altitude_hold_control_node = mode_control_pkg.manual_altitude_hold_control_node:main',
+            'emergency_stop_mode_node = mode_control_pkg.emergency_stop_mode_node:main',
         ],
     },
 )
