@@ -1,0 +1,20 @@
+{
+    "shift": {
+        "button": 3,
+        "toggle": true,
+        "axis": -1,
+        "direction": null
+    },
+    "up": {
+        "axis": 6,
+        "direction": null,
+        "button": -1,
+        "toggle": false
+    },
+    "left": {
+        "axis": 7,
+        "direction": null,
+        "button": -1,
+        "toggle": false
+    }
+}

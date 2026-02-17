@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GamepadBackground } from "./GamepadBackground";
 import cheapo from "./display-mappings/cheapo.json";
 import ipega9083s from "./display-mappings/ipega-9083s.json";
+import keyboard from "./display-mappings/keyboard.json";
 import ps4 from "./display-mappings/ps4.json";
 import steamdeck from "./display-mappings/steamdeck.json";
 import xbox from "./display-mappings/xbox.json";
@@ -199,6 +200,8 @@ export function GamepadView(props: {
       setDisplayMapping(ps4);
     } else if (layoutName === "cheapo") {
       setDisplayMapping(cheapo);
+    } else if (layoutName === "keyboard") {
+      setDisplayMapping(keyboard);
     } else {
       setDisplayMapping([]);
     }

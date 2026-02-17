@@ -114,12 +114,12 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           value: "default",
         },
         {
-          label: "Custom A",
-          value: "custom-a",
+          label: "Keyboard Control",
+          value: "keyboard_control",
         },
         {
-          label: "Custom B",
-          value: "custom-b",
+          label: "Keyboard Mode",
+          value: "keyboard_mode",
         },
       ],
     },
@@ -187,6 +187,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
         {
           label: "Cheap Controller",
           value: "cheapo",
+        },
+        {
+          label: "Keyboard",
+          value: "keyboard",
         },
       ],
     },

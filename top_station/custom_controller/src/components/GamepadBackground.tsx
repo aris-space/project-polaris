@@ -151,6 +151,8 @@ export function GamepadBackground(props: { layoutName: string }): React.ReactEle
         }}
       />
     );
+  } else if (props.layoutName === "keyboard") {
+    return <g></g>;
   } else {
     return <g></g>;
   }

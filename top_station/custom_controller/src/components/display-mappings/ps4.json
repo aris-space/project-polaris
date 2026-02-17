@@ -88,6 +88,14 @@
         "button": 12
     },
     {
+        "type": "button",
+        "text": "Touchpad",
+        "x": 256,
+        "y": 180,
+        "rot": 0,
+        "button": 2
+    },
+    {
         "type": "bar",
         "axis": 4,
         "x": 395,
