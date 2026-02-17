@@ -90,13 +90,19 @@ class JoyControlMapping:
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
-    # Control Specific Axis Mapping
-    MODE_DPAD_HORIZONTAL_AXIS_IDX = (
-        JoyPS4.DPAD_HORIZONTAL_AXIS
-    )  # Left = -1.0 = TBD, Right = 1.0 = TBD
-    MODE_DPAD_UP_AXIS_IDX = (
-        JoyPS4.DPAD_VERTICAL_AXIS
-    )  # Up = 1.0 = MANUAL, Down = -1.0 = DEPTH HOLD
+    if CONTROLLER_LAYOUT == "JETSON":
+        MODE_DPAD_UP = JoyPS4.DPAD_UP  # D-pad Up
+        MODE_DPAD_DOWN = JoyPS4.DPAD_DOWN  # D-pad Down
+        MODE_DPAD_LEFT = JoyPS4.DPAD_LEFT  # D-pad Left
+        MODE_DPAD_RIGHT = JoyPS4.DPAD_RIGHT  # D-pad Right
+    else: 
+        # Control Specific Axis Mapping
+        MODE_DPAD_HORIZONTAL_AXIS_IDX = (
+            JoyPS4.DPAD_HORIZONTAL_AXIS
+        )  # Left = -1.0 = TBD, Right = 1.0 = TBD
+        MODE_DPAD_UP_AXIS_IDX = (
+            JoyPS4.DPAD_VERTICAL_AXIS
+        )  # Up = 1.0 = MANUAL, Down = -1.0 = DEPTH HOLD
     LINEAR_SPEED_X_AXIS_IDX = JoyPS4.LEFT_STICK_X_AXIS  # Left Stick X-Axis
     LINEAR_SPEED_Y_AXIS_IDX = JoyPS4.LEFT_STICK_Y_AXIS  # Left Stick Y-Axis
     LINEAR_SPEED_Z_FORWARD_AXIS_IDX = JoyPS4.L2_TRIGGER_AXIS  # L2 Trigger Axis
