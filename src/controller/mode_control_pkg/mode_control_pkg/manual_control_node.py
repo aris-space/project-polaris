@@ -141,10 +141,11 @@ class ManualControlNode(Node):
         roll_pos = joy_msg.buttons[self.roll_pos_button]
         roll = float(roll_pos - roll_neg)  # [-1..1]
 
+        #invert y and r to match the behavior of the PS4 controller
         x = int(surge * 1000)           # forward/back
-        y = int(sway * 1000)            # lateral
+        y = int(-sway * 1000)            # lateral
         z = int((heave_net + 1) * 500)  # throttle/depth (500 = neutral)
-        r = int(yaw * 1000)             # yaw
+        r = int(-yaw * 1000)             # yaw
         s = int(roll * 1000)            # roll
         t = int(pitch * 1000)           # pitch
 
