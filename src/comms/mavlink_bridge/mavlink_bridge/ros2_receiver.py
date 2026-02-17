@@ -15,8 +15,6 @@ class MavlinkBridgeReceiver(Node):
         # "mavlink_bridge" is the name of the node
         super().__init__("mavlink_bridge_receiver")
 
-        print(mavutil.mavlink.MAVLINK20)
-
         self.pixhawk_mode = (
             "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
         )
