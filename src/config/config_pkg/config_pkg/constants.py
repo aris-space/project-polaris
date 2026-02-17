@@ -51,7 +51,7 @@ class JoyControlMapping:
 
     # Control Specific Button Mapping
     SETTING_SAFETY_BUTTON_IDX = JoyPS4.CIRCLE  # Circle Button
-    MODE_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Square Button
+    MODE_SAFETY_BUTTON_IDX = JoyPS4.TRIANGLE  # Square Button
     SETTING_ARM_BUTTON_IDX = JoyPS4.OPTIONS_BUTTON  # Options Button
     SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # R1 Button
     EMERGENCY_STOP_BUTTON_IDX = JoyPS4.PS_BUTTON  # Triangle Button
