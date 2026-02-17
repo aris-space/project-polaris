@@ -1,0 +1,14 @@
+{
+    "TODO_KEY_1": {
+        "button": 0,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+    "TODO_KEY_2": {
+        "axis": 0,
+        "direction": "+",
+        "button": -1,
+        "toggle": null
+    }
+}

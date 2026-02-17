@@ -13,6 +13,7 @@ export type Config = {
   debugGamepad: boolean;
   layoutName: string;
   mapping_name: string;
+  keyboardMapping: string;
 };
 
 export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAction): Config {
@@ -102,6 +103,26 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
         },
       ],
     },
+    keyboardMapping: {
+      label: "KB->Joy Mapping",
+      input: "select",
+      value: config.keyboardMapping,
+      disabled: config.dataSource !== "keyboard",
+      options: [
+        {
+          label: "Default",
+          value: "default",
+        },
+        {
+          label: "Custom A",
+          value: "custom-a",
+        },
+        {
+          label: "Custom B",
+          value: "custom-b",
+        },
+      ],
+    },
   };
   const publishFields: SettingsTreeFields = {
     publishMode: {
@@ -144,6 +165,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       value: config.layoutName,
       options: [
         {
+          label: "Empty",
+          value: "empty",
+        },
+        {
           label: "Steam Deck",
           value: "steamdeck",
         },
@@ -154,6 +179,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
         {
           label: "Xbox",
           value: "xbox",
+        },
+        {
+          label: "PS4",
+          value: "ps4",
         },
         {
           label: "Cheap Controller",

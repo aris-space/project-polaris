@@ -1,8 +1,8 @@
-# joy-panel version history
+# POLARIS Joystick version history
 
 ## 0.0.3
 
-- Rename to `joy-panel`
+- Rename to `polaris-joystick`
 
 ## 0.0.2
 

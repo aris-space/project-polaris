@@ -14,6 +14,8 @@ import ReactDOM from "react-dom";
 import { GamepadView } from "./components/GamepadView";
 import { SimpleButtonView } from "./components/SimpleButtonView";
 import kbmapping1 from "./components/kbmapping1.json";
+import kbmappingCustomA from "./components/kbmapping-custom-a.json";
+import kbmappingCustomB from "./components/kbmapping-custom-b.json";
 import { useGamepad } from "./hooks/useGamepad";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
@@ -25,26 +27,43 @@ type KbMap = {
   value: number;
 };
 
+type RawKbMap = {
+  button: number;
+  axis: number;
+  direction: string | null;
+};
+
+const keyboardMappings: Record<string, Record<string, RawKbMap>> = {
+  default: kbmapping1,
+  "custom-a": kbmappingCustomA,
+  "custom-b": kbmappingCustomB,
+};
+
+function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
+  const keyMap = new Map<string, KbMap>();
+
+  for (const [key, value] of Object.entries(mapping)) {
+    const k: KbMap = {
+      button: value.button,
+      axis: value.axis,
+      direction: value.direction === "+" ? 1 : 0,
+      value: 0,
+    };
+    keyMap.set(key, k);
+  }
+
+  return keyMap;
+}
+
 function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
   const [joy, setJoy] = useState<Joy | undefined>();
   const [pubTopic, setPubTopic] = useState<string | undefined>();
   const [kbEnabled, setKbEnabled] = useState<boolean>(true);
-  const [trackedKeys, setTrackedKeys] = useState<Map<string, KbMap> | undefined>(() => {
-    const keyMap = new Map<string, KbMap>();
-
-    for (const [key, value] of Object.entries(kbmapping1)) {
-      const k: KbMap = {
-        button: value.button,
-        axis: value.axis,
-        direction: value.direction === "+" ? 1 : 0,
-        value: 0,
-      };
-      keyMap.set(key, k);
-    }
-    return keyMap;
-  });
+  const [trackedKeys, setTrackedKeys] = useState<Map<string, KbMap> | undefined>(() =>
+    buildKeyMap(kbmapping1),
+  );
 
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
@@ -59,6 +78,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.debugGamepad ??= false;
     partialConfig.layoutName ??= "steamdeck";
     partialConfig.mapping_name ??= "TODO";
+    partialConfig.keyboardMapping ??= "default";
     partialConfig.gamepadId ??= 0;
     return partialConfig as Config;
   });
@@ -175,6 +195,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     ),
   });
 
+
+
+  
   // Keyboard mode
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
@@ -220,6 +243,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       document.removeEventListener("keyup", handleKeyUp);
     };
   }, [handleKeyUp]);
+
+  // Reload mapping when selection changes
+  useEffect(() => {
+    const mapping = keyboardMappings[config.keyboardMapping] ?? kbmapping1;
+    setTrackedKeys(buildKeyMap(mapping));
+  }, [config.keyboardMapping]);
 
   // Generate Joy from Keys
   useEffect(() => {

@@ -1,4 +1,4 @@
-# foxglove-joystick
+# POLARIS Joystick
 
 This is an extension for [Foxglove Studio](https://github.com/foxglove/studio) that adds functionality for working with joysticks. It receives joystick data from a variety of inputs, and offers various ways to display it.
 
@@ -19,7 +19,7 @@ There are four main operating modes/input sources/use cases:
 
 ### Foxglove Studio Extension Marketplace
 
-In the Foxglove Studio Desktop app, use the Extension Marketplace (Profile menu in top-right -> Extensions) to find and install the Joystick panel.
+In the Foxglove Studio Desktop app, use the Extension Marketplace (Profile menu in top-right -> Extensions) to find and install the POLARIS Joystick panel.
 
 ### Releases
 

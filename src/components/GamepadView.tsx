@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GamepadBackground } from "./GamepadBackground";
 import cheapo from "./display-mappings/cheapo.json";
 import ipega9083s from "./display-mappings/ipega-9083s.json";
+import ps4 from "./display-mappings/ps4.json";
 import steamdeck from "./display-mappings/steamdeck.json";
 import xbox from "./display-mappings/xbox.json";
 import { Joy, ButtonConfig, BarConfig, StickConfig, DPadConfig, DisplayMapping } from "../types";
@@ -188,10 +189,14 @@ export function GamepadView(props: {
   useEffect(() => {
     if (layoutName === "steamdeck") {
       setDisplayMapping(steamdeck);
+    } else if (layoutName === "empty") {
+      setDisplayMapping([]);
     } else if (layoutName === "ipega-9083s") {
       setDisplayMapping(ipega9083s);
     } else if (layoutName === "xbox") {
       setDisplayMapping(xbox);
+    } else if (layoutName === "ps4") {
+      setDisplayMapping(ps4);
     } else if (layoutName === "cheapo") {
       setDisplayMapping(cheapo);
     } else {
@@ -451,7 +456,7 @@ export function GamepadView(props: {
 
   return (
     <div>
-      {displayMapping.length === 0 ? <h2>No mapping!</h2> : null}
+      {displayMapping.length === 0 && layoutName !== "empty" ? <h2>No mapping!</h2> : null}
       <svg viewBox="0 0 512 512" className="preventPan">
         <GamepadBackground layoutName={layoutName} />
         {dispItems}
