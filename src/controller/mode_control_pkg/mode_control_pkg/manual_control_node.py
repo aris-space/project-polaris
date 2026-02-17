@@ -62,7 +62,7 @@ class ManualControlNode(Node):
         # Subscribe to the current mode published by mode_control_node
         self.mode_subscription = self.create_subscription(
             String,
-            '/manual_control_node/current_mode',
+            '/mode_control/current_mode',
             self.mode_callback,
             10,
         )
