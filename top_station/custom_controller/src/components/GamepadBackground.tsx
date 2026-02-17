@@ -1,6 +1,6 @@
 export function GamepadBackground(props: { layoutName: string }): React.ReactElement {
   if (props.layoutName === "empty") {
-    return <rect width="512" height="512" fill="#000" />;
+    return <></>;
   } else if (props.layoutName === "steamdeck") {
     return (
       <>
