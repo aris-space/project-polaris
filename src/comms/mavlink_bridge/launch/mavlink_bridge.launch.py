@@ -20,5 +20,11 @@ def generate_launch_description():
                 name="output_monitor",
                 output="screen",
             ),
+            Node(
+                package="mavlink_bridge",
+                executable="ros2_receiver",
+                name="ros2_receiver",
+                output="screen",
+            ),
         ]
     )

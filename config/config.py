@@ -20,6 +20,9 @@ class Config:
         "right_stick_vertical_axis": 3,
         "l2_axis": 4,
         "r2_axis": 5,
+        "l1_button": 4,
+        "r1_button": 5,
+
     }
 
     def __init__(self):
@@ -68,6 +71,18 @@ class Config:
     @classmethod
     def get_joy_right_stick_horizontal_axis(self):
         return self.joystick["right_stick_horizontal_axis"]
+
+    @classmethod
+    def get_joy_triangle_button(self):
+        return self.joystick["triangle_button"]
+
+    @classmethod
+    def get_joy_l1_button(self):
+        return self.joystick["l1_button"]
+
+    @classmethod
+    def get_joy_r1_button(self):
+        return self.joystick["r1_button"]
 
 
 if __name__ == "__main__":

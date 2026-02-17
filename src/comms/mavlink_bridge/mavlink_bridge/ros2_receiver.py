@@ -36,7 +36,7 @@ class MavlinkBridgeReceiver(Node):
 
         self.manual_control_subscriber = self.create_subscription(
             Int16MultiArray,
-            "pixhawk/manual_control",
+            "/pixhawk/manual_control",
             self.manual_control_cb,
             10,
         )
