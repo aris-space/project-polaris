@@ -6,6 +6,7 @@ Change ENVIRONMENT to the appropriate value based on the testing environment:
 """
 
 ENVIRONMENT = "POOL"  # Options: "POOL", "OPEN_WATER", "ICE_LAKE"
+CONTROLLER_LAYOUT = "JETSON"  # Options: "DESKTOP", "JETSON"
 
 
 """
@@ -22,29 +23,60 @@ class SubConfig:
     LEAK_THRESHOLD = 500  # Analog value
 
 
-class JoyPS4:
-    # General Button Mapping (0-indexed)
-    X = 0
-    CIRCLE = 1
-    TRIANGLE = 2
-    SQUARE = 3
-    L1 = 4
-    R1 = 5
-    SHARE_BUTTON = 8
-    OPTIONS_BUTTON = 9
-    PS_BUTTON = 10
-    L3_BUTTON = 11  # Left stick click
-    R3_BUTTON = 12  # Right stick click
+if CONTROLLER_LAYOUT == "DESKTOP":
 
-    # General Axis Mapping (0-indexed)
-    LEFT_STICK_X_AXIS = 1  # Up = 1.0, Down = -1.0
-    LEFT_STICK_Y_AXIS = 0  # Left = 1.0, Right = -1.0
-    RIGHT_STICK_X_AXIS = 4  # Up = 1.0, Down = -1.0
-    L2_TRIGGER_AXIS = 2  # Fully out = 1.0, Fully in = -1.0
-    R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
-    RIGHT_STICK_Y_AXIS = 3  # Left = 1.0, Right = -1.0
-    DPAD_HORIZONTAL_AXIS = 6  # Left = 1.0, Right = -1.0
-    DPAD_VERTICAL_AXIS = 7  # Up = 1.0, Down = -1.0
+    class JoyPS4:
+        # General Button Mapping (0-indexed)
+        X = 0
+        CIRCLE = 1
+        TRIANGLE = 2
+        SQUARE = 3
+        L1 = 4
+        R1 = 5
+        SHARE_BUTTON = 8
+        OPTIONS_BUTTON = 9
+        PS_BUTTON = 10
+        L3_BUTTON = 11  # Left stick click
+        R3_BUTTON = 12  # Right stick click
+
+        # General Axis Mapping (0-indexed)
+        LEFT_STICK_X_AXIS = 1  # Up = 1.0, Down = -1.0
+        LEFT_STICK_Y_AXIS = 0  # Left = 1.0, Right = -1.0
+        RIGHT_STICK_X_AXIS = 4  # Up = 1.0, Down = -1.0
+        L2_TRIGGER_AXIS = 2  # Fully out = 1.0, Fully in = -1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
+        RIGHT_STICK_Y_AXIS = 3  # Left = 1.0, Right = -1.0
+        DPAD_HORIZONTAL_AXIS = 6  # Left = 1.0, Right = -1.0
+        DPAD_VERTICAL_AXIS = 7  # Up = 1.0, Down = -1.0
+
+elif CONTROLLER_LAYOUT == "JETSON":
+
+    class JoyPS4:
+        # General Button Mapping (0-indexed)
+        X = 0
+        CIRCLE = 1
+        TRIANGLE = 3
+        SQUARE = 2
+        L1 = 4
+        R1 = 5
+        SHARE_BUTTON = 8
+        OPTIONS_BUTTON = 9
+        PS_BUTTON = 10
+        L3_BUTTON = 11  # Left stick click
+        R3_BUTTON = 12  # Right stick click
+        DPAD_UP = 13
+        DPAD_DOWN = 14
+        DPAD_LEFT = 15
+        DPAD_RIGHT = 16
+
+
+        # General Axis Mapping (0-indexed)
+        LEFT_STICK_X_AXIS = 0  # Left = -1.0, Right = 1.0
+        LEFT_STICK_Y_AXIS = 1  # Up = -1.0, Down = 1.0
+        RIGHT_STICK_X_AXIS = 2  # Left = -1.0, Right = 1.0
+        RIGHT_STICK_Y_AXIS = 3  # Up = -1.0, Down = 1.0
+        L2_TRIGGER_AXIS = 4  # Fully out = -1.0, Fully in = 1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
 
 
 class JoyControlMapping:
@@ -59,8 +91,12 @@ class JoyControlMapping:
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
     # Control Specific Axis Mapping
-    MODE_DPAD_HORIZONTAL_AXIS_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS # Left = -1.0 = TBD, Right = 1.0 = TBD
-    MODE_DPAD_UP_AXIS_IDX = JoyPS4.DPAD_VERTICAL_AXIS # Up = 1.0 = MANUAL, Down = -1.0 = DEPTH HOLD
+    MODE_DPAD_HORIZONTAL_AXIS_IDX = (
+        JoyPS4.DPAD_HORIZONTAL_AXIS
+    )  # Left = -1.0 = TBD, Right = 1.0 = TBD
+    MODE_DPAD_UP_AXIS_IDX = (
+        JoyPS4.DPAD_VERTICAL_AXIS
+    )  # Up = 1.0 = MANUAL, Down = -1.0 = DEPTH HOLD
     LINEAR_SPEED_X_AXIS_IDX = JoyPS4.LEFT_STICK_X_AXIS  # Left Stick X-Axis
     LINEAR_SPEED_Y_AXIS_IDX = JoyPS4.LEFT_STICK_Y_AXIS  # Left Stick Y-Axis
     LINEAR_SPEED_Z_FORWARD_AXIS_IDX = JoyPS4.L2_TRIGGER_AXIS  # L2 Trigger Axis

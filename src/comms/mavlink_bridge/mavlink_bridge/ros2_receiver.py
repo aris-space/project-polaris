@@ -18,7 +18,7 @@ class MavlinkBridgeReceiver(Node):
         self.pixhawk_mode = "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
 
         # configures serial port the pixhawk is connected to and the baud rate
-        self.port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)
+        self.port = mavutil.mavlink_connection("udpout:10.5.11.50:15000")
 
         # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
         self.port.wait_heartbeat()
@@ -29,7 +29,7 @@ class MavlinkBridgeReceiver(Node):
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
             OverrideRCIn,
-            "pixhawk/rc_override",
+            "/pixhawk/rc_override",
             self.rc_override_cb,
             10,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
         )
@@ -43,11 +43,11 @@ class MavlinkBridgeReceiver(Node):
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
-            String, "pixhawk/mode_cmd", self.mode_selection_cb, 10
+            String, "/pixhawk/mode_cmd", self.mode_selection_cb, 10
         )
 
         self.arm_disarm_subscriber = self.create_subscription(
-            Bool, "pixhawk/arm_cmd", self.arm_disarm_cb, 10
+            Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, 10
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
@@ -151,6 +151,7 @@ class MavlinkBridgeReceiver(Node):
         """
         Input values: -1000 to 1000 (except heave, see below)
         """
+        self._logger.info(f"Sending 4DOF command with control input: {control_input}")
         surge, sway, heave, yaw = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
@@ -167,6 +168,7 @@ class MavlinkBridgeReceiver(Node):
         newer MAVLink 2.0 implementations. This has to be tested!
         Input values: -1000 to 1000 (except heave, see below)
         """
+        self._logger.info(f"Sending 6DOF command with control input: {control_input}")
         surge, sway, heave, yaw, roll, pitch = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
