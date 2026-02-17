@@ -412,7 +412,15 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         <FormGroup>
           <FormControlLabel
             control={<Switch checked={kbEnabled} onChange={handleKbSwitch} />}
-            label="Enable Keyboard"
+            label={`Enable ${
+              config.keyboardMapping === "default"
+                ? "Default"
+                : config.keyboardMapping === "keyboard_movement"
+                ? "Keyboard Movement"
+                : config.keyboardMapping === "keyboard_buttons"
+                ? "Keyboard Buttons"
+                : config.keyboardMapping
+            }`}
           />
         </FormGroup>
       ) : null}
