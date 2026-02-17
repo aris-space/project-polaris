@@ -33,24 +33,24 @@
         "axis": 1,
         "direction": "+",
         "button": -1,
-        "toggle": null
+        "toggle": false
     },
     "s": {
         "axis": 1,
         "direction": "-",
         "button": -1,
-        "toggle": null
+        "toggle": false
     },
     "a": {
         "axis": 0,
         "direction": "+",
         "button": -1,
-        "toggle": null
+        "toggle": false
     },
     "d": {
         "axis": 0,
         "direction": "-",
         "button": -1,
-        "toggle": null
+        "toggle": false
     }
 }

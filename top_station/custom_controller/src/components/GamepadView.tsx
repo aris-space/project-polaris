@@ -13,6 +13,7 @@ const colStroke = "#ddd";
 const colPrim = "blue";
 const colSec = "cornflowerblue";
 const colAlt = "red";
+const colToggled = "#ffff00";
 
 interface Interaction {
   pointerId: number;
@@ -44,7 +45,7 @@ function generateButton(
       <circle
         cx={x}
         cy={y}
-        fill={value > 0 ? colAlt : colPrim}
+        fill={value > 0 ? colToggled : colPrim}
         r={radius}
         stroke={colStroke}
         strokeWidth={2}
@@ -158,14 +159,14 @@ function generateDPad(valueX: number, valueY: number, x: number, y: number, radi
       />
       <polygon
         points="15,10 25,0 15,-10"
-        fill={valueX < 0 ? colAlt : colPrim}
+        fill={valueX > 0 ? colAlt : colPrim}
         stroke={colStroke}
         strokeWidth={2}
         transform={transform}
       />
       <polygon
         points="-15,10 -25,0 -15,-10"
-        fill={valueX > 0 ? colAlt : colPrim}
+        fill={valueX < 0 ? colAlt : colPrim}
         stroke={colStroke}
         strokeWidth={2}
         transform={transform}
@@ -174,13 +175,40 @@ function generateDPad(valueX: number, valueY: number, x: number, y: number, radi
   );
 }
 
+type KbMappingEntry = {
+  button: number;
+  axis: number;
+  direction?: string | null;
+};
+
 export function GamepadView(props: {
   joy: Joy | undefined;
   cbInteractChange: (joy: Joy) => void;
   layoutName: string;
+  kbMapping?: Record<string, KbMappingEntry>;
 }): React.ReactElement {
-  const { joy, cbInteractChange, layoutName } = props;
+  const { joy, cbInteractChange, layoutName, kbMapping } = props;
   const dispItems = [];
+
+  // Build set of mapped button indices for highlighting only active buttons
+  const mappedButtons = new Set<number>();
+  const mappedAxes = new Map<number, { pos: boolean; neg: boolean }>();
+  if (kbMapping) {
+    for (const config of Object.values(kbMapping)) {
+      if (config.button >= 0) {
+        mappedButtons.add(config.button);
+      }
+      if (config.axis >= 0 && config.direction) {
+        const current = mappedAxes.get(config.axis) ?? { pos: false, neg: false };
+        if (config.direction === "+") {
+          current.pos = true;
+        } else if (config.direction === "-") {
+          current.neg = true;
+        }
+        mappedAxes.set(config.axis, current);
+      }
+    }
+  }
 
   const [numButtons, setNumButtons] = useState<number>(0);
   const [numAxes, setNumAxes] = useState<number>(0);
@@ -383,10 +411,14 @@ export function GamepadView(props: {
       const y = mapping.y;
       const radius = 8;
       const buttonVal = joy?.buttons[index] ?? 0;
+      
+      // Only highlight if button is in the current keyboard mapping, or if no keyboard mapping is active
+      const shouldHighlight = mappedButtons.size === 0 || mappedButtons.has(index);
+      const displayValue = shouldHighlight ? buttonVal : 0;
 
       dispItems.push(
         generateButton(
-          buttonVal,
+          displayValue,
           x,
           y,
           text,
@@ -442,8 +474,24 @@ export function GamepadView(props: {
       const axisY = mapping.axisY;
       const x = mapping.x;
       const y = mapping.y;
-      const axXVal = joy?.axes[axisX] ?? 0;
-      const axYVal = joy?.axes[axisY] ?? 0;
+      let axXVal = joy?.axes[axisX] ?? 0;
+      let axYVal = joy?.axes[axisY] ?? 0;
+      if (kbMapping) {
+        const axisXMapping = mappedAxes.get(axisX);
+        const axisYMapping = mappedAxes.get(axisY);
+        if (!axisXMapping?.pos && axXVal > 0) {
+          axXVal = 0;
+        }
+        if (!axisXMapping?.neg && axXVal < 0) {
+          axXVal = 0;
+        }
+        if (!axisYMapping?.pos && axYVal > 0) {
+          axYVal = 0;
+        }
+        if (!axisYMapping?.neg && axYVal < 0) {
+          axYVal = 0;
+        }
+      }
       dispItems.push(generateDPad(axXVal, axYVal, x, y, 30));
     }
 

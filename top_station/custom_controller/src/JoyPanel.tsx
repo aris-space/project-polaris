@@ -25,12 +25,15 @@ type KbMap = {
   axis: number;
   direction: number;
   value: number;
+  toggle: boolean;
+  toggled: boolean;
 };
 
 type RawKbMap = {
   button: number;
   axis: number;
   direction: string | null;
+  toggle?: boolean;
 };
 
 const keyboardMappings: Record<string, Record<string, RawKbMap>> = {
@@ -48,6 +51,8 @@ function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
       axis: value.axis,
       direction: value.direction === "+" ? 1 : 0,
       value: 0,
+      toggle: value.toggle ?? false,
+      toggled: false,
     };
     keyMap.set(key, k);
   }
@@ -64,6 +69,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   const [trackedKeys, setTrackedKeys] = useState<Map<string, KbMap> | undefined>(() =>
     buildKeyMap(kbmapping1),
   );
+  const [currentKbMapping, setCurrentKbMapping] = useState<Record<string, RawKbMap> | undefined>();
 
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
@@ -197,36 +203,62 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
 
 
-  
   // Keyboard mode
 
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    setTrackedKeys((oldTrackedKeys) => {
-      if (oldTrackedKeys && oldTrackedKeys.has(event.key)) {
-        const newKeys = new Map(oldTrackedKeys);
-        const k = newKeys.get(event.key);
-        if (k) {
-          k.value = 1;
-        }
-        return newKeys;
-      }
-      return oldTrackedKeys;
-    });
+  const normalizeKey = useCallback((event: KeyboardEvent): string => {
+    const { code, key } = event;
+    if (code.startsWith("Key")) {
+      return code.slice(3).toLowerCase();
+    }
+    if (code.startsWith("Digit")) {
+      return code.slice(5);
+    }
+    if (code === "Space") {
+      return " ";
+    }
+    return key;
   }, []);
 
-  const handleKeyUp = useCallback((event: KeyboardEvent) => {
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    const normalizedKey = normalizeKey(event);
     setTrackedKeys((oldTrackedKeys) => {
-      if (oldTrackedKeys && oldTrackedKeys.has(event.key)) {
+      if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
         const newKeys = new Map(oldTrackedKeys);
-        const k = newKeys.get(event.key);
+        const k = newKeys.get(normalizedKey);
         if (k) {
-          k.value = 0;
+          if (k.toggle) {
+            // Toggle mode - switch toggled state
+            k.toggled = !k.toggled;
+            k.value = k.toggled ? 1 : 0;
+          } else {
+            // Regular mode - just set value
+            k.value = 1;
+          }
         }
         return newKeys;
       }
       return oldTrackedKeys;
     });
-  }, []);
+  }, [normalizeKey]);
+
+  const handleKeyUp = useCallback((event: KeyboardEvent) => {
+    const normalizedKey = normalizeKey(event);
+    setTrackedKeys((oldTrackedKeys) => {
+      if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
+        const newKeys = new Map(oldTrackedKeys);
+        const k = newKeys.get(normalizedKey);
+        if (k) {
+          if (!k.toggle) {
+            // Only set value to 0 for non-toggle keys
+            k.value = 0;
+          }
+          // For toggle keys, value stays as is (toggled or not)
+        }
+        return newKeys;
+      }
+      return oldTrackedKeys;
+    });
+  }, [normalizeKey]);
 
   // Key down Listener
   useEffect(() => {
@@ -248,6 +280,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   useEffect(() => {
     const mapping = keyboardMappings[config.keyboardMapping] ?? kbmapping1;
     setTrackedKeys(buildKeyMap(mapping));
+    setCurrentKbMapping(mapping as Record<string, RawKbMap>);
   }, [config.keyboardMapping]);
 
   // Generate Joy from Keys
@@ -379,6 +412,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           joy={joy}
           cbInteractChange={interactiveCb}
           layoutName={config.layoutName}
+          kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
         />
       ) : null}
       {/* {config.debugGamepad ? <GamepadDebug gamepads={gamepads} /> : null} */}
