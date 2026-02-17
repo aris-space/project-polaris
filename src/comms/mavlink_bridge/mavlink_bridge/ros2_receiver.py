@@ -15,11 +15,17 @@ class MavlinkBridgeReceiver(Node):
         # "mavlink_bridge" is the name of the node
         super().__init__("mavlink_bridge_receiver")
 
-        self.pixhawk_mode = "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
+        print(mavutil.mavlink.MAVLINK20)
+
+        self.pixhawk_mode = (
+            "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
+        )
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection("udpout:10.5.11.50:15000")
-        self.port_in = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # For receiving messages from Pixhawk (e.g., heartbeats, status)
+        self.port_in = mavutil.mavlink_connection(
+            "/dev/ttyTHS1", baud=57600
+        )  # For receiving messages from Pixhawk (e.g., heartbeats, status)
 
         # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
         self.port_in.wait_heartbeat()
@@ -84,9 +90,7 @@ class MavlinkBridgeReceiver(Node):
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
         if self.pixhawk_mode == "MANUAL":
-            self.send_6dof_command(
-                msg.data
-            )
+            self.send_6dof_command(msg.data)
 
         elif self.pixhawk_mode == "ALT_HOLD":
             self.send_4dof_command(
@@ -179,7 +183,7 @@ class MavlinkBridgeReceiver(Node):
             int(heave),  # z (0-1000)
             int(yaw),  # r
             0,  # buttons
-            0, # buttons 2
+            0,  # buttons 2
             192,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
             int(roll),  # s (Extension 1)
             int(pitch),  # t (Extension 2)
