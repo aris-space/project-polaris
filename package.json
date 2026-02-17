@@ -1,7 +1,7 @@
 {
-  "name": "joy-panel",
-  "displayName": "Joystick Panel",
-  "description": "Foxglove panel extension for joystick/gamepad control.",
+  "name": "polaris-joystick",
+  "displayName": "POLARIS Joystick",
+  "description": "POLARIS Joystick panel extension for joystick/gamepad control.",
   "publisher": "Josh Newans",
   "homepage": "",
   "version": "0.0.3",
