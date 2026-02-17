@@ -117,6 +117,8 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
+                elif msg.get_type() == "MANUAL_CONTROL":
+                    self.handle_manual_control(msg)
 
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
@@ -201,6 +203,12 @@ class MavlinkBridgeSender(Node):
 
         self.scaled_pressure_publisher.publish(ros_msg)
         self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+
+    def handle_manual_control(self, msg):
+        """Process MANUAL_CONTROL message and publish to ROS2"""
+        # This is a placeholder for handling manual control messages if needed
+        self.logger.info(f"Received Manual Control from MAVLink Message (69): {msg}")
+        pass
 
 
 def main(args=None):
