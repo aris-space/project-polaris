@@ -4,9 +4,11 @@ import logging, os
 from rclpy.node import Node
 from pymavlink import mavutil
 from datetime import datetime
+from std_msgs.msg import Int16MultiArray
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
+    ManualControl
 )
 from sensor_msgs.msg import (
     Imu,  # ATTITUDE
@@ -92,6 +94,10 @@ class MavlinkBridgeSender(Node):
 
         self.scaled_pressure_publisher = self.create_publisher(
             FluidPressure, "/pixhawk/scaled_pressure", 10
+        )
+
+        self.manual_control_publisher = self.create_publisher(
+            ManualControl, "/pixhawk/out/manual_control", 10
         )
 
         self.timer = self.create_timer(0.5, self.mavlink_callback)
@@ -208,7 +214,15 @@ class MavlinkBridgeSender(Node):
         """Process MANUAL_CONTROL message and publish to ROS2"""
         # This is a placeholder for handling manual control messages if needed
         self.logger.info(f"Received Manual Control from MAVLink Message (69): {msg}")
-        pass
+        ros_msg = ManualControl()
+        ros_msg.x = msg.x
+        ros_msg.y = msg.y
+        ros_msg.z = msg.z
+        ros_msg.r = msg.r
+        ros_msg.buttons = msg.buttons
+        ros_msg.s = msg.s
+        ros_msg.t = msg.t
+        self.manual_control_publisher.publish(ros_msg)
 
 
 def main(args=None):
