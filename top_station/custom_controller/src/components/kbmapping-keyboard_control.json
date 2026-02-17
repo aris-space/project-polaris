@@ -1,72 +1,60 @@
 {
-    "shift": {
-        "button": 3,
-        "toggle": false,
-        "axis": -1,
-        "direction": null
-    },
-    "arrow_up": {
-        "axis": 4,
-        "direction": "+",
-        "button": -1,
-        "toggle": false
-    },
-    "arrow_down": {
-        "axis": 5,
-        "direction": "+",
-        "button": -1,
-        "toggle": false
-    },
-    "ctrl_x": {
+    "x": {
         "button": 10,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
-    "ctrl_y": {
+    "y": {
         "button": 11,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
-    "space": {
-        "button": 12,
-        "toggle": false,
-        "axis": -1,
-        "direction": null
-    },
     "w": {
+        "button": 15,
+        "toggle": false,
         "axis": 0,
-        "direction": "+",
-        "button": -1,
-        "toggle": false
+        "direction": "+"
     },
     "s": {
+        "button": 25,
+        "toggle": false,
         "axis": 0,
-        "direction": "-",
-        "button": -1,
-        "toggle": false
+        "direction": "-"
     },
     "d": {
+        "button": 26,
+        "toggle": false,
         "axis": 1,
+        "direction": "+"
+    },
+    "a": {
+        "button": 24,
+        "toggle": false,
+        "axis": 1,
+        "direction": "-"
+    },
+    "ArrowUp": {
+        "axis": 7,
         "direction": "+",
         "button": -1,
         "toggle": false
     },
-    "a": {
-        "axis": 1,
+    "ArrowDown": {
+        "axis": 7,
         "direction": "-",
         "button": -1,
         "toggle": false
     },
-    "arrow_right": {
-        "axis": 2,
+    "ArrowRight": {
+        "axis": 6,
         "direction": "+",
         "button": -1,
         "toggle": false
     },
-    "arrow_left": {
-        "axis": 2,
+    "ArrowLeft": {
+        "axis": 6,
         "direction": "-",
         "button": -1,
         "toggle": false
