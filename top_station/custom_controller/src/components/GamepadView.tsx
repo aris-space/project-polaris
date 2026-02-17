@@ -381,7 +381,7 @@ export function GamepadView(props: {
       const text = mapping.text;
       const x = mapping.x;
       const y = mapping.y;
-      const radius = 18;
+      const radius = 8;
       const buttonVal = joy?.buttons[index] ?? 0;
 
       dispItems.push(
