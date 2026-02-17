@@ -26,7 +26,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_msgs.msg import Int16MultiArray
 from sensor_msgs.msg import Joy
-from config.config import Config
+from config_pkg.constants import JoyControlMapping
 
 # If no /joy message is received for this duration (seconds), send neutral values
 JOY_TIMEOUT = 0.2
@@ -49,15 +49,15 @@ class ManualControlNode(Node):
         # Timestamp of last received /joy message
         self.last_joy_time = self.get_clock().now()
 
-        # Joystick axis / button indices from config
-        self.left_stick_horizontal_axis = Config.get_joy_left_stick_horizontal_axis()
-        self.left_stick_vertical_axis = Config.get_joy_left_stick_vertical_axis()
-        self.right_stick_horizontal_axis = Config.get_joy_right_stick_horizontal_axis()
-        self.right_stick_vertical_axis = Config.get_joy_right_stick_vertical_axis()
-        self.l2_axis = Config.get_joy_l2_axis()
-        self.r2_axis = Config.get_joy_r2_axis()
-        self.l1_button = Config.get_joy_l1_button()
-        self.r1_button = Config.get_joy_r1_button()
+        # Joystick axis / button indices from config_pkg constants
+        self.surge_axis = JoyControlMapping.LINEAR_SPEED_X_AXIS_IDX
+        self.sway_axis = JoyControlMapping.LINEAR_SPEED_Y_AXIS_IDX
+        self.yaw_axis = JoyControlMapping.YAW_RATE_AXIS_IDX
+        self.pitch_axis = JoyControlMapping.PITCH_RATE_AXIS_IDX
+        self.l2_axis = JoyControlMapping.LINEAR_SPEED_Z_FORWARD_AXIS_IDX
+        self.r2_axis = JoyControlMapping.LINEAR_SPEED_Z_BACKWARD_AXIS_IDX
+        self.roll_neg_button = JoyControlMapping.ROLL_RATE_NEGATIVE_AXIS_IDX
+        self.roll_pos_button = JoyControlMapping.ROLL_RATE_POSITIVE_AXIS_IDX
 
         # Subscribe to the current mode published by mode_control_node
         self.mode_subscription = self.create_subscription(
@@ -122,10 +122,10 @@ class ManualControlNode(Node):
         """
         mc_msg = Int16MultiArray()
 
-        lx = joy_msg.axes[self.left_stick_horizontal_axis]  # left stick X
-        ly = joy_msg.axes[self.left_stick_vertical_axis]    # left stick Y
-        rx = joy_msg.axes[self.right_stick_horizontal_axis] # right stick X
-        ry = joy_msg.axes[self.right_stick_vertical_axis] # right stick Y
+        surge = joy_msg.axes[self.surge_axis]
+        sway = joy_msg.axes[self.sway_axis]
+        yaw = joy_msg.axes[self.yaw_axis]
+        pitch = joy_msg.axes[self.pitch_axis]
 
         # Triggers: commonly +1 unpressed, -1 pressed -> normalize to [0,1]
         l2_raw = joy_msg.axes[self.l2_axis]
@@ -133,20 +133,20 @@ class ManualControlNode(Node):
         l2 = (1.0 - l2_raw) * 0.5  # [0..1]
         r2 = (1.0 - r2_raw) * 0.5  # [0..1]
 
-        # net vertical: + up, - down 
-        net = r2 - l2  # [-1..1]
+        # net vertical: + up, - down
+        heave_net = r2 - l2  # [-1..1]
 
-        # roll: + right, - left 
-        roll = rx - lx  # [-1..1]
+        # roll via L1/R1 buttons: +1 right, -1 left, 0 neither/both
+        roll_neg = joy_msg.buttons[self.roll_neg_button]
+        roll_pos = joy_msg.buttons[self.roll_pos_button]
+        roll = float(roll_pos - roll_neg)  # [-1..1]
 
-        # TODO: map joy_msg.axes / joy_msg.buttons to the 6 axes + button bitmasks
-        x = int(ly * 1000)        # forward/back
-        y = int(lx * 1000)        # lateral
-        z = int((net+1)*500)      # throttle/depth (neutral)
-        r = int(rx * 1000)        # yaw
-        s = int(roll * 1000)        # roll
-        t = int(ry * 1000)        # pitch
-
+        x = int(surge * 1000)           # forward/back
+        y = int(sway * 1000)            # lateral
+        z = int((heave_net + 1) * 500)  # throttle/depth (500 = neutral)
+        r = int(yaw * 1000)             # yaw
+        s = int(roll * 1000)            # roll
+        t = int(pitch * 1000)           # pitch
 
         mc_msg.data = [x, y, z, r, s, t]
         return mc_msg
