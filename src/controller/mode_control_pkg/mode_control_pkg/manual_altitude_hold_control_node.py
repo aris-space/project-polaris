@@ -29,7 +29,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from std_msgs.msg import Int16MultiArray
 from sensor_msgs.msg import Joy
-from config.config import Config
+from config_pkg.constants import JoyControlMapping
 
 # If no /joy message is received for this duration (seconds), send neutral values
 JOY_TIMEOUT = 0.2
@@ -52,13 +52,12 @@ class ManualAltitudeHoldControlNode(Node):
         # Timestamp of last received /joy message
         self.last_joy_time = self.get_clock().now()
 
-        # Joystick axis / button indices from config
-        self.left_stick_horizontal_axis = Config.get_joy_left_stick_horizontal_axis()
-        self.left_stick_vertical_axis = Config.get_joy_left_stick_vertical_axis()
-        self.right_stick_horizontal_axis = Config.get_joy_right_stick_horizontal_axis()
-        self.right_stick_vertical_axis = Config.get_joy_right_stick_vertical_axis()
-        self.l2_axis = Config.get_joy_l2_axis()
-        self.r2_axis = Config.get_joy_r2_axis()
+        # Joystick axis / button indices from config_pkg constants
+        self.surge_axis = JoyControlMapping.LINEAR_SPEED_X_AXIS_IDX
+        self.sway_axis = JoyControlMapping.LINEAR_SPEED_Y_AXIS_IDX
+        self.yaw_axis = JoyControlMapping.YAW_RATE_AXIS_IDX
+        self.l2_axis = JoyControlMapping.LINEAR_SPEED_Z_FORWARD_AXIS_IDX
+        self.r2_axis = JoyControlMapping.LINEAR_SPEED_Z_BACKWARD_AXIS_IDX
 
         # Subscribe to the current mode published by mode_control_node
         self.mode_subscription = self.create_subscription(
@@ -123,9 +122,9 @@ class ManualAltitudeHoldControlNode(Node):
         """
         mc_msg = Int16MultiArray()
 
-        lx = joy_msg.axes[self.left_stick_horizontal_axis]  # left stick X
-        ly = joy_msg.axes[self.left_stick_vertical_axis]    # left stick Y
-        rx = joy_msg.axes[self.right_stick_horizontal_axis] # right stick X
+        surge = joy_msg.axes[self.surge_axis]
+        sway = joy_msg.axes[self.sway_axis]
+        yaw = joy_msg.axes[self.yaw_axis]
 
         # Triggers: commonly +1 unpressed, -1 pressed -> normalize to [0,1]
         l2_raw = joy_msg.axes[self.l2_axis]
@@ -134,12 +133,12 @@ class ManualAltitudeHoldControlNode(Node):
         r2 = (1.0 - r2_raw) * 0.5  # [0..1]
 
         # net vertical: + up, - down
-        net = r2 - l2  # [-1..1]
+        heave_net = r2 - l2  # [-1..1]
 
-        x = int(ly * 1000)        # surge: forward/back
-        y = int(lx * 1000)        # sway: lateral
-        z = int((net + 1) * 500)  # heave: depth target (500 = hold current depth)
-        r = int(rx * 1000)        # yaw: rotation
+        x = int(surge * 1000)           # surge: forward/back
+        y = int(sway * 1000)            # sway: lateral
+        z = int((heave_net + 1) * 500)  # heave: depth target (500 = hold current depth)
+        r = int(yaw * 1000)             # yaw: rotation
 
         mc_msg.data = [x, y, z, r]
         return mc_msg
