@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from sensor_msgs.msg import Joy
-from config_pkg.constants import JoyControlMapping
+from config_pkg.constants import JoyControlMapping, CONTROLLER_LAYOUT
 
 
 class ModeControlNode(Node):
@@ -55,16 +55,22 @@ class ModeControlNode(Node):
 
         # 2. Mode Switching Logic (Requires Safety Button Pressed)
         elif self.mode_safety_button_pressed(msg):
-            if axes[JoyControlMapping.MODE_DPAD_UP_AXIS_IDX] == 1.0:  # D-pad Up
-                self.current_mode = "manual_control"
-                self.pixhawk_mode = "MANUAL"
+            if CONTROLLER_LAYOUT == "DESKTOP":
+                if axes[JoyControlMapping.MODE_DPAD_UP_AXIS_IDX] == 1.0:  # D-pad Up
+                    self.current_mode = "manual_control"
+                    self.pixhawk_mode = "MANUAL"
+                elif axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == 1.0:  # D-pad Left
+                    self.current_mode = "manual_depth_hold"
+                    self.pixhawk_mode = "ALT_HOLD"
+            elif CONTROLLER_LAYOUT == "JETSON":
+                if buttons[JoyControlMapping.DPAD_UP] == 1:  # D-pad Up
+                    self.current_mode = "manual_control"
+                    self.pixhawk_mode = "MANUAL"
+                elif buttons[JoyControlMapping.DPAD_LEFT] == 1:  # D-pad Left
+                    self.current_mode = "manual_depth_hold"
+                    self.pixhawk_mode = "ALT_HOLD"
                 # TODO: here add the option for stabilization mode
 
-            elif (
-                axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == 1.0
-            ):  # D-pad Left
-                self.current_mode = "manual_depth_hold"
-                self.pixhawk_mode = "ALT_HOLD"
 
         # 3. Arm Control
         elif buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1:
