@@ -6,7 +6,7 @@ The modes include manual control, manual depth hold, emergency stop and later al
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sensor_msgs.msg import Joy
 from config_pkg.constants import JoyControlMapping
 
@@ -26,11 +26,16 @@ class ModeControlNode(Node):
         self.pixhawk_mode_publisher = self.create_publisher(
             String, "pixhawk/mode_cmd", 10
         )
+        self.arm_cmd_publisher = self.create_publisher(
+            Bool, "pixhawk/arm_cmd", 10
+        )
         self.joy_subscriber = self.create_subscription(
             Joy, "joy", self.command_callback, 10
         )
 
         self.get_logger().info("Mode Control Node Started. Default: manual_control")
+
+    """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
 
     def mode_control_callback(self, msg):
         axes = msg.axes
@@ -48,16 +53,22 @@ class ModeControlNode(Node):
                     "MANUAL"  # Ensure Pixhawk is in MANUAL for emergency stop
                 )
 
-        # 2. Mode Switching Logic (Requires Safety Button 0 / X)
-        elif self.safety_button_pressed(msg):
+        # 2. Mode Switching Logic (Requires Safety Button Pressed)
+        elif self.mode_safety_button_pressed(msg):
             if axes[JoyControlMapping.MODE_DPAD_UP_AXIS_IDX] == 1.0:  # D-pad Up
                 self.current_mode = "manual_control"
                 self.pixhawk_mode = "MANUAL"
                 # TODO: here add the option for stabilization mode
 
-            elif axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == 1.0:  # D-pad Left
+            elif (
+                axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == 1.0
+            ):  # D-pad Left
                 self.current_mode = "manual_depth_hold"
                 self.pixhawk_mode = "ALT_HOLD"
+
+        # 3. Arm Control
+        elif buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1:
+            self.publish_arm_cmd()
 
         # 3. Only publish and log if the state has actually changed
         if self.current_mode != self.prev_mode:
@@ -68,6 +79,8 @@ class ModeControlNode(Node):
             self.publish_pixhawk_mode()
             self.prev_pixhawk_mode = self.pixhawk_mode
             # Update Pixhawk mode tracking if needed
+
+    """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     def publish_mode(self):
         mode_msg = String()
@@ -80,11 +93,21 @@ class ModeControlNode(Node):
         pixhawk_mode_msg.data = self.pixhawk_mode
         self.pixhawk_mode_publisher.publish(pixhawk_mode_msg)
 
-    def safety_button_pressed(self, msg):
+    def publish_arm_cmd(self):
+        arm_cmd_msg = Bool()
+        arm_cmd_msg.data = True
+        self.arm_cmd_publisher.publish(arm_cmd_msg)
+
+    def mode_safety_button_pressed(self, msg):
         # This function should check the state of the safety button
         # For now, we will just return True to allow mode switching
         buttons = msg.buttons
-        return buttons[JoyControlMapping.SETTING_SAFETY_BUTTON_IDX] == 1  # Assuming button 0 (X) is the safety button
+        return (
+            buttons[JoyControlMapping.MODE_SAFETY_BUTTON_IDX] == 1
+        )  # Assuming button 0 (X) is the safety button
+
+
+"""--------------------------------------------- main function ---------------------------------------------"""
 
 
 def main(args=None):
