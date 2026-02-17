@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from pymavlink import mavutil
 from std_msgs.msg import String
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 
 
@@ -14,6 +14,8 @@ class MavlinkBridgeReceiver(Node):
     def __init__(self):
         # "mavlink_bridge" is the name of the node
         super().__init__("mavlink_bridge_receiver")
+
+        self.pixhawk_mode = "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)
@@ -33,10 +35,10 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.manual_control_subscriber = self.create_subscription(
-            String,
+            Int16MultiArray,
             "pixhawk/manual_control",
             self.manual_control_cb,
-            10,  # TODO: Change the topic and message type to what gleb defined!
+            10,
         )
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
@@ -80,9 +82,14 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        self.send_6dof_command(
-            msg.data
-        )  # TODO: Change this to the correct message type and extract the control input values from the message
+        if self.pixhawk_mode == "MANUAL":
+            self.send_6dof_command(
+                msg.data
+            )
+        elif self.pixhawk_mode == "ALT_HOLD":
+            self.send_4dof_command(
+                msg.data
+            )  # In ALT_HOLD, we typically control surge, sway, heave, and yaw, but not roll and pitch
 
         # self.send_4dof_command(msg.data)
 
@@ -125,6 +132,7 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
+            self.pixhawk_mode = "ALT_HOLD"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent ALT_HOLD mode command")
 
         elif msg.data == "MANUAL":
@@ -134,6 +142,7 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
+            self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
