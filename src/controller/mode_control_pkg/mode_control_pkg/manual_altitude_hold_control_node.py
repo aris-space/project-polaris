@@ -62,7 +62,7 @@ class ManualAltitudeHoldControlNode(Node):
         # Subscribe to the current mode published by mode_control_node
         self.mode_subscription = self.create_subscription(
             String,
-            'current_mode',
+            '/mode_control/current_mode',
             self.mode_callback,
             10,
         )
@@ -78,7 +78,7 @@ class ManualAltitudeHoldControlNode(Node):
         # Publish manual control commands to the pixhawk via ros2_receiver
         self.manual_control_publisher = self.create_publisher(
             Int16MultiArray,
-            'pixhawk/manual_control',
+            '/pixhawk/manual_control',
             10,
         )
 
