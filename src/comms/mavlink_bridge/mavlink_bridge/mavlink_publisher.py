@@ -102,6 +102,17 @@ class MavlinkBridgeSender(Node):
 
         self.timer = self.create_timer(0.5, self.mavlink_callback)
 
+        # Request MANUAL_CONTROL at 100ms intervals (10 Hz)
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID
+            100000,  # interval in microseconds (100ms = 10Hz)
+            0, 0, 0, 0, 0
+        )
+
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
         # Process ALL available messages in the buffer (not just one)
