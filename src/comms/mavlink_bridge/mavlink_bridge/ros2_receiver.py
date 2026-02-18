@@ -96,7 +96,7 @@ class MavlinkBridgeReceiver(Node):
             self.send_6dof_command(msg.data)
 
         elif self.pixhawk_mode == "ALT_HOLD":
-            self.send_4dof_command(
+            self.send_6dof_command(
                 msg.data
             )  # In ALT_HOLD, we typically control surge, sway, heave, and yaw, but not roll and pitch
         else:
@@ -182,8 +182,6 @@ class MavlinkBridgeReceiver(Node):
             int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
             int(yaw),  # r: Yaw
             0,  # buttons bitmask
-            0,  # buttons 2 (not used in 4DOF)
-            0,  # flags (not using extension fields)
         )
 
     def send_4dof_command_test(self, control_input):
