@@ -24,6 +24,12 @@ def generate_launch_description():
         [
             Node(
                 package="mode_control_pkg",
+                executable="joy_handler_node",
+                name="joy_handler_node",
+                output="screen",
+            ),
+            Node(
+                package="mode_control_pkg",
                 executable="mode_control_node",
                 name="mode_control_node",
                 output="screen",
