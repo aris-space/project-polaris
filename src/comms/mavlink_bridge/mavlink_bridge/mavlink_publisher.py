@@ -75,7 +75,8 @@ class MavlinkBridgeSender(Node):
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
 
-        self.port = mavutil.mavlink_connection("udp:10.5.11.50:14600")
+        self.port = mavutil.mavlink_connection("udp:10.5.11.50:14600") # UDP connection to companion computer (BlueOS)
+        self.serial_port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # Serial connection straight to Pixhawk
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
@@ -102,15 +103,19 @@ class MavlinkBridgeSender(Node):
 
         self.timer = self.create_timer(0.5, self.mavlink_callback)
 
-        # Request MANUAL_CONTROL at 100ms intervals (10 Hz)
-        self.port.mav.command_long_send(
-            self.port.target_system,
-            self.port.target_component,
+        # Request MANUAL_CONTROL messages at 10 Hz
+        self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
+        self.serial_port.mav.command_long_send(
+            self.serial_port.target_system,
+            self.serial_port.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
             0,  # confirmation
-            mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID
+            mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID = 69
             100000,  # interval in microseconds (100ms = 10Hz)
             0, 0, 0, 0, 0
+        )
+        self.logger.info(
+            f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
         )
 
     def mavlink_callback(self):
