@@ -22,6 +22,11 @@ class ModeControlNode(Node):
             "MANUAL"  # To track the last mode before entering stabilization
         )
 
+        # Debounce states for button presses
+        self.prev_arm_button_state = 0
+        self.prev_disarm_button_state = 0
+        self.prev_stabilization_button_state = 0
+
         # Publishers & Subscribers
         self.mode_publisher = self.create_publisher(
             String, "/mode_control/current_mode", 10
@@ -101,28 +106,28 @@ class ModeControlNode(Node):
         # 3. Setting Control (Requires Setting Safety Button Pressed)
         elif self.setting_safety_button_pressed(msg):
             # 3.1. Arm Command
-            if (
-                CONTROLLER_LAYOUT == "DESKTOP"
-                and axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
-            ) or (
-                CONTROLLER_LAYOUT != "DESKTOP"
-                and buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
-            ):
+            current_arm_button_state = (
+                axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
+            )
+            if current_arm_button_state and not self.prev_arm_button_state:
                 self.publish_arm_cmd(True)
+            self.prev_arm_button_state = current_arm_button_state
 
-            # 3.2.Disarm Command
-            elif (
-                CONTROLLER_LAYOUT == "DESKTOP"
-                and axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
-            ) or (
-                CONTROLLER_LAYOUT != "DESKTOP"
-                and buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
-            ):
+            # 3.2. Disarm Command
+            current_disarm_button_state = (
+                axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
+            )
+            if current_disarm_button_state and not self.prev_disarm_button_state:
                 self.publish_arm_cmd(False)
+            self.prev_disarm_button_state = current_disarm_button_state
 
             # 3.3. Stabilization Setting Toggle
-            if buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1:
-                # Toggle stabilization setting (this is just an example, you can implement the actual logic as needed)
+            current_stabilization_button_state = buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1
+            if current_stabilization_button_state and not self.prev_stabilization_button_state:
                 if self.current_mode != "manual_control":
                     self.get_logger().info(
                         "STABILIZATION Setting not available in current mode"
@@ -134,6 +139,7 @@ class ModeControlNode(Node):
                     else:
                         self.last_pixhawk_mode_before_stabilization = self.pixhawk_mode
                         self.pixhawk_mode = "STABILIZATION"
+            self.prev_stabilization_button_state = current_stabilization_button_state
 
         # 4. Only publish and log if the state has actually changed
         if self.current_mode != self.prev_mode:
