@@ -161,7 +161,7 @@ class MavlinkBridgeReceiver(Node):
         Input values: -1000 to 1000 (except heave, see below)
         """
         self._logger.info(f"Sending 4DOF command with control input: {control_input}")
-        surge, sway, heave, yaw = control_input
+        surge, sway, heave, yaw , dummy1, dummy2 = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
             int(surge),  # x: Forward/Back
