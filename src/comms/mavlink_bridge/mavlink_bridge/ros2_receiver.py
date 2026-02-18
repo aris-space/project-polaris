@@ -93,10 +93,10 @@ class MavlinkBridgeReceiver(Node):
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
         if self.pixhawk_mode == "MANUAL":
-            self.send_6dof_command(msg.data)
+            self.send_4dof_command_test(msg.data)
 
         elif self.pixhawk_mode == "ALT_HOLD":
-            self.send_4dof_command(
+            self.send_4dof_command_test(
                 msg.data
             )  # In ALT_HOLD, we typically control surge, sway, heave, and yaw, but not roll and pitch
 
@@ -168,6 +168,20 @@ class MavlinkBridgeReceiver(Node):
             int(sway),  # y: Left/Right
             int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
             int(yaw),  # r: Yaw
+            0,  # buttons bitmask
+        )
+
+    def send_4dof_command_test(self, control_input):
+        """
+        Input values: -1000 to 1000 (except heave, see below)
+        """
+        self._logger.info(f"DUMMY FUNCTION Sending 4DOF command with control input")
+        self.port.mav.manual_control_send(
+            self.port.target_system,
+            123,  # x: Forward/Back
+            123,  # y: Left/Right
+            500,  # z: Up/Down (range 0-1000, 500 is neutral)
+            123,  # r: Yaw
             0,  # buttons bitmask
         )
 
