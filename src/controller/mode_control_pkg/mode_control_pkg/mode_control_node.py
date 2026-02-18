@@ -18,6 +18,9 @@ class ModeControlNode(Node):
         self.pixhawk_mode = "MANUAL"  # To track the current mode for Pixhawk
         self.prev_mode = None  # To track changes
         self.prev_pixhawk_mode = None
+        self.last_pixhawk_mode_before_stabilization = (
+            "MANUAL"  # To track the last mode before entering stabilization
+        )
 
         # Publishers & Subscribers
         self.mode_publisher = self.create_publisher(
@@ -26,9 +29,7 @@ class ModeControlNode(Node):
         self.pixhawk_mode_publisher = self.create_publisher(
             String, "/pixhawk/mode_cmd", 10
         )
-        self.arm_cmd_publisher = self.create_publisher(
-            Bool, "/pixhawk/arm_cmd", 10
-        )
+        self.arm_cmd_publisher = self.create_publisher(Bool, "/pixhawk/arm_cmd", 10)
         self.joy_subscriber = self.create_subscription(
             Joy, "/joy", self.command_callback, 10
         )
@@ -37,9 +38,6 @@ class ModeControlNode(Node):
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
 
-    def mode_control_callback(self, msg):
-        axes = msg.axes
-        buttons = msg.buttons
 
     def command_callback(self, msg):
         buttons = msg.buttons
@@ -55,28 +53,89 @@ class ModeControlNode(Node):
 
         # 2. Mode Switching Logic (Requires Safety Button Pressed)
         elif self.mode_safety_button_pressed(msg):
-            if CONTROLLER_LAYOUT == "DESKTOP":
-                if axes[JoyControlMapping.MODE_DPAD_VERTICAL_AXIS_IDX] == 1.0:  # D-pad Up
-                    self.current_mode = "manual_control"
-                    self.pixhawk_mode = "MANUAL"
-                elif axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == -1.0:  # D-pad Left
-                    self.current_mode = "manual_depth_hold"
-                    self.pixhawk_mode = "ALT_HOLD"
-            elif CONTROLLER_LAYOUT == "JETSON":
-                if buttons[JoyControlMapping.MODE_DPAD_UP] == 1:  # D-pad Up
-                    self.current_mode = "manual_control"
-                    self.pixhawk_mode = "MANUAL"
-                elif buttons[JoyControlMapping.MODE_DPAD_LEFT] == 1:  # D-pad Left
-                    self.current_mode = "manual_depth_hold"
-                    self.pixhawk_mode = "ALT_HOLD"
-                # TODO: here add the option for stabilization mode
+            if (
+                CONTROLLER_LAYOUT == "DESKTOP"
+                and axes[JoyControlMapping.MODE_MANUAL_AXES_IDX] == 1.0
+            ) or (
+                CONTROLLER_LAYOUT != "DESKTOP"
+                and buttons[JoyControlMapping.MODE_MANUAL_BUTTON_IDX] == 1
+            ):
+                # MANUAL CONTROL MODE
+                self.current_mode = "manual_control"
+                self.pixhawk_mode = "MANUAL"
 
+            elif (
+                CONTROLLER_LAYOUT == "DESKTOP"
+                and axes[JoyControlMapping.MODE_ALT_HOLD_AXES_IDX] == 1.0
+                or (
+                    CONTROLLER_LAYOUT != "DESKTOP"
+                    and buttons[JoyControlMapping.MODE_ALT_HOLD_BUTTON_IDX] == 1
+                )
+            ):
+                #MANUAL DEPTH HOLD MODE
+                self.current_mode = "manual_depth_hold"
+                self.pixhawk_mode = "ALT_HOLD"
 
-        # 3. Arm Control
-        elif buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1:
-            self.publish_arm_cmd()
+            elif (
+                CONTROLLER_LAYOUT == "DESKTOP"
+                and axes[JoyControlMapping.MODE_SPARE_1_DPAD_AXES_IDX] == -1.0
+                or (
+                    CONTROLLER_LAYOUT != "DESKTOP"
+                    and buttons[JoyControlMapping.MODE_SPARE_1_DPAD_BUTTON_IDX] == 1
+                )
+            ):
+                # SPARE MODE 1
+                pass
 
-        # 3. Only publish and log if the state has actually changed
+            elif (
+                CONTROLLER_LAYOUT == "DESKTOP"
+                and axes[JoyControlMapping.SPARE_MODE_2_DPAD_AXES_IDX] == -1.0
+                or (
+                    CONTROLLER_LAYOUT != "DESKTOP"
+                    and buttons[JoyControlMapping.SPARE_MODE_2_DPAD_BUTTON_IDX] == 1
+                )
+            ):
+                # SPARE MODE 2
+                pass
+
+        # 3. Setting Control (Requires Setting Safety Button Pressed)
+        elif self.setting_safety_button_pressed(msg):
+            # 3.1. Arm Command
+            if (
+                CONTROLLER_LAYOUT == "DESKTOP"
+                and axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
+            ) or (
+                CONTROLLER_LAYOUT != "DESKTOP"
+                and buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
+            ):
+                self.publish_arm_cmd(True)
+
+            # 3.2.Disarm Command
+            elif (
+                CONTROLLER_LAYOUT == "DESKTOP"
+                and axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
+            ) or (
+                CONTROLLER_LAYOUT != "DESKTOP"
+                and buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
+            ):
+                self.publish_arm_cmd(False)
+
+            # 3.3. Stabilization Setting Toggle
+            if buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1:
+                # Toggle stabilization setting (this is just an example, you can implement the actual logic as needed)
+                if self.current_mode != "manual_control":
+                    self.get_logger().info(
+                        "STABILIZATION Setting not available in current mode"
+                    )
+                else:
+                    self.get_logger().info("Toggling Stabilization Setting")
+                    if self.pixhawk_mode == "STABILIZATION":
+                        self.pixhawk_mode = self.last_pixhawk_mode_before_stabilization
+                    else:
+                        self.last_pixhawk_mode_before_stabilization = self.pixhawk_mode
+                        self.pixhawk_mode = "STABILIZATION"
+
+        # 4. Only publish and log if the state has actually changed
         if self.current_mode != self.prev_mode:
             self.publish_mode()
             self.prev_mode = self.current_mode
@@ -99,18 +158,20 @@ class ModeControlNode(Node):
         pixhawk_mode_msg.data = self.pixhawk_mode
         self.pixhawk_mode_publisher.publish(pixhawk_mode_msg)
 
-    def publish_arm_cmd(self):
+    def publish_arm_cmd(self, arm_bool):
         arm_cmd_msg = Bool()
-        arm_cmd_msg.data = True
+        arm_cmd_msg.data = arm_bool
         self.arm_cmd_publisher.publish(arm_cmd_msg)
 
     def mode_safety_button_pressed(self, msg):
         # This function should check the state of the safety button
         # For now, we will just return True to allow mode switching
         buttons = msg.buttons
-        return (
-            buttons[JoyControlMapping.MODE_SAFETY_BUTTON_IDX] == 1
-        )  
+        return buttons[JoyControlMapping.MODE_SAFETY_BUTTON_IDX] == 1
+
+    def setting_safety_button_pressed(self, msg):
+        buttons = msg.buttons
+        return buttons[JoyControlMapping.SETTING_SAFETY_BUTTON_IDX] == 1
 
 
 """--------------------------------------------- main function ---------------------------------------------"""
