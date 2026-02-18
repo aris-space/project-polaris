@@ -124,7 +124,6 @@ class MavlinkBridgeReceiver(Node):
         # Wait for acknowledgment
         ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
         print(f"Arming status: {ack.result}")  # 0 = Success
-        #self.arm_disarm(msg.data)
 
     def mode_selection_cb(self, msg):
         """
@@ -154,6 +153,16 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
 
+        elif msg.data == "STABILIZATION":
+            mode_id = 0
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
+            self.get_logger().info("Sent STABILIZATION mode command")
+
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     def send_4dof_command(self, control_input):
@@ -161,7 +170,7 @@ class MavlinkBridgeReceiver(Node):
         Input values: -1000 to 1000 (except heave, see below)
         """
         self._logger.info(f"Sending 4DOF command with control input: {control_input}")
-        surge, sway, heave, yaw, dummy1, dummy2 = control_input
+        surge, sway, heave, yaw = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
             int(surge),  # x: Forward/Back
