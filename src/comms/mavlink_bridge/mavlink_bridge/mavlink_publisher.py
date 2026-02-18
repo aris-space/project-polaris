@@ -123,8 +123,16 @@ class MavlinkBridgeSender(Node):
         # Process ALL available messages in the buffer (not just one)
         while True:
             msg = self.port.recv_match(blocking=False)
+            msg_serial = self.serial_port.recv_match(blocking=False)
             if msg is None:
                 break  # No more messages in buffer
+
+            if msg_serial is not None:
+                self.logger.info(f"Received from serial: {msg_serial.get_type()}")
+                if msg_serial.get_type() == "MANUAL_CONTROL":
+                    self.handle_manual_control(msg_serial)
+                # We can choose to process serial messages differently if needed
+                # For now, we will just log them and not publish to ROS2
 
             if msg is not None:
                 self.logger.info(f"Received: {msg.get_type()}")
@@ -139,8 +147,8 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
-                elif msg.get_type() == "MANUAL_CONTROL":
-                    self.handle_manual_control(msg)
+
+        
 
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
@@ -229,6 +237,7 @@ class MavlinkBridgeSender(Node):
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
         # This is a placeholder for handling manual control messages if needed
+        self.logger.info("manual control callback triggered")
         ros_msg = Int16MultiArray()
         ros_msg.data = [msg.x, msg.y, msg.z, msg.r, msg.buttons, msg.s, msg.t]
         self.manual_control_publisher.publish(ros_msg)
