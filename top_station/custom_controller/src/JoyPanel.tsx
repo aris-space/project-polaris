@@ -7,17 +7,17 @@ import {
   SettingsTreeAction,
 } from "@foxglove/studio";
 import { FormGroup, FormControlLabel, Switch } from "@mui/material";
-import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback } from "react";
 import ReactDOM from "react-dom";
+import { createRoot } from "react-dom/client";
 
 // import { GamepadDebug } from "./components/GamepadDebug";
 import { GamepadView } from "./components/GamepadView";
 import { SimpleButtonView } from "./components/SimpleButtonView";
-import kbmapping1 from "./components/kbmapping1.json";
-import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
 import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.json";
+import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
+import kbmapping1 from "./components/kbmapping1.json";
 import { useGamepad } from "./hooks/useGamepad";
-import { useSharedKeyboard } from "./hooks/useSharedKeyboard";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
 
@@ -39,8 +39,8 @@ type RawKbMap = {
 
 const keyboardMappings: Record<string, Record<string, RawKbMap>> = {
   default: kbmapping1,
-  "keyboard_movement": kbmappingKeyboardMovement,
-  "keyboard_buttons": kbmappingKeyboardButtons,
+  keyboard_movement: kbmappingKeyboardMovement,
+  keyboard_buttons: kbmappingKeyboardButtons,
 };
 
 function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
@@ -50,7 +50,7 @@ function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
     const k: KbMap = {
       button: value.button,
       axis: value.axis,
-      direction: value.direction === "+" ? 1 : (value.direction === "-" ? -1 : 0),
+      direction: value.direction === "+" ? 1 : value.direction === "-" ? -1 : 0,
       value: 0,
       toggle: value.toggle ?? false,
       toggled: false,
@@ -168,11 +168,13 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
   useGamepad({
     didConnect: useCallback((gp: Gamepad) => {
+      // eslint-disable-next-line no-warning-comments
       // TODO update the gamepad ID list
       console.log("Gamepad " + gp.index + " connected!");
     }, []),
 
     didDisconnect: useCallback((gp: Gamepad) => {
+      // eslint-disable-next-line no-warning-comments
       // TODO update the gamepad ID list
       console.log("Gamepad " + gp.index + " discconnected!");
     }, []),
@@ -190,7 +192,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         const tmpJoy = {
           header: {
             frame_id: config.publishFrameId,
-            stamp: fromDate(new Date()), // TODO: /clock
+            // eslint-disable-next-line no-warning-comments
+            // TODO: /clock
+            stamp: fromDate(new Date()),
           },
           axes: gp.axes.map((axis) => -axis),
           buttons: gp.buttons.map((button) => button.value),
@@ -202,10 +206,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     ),
   });
 
-
-
   // Keyboard mode
-
   const normalizeKey = useCallback((event: KeyboardEvent): string => {
     const { code, key } = event;
     if (code.startsWith("Key")) {
@@ -220,46 +221,52 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     return key;
   }, []);
 
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    const normalizedKey = normalizeKey(event);
-    setTrackedKeys((oldTrackedKeys) => {
-      if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
-        const newKeys = new Map(oldTrackedKeys);
-        const k = newKeys.get(normalizedKey);
-        if (k) {
-          if (k.toggle) {
-            // Toggle mode - switch toggled state
-            k.toggled = !k.toggled;
-            k.value = k.toggled ? 1 : 0;
-          } else {
-            // Regular mode - just set value
-            k.value = 1;
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      const normalizedKey = normalizeKey(event);
+      setTrackedKeys((oldTrackedKeys) => {
+        if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
+          const newKeys = new Map(oldTrackedKeys);
+          const k = newKeys.get(normalizedKey);
+          if (k) {
+            if (k.toggle) {
+              // Toggle mode - switch toggled state
+              k.toggled = !k.toggled;
+              k.value = k.toggled ? 1 : 0;
+            } else {
+              // Regular mode - just set value
+              k.value = 1;
+            }
           }
+          return newKeys;
         }
-        return newKeys;
-      }
-      return oldTrackedKeys;
-    });
-  }, [normalizeKey]);
+        return oldTrackedKeys;
+      });
+    },
+    [normalizeKey],
+  );
 
-  const handleKeyUp = useCallback((event: KeyboardEvent) => {
-    const normalizedKey = normalizeKey(event);
-    setTrackedKeys((oldTrackedKeys) => {
-      if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
-        const newKeys = new Map(oldTrackedKeys);
-        const k = newKeys.get(normalizedKey);
-        if (k) {
-          if (!k.toggle) {
-            // Only set value to 0 for non-toggle keys
-            k.value = 0;
+  const handleKeyUp = useCallback(
+    (event: KeyboardEvent) => {
+      const normalizedKey = normalizeKey(event);
+      setTrackedKeys((oldTrackedKeys) => {
+        if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
+          const newKeys = new Map(oldTrackedKeys);
+          const k = newKeys.get(normalizedKey);
+          if (k) {
+            if (!k.toggle) {
+              // Only set value to 0 for non-toggle keys
+              k.value = 0;
+            }
+            // For toggle keys, value stays as is (toggled or not)
           }
-          // For toggle keys, value stays as is (toggled or not)
+          return newKeys;
         }
-        return newKeys;
-      }
-      return oldTrackedKeys;
-    });
-  }, [normalizeKey]);
+        return oldTrackedKeys;
+      });
+    },
+    [normalizeKey],
+  );
 
   // Key down Listener
   useEffect(() => {
@@ -315,14 +322,17 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
     // Only update if values actually changed
     setJoy((prevJoy) => {
-      const axesChanged = !prevJoy || axes.some((val, idx) => val !== (prevJoy?.axes?.[idx] ?? 0));
-      const buttonsChanged = !prevJoy || buttons.some((val, idx) => val !== (prevJoy?.buttons?.[idx] ?? 0));
-      
+      const axesChanged = !prevJoy || axes.some((val, idx) => val !== (prevJoy.axes[idx] ?? 0));
+      const buttonsChanged =
+        !prevJoy || buttons.some((val, idx) => val !== (prevJoy.buttons[idx] ?? 0));
+
       if (axesChanged || buttonsChanged) {
         return {
           header: {
             frame_id: config.publishFrameId,
-            stamp: fromDate(new Date()), // TODO: /clock
+            // eslint-disable-next-line no-warning-comments
+            // TODO: /clock
+            stamp: fromDate(new Date()),
           },
           axes,
           buttons,
@@ -371,6 +381,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   const handleKbSwitch = (event: React.ChangeEvent<HTMLInputElement>) => {
     setKbEnabled(event.target.checked);
 
+    // eslint-disable-next-line no-warning-comments
     // TODO Clear key values when disabled
     // setTrackedKeys((oldTrackedKeys) => {
     //   const newKeys = new Map(oldTrackedKeys);
@@ -392,7 +403,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       const tmpJoy = {
         header: {
           frame_id: config.publishFrameId,
-          stamp: fromDate(new Date()), // TODO: /clock
+          // eslint-disable-next-line no-warning-comments
+          // TODO: /clock
+          stamp: fromDate(new Date()),
         },
         axes: interactiveJoy.axes,
         buttons: interactiveJoy.buttons,
@@ -417,10 +430,10 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
               config.keyboardMapping === "default"
                 ? "Default"
                 : config.keyboardMapping === "keyboard_movement"
-                ? "Keyboard Movement"
-                : config.keyboardMapping === "keyboard_buttons"
-                ? "Keyboard Buttons"
-                : config.keyboardMapping
+                  ? "Keyboard Movement"
+                  : config.keyboardMapping === "keyboard_buttons"
+                    ? "Keyboard Buttons"
+                    : config.keyboardMapping
             }`}
           />
         </FormGroup>
@@ -440,10 +453,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 }
 
 export function initJoyPanel(context: PanelExtensionContext): () => void {
-  ReactDOM.render(<JoyPanel context={context} />, context.panelElement);
+  const root = createRoot(context.panelElement);
+  root.render(<JoyPanel context={context} />);
 
   // Return a function to run when the panel is removed
   return () => {
-    ReactDOM.unmountComponentAtNode(context.panelElement);
+    root.unmount();
   };
 }

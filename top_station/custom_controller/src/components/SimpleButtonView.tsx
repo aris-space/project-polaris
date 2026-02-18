@@ -1,13 +1,18 @@
 import { Button, LinearProgress } from "@mui/material";
+import { Joy } from "../types";
 
+// eslint-disable-next-line no-warning-comments
 // TODO copy theming from another extension
 
-export function SimpleButtonView(props: any) {
+interface SimpleButtonViewProps {
+  joy?: Joy;
+}
 
-
-  const buttons = props.joy
-    ? props.joy.buttons.map((item: number, index: number) => (
+export function SimpleButtonView({ joy }: SimpleButtonViewProps): JSX.Element {
+  const buttons = joy
+    ? joy.buttons.map((item, index) => (
         <Button
+          key={`btn-${index}`}
           variant={item > 0 ? "contained" : "outlined"}
           size="large"
           color={item > 0 ? "error" : "primary"}
@@ -17,10 +22,10 @@ export function SimpleButtonView(props: any) {
       ))
     : [];
 
-  const axes = props.joy
-    ? props.joy.axes.map((item: number, index: number) => (
+  const axes = joy
+    ? joy.axes.map((item, index) => (
         <LinearProgress
-          key={index}
+          key={`axis-${index}`}
           variant="determinate"
           value={item * 50 + 50}
           sx={{ transition: "none" }}
@@ -30,10 +35,10 @@ export function SimpleButtonView(props: any) {
 
   return (
     <div>
-      {props.joy ? null : "Waiting for first data..."}
+      {joy ? null : "Waiting for first data..."}
       {buttons}
       {axes}
-      {/* {JSON.stringify(props.joy)} */}
+      {/* {JSON.stringify(joy)} */}
     </div>
   );
 }

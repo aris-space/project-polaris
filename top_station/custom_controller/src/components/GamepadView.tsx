@@ -70,9 +70,10 @@ function generateBar(value: number, x: number, y: number, rot: number, text?: st
   const height = 10;
   // Handle button values (0 to 1) as triggers - fill left to right
   // Handle axis values (-1 to 1) as bidirectional - fill from center
-  const fracwidth = value >= 0 && value <= 1 
-    ? value * width  // Trigger: 0=empty, 1=full
-    : ((-value + 1) * width) / 2;  // Axis: -1=full, 0=half, 1=empty
+  const fracwidth =
+    value >= 0 && value <= 1
+      ? value * width // Trigger: 0=empty, 1=full
+      : ((-value + 1) * width) / 2; // Axis: -1=full, 0=half, 1=empty
 
   const transform =
     "translate(" + x.toString() + "," + y.toString() + ") rotate(" + rot.toString() + ")";
@@ -256,19 +257,19 @@ export function GamepadView(props: {
   useEffect(() => {
     const elements = document.getElementsByClassName("preventPan");
 
-    Array.prototype.forEach.call(elements, (el) => {
-      el.addEventListener("touchstart", preventPan, { passive: false });
-      el.addEventListener("touchend", preventPan, { passive: false });
-      el.addEventListener("touchmove", preventPan, { passive: false });
-      el.addEventListener("touchcancel", preventPan, { passive: false });
+    Array.prototype.forEach.call(elements, (el: Element) => {
+      (el as EventTarget).addEventListener("touchstart", preventPan, { passive: false });
+      (el as EventTarget).addEventListener("touchend", preventPan, { passive: false });
+      (el as EventTarget).addEventListener("touchmove", preventPan, { passive: false });
+      (el as EventTarget).addEventListener("touchcancel", preventPan, { passive: false });
     });
 
     return () => {
-      Array.prototype.forEach.call(elements, (el) => {
-        el.removeEventListener("touchstart", preventPan);
-        el.removeEventListener("touchend", preventPan);
-        el.removeEventListener("touchmove", preventPan);
-        el.removeEventListener("touchcancel", preventPan);
+      Array.prototype.forEach.call(elements, (el: Element) => {
+        (el as EventTarget).removeEventListener("touchstart", preventPan);
+        (el as EventTarget).removeEventListener("touchend", preventPan);
+        (el as EventTarget).removeEventListener("touchmove", preventPan);
+        (el as EventTarget).removeEventListener("touchcancel", preventPan);
       });
     };
   }, [preventPan]);
@@ -424,7 +425,7 @@ export function GamepadView(props: {
       const y = mapping.y;
       const radius = 12;
       const buttonVal = joy?.buttons[index] ?? 0;
-      
+
       // Only highlight if button is in the current keyboard mapping, or if no keyboard mapping is active
       const shouldHighlight = mappedButtons.size === 0 || mappedButtons.has(index);
       const displayValue = shouldHighlight ? buttonVal : 0;
@@ -453,9 +454,8 @@ export function GamepadView(props: {
       const rot = mapping.rot;
       const text = mapping.text;
       // Read from button if button is specified and axis is -1, otherwise from axis
-      const axVal = (axis === -1 && button !== undefined) 
-        ? (joy?.buttons[button] ?? 0)
-        : (joy?.axes[axis] ?? 0);
+      const axVal =
+        axis === -1 && button !== undefined ? joy?.buttons[button] ?? 0 : joy?.axes[axis] ?? 0;
       dispItems.push(generateBar(axVal, x, y, rot, text));
     } else if (mappingA.type === "stick") {
       const mapping = mappingA as StickConfig;
