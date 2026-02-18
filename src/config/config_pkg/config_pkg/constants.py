@@ -6,7 +6,7 @@ Change ENVIRONMENT to the appropriate value based on the testing environment:
 """
 
 ENVIRONMENT = "POOL"  # Options: "POOL", "OPEN_WATER", "ICE_LAKE"
-CONTROLLER_LAYOUT = "FOXGLOVE"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
+CONTROLLER_LAYOUT = "JETSON"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
 
 
 """
