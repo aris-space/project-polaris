@@ -92,13 +92,17 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        if self.pixhawk_mode == "MANUAL":
+        if self.pixhawk_mode == "MANUAL" or self.pixhawk_mode == "STABILIZATION":
             self.send_6dof_command(msg.data)
 
         elif self.pixhawk_mode == "ALT_HOLD":
             self.send_4dof_command(
                 msg.data
             )  # In ALT_HOLD, we typically control surge, sway, heave, and yaw, but not roll and pitch
+        else:
+            self.get_logger().warn(
+                f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)"
+            )
 
         # self.send_4dof_command(msg.data)
 
