@@ -213,16 +213,12 @@ class MavlinkBridgeSender(Node):
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
         # This is a placeholder for handling manual control messages if needed
-        self.logger.info(f"Received Manual Control from MAVLink Message (69): {msg}")
-        ros_msg = ManualControl()
-        ros_msg.x = msg.x
-        ros_msg.y = msg.y
-        ros_msg.z = msg.z
-        ros_msg.r = msg.r
-        ros_msg.buttons = msg.buttons
-        ros_msg.s = msg.s
-        ros_msg.t = msg.t
+        ros_msg = Int16MultiArray()
+        ros_msg.data = [msg.x, msg.y, msg.z, msg.r, msg.buttons, msg.s, msg.t]
         self.manual_control_publisher.publish(ros_msg)
+        self.logger.info(
+            f"Published Manual Control: x={msg.x}, y={msg.y}, z={msg.z}, r={msg.r}, s={msg.s}, t={msg.t}"
+        ) 
 
 
 def main(args=None):
