@@ -93,7 +93,7 @@ class MavlinkBridgeReceiver(Node):
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
         if self.pixhawk_mode == "MANUAL":
-            self.send_4dof_command(msg.data)
+            self.send_6dof_command(msg.data)
 
         elif self.pixhawk_mode == "ALT_HOLD":
             self.send_4dof_command(
@@ -161,7 +161,7 @@ class MavlinkBridgeReceiver(Node):
         Input values: -1000 to 1000 (except heave, see below)
         """
         self._logger.info(f"Sending 4DOF command with control input: {control_input}")
-        surge, sway, heave, yaw , dummy1, dummy2 = control_input
+        surge, sway, heave, yaw, dummy1, dummy2 = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
             int(surge),  # x: Forward/Back
@@ -201,9 +201,9 @@ class MavlinkBridgeReceiver(Node):
             int(yaw),  # r
             0,  # buttons
             0,  # buttons 2
-            192,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
-            int(roll),  # s (Extension 1)
-            int(pitch),  # t (Extension 2)
+            3,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
+            int(pitch),  # s (Extension 1)
+            int(roll),  # t (Extension 2)
         )
 
     """--------------------------------------------- main function ---------------------------------------------"""
