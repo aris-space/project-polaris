@@ -455,7 +455,7 @@ export function GamepadView(props: {
       const text = mapping.text;
       // Read from button if button is specified and axis is -1, otherwise from axis
       const axVal =
-        axis === -1 && button !== undefined ? joy?.buttons[button] ?? 0 : joy?.axes[axis] ?? 0;
+        axis === -1 && button != undefined ? joy?.buttons[button] ?? 0 : joy?.axes[axis] ?? 0;
       dispItems.push(generateBar(axVal, x, y, rot, text));
     } else if (mappingA.type === "stick") {
       const mapping = mappingA as StickConfig;
@@ -497,16 +497,16 @@ export function GamepadView(props: {
       if (kbMapping) {
         const axisXMapping = mappedAxes.get(axisX);
         const axisYMapping = mappedAxes.get(axisY);
-        if (!axisXMapping?.pos && axXVal > 0) {
+        if (axisXMapping != null && !axisXMapping.pos && axXVal > 0) {
           axXVal = 0;
         }
-        if (!axisXMapping?.neg && axXVal < 0) {
+        if (axisXMapping != null && !axisXMapping.neg && axXVal < 0) {
           axXVal = 0;
         }
-        if (!axisYMapping?.pos && axYVal > 0) {
+        if (axisYMapping != null && !axisYMapping.pos && axYVal > 0) {
           axYVal = 0;
         }
-        if (!axisYMapping?.neg && axYVal < 0) {
+        if (axisYMapping != null && !axisYMapping.neg && axYVal < 0) {
           axYVal = 0;
         }
       }

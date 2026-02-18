@@ -8,7 +8,6 @@ import {
 } from "@foxglove/studio";
 import { FormGroup, FormControlLabel, Switch } from "@mui/material";
 import { useEffect, useLayoutEffect, useState, useCallback } from "react";
-import ReactDOM from "react-dom";
 import { createRoot } from "react-dom/client";
 
 // import { GamepadDebug } from "./components/GamepadDebug";
