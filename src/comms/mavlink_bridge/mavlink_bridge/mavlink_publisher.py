@@ -97,7 +97,7 @@ class MavlinkBridgeSender(Node):
         )
 
         self.manual_control_publisher = self.create_publisher(
-            ManualControl, "/pixhawk/out/manual_control", 10
+            Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
         self.timer = self.create_timer(0.5, self.mavlink_callback)
