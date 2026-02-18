@@ -56,17 +56,17 @@ class ModeControlNode(Node):
         # 2. Mode Switching Logic (Requires Safety Button Pressed)
         elif self.mode_safety_button_pressed(msg):
             if CONTROLLER_LAYOUT == "DESKTOP":
-                if axes[JoyControlMapping.MODE_DPAD_UP_AXIS_IDX] == 1.0:  # D-pad Up
+                if axes[JoyControlMapping.MODE_DPAD_VERTICAL_AXIS_IDX] == 1.0:  # D-pad Up
                     self.current_mode = "manual_control"
                     self.pixhawk_mode = "MANUAL"
-                elif axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == 1.0:  # D-pad Left
+                elif axes[JoyControlMapping.MODE_DPAD_HORIZONTAL_AXIS_IDX] == -1.0:  # D-pad Left
                     self.current_mode = "manual_depth_hold"
                     self.pixhawk_mode = "ALT_HOLD"
             elif CONTROLLER_LAYOUT == "JETSON":
-                if buttons[JoyControlMapping.DPAD_UP] == 1:  # D-pad Up
+                if buttons[JoyControlMapping.MODE_DPAD_UP] == 1:  # D-pad Up
                     self.current_mode = "manual_control"
                     self.pixhawk_mode = "MANUAL"
-                elif buttons[JoyControlMapping.DPAD_LEFT] == 1:  # D-pad Left
+                elif buttons[JoyControlMapping.MODE_DPAD_LEFT] == 1:  # D-pad Left
                     self.current_mode = "manual_depth_hold"
                     self.pixhawk_mode = "ALT_HOLD"
                 # TODO: here add the option for stabilization mode
