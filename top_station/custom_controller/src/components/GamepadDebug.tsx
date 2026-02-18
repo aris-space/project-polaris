@@ -1,15 +1,20 @@
-export function GamepadDebug(props: any) {
-  const gamepadDisplay = Object.keys(props.gamepads).map((gamepadId) => {
+interface GamepadDebugProps {
+  gamepads: Record<string, Gamepad>;
+}
+
+export function GamepadDebug({ gamepads }: GamepadDebugProps): JSX.Element {
+  const gamepadDisplay = Object.keys(gamepads).map((gamepadId) => {
+    const gamepad = gamepads[gamepadId];
     return (
-      <div>
-        <h2>{props.gamepads[gamepadId].id}</h2>
-        {props.gamepads[gamepadId].buttons?.map((button: any, index: any) => (
-          <div>
+      <div key={gamepadId}>
+        <h2>{gamepad.id}</h2>
+        {gamepad.buttons?.map((button, index) => (
+          <div key={`btn-${index}`}>
             {index}: {button.pressed ? "True" : "False"}
           </div>
         ))}
-        {props.gamepads[gamepadId].axes?.map((axis: any, index: any) => (
-          <div>
+        {gamepad.axes?.map((axis, index) => (
+          <div key={`axis-${index}`}>
             {index}: {axis}
           </div>
         ))}
