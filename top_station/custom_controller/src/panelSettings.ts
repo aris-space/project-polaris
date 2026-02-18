@@ -129,7 +129,9 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Publish Mode",
       input: "boolean",
       value: config.publishMode,
-      disabled: config.dataSource === "sub-joy-topic", // TODO also need to force publish mode to false when in sub mode
+      // eslint-disable-next-line no-warning-comments
+      // TODO also need to force publish mode to false when in sub mode
+      disabled: config.dataSource === "sub-joy-topic",
     },
     pubJoyTopic: {
       label: "Pub Joy Topic",

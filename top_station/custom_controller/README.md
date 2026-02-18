@@ -83,4 +83,12 @@ Currently consist of a `.json` to determine button locations and an entry in `Ga
 
 ## Contributions
 
-Thanks to [rgov](https://github.com/rgov) for creating [this repo](https://github.com/ARMADAMarineRobotics/studio-extension-gamepad) which I originally worked on this project from before rewriting it mostly from scratch (but have retained [useGamepads.ts](src/hooks/useGamepad.ts)).
+Originally created by [Josh Newans](https://github.com/joshnewans). Thanks to [rgov](https://github.com/rgov) for creating [this repo](https://github.com/ARMADAMarineRobotics/studio-extension-gamepad) which the original project was based on before being mostly rewritten (but retaining [useGamepad.ts](src/hooks/useGamepad.ts)).
+
+### POLARIS Updates
+
+This extension has been updated by the POLARIS team to:
+- Migrate to React 18+ APIs (ReactDOM.createRoot)
+- Improve TypeScript type safety and strict mode compliance
+- Fix linting errors and code quality issues
+- Enhance null/undefined handling for better runtime safety
