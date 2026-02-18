@@ -11,24 +11,65 @@
         "axis": -1,
         "direction": "+"
     },
+
+    "3": {
+        "button": 13,
+        "toggle": false,
+        "axis": -1,
+        "direction": "-"
+    },
+    "4": {
+        "button": 15,
+        "toggle": false,
+        "axis": -1,
+        "direction": "+"
+    },
     
     
-    " ": {
+    "Space": {
         "button": 17,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
     
-    "Control": {
-        "button": 2,
+    "ü": {
+        "button": 3,
         "toggle": false,
         "axis": 1,
         "direction": null
     },
 
-    "Shift": {
+    "ö": {
+        "button": 2,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+
+
+    "-": {
         "button": 0,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+
+    "ä": {
+        "button": 1,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+
+    "§": {
+        "button": 8,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+    "'": {
+        "button": 9,
         "toggle": false,
         "axis": -1,
         "direction": null

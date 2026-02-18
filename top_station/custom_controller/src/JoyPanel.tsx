@@ -17,6 +17,7 @@ import kbmapping1 from "./components/kbmapping1.json";
 import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
 import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.json";
 import { useGamepad } from "./hooks/useGamepad";
+import { useSharedKeyboard } from "./hooks/useSharedKeyboard";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
 
@@ -214,7 +215,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       return code.slice(5);
     }
     if (code === "Space") {
-      return " ";
+      return "Space";
     }
     return key;
   }, []);
