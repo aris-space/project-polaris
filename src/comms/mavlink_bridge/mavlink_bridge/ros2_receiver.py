@@ -124,7 +124,7 @@ class MavlinkBridgeReceiver(Node):
         # Wait for acknowledgment
         ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
         print(f"Arming status: {ack.result}")  # 0 = Success
-        self.arm_disarm(msg.data)
+        #self.arm_disarm(msg.data)
 
     def mode_selection_cb(self, msg):
         """

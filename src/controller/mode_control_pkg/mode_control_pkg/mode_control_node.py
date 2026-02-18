@@ -89,10 +89,10 @@ class ModeControlNode(Node):
 
             elif (
                 CONTROLLER_LAYOUT == "DESKTOP"
-                and axes[JoyControlMapping.SPARE_MODE_2_DPAD_AXES_IDX] == -1.0
+                and axes[JoyControlMapping.MODE_SPARE_2_DPAD_AXES_IDX] == -1.0
                 or (
                     CONTROLLER_LAYOUT != "DESKTOP"
-                    and buttons[JoyControlMapping.SPARE_MODE_2_DPAD_BUTTON_IDX] == 1
+                    and buttons[JoyControlMapping.MODE_SPARE_2_DPAD_BUTTON_IDX] == 1
                 )
             ):
                 # SPARE MODE 2
