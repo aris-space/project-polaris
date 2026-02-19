@@ -127,11 +127,11 @@ class ManualControlNode(Node):
         yaw = joy_msg.axes[self.yaw_axis]
         pitch = joy_msg.axes[self.pitch_axis]
 
-        # Triggers: commonly +1 unpressed, -1 pressed -> normalize to [0,1]
+        # Triggers: -1 unpressed, +1 pressed -> normalize to [0,1]
         l2_raw = joy_msg.axes[self.l2_axis]
         r2_raw = joy_msg.axes[self.r2_axis]
-        l2 = (1.0 - l2_raw) * 0.5  # [0..1]
-        r2 = (1.0 - r2_raw) * 0.5  # [0..1]
+        l2 = (l2_raw + 1.0) * 0.5  # [0..1]
+        r2 = (r2_raw + 1.0) * 0.5  # [0..1]
 
         # net vertical: + up, - down
         heave_net = r2 - l2  # [-1..1]
