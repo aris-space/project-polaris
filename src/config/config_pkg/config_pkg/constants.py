@@ -23,6 +23,10 @@ class SubConfig:
     LEAK_THRESHOLD = 500  # Analog value
 
 
+class Logs:
+    LOG_DIR = "~/polaris_logs"  # Directory to save logs
+
+
 class JoyPS4:
     if CONTROLLER_LAYOUT == "DESKTOP":
         # General Button Mapping (0-indexed)
@@ -115,18 +119,15 @@ class JoyControlMapping:
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
-
-
-
     if CONTROLLER_LAYOUT == "DESKTOP":
         # DESKTOP Mode Axis Mapping (Requires Safety Button Pressed)
-        MODE_MANUAL_AXES_IDX = JoyPS4.DPAD_VERTICAL_AXIS 
-        MODE_ALT_HOLD_AXES_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS  
-        MODE_SPARE_1_DPAD_AXES_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS  
-        MODE_SPARE_2_DPAD_AXES_IDX = JoyPS4.DPAD_VERTICAL_AXIS  
-        SETTING_ARM_DISARM_AXIS_IDX = JoyPS4.DPAD_VERTICAL_AXIS  
-        SETTING_STABILIZATION_AXIS_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS  
-    
+        MODE_MANUAL_AXES_IDX = JoyPS4.DPAD_VERTICAL_AXIS
+        MODE_ALT_HOLD_AXES_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS
+        MODE_SPARE_1_DPAD_AXES_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS
+        MODE_SPARE_2_DPAD_AXES_IDX = JoyPS4.DPAD_VERTICAL_AXIS
+        SETTING_ARM_DISARM_AXIS_IDX = JoyPS4.DPAD_VERTICAL_AXIS
+        SETTING_STABILIZATION_AXIS_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS
+
     else:
         # JETSON & FOXGLOVE Mode Button Mapping (Requires Safety Button Pressed)
         MODE_MANUAL_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Up
@@ -136,7 +137,6 @@ class JoyControlMapping:
         SETTING_ARM_BUTTON_IDX = JoyPS4.DPAD_UP  # Options Button
         SETTING_DISARM_BUTTON_IDX = JoyPS4.DPAD_DOWN  # Share Button
         SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Right
-
 
     LINEAR_SPEED_X_AXIS_IDX = JoyPS4.LEFT_STICK_X_AXIS  # Left Stick X-Axis
     LINEAR_SPEED_Y_AXIS_IDX = JoyPS4.LEFT_STICK_Y_AXIS  # Left Stick Y-Axis
