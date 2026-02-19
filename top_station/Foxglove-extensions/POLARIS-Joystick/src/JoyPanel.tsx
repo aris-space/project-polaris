@@ -13,10 +13,12 @@ import { createRoot } from "react-dom/client";
 // import { GamepadDebug } from "./components/GamepadDebug";
 import { GamepadView } from "./components/GamepadView";
 import { SimpleButtonView } from "./components/SimpleButtonView";
+import { JoyDataDisplay } from "./components/JoyDataDisplay";
 import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.json";
 import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
 import kbmapping1 from "./components/kbmapping1.json";
 import { useGamepad } from "./hooks/useGamepad";
+import { gamepadToRosJoy } from "./utils/gamepadToRosJoy";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
 
@@ -188,6 +190,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           return;
         }
 
+        // Convert Gamepad API to ROS /joy format using the mapping
+        const { buttons, axes } = gamepadToRosJoy(gp);
+
         const tmpJoy = {
           header: {
             frame_id: config.publishFrameId,
@@ -195,8 +200,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             // TODO: /clock
             stamp: fromDate(new Date()),
           },
-          axes: gp.axes.map((axis) => -axis),
-          buttons: gp.buttons.map((button) => button.value),
+          axes,
+          buttons,
         } as Joy;
 
         setJoy(tmpJoy);
@@ -446,6 +451,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
         />
       ) : null}
+      <JoyDataDisplay joy={joy} />
       {/* {config.debugGamepad ? <GamepadDebug gamepads={gamepads} /> : null} */}
     </div>
   );
