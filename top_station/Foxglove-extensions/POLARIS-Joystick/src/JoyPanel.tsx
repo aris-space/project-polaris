@@ -84,7 +84,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.dataSource ??= "sub-joy-topic";
     partialConfig.displayMode ??= "auto";
     partialConfig.debugGamepad ??= false;
-    partialConfig.layoutName ??= "steamdeck";
+    partialConfig.layoutName ??= "ps4";
     partialConfig.mapping_name ??= "TODO";
     partialConfig.keyboardMapping ??= "default";
     partialConfig.gamepadId ??= 0;
@@ -443,7 +443,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         </FormGroup>
       ) : null}
       {config.displayMode === "auto" ? <SimpleButtonView joy={joy} /> : null}
-      {config.displayMode === "custom" ? (
+      {config.displayMode === "custom" && config.layoutName !== "rawjoy" ? (
         <GamepadView
           joy={joy}
           cbInteractChange={interactiveCb}
@@ -451,7 +451,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
         />
       ) : null}
-      <JoyDataDisplay joy={joy} />
+      {config.displayMode === "custom" || config.layoutName === "rawjoy" ? <JoyDataDisplay joy={joy} /> : null}
       {/* {config.debugGamepad ? <GamepadDebug gamepads={gamepads} /> : null} */}
     </div>
   );

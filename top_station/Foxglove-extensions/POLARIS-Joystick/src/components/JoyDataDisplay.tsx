@@ -34,51 +34,67 @@ const buttonNames: Record<number, string> = {
 
 export function JoyDataDisplay({ joy }: JoyDataDisplayProps): JSX.Element {
   if (!joy) {
-    return <div style={{ padding: "10px", color: "#999" }}>No joy data</div>;
+    return <div style={{ padding: "16px", color: "#999" }}>No joy data</div>;
   }
 
   return (
-    <div style={{ padding: "10px", fontFamily: "monospace", fontSize: "12px" }}>
-      <h3 style={{ marginTop: "20px", marginBottom: "10px" }}>Raw Joy Data</h3>
+    <div style={{ padding: "16px", fontFamily: "monospace", fontSize: "12px", maxWidth: "1200px" }}>
+      <h3 style={{ margin: "0 0 16px 0", fontSize: "16px", fontWeight: "600" }}>Raw Joy Data</h3>
       
-      <div style={{ marginBottom: "20px" }}>
-        <h4 style={{ marginBottom: "8px" }}>Buttons ({joy.buttons.length})</h4>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: "4px" }}>
+      <div style={{ marginBottom: "24px" }}>
+        <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", fontWeight: "500", color: "#bbb" }}>
+          Buttons <span style={{ color: "#666" }}>({joy.buttons.length})</span>
+        </h4>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(80px, 1fr))", gap: "8px" }}>
           {joy.buttons.map((value, idx) => (
             <div
               key={idx}
               style={{
-                padding: "6px",
-                border: "1px solid #666",
-                backgroundColor: value === 1 ? "#4a4" : "#333",
+                padding: "10px 8px",
+                border: "1px solid #555",
+                backgroundColor: value === 1 ? "#4a4" : "#2a2a2a",
                 textAlign: "center",
-                color: value === 1 ? "#000" : "#aaa",
-                borderRadius: "4px",
+                color: value === 1 ? "#000" : "#ccc",
+                borderRadius: "6px",
+                transition: "all 0.15s ease",
               }}
             >
-              <div style={{ fontSize: "10px", color: "#888" }}>{buttonNames[idx] || `B${idx}`}</div>
-              <div style={{ fontWeight: "bold" }}>{value}</div>
+              <div style={{ fontSize: "16px", fontWeight: "600", color: value === 1 ? "#000" : "#fff", marginBottom: "4px" }}>
+                {buttonNames[idx] || `B${idx}`}
+              </div>
+              <div style={{ fontSize: "11px", fontWeight: "500", color: value === 1 ? "#333" : "#888", marginBottom: "6px" }}>
+                [{idx}]
+              </div>
+              <div style={{ fontWeight: "bold", fontSize: "14px" }}>{value}</div>
             </div>
           ))}
         </div>
       </div>
 
       <div>
-        <h4 style={{ marginBottom: "8px" }}>Axes ({joy.axes.length})</h4>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "4px" }}>
+        <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", fontWeight: "500", color: "#bbb" }}>
+          Axes <span style={{ color: "#666" }}>({joy.axes.length})</span>
+        </h4>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: "8px" }}>
           {joy.axes.map((value, idx) => (
             <div
               key={idx}
               style={{
-                padding: "8px",
-                border: "1px solid #666",
-                backgroundColor: "#333",
-                borderRadius: "4px",
+                padding: "10px 8px",
+                border: "1px solid #555",
+                backgroundColor: "#2a2a2a",
+                borderRadius: "6px",
+                textAlign: "center",
               }}
             >
-              <div style={{ fontSize: "10px", color: "#888" }}>{axisNames[idx] || `A${idx}`}</div>
-              <div style={{ fontWeight: "bold", color: Math.abs(value) > 0.1 ? "#f88" : "#aaa" }}>
-                {value.toFixed(3)}
+              <div style={{ fontSize: "13px", fontWeight: "600", color: "#fff", marginBottom: "4px" }}>
+                {axisNames[idx] || `Axis ${idx}`}
+              </div>
+              <div style={{ fontSize: "11px", fontWeight: "500", color: "#888", marginBottom: "6px" }}>
+                [{idx}]
+              </div>
+              <div style={{ fontWeight: "bold", fontSize: "14px", color: Math.abs(value) > 0.1 ? "#4af" : "#888" }}>
+                {value.toFixed(2)}
               </div>
             </div>
           ))}
