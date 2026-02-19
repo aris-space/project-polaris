@@ -171,24 +171,12 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           value: "empty",
         },
         {
-          label: "Steam Deck",
-          value: "steamdeck",
-        },
-        {
-          label: "iPega PG-9083s",
-          value: "ipega-9083s",
-        },
-        {
-          label: "Xbox",
-          value: "xbox",
-        },
-        {
           label: "PS4",
           value: "ps4",
         },
         {
-          label: "Cheap Controller",
-          value: "cheapo",
+          label: "Raw Joy",
+          value: "rawjoy",
         },
       ],
     },
