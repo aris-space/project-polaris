@@ -127,9 +127,11 @@ class MavlinkBridgeReceiver(Node):
             0,  # Unused parameters
         )
 
+        self.get_logger().info(f"Sent {'arm' if arm_bool else 'disarm'} command to Pixhawk")
+
         # Wait for acknowledgment
-        ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
-        print(f"Arming status: {ack.result}")  # 0 = Success
+        #ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
+        #print(f"Arming status: {ack.result}")  # 0 = Success
 
     def mode_selection_cb(self, msg):
         """
@@ -206,7 +208,7 @@ class MavlinkBridgeReceiver(Node):
         newer MAVLink 2.0 implementations. This has to be tested!
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self._logger.info(f"Sending 6DOF command with control input: {control_input}")
+        #self._logger.info(f"Sending 6DOF command with control input: {control_input}")
         surge, sway, heave, yaw, roll, pitch = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
