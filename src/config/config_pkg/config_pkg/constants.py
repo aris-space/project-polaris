@@ -68,12 +68,12 @@ class JoyPS4:
         TOUCHPAD_BUTTON = 15  # Touchpad Button
 
         # General Axis Mapping (0-indexed)
-        LEFT_STICK_X_AXIS = 1  # down = -1.0, up = 1.0
         LEFT_STICK_Y_AXIS = 0  # left = 1.0, right = -1.0
+        LEFT_STICK_X_AXIS = 1  # down = -1.0, up = 1.0
         RIGHT_STICK_Y_AXIS = 2  # Left = 1.0, Right = -1.0
         RIGHT_STICK_X_AXIS = 3  # down = -1.0, up = 1.0
-        L2_TRIGGER_AXIS = 4  # Fully out = -1.0, Fully in = 1.0
-        R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
+        L2_TRIGGER_AXIS = 4  # Fully out = 1.0, Fully in = -1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
 
     elif CONTROLLER_LAYOUT == "FOXGLOVE":
         # General Button Mapping (0-indexed)
@@ -97,19 +97,19 @@ class JoyPS4:
         # General Axis Mapping (0-indexed)
         LEFT_STICK_Y_AXIS = 0  # left = 1.0, right = -1.0
         LEFT_STICK_X_AXIS = 1  # down = -1.0, up = 1.0
+        L2_TRIGGER_AXIS = 2  # Fully out = 1.0, Fully in = -1.0
         RIGHT_STICK_Y_AXIS = 3  # Left = 1.0, Right = -1.0
         RIGHT_STICK_X_AXIS = 4  # down = -1.0, up = 1.0
-        L2_TRIGGER_AXIS = 2  # Fully out = -1.0, Fully in = 1.0
-        R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
 
 
 class JoyControlMapping:
 
     # Control Specific Button Mapping
-    SETTING_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Circle Button
-    MODE_SAFETY_BUTTON_IDX = JoyPS4.X  # Square Button
-    SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # R1 Button
-    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.TOUCHPAD_BUTTON  # Triangle Button
+    SETTING_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Square Button
+    MODE_SAFETY_BUTTON_IDX = JoyPS4.X  # X Button
+    SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # Share Button
+    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.TOUCHPAD_BUTTON  # Touchpad Button
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
@@ -127,13 +127,13 @@ class JoyControlMapping:
     
     else:
         # JETSON & FOXGLOVE Mode Button Mapping (Requires Safety Button Pressed)
-        MODE_MANUAL_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Up
-        MODE_ALT_HOLD_BUTTON_IDX = JoyPS4.DPAD_UP  # D-pad Down
+        MODE_MANUAL_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Left
+        MODE_ALT_HOLD_BUTTON_IDX = JoyPS4.DPAD_UP  # D-pad Up
         MODE_SPARE_1_DPAD_BUTTON_IDX = JoyPS4.DPAD_RIGHT  # D-pad Right
         MODE_SPARE_2_DPAD_BUTTON_IDX = JoyPS4.DPAD_DOWN  # D-pad Down
-        SETTING_ARM_BUTTON_IDX = JoyPS4.DPAD_UP  # Options Button
-        SETTING_DISARM_BUTTON_IDX = JoyPS4.DPAD_DOWN  # Share Button
-        SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Right
+        SETTING_ARM_BUTTON_IDX = JoyPS4.DPAD_UP  # D-pad Up
+        SETTING_DISARM_BUTTON_IDX = JoyPS4.DPAD_DOWN  # D-pad Down
+        SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Left
 
 
     LINEAR_SPEED_X_AXIS_IDX = JoyPS4.LEFT_STICK_X_AXIS  # Left Stick X-Axis
