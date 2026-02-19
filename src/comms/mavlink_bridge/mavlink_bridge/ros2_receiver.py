@@ -1,12 +1,18 @@
 import rclpy
 from rclpy.node import Node
-import os
-
+import logging, os
+from datetime import datetime
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
 from std_msgs.msg import Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
+
+
+log_dir = os.path.expanduser("~/polaris_logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"ros2_receiver_{datetime.now():%Y%m%d_%H%M%S}.log")
+
 
 
 class MavlinkBridgeReceiver(Node):
@@ -17,6 +23,24 @@ class MavlinkBridgeReceiver(Node):
     def __init__(self):
         # "mavlink_bridge" is the name of the node
         super().__init__("mavlink_bridge_receiver")
+        
+        self._file_logger = logging.getLogger(
+            "ros2_receiver"
+        ) 
+        
+         # set level defines from what message type onwards the message is logged. the different levels are:
+        # Logging levels (lowest → highest):
+        # DEBUG    = detailed diagnostic data (high-frequency sensor + internal state)
+        # INFO     = normal operational messages (mode changes, summaries)
+        # WARNING  = unexpected situations that do not stop operation
+        # ERROR    = recoverable failures
+        # CRITICAL = unrecoverable failures; system may be unusable
+        self._file_logger.setLevel(logging.INFO)
+        self.file_logger = logging.getLogger("ros2_receiver_file")
+        file_handler = logging.FileHandler(log_file)
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        file_handler.setFormatter(formatter)
+        self._file_logger.addHandler(file_handler)
 
         self.pixhawk_mode = (
             "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
@@ -103,10 +127,12 @@ class MavlinkBridgeReceiver(Node):
             self.get_logger().warn(
                 f"Received 4DOF manual control command, but current mode {self.pixhawk_mode} may require 6DOF."
             ) 
+            self._file_logger.warning(f"Received 4DOF manual control command, but current mode {self.pixhawk_mode} may require 6DOF. Command ignored. (manual_control_cb function in ros2_receiver.py)")
         else:
             self.get_logger().warn(
                 f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)"
             )
+            self._file_logger.warning(f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)")
 
     def arm_disarm_cb(self, msg):
         """
@@ -148,7 +174,7 @@ class MavlinkBridgeReceiver(Node):
             )
             self.pixhawk_mode = "ALT_HOLD"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent ALT_HOLD mode command")
-
+            self._file_logger.info("Sent ALT_HOLD mode command")
         elif msg.data == "MANUAL":
             mode_id = 19
             self.port.mav.set_mode_send(
@@ -158,7 +184,7 @@ class MavlinkBridgeReceiver(Node):
             )
             self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
-
+            self._file_logger.info("Sent MANUAL mode command")
         elif msg.data == "STABILIZATION":
             mode_id = 0
             self.port.mav.set_mode_send(
@@ -168,14 +194,14 @@ class MavlinkBridgeReceiver(Node):
             )
             self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent STABILIZATION mode command")
-
+            self._file_logger.info("Sent STABILIZATION mode command")
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     def send_4dof_command(self, control_input):
         """
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self._logger.info(f"Sending 4DOF command with control input: {control_input}")
+        self._file_logger.info(f"Sending 4DOF command with control input: {control_input}")
         surge, sway, heave, yaw = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
@@ -190,7 +216,7 @@ class MavlinkBridgeReceiver(Node):
         """
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self._logger.info(f"DUMMY FUNCTION Sending 4DOF command with control input")
+        self._file_logger.info(f"DUMMY FUNCTION Sending 4DOF command with control input")
         self.port.mav.manual_control_send(
             self.port.target_system,
             123,  # x: Forward/Back
@@ -206,7 +232,7 @@ class MavlinkBridgeReceiver(Node):
         newer MAVLink 2.0 implementations. This has to be tested!
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self._logger.info(f"Sending 6DOF command with control input: {control_input}")
+        self._file_logger.info(f"Sending 6DOF command with control input: {control_input}")
         surge, sway, heave, yaw, roll, pitch = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
