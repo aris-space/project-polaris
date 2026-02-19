@@ -9,8 +9,8 @@ Subscribes to:
   - current_mode (std_msgs/String): active mode published by mode_control_node
 
 Publishes:
-  - pixhawk/manual_control (std_msgs/Int16MultiArray): 4-element array of
-    neutral values [0, 0, 500, 0] to zero out all thrust.
+  - pixhawk/manual_control (std_msgs/Int16MultiArray): 6-element array of
+    neutral values [0, 0, 500, 0, 0, 0] to zero out all thrust.
 
 Only publishes when current_mode == 'emergency_stop'.
 """

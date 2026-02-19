@@ -11,17 +11,19 @@ Subscribes to:
   - current_mode (std_msgs/String): active mode published by mode_control_node
 
 Publishes:
-  - pixhawk/manual_control (std_msgs/Int16MultiArray): 4-element array consumed
+  - pixhawk/manual_control (std_msgs/Int16MultiArray): 6-element array consumed
     by the mavlink_bridge ros2_receiver, which sends it as a MAVLink MANUAL_CONTROL
     message to the Pixhawk.
 
 Only processes joystick input when current_mode == 'manual_depth_hold'.
 
-Int16MultiArray layout (4 values):
+Int16MultiArray layout (6 values, roll and pitch fixed at 0):
   data[0] = x   (surge:  forward/back,  -1000 to 1000)
   data[1] = y   (sway:   lateral,       -1000 to 1000)
   data[2] = z   (heave:  depth target,   0 to 1000, 500 = hold)
   data[3] = r   (yaw:    rotation,      -1000 to 1000)
+  data[4] = s   (roll:   always 0, auto-stabilized by Pixhawk)
+  data[5] = t   (pitch:  always 0, auto-stabilized by Pixhawk)
 """
 
 import rclpy

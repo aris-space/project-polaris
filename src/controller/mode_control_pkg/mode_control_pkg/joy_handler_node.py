@@ -33,9 +33,9 @@ Foxglove controller layout (button IDs):
   7  Z down                (R2)        15  D-pad right
 
 Foxglove controller layout (axis IDs):
-  0  X forward/backward (left stick)   2  Yaw   (right stick horizontal)
-  1  Y left/right       (left stick)   3  Pitch (right stick vertical)
-  4  L2 trigger                        5  R2 trigger
+  0  Y left/right       (left stick)   3  Yaw   (right stick horizontal)
+  1  X forward/backward (left stick)   4  Pitch (right stick vertical)
+  2  L2 trigger                        5  R2 trigger
 """
 
 import rclpy
@@ -49,8 +49,7 @@ NUM_BUTTONS = 18  # indices 0..17 (highest: 17 = Touchpad / Emergency Stop)
 NUM_AXES = 6  # indices 0..5  (highest: 5 = R2 trigger axis)
 
 # Neutral (unpressed) value for each axis.  Sticks rest at 0.0; L2/R2 triggers rest at 1.0.
-#NEUTRAL_AXES = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0] 
-NEUTRAL_AXES = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0] # this may be wrong (foxglove mappings aren't sure yet)
+NEUTRAL_AXES = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
 AXIS_DEADZONE = 0.05
 
 # Foxglove layout: button indices that belong to the "mode" group
