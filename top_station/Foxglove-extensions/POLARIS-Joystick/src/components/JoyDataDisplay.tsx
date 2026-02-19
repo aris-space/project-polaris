@@ -2,6 +2,7 @@ import { Joy } from "../types";
 
 interface JoyDataDisplayProps {
   joy: Joy | undefined;
+  kbMapping?: Record<string, { button: number; axis: number; direction?: string | null }>;
 }
 
 // Map axis indices to their names based on PS4 controller
@@ -12,6 +13,11 @@ const axisNames: Record<number, string> = {
   3: "R Stick Y",
   4: "L2",
   5: "R2",
+};
+
+const axisBaseline: Record<number, number> = {
+  4: -1,
+  5: -1,
 };
 
 // Map button indices to their names based on PS4 controller
@@ -36,9 +42,29 @@ const buttonNames: Record<number, string> = {
   17: "Touchpad",
 };
 
-export function JoyDataDisplay({ joy }: JoyDataDisplayProps): JSX.Element {
+export function JoyDataDisplay({ joy, kbMapping }: JoyDataDisplayProps): JSX.Element {
   if (!joy) {
     return <div style={{ padding: "16px", color: "#999" }}>No joy data</div>;
+  }
+
+  const kbButtonLabels = new Map<number, string[]>();
+  const kbAxisLabels = new Map<number, string[]>();
+  if (kbMapping) {
+    for (const [key, config] of Object.entries(kbMapping)) {
+      const displayKey = key === " " ? "Space" : key;
+      if (config.button >= 0) {
+        const existing = kbButtonLabels.get(config.button) ?? [];
+        existing.push(displayKey);
+        kbButtonLabels.set(config.button, existing);
+      }
+
+      if (config.axis >= 0) {
+        const dir = config.direction ? ` ${config.direction}` : "";
+        const existing = kbAxisLabels.get(config.axis) ?? [];
+        existing.push(`${displayKey}${dir}`.trim());
+        kbAxisLabels.set(config.axis, existing);
+      }
+    }
   }
 
   const maxButtonIndex = Math.max(
@@ -76,13 +102,24 @@ export function JoyDataDisplay({ joy }: JoyDataDisplayProps): JSX.Element {
                 transition: "all 0.15s ease",
               }}
             >
-              <div style={{ fontSize: "16px", fontWeight: "600", color: value === 1 ? "#000" : "#fff", marginBottom: "4px" }}>
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: "700",
+                  color: value !== 0 ? "#4af" : "#ccc",
+                  marginBottom: "6px",
+                }}
+              >
+                [{idx}] = {value}
+              </div>
+              <div style={{ fontSize: "16px", fontWeight: "600", color: value === 1 ? "#000" : "#fff" }}>
                 {buttonNames[idx] || `B${idx}`}
               </div>
-              <div style={{ fontSize: "11px", fontWeight: "500", color: value === 1 ? "#333" : "#888", marginBottom: "6px" }}>
-                [{idx}]
-              </div>
-              <div style={{ fontWeight: "bold", fontSize: "14px" }}>{value}</div>
+              {kbButtonLabels.has(idx) ? (
+                <div style={{ fontSize: "10px", fontWeight: "500", color: "#bbb", marginTop: "6px" }}>
+                  {(kbButtonLabels.get(idx) ?? []).join(", ")}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -104,15 +141,24 @@ export function JoyDataDisplay({ joy }: JoyDataDisplayProps): JSX.Element {
                 textAlign: "center",
               }}
             >
-              <div style={{ fontSize: "13px", fontWeight: "600", color: "#fff", marginBottom: "4px" }}>
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: "700",
+                  color: value !== (axisBaseline[idx] ?? 0) ? "#4af" : "#ccc",
+                  marginBottom: "6px",
+                }}
+              >
+                [{idx}] = {value.toFixed(2)}
+              </div>
+              <div style={{ fontSize: "13px", fontWeight: "600", color: "#fff" }}>
                 {axisNames[idx] || `Axis ${idx}`}
               </div>
-              <div style={{ fontSize: "11px", fontWeight: "500", color: "#888", marginBottom: "6px" }}>
-                [{idx}]
-              </div>
-              <div style={{ fontWeight: "bold", fontSize: "14px", color: Math.abs(value) > 0.1 ? "#4af" : "#888" }}>
-                {value.toFixed(2)}
-              </div>
+              {kbAxisLabels.has(idx) ? (
+                <div style={{ fontSize: "10px", fontWeight: "500", color: "#bbb", marginTop: "6px" }}>
+                  {(kbAxisLabels.get(idx) ?? []).join(", ")}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

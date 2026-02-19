@@ -307,6 +307,21 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     // Initialize with fixed array sizes so the raw display is always complete
     const axes: number[] = new Array(6).fill(0);
     const buttons: number[] = new Array(18).fill(0);
+    const triggerAxes = new Set<number>();
+
+    // Default trigger axes (L2/R2) to -1 when idle
+    axes[4] = -1;
+    axes[5] = -1;
+
+    trackedKeys?.forEach((value) => {
+      if (value.axis >= 0 && value.direction !== 0 && value.button >= 0) {
+        triggerAxes.add(value.axis);
+      }
+    });
+
+    triggerAxes.forEach((axis) => {
+      axes[axis] = -1;
+    });
 
     trackedKeys?.forEach((value) => {
       if (value.button >= 0) {
@@ -315,7 +330,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
       if (value.axis >= 0 && value.direction !== 0) {
         const direction = value.direction > 0 ? 1 : -1;
-        axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
+        if (triggerAxes.has(value.axis)) {
+          axes[value.axis] = -1 + 2 * (direction * value.value);
+        } else {
+          axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
+        }
       }
     });
 
@@ -446,7 +465,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
         />
       ) : null}
-      {config.displayMode === "custom" || config.layoutName === "rawjoy" ? <JoyDataDisplay joy={joy} /> : null}
+      {config.displayMode === "custom" || config.layoutName === "rawjoy" ? (
+        <JoyDataDisplay joy={joy} kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined} />
+      ) : null}
       {/* {config.debugGamepad ? <GamepadDebug gamepads={gamepads} /> : null} */}
     </div>
   );
