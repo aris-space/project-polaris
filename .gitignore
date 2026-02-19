@@ -24,3 +24,6 @@ src/measurement/ping_sonar/
 /build/
 /install/
 /log/
+/src/build/
+/src/install/
+/src/log/

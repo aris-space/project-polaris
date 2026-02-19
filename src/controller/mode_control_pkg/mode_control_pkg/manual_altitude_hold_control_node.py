@@ -39,17 +39,17 @@ JOY_TIMEOUT = 0.2
 
 class ManualAltitudeHoldControlNode(Node):
     def __init__(self):
-        super().__init__('manual_altitude_hold_control_node')
+        super().__init__("manual_altitude_hold_control_node")
 
-        self.current_mode = ''
+        self.current_mode = ""
 
         # Neutral defaults for 4DOF
         self.neutral_msg = Int16MultiArray()
-        self.neutral_msg.data = [0, 0, 500, 0]
+        self.neutral_msg.data = [0, 0, 500, 0, 0, 0]
 
         # Latest control values, updated by joy_callback
         self.latest_msg = Int16MultiArray()
-        self.latest_msg.data = [0, 0, 500, 0]
+        self.latest_msg.data = [0, 0, 500, 0, 0, 0]
 
         # Timestamp of last received /joy message
         self.last_joy_time = self.get_clock().now()
@@ -64,7 +64,7 @@ class ManualAltitudeHoldControlNode(Node):
         # Subscribe to the current mode published by mode_control_node
         self.mode_subscription = self.create_subscription(
             String,
-            '/mode_control/current_mode',
+            "/mode_control/current_mode",
             self.mode_callback,
             10,
         )
@@ -72,7 +72,7 @@ class ManualAltitudeHoldControlNode(Node):
         # Subscribe to joystick input from foxglove_bridge
         self.joy_subscription = self.create_subscription(
             Joy,
-            '/joy',
+            "/joy",
             self.joy_callback,
             10,
         )
@@ -80,23 +80,25 @@ class ManualAltitudeHoldControlNode(Node):
         # Publish manual control commands to the pixhawk via ros2_receiver
         self.manual_control_publisher = self.create_publisher(
             Int16MultiArray,
-            '/pixhawk/manual_control',
+            "/pixhawk/manual_control",
             10,
         )
 
         # Timer to publish at a steady 20Hz rate
         self.timer = self.create_timer(0.05, self.timer_callback)
 
-        self.get_logger().info('ManualAltitudeHoldControlNode: Node has been initialized')
+        self.get_logger().info(
+            "ManualAltitudeHoldControlNode: Node has been initialized"
+        )
 
     def mode_callback(self, msg):
         """Called when a new mode is published by mode_control_node."""
         self.current_mode = msg.data
-        self.get_logger().info(f'Mode updated: {self.current_mode}')
+        self.get_logger().info(f"Mode updated: {self.current_mode}")
 
     def joy_callback(self, msg):
         """Called when a joystick message arrives from /joy. Updates stored values and timestamp."""
-        if self.current_mode != 'manual_depth_hold':
+        if self.current_mode != "manual_depth_hold":
             return
 
         self.last_joy_time = self.get_clock().now()
@@ -104,7 +106,7 @@ class ManualAltitudeHoldControlNode(Node):
 
     def timer_callback(self):
         """Publishes at 20Hz. Falls back to neutral if /joy times out."""
-        if self.current_mode != 'manual_depth_hold':
+        if self.current_mode != "manual_depth_hold":
             return
 
         elapsed = (self.get_clock().now() - self.last_joy_time).nanoseconds / 1e9
@@ -137,13 +139,22 @@ class ManualAltitudeHoldControlNode(Node):
         # net vertical: + up, - down
         heave_net = r2 - l2  # [-1..1]
 
-        x = int(surge * 1000)           # surge: forward/back
-        y = int(sway * 1000)            # sway: lateral
+        x = int(surge * 1000)  # surge: forward/back
+        y = int(sway * 1000)  # sway: lateral
         z = int((heave_net + 1) * 500)  # heave: depth target (500 = hold current depth)
-        r = int(yaw * 1000)             # yaw: rotation
-      
-        self.get_logger().debug(f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}")
-        mc_msg.data = [x, y, z, r, 0, 0]  # Extend to 6 values for compatibility with 6DOF (roll and pitch = 0)
+        r = int(yaw * 1000)  # yaw: rotation
+
+        self.get_logger().debug(
+            f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}"
+        )
+        mc_msg.data = [
+            x,
+            y,
+            z,
+            r,
+            0,
+            0,
+        ]  # Extend to 6 values for compatibility with 6DOF (roll and pitch = 0)
         return mc_msg
 
 

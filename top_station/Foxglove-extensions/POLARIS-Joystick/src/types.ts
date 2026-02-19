@@ -14,39 +14,51 @@ export type Joy = {
 };
 
 export interface ButtonConfig {
-  type: string;
+  type: "button";
   text: string;
   x: number;
   y: number;
   rot: number;
-  button: number;
+  gamepadApi: number;
+  joyButton: number;
+  transform?: string;
+  joyValue?: number;
 }
 
 export interface BarConfig {
-  type: string;
-  text?: string;
+  type: "bar";
+  text: string;
   x: number;
   y: number;
   rot: number;
-  axis: number;
-  button?: number;
+  gamepadApi: number;
+  joyAxis: number;
+  transform?: string;
 }
 
 export interface StickConfig {
-  type: string;
+  type: "stick";
+  text?: string;
   x: number;
   y: number;
-  axisX: number;
-  axisY: number;
-  button: number;
+  gamepadApiX: number;
+  gamepadApiY: number;
+  gamepadApiButton: number;
+  joyAxisX: number;
+  joyAxisY: number;
+  joyButton: number;
 }
 
 export interface DPadConfig {
-  type: string;
+  type: "button";
+  text: string;
   x: number;
   y: number;
-  axisX: number;
-  axisY: number;
+  rot: number;
+  gamepadApi: number;
+  joyAxis: number;
+  joyValue: number;
+  transform: "dpad";
 }
 
 export type DisplayMapping = (ButtonConfig | BarConfig | StickConfig | DPadConfig)[];
