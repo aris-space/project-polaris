@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 import logging, os
 from datetime import datetime
+from config_pkg.constants import Logs
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
@@ -10,7 +11,7 @@ from std_msgs.msg import Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 
 
-log_dir = os.path.expanduser("~/polaris_logs")
+log_dir = os.path.expanduser(Logs.LOG_DIR)
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"ros2_receiver_{datetime.now():%Y%m%d_%H%M%S}.log")
 
