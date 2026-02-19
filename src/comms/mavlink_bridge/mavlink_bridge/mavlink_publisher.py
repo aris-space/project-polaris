@@ -4,9 +4,11 @@ import logging, os
 from rclpy.node import Node
 from pymavlink import mavutil
 from datetime import datetime
+from std_msgs.msg import Int16MultiArray
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
+    ManualControl
 )
 from sensor_msgs.msg import (
     Imu,  # ATTITUDE
@@ -73,36 +75,64 @@ class MavlinkBridgeSender(Node):
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
 
-        self.port = mavutil.mavlink_connection("udp:10.5.11.50:14600")
+        self.port = mavutil.mavlink_connection("udp:10.5.11.50:14600") # UDP connection to companion computer (BlueOS)
+        self.serial_port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # Serial connection straight to Pixhawk
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
 
-        self.heartbeat_publisher = self.create_publisher(State, "pixhawk/heartbeat", 10)
+        self.heartbeat_publisher = self.create_publisher(State, "/pixhawk/heartbeat", 10)
 
-        self.attitude_publisher = self.create_publisher(Imu, "pixhawk/attitude", 10)
+        self.attitude_publisher = self.create_publisher(Imu, "/pixhawk/attitude", 10)
 
         self.rc_channel_publisher = self.create_publisher(
-            RCIn, "pixhawk/rc_channels", 10
+            RCIn, "/pixhawk/rc_channels", 10
         )
 
         self.battery_publisher = self.create_publisher(
-            BatteryState, "pixhawk/battery", 10
+            BatteryState, "/pixhawk/battery", 10
         )
 
         self.scaled_pressure_publisher = self.create_publisher(
-            FluidPressure, "pixhawk/scaled_pressure", 10
+            FluidPressure, "/pixhawk/scaled_pressure", 10
+        )
+
+        self.manual_control_publisher = self.create_publisher(
+            Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
         self.timer = self.create_timer(0.5, self.mavlink_callback)
+
+        # Request MANUAL_CONTROL messages at 10 Hz
+        self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
+        self.serial_port.mav.command_long_send(
+            self.serial_port.target_system,
+            self.serial_port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID = 69
+            100000,  # interval in microseconds (100ms = 10Hz)
+            0, 0, 0, 0, 0
+        )
+        self.logger.info(
+            f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
+        )
 
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
         # Process ALL available messages in the buffer (not just one)
         while True:
             msg = self.port.recv_match(blocking=False)
+            msg_serial = self.serial_port.recv_match(blocking=False)
             if msg is None:
                 break  # No more messages in buffer
+
+            if msg_serial is not None:
+                self.logger.info(f"Received from serial: {msg_serial.get_type()}")
+                if msg_serial.get_type() == "MANUAL_CONTROL":
+                    self.handle_manual_control(msg_serial)
+                # We can choose to process serial messages differently if needed
+                # For now, we will just log them and not publish to ROS2
 
             if msg is not None:
                 self.logger.info(f"Received: {msg.get_type()}")
@@ -117,6 +147,8 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
+
+        
 
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
@@ -201,6 +233,17 @@ class MavlinkBridgeSender(Node):
 
         self.scaled_pressure_publisher.publish(ros_msg)
         self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+
+    def handle_manual_control(self, msg):
+        """Process MANUAL_CONTROL message and publish to ROS2"""
+        # This is a placeholder for handling manual control messages if needed
+        self.logger.info("manual control callback triggered")
+        ros_msg = Int16MultiArray()
+        ros_msg.data = [msg.x, msg.y, msg.z, msg.r, msg.buttons, msg.s, msg.t]
+        self.manual_control_publisher.publish(ros_msg)
+        self.logger.info(
+            f"Published Manual Control: x={msg.x}, y={msg.y}, z={msg.z}, r={msg.r}, s={msg.s}, t={msg.t}"
+        ) 
 
 
 def main(args=None):
