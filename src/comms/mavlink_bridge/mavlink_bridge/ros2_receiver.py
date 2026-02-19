@@ -92,7 +92,11 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        if self.pixhawk_mode == "MANUAL" or self.pixhawk_mode == "STABILIZATION" and len(msg.data) == 6:
+        if (
+            self.pixhawk_mode == "MANUAL"
+            or self.pixhawk_mode == "STABILIZATION"
+            and len(msg.data) == 6
+        ):
             self.send_6dof_command(msg.data)
 
         elif self.pixhawk_mode == "ALT_HOLD" and len(msg.data) == 6:
@@ -102,7 +106,7 @@ class MavlinkBridgeReceiver(Node):
         elif len(msg.data) == 4:
             self.get_logger().warn(
                 f"Received 4DOF manual control command, but current mode {self.pixhawk_mode} may require 6DOF."
-            ) 
+            )
         else:
             self.get_logger().warn(
                 f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)"
@@ -127,10 +131,9 @@ class MavlinkBridgeReceiver(Node):
             0,  # Unused parameters
         )
 
-        self.get_logger().info(f"Sent {'arm' if arm_bool else 'disarm'} command to Pixhawk")
-        # Wait for acknowledgment
-        # ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
-        # print(f"Arming status: {ack.result}")  # 0 = Success
+        self.get_logger().info(
+            f"Sent {'arm' if arm_bool else 'disarm'} command to Pixhawk"
+        )
 
     def mode_selection_cb(self, msg):
         """
