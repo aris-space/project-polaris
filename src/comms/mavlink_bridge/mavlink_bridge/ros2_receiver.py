@@ -92,15 +92,21 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        if self.pixhawk_mode == "MANUAL":
-            self.send_4dof_command(msg.data)
+        if self.pixhawk_mode == "MANUAL" or self.pixhawk_mode == "STABILIZATION" and len(msg.data) == 6:
+            self.send_6dof_command(msg.data)
 
-        elif self.pixhawk_mode == "ALT_HOLD":
-            self.send_4dof_command(
+        elif self.pixhawk_mode == "ALT_HOLD" and len(msg.data) == 6:
+            self.send_6dof_command(
                 msg.data
             )  # In ALT_HOLD, we typically control surge, sway, heave, and yaw, but not roll and pitch
-
-        # self.send_4dof_command(msg.data)
+        elif len(msg.data) == 4:
+            self.get_logger().warn(
+                f"Received 4DOF manual control command, but current mode {self.pixhawk_mode} may require 6DOF."
+            ) 
+        else:
+            self.get_logger().warn(
+                f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)"
+            )
 
     def arm_disarm_cb(self, msg):
         """
@@ -124,7 +130,6 @@ class MavlinkBridgeReceiver(Node):
         # Wait for acknowledgment
         ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
         print(f"Arming status: {ack.result}")  # 0 = Success
-        self.arm_disarm(msg.data)
 
     def mode_selection_cb(self, msg):
         """
@@ -154,6 +159,16 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
 
+        elif msg.data == "STABILIZATION":
+            mode_id = 0
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
+            self.get_logger().info("Sent STABILIZATION mode command")
+
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     def send_4dof_command(self, control_input):
@@ -161,7 +176,7 @@ class MavlinkBridgeReceiver(Node):
         Input values: -1000 to 1000 (except heave, see below)
         """
         self._logger.info(f"Sending 4DOF command with control input: {control_input}")
-        surge, sway, heave, yaw , dummy1, dummy2 = control_input
+        surge, sway, heave, yaw = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
             int(surge),  # x: Forward/Back
@@ -201,9 +216,9 @@ class MavlinkBridgeReceiver(Node):
             int(yaw),  # r
             0,  # buttons
             0,  # buttons 2
-            192,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
-            int(roll),  # s (Extension 1)
-            int(pitch),  # t (Extension 2)
+            3,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
+            int(pitch),  # s (Extension 1)
+            int(roll),  # t (Extension 2)
         )
 
     """--------------------------------------------- main function ---------------------------------------------"""

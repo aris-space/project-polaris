@@ -58,7 +58,7 @@ class EmergencyStopModeNode(Node):
             return
 
         mc_msg = Int16MultiArray()
-        mc_msg.data = [0, 0, 500, 0]
+        mc_msg.data = [0, 0, 500, 0, 0, 0]  # Neutral values for surge, sway, heave, roll, pitch, yaw
         self.manual_control_publisher.publish(mc_msg)
 
 

@@ -19,13 +19,23 @@ thruster_4_pos = np.array(
 thruster_5_pos = np.array(
     [0.242, 0.414, 0]
 )  # left thruster in z direction (throttle thruster)
+thruster_6_pos = np.array([-0.013, -0.454, -0.015])  #
 
 thruster_positions = np.array(
-    [thruster_1_pos, thruster_2_pos, thruster_3_pos, thruster_4_pos, thruster_5_pos]
+    [
+        thruster_1_pos,
+        thruster_2_pos,
+        thruster_3_pos,
+        thruster_4_pos,
+        thruster_5_pos,
+        thruster_6_pos,
+    ]
 )
 
 
-thruster_forces = np.array([[0, -1, 0], [-1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, 1]])
+thruster_forces = np.array(
+    [[0, -1, 0], [-1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1]]
+)
 
 
 def attitude_calculator(com_position, thruster_positions, thruster_forces):
@@ -35,7 +45,7 @@ def attitude_calculator(com_position, thruster_positions, thruster_forces):
 
     attitude = np.zeros_like(thruster_positions)
 
-    for i in range(5):
+    for i in range(6):
         attitude[i] = np.cross(thruster_positions[i] - com_position, thruster_forces[i])
 
     for i in range(3):

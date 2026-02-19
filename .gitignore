@@ -17,6 +17,8 @@ env/
 .mypy_cache/
 .coverage
 coverage.xml
+ping-python/
+src/measurement/ping_sonar/
 
 # ROS 2 workspace build artifacts
 /build/
