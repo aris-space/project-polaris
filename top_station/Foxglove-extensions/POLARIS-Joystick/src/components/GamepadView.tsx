@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { GamepadBackground } from "./GamepadBackground";
-import cheapo from "./display-mappings/cheapo.json";
-import ipega9083s from "./display-mappings/ipega-9083s.json";
 import ps4 from "./display-mappings/ps4.json";
-import steamdeck from "./display-mappings/steamdeck.json";
-import xbox from "./display-mappings/xbox.json";
-import { Joy, ButtonConfig, BarConfig, StickConfig, DPadConfig, DisplayMapping } from "../types";
+import { Joy, DisplayMapping } from "../types";
 
 const colStroke = "#ddd";
 const colPrim = "blue";
@@ -232,18 +228,8 @@ export function GamepadView(props: {
   const [displayMapping, setDisplayMapping] = useState<DisplayMapping>([]);
 
   useEffect(() => {
-    if (layoutName === "steamdeck") {
-      setDisplayMapping(steamdeck);
-    } else if (layoutName === "empty") {
-      setDisplayMapping([]);
-    } else if (layoutName === "ipega-9083s") {
-      setDisplayMapping(ipega9083s);
-    } else if (layoutName === "xbox") {
-      setDisplayMapping(xbox);
-    } else if (layoutName === "ps4") {
-      setDisplayMapping(ps4);
-    } else if (layoutName === "cheapo") {
-      setDisplayMapping(cheapo);
+    if (layoutName === "ps4") {
+      setDisplayMapping(ps4 as DisplayMapping);
     } else {
       setDisplayMapping([]);
     }
@@ -281,16 +267,28 @@ export function GamepadView(props: {
     } else {
       setNumButtons(
         Math.max(
-          ...displayMapping.map((item) =>
-            item.type === "button" ? (item as ButtonConfig).button : -1,
-          ),
+          ...displayMapping.map((item: any) => {
+            if (item.type === "button" && item.transform !== "dpad") {
+              // Use joyButton for PS4 format, fallback to joy/button for old formats
+              return item.joyButton !== undefined ? item.joyButton : (item.joy !== undefined ? item.joy : (item.button ?? -1));
+            }
+            return -1;
+          }),
         ) + 1,
       );
       setNumAxes(
-        displayMapping.reduce((tempMax, current) => {
-          if (current.type === "stick") {
-            const mapping = current as StickConfig;
-            return Math.max(tempMax, mapping.axisX, mapping.axisY);
+        displayMapping.reduce((tempMax, current: any) => {
+          if (current.type === "button" && current.transform === "dpad") {
+            // D-pad buttons use axes
+            const axis = current.joyAxis ?? -1;
+            return Math.max(tempMax, axis);
+          } else if (current.type === "bar") {
+            const axis = current.joyAxis ?? -1;
+            return Math.max(tempMax, axis);
+          } else if (current.type === "stick") {
+            const axisX = current.joyAxisX ?? -1;
+            const axisY = current.joyAxisY ?? -1;
+            return Math.max(tempMax, axisX, axisY);
           } else {
             return tempMax;
           }
@@ -418,55 +416,88 @@ export function GamepadView(props: {
 
   for (const mappingA of displayMapping) {
     if (mappingA.type === "button") {
-      const mapping = mappingA as ButtonConfig;
-      const index = mapping.button;
-      const text = mapping.text;
-      const x = mapping.x;
-      const y = mapping.y;
-      const radius = 12;
-      const buttonVal = joy?.buttons[index] ?? 0;
+      const mapping = mappingA as any;
+      
+      // Handle D-pad buttons that map to axes
+      if (mapping.transform === "dpad") {
+        const axis = mapping.joyAxis ?? -1;
+        const expectedValue = mapping.joyValue ?? 0;
+        const text = mapping.text;
+        const x = mapping.x;
+        const y = mapping.y;
+        const radius = 12;
+        
+        // Check if this axis has the expected value for this button
+        const axVal = joy?.axes[axis] ?? 0;
+        const buttonVal = Math.abs(axVal - expectedValue) < 0.1 ? 1 : 0;
 
-      // Only highlight if button is in the current keyboard mapping, or if no keyboard mapping is active
-      const shouldHighlight = mappedButtons.size === 0 || mappedButtons.has(index);
-      const displayValue = shouldHighlight ? buttonVal : 0;
+        const shouldHighlight = mappedAxes.size === 0 || mappedAxes.get(axis)?.pos || mappedAxes.get(axis)?.neg;
+        const displayValue = shouldHighlight ? buttonVal : 0;
 
-      dispItems.push(
-        generateButton(
-          displayValue,
-          x,
-          y,
-          text,
-          radius,
-          (e) => {
-            buttonCb(index, e, PointerEventType.Down);
-          },
-          (e) => {
-            buttonCb(index, e, PointerEventType.Up);
-          },
-        ),
-      );
+        dispItems.push(
+          generateButton(
+            displayValue,
+            x,
+            y,
+            text,
+            radius,
+            (e) => {
+              buttonCb(axis, e, PointerEventType.Down);
+            },
+            (e) => {
+              buttonCb(axis, e, PointerEventType.Up);
+            },
+          ),
+        );
+      } else {
+        // Regular button
+        const index = mapping.joyButton ?? (mapping.joy !== undefined ? mapping.joy : mapping.button);
+        const text = mapping.text;
+        const x = mapping.x;
+        const y = mapping.y;
+        const radius = 12;
+        const buttonVal = joy?.buttons[index] ?? 0;
+
+        // Only highlight if button is in the current keyboard mapping, or if no keyboard mapping is active
+        const shouldHighlight = mappedButtons.size === 0 || mappedButtons.has(index);
+        const displayValue = shouldHighlight ? buttonVal : 0;
+
+        dispItems.push(
+          generateButton(
+            displayValue,
+            x,
+            y,
+            text,
+            radius,
+            (e) => {
+              buttonCb(index, e, PointerEventType.Down);
+            },
+            (e) => {
+              buttonCb(index, e, PointerEventType.Up);
+            },
+          ),
+        );
+      }
     } else if (mappingA.type === "bar") {
-      const mapping = mappingA as BarConfig;
-      const axis = mapping.axis;
-      const button = mapping.button;
+      const mapping = mappingA as any;
+      // Use joyAxis for PS4 mapping format
+      const axis = mapping.joyAxis ?? (mapping.joy !== undefined ? mapping.joy : mapping.axis);
       const x = mapping.x;
       const y = mapping.y;
       const rot = mapping.rot;
       const text = mapping.text;
-      // Read from button if button is specified and axis is -1, otherwise from axis
-      const axVal =
-        axis === -1 && button != undefined ? joy?.buttons[button] ?? 0 : joy?.axes[axis] ?? 0;
+      const axVal = joy?.axes[axis] ?? 0;
       dispItems.push(generateBar(axVal, x, y, rot, text));
     } else if (mappingA.type === "stick") {
-      const mapping = mappingA as StickConfig;
-      const axisX = mapping.axisX;
-      const axisY = mapping.axisY;
-      const button = mapping.button;
+      const mapping = mappingA as any;
+      const axisX = mapping.joyAxisX ?? -1;
+      const axisY = mapping.joyAxisY ?? -1;
       const x = mapping.x;
       const y = mapping.y;
       const axXVal = joy?.axes[axisX] ?? 0;
       const axYVal = joy?.axes[axisY] ?? 0;
-      const buttonVal = joy?.buttons[button] ?? 0;
+      const buttonIndex = mapping.joyButton ?? -1;
+      const buttonVal = buttonIndex >= 0 ? joy?.buttons[buttonIndex] ?? 0 : 0;
       dispItems.push(
         generateStick(
           axXVal,
@@ -486,31 +517,6 @@ export function GamepadView(props: {
           },
         ),
       );
-    } else if (mappingA.type === "d-pad") {
-      const mapping = mappingA as DPadConfig;
-      const axisX = mapping.axisX;
-      const axisY = mapping.axisY;
-      const x = mapping.x;
-      const y = mapping.y;
-      let axXVal = joy?.axes[axisX] ?? 0;
-      let axYVal = joy?.axes[axisY] ?? 0;
-      if (kbMapping) {
-        const axisXMapping = mappedAxes.get(axisX);
-        const axisYMapping = mappedAxes.get(axisY);
-        if (axisXMapping != null && !axisXMapping.pos && axXVal > 0) {
-          axXVal = 0;
-        }
-        if (axisXMapping != null && !axisXMapping.neg && axXVal < 0) {
-          axXVal = 0;
-        }
-        if (axisYMapping != null && !axisYMapping.pos && axYVal > 0) {
-          axYVal = 0;
-        }
-        if (axisYMapping != null && !axisYMapping.neg && axYVal < 0) {
-          axYVal = 0;
-        }
-      }
-      dispItems.push(generateDPad(axXVal, axYVal, x, y, 30));
     }
 
     // Auto indexing code to bring back later?
