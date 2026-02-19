@@ -304,21 +304,16 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       return;
     }
 
-    // Initialize with proper array sizes to prevent flickering
-    const axes: number[] = [0, 0, 0, 0]; // 4 axes for sticks
-    const buttons: number[] = [];
+    // Initialize with fixed array sizes so the raw display is always complete
+    const axes: number[] = new Array(6).fill(0);
+    const buttons: number[] = new Array(18).fill(0);
 
     trackedKeys?.forEach((value) => {
       if (value.button >= 0) {
-        while (buttons.length <= value.button) {
-          buttons.push(0);
-        }
         buttons[value.button] = value.value;
-      } else if (value.axis >= 0 && value.direction !== 0) {
-        while (axes.length <= value.axis) {
-          axes.push(0);
-        }
-        // Safe to index because we've grown the array to accommodate
+      }
+
+      if (value.axis >= 0 && value.direction !== 0) {
         const direction = value.direction > 0 ? 1 : -1;
         axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
       }

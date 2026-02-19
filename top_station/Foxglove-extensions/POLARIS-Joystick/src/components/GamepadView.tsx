@@ -120,8 +120,8 @@ function generateStick(
   moveCb: (e: React.PointerEvent) => void,
   upCb: (e: React.PointerEvent) => void,
 ) {
-  const offX = -valueX * radius;
-  const offY = -valueY * radius;
+  const offX = valueX * radius;
+  const offY = valueY * radius;
 
   return (
     <>
@@ -362,8 +362,8 @@ export function GamepadView(props: {
     eventType: PointerEventType,
   ) => {
     const dim = e.currentTarget.getBoundingClientRect();
-    const x = -(e.clientX - (dim.left + dim.right) / 2) / 30;
-    const y = -(e.clientY - (dim.top + dim.bottom) / 2) / 30;
+    const x = (e.clientX - (dim.left + dim.right) / 2) / 30;
+    const y = (e.clientY - (dim.top + dim.bottom) / 2) / 30;
     const r = Math.min(Math.sqrt(x * x + y * y), 1);
     const ang = Math.atan2(y, x);
     const xa = r * Math.cos(ang);
@@ -486,7 +486,13 @@ export function GamepadView(props: {
       const y = mapping.y;
       const rot = mapping.rot;
       const text = mapping.text;
-      const axVal = joy?.axes[axis] ?? 0;
+      let axVal = joy?.axes[axis] ?? 0;
+      
+      // Apply normalize transform if specified (converts -1 to 1 range to 0 to 1 range)
+      if (mapping.transform === "normalize") {
+        axVal = (axVal + 1) / 2;
+      }
+      
       dispItems.push(generateBar(axVal, x, y, rot, text));
     } else if (mappingA.type === "stick") {
       const mapping = mappingA as any;
