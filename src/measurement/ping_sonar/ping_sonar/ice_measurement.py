@@ -2,8 +2,11 @@ from .brping import Ping1D
 from rclpy.node import Node
 import rclpy
 import csv
+import json
+import os
 from datetime import datetime
 from std_msgs.msg import String
+from config_pkg.constants import Logs, Comms
 
 
 class Ice_Measurement(Node):
@@ -15,7 +18,7 @@ class Ice_Measurement(Node):
         super().__init__("ice_measurement_publisher")
 
         self.ping = Ping1D()  # initializes object
-        self.ping.connect_serial("/dev/ttyUSB0", 115200)  # specifies relevant port
+        self.ping.connect_serial(Comms.PING_SONAR_PORT, Comms.PING_SONAR_BAUD_RATE)  # specifies relevant port
 
         self.initialization = self.ping.initialize()
 
@@ -47,12 +50,19 @@ class Ice_Measurement(Node):
 
         # CSV setup
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.csv_file = open(f"/root/ice_data_{ts}.csv", "w", newline="")
+        log_dir = os.path.expanduser(Logs.LOG_DIR)
+        os.makedirs(log_dir, exist_ok=True)
+        self.csv_file = open(
+            os.path.join(log_dir, f"ice_data_{ts}.csv"), "w", newline=""
+        )
         self.csv_writer = csv.writer(self.csv_file)
         self.csv_writer.writerow(["timestamp", "ping_number", "bin_index", "intensity"])
 
         self.first_timestamp = None
         self.timer = self.create_timer(self.ping_interval, self.logging_cb)
+
+        self.distance_publisher = self.create_publisher(String, "/ping_sonar/distance", 10)
+        self.profile_publisher = self.create_publisher(String, "/ping_sonar/profile", 10)
 
     def mode_callback(self, msg):
         if msg.data == "start":
@@ -66,13 +76,34 @@ class Ice_Measurement(Node):
         if not self.recording:
             return
         profile = self.ping.get_profile()
+        distance = self.ping.get_distance()
+
         if profile is None:
             return
+        if distance is None:
+            return
+
+        msg_distance = String()
+        msg_distance.data = json.dumps({
+            "distance": distance["distance"],
+            "confidence": distance["confidence"],
+        })
+
+        msg_profile = String()
+        msg_profile.data = json.dumps({
+            "scan_start": profile["scan_start"],
+            "scan_length": profile["scan_length"],
+            "ping_number": profile["ping_number"],
+            "profile_data": list(profile["profile_data"]),
+        })
+
+        self.distance_publisher.publish(msg_distance)
+        self.profile_publisher.publish(msg_profile)
 
         if self.first_timestamp is None:
             self.first_timestamp = (
                 self.get_clock().now().nanoseconds / 1e9
-            )  # creates a first timestamp for the csv
+            )
 
         ping_num = profile["ping_number"]
         for i, intensity in enumerate(profile["profile_data"]):
