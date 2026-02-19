@@ -22,3 +22,6 @@ coverage.xml
 /build/
 /install/
 /log/
+/src/build/
+/src/install/
+/src/log/
