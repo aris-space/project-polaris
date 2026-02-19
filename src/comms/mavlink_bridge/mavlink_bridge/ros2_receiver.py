@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 import logging, os
 from datetime import datetime
-from config_pkg.constants import Logs
+from config_pkg.constants import Logs, Comms
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
@@ -47,7 +47,7 @@ class MavlinkBridgeReceiver(Node):
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection(
-            "/dev/ttyTHS1", baud=57600
+            Comms.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
         )  # For sending commands to Pixhawk
         # self.port_in = mavutil.mavlink_connection(
         #     "/dev/ttyTHS1", baud=57600
@@ -64,23 +64,23 @@ class MavlinkBridgeReceiver(Node):
             OverrideRCIn,
             "/pixhawk/rc_override",
             self.rc_override_cb,
-            10,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
+            Comms.SUB_QOS_DEPTH,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
         )
 
         self.manual_control_subscriber = self.create_subscription(
             Int16MultiArray,
             "/pixhawk/manual_control",
             self.manual_control_cb,
-            10,
+            Comms.SUB_QOS_DEPTH,
         )
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
-            String, "/pixhawk/mode_cmd", self.mode_selection_cb, 10
+            String, "/pixhawk/mode_cmd", self.mode_selection_cb, Comms.SUB_QOS_DEPTH
         )
 
         self.arm_disarm_subscriber = self.create_subscription(
-            Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, 10
+            Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, Comms.SUB_QOS_DEPTH
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")

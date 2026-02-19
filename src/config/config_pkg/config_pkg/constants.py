@@ -148,3 +148,7 @@ class JoyControlMapping:
 
 class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
+    SERIAL_PORT1 = "/dev/ttyTHS1"
+    SUB_QOS_DEPTH = 10
+    SERIAL1_BAUD_RATE = 57600
+
