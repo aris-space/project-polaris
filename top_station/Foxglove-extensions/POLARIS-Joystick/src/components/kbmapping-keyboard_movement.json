@@ -37,14 +37,14 @@
         "toggle": false
     },
     "ArrowRight": {
-        "axis": 3,
-        "direction": "-",
+        "axis": 2,
+        "direction": "+",
         "button": -1,
         "toggle": false
     },
     "ArrowLeft": {
-        "axis": 3,
-        "direction": "+",
+        "axis": 2,
+        "direction": "-",
         "button": -1,
         "toggle": false
     }

@@ -489,7 +489,11 @@ export function GamepadView(props: {
       let axVal = joy?.axes[axis] ?? 0;
       
       // Apply normalize transform if specified (converts -1 to 1 range to 0 to 1 range)
-      if (mapping.transform === "normalize") {
+      if (
+        mapping.transform === "normalize" ||
+        mapping.transform === "l2_normalize" ||
+        mapping.transform === "r2_normalize"
+      ) {
         axVal = (axVal + 1) / 2;
       }
       
