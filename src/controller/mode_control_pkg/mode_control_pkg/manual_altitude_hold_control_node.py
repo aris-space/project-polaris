@@ -62,7 +62,7 @@ class ManualAltitudeHoldControlNode(Node):
         # Subscribe to the current mode published by mode_control_node
         self.mode_subscription = self.create_subscription(
             String,
-            'current_mode',
+            '/mode_control/current_mode',
             self.mode_callback,
             10,
         )
@@ -78,7 +78,7 @@ class ManualAltitudeHoldControlNode(Node):
         # Publish manual control commands to the pixhawk via ros2_receiver
         self.manual_control_publisher = self.create_publisher(
             Int16MultiArray,
-            'pixhawk/manual_control',
+            '/pixhawk/manual_control',
             10,
         )
 
@@ -139,8 +139,9 @@ class ManualAltitudeHoldControlNode(Node):
         y = int(sway * 1000)            # sway: lateral
         z = int((heave_net + 1) * 500)  # heave: depth target (500 = hold current depth)
         r = int(yaw * 1000)             # yaw: rotation
-
-        mc_msg.data = [x, y, z, r]
+      
+        self.get_logger().debug(f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}")
+        mc_msg.data = [x, y, z, r, 0, 0]  # Extend to 6 values for compatibility with 6DOF (roll and pitch = 0)
         return mc_msg
 
 

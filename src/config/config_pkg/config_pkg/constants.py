@@ -6,7 +6,7 @@ Change ENVIRONMENT to the appropriate value based on the testing environment:
 """
 
 ENVIRONMENT = "POOL"  # Options: "POOL", "OPEN_WATER", "ICE_LAKE"
-CONTROLLER_LAYOUT = "FOXGLOVE"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
+CONTROLLER_LAYOUT = "JETSON"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
 
 
 """
@@ -108,10 +108,10 @@ class JoyPS4:
 class JoyControlMapping:
 
     # Control Specific Button Mapping
-    SETTING_SAFETY_BUTTON_IDX = JoyPS4.CIRCLE  # Circle Button
-    MODE_SAFETY_BUTTON_IDX = JoyPS4.TRIANGLE  # Square Button
+    SETTING_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Circle Button
+    MODE_SAFETY_BUTTON_IDX = JoyPS4.X  # Square Button
     SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # R1 Button
-    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.PS_BUTTON  # Triangle Button
+    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.TOUCHPAD_BUTTON  # Triangle Button
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
