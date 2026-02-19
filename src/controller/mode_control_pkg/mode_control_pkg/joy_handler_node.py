@@ -16,7 +16,7 @@ Fusion priority logic:
 
 A source is considered "active" when a message with non-neutral content
 (any axis deviating from its neutral value, or any pressed button) was received
-within DELTA_T seconds.  Neutral values: 0.0 for stick axes, 1.0 for L2/R2 triggers.
+within DELTA_T seconds.  Neutral values: 0.0 for stick axes, -1.0 for L2/R2 triggers.
 
 The output message always has exactly NUM_AXES axes and NUM_BUTTONS buttons,
 regardless of the source message sizes, so downstream nodes can safely index
@@ -33,9 +33,9 @@ Foxglove controller layout (button IDs):
   7  Z down                (R2)        15  D-pad right
 
 Foxglove controller layout (axis IDs):
-  0  Y left/right       (left stick)   3  Yaw   (right stick horizontal)
-  1  X forward/backward (left stick)   4  Pitch (right stick vertical)
-  2  L2 trigger                        5  R2 trigger
+  0  Y left/right       (left stick)   3  Pitch (right stick vertical)
+  1  X forward/backward (left stick)   4  L2 trigger
+  2  Yaw (right stick horizontal)      5  R2 trigger
 """
 
 import rclpy
@@ -48,8 +48,8 @@ PUBLISH_RATE_HZ = 20.0
 NUM_BUTTONS = 18  # indices 0..17 (highest: 17 = Touchpad / Emergency Stop)
 NUM_AXES = 6  # indices 0..5  (highest: 5 = R2 trigger axis)
 
-# Neutral (unpressed) value for each axis.  Sticks rest at 0.0; L2/R2 triggers rest at 1.0.
-NEUTRAL_AXES = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+# Neutral (unpressed) value for each axis.  Sticks rest at 0.0; L2/R2 triggers rest at -1.0.
+NEUTRAL_AXES = [0.0, 0.0, 0.0, 0.0, -1.0, -1.0]
 AXIS_DEADZONE = 0.05
 
 # Foxglove layout: button indices that belong to the "mode" group

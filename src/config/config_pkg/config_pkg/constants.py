@@ -46,8 +46,8 @@ class JoyPS4:
         LEFT_STICK_X_AXIS = 1  # Up = 1.0, Down = -1.0
         LEFT_STICK_Y_AXIS = 0  # Left = 1.0, Right = -1.0
         RIGHT_STICK_X_AXIS = 4  # Up = 1.0, Down = -1.0
-        L2_TRIGGER_AXIS = 2  # Fully out = 1.0, Fully in = -1.0
-        R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
+        L2_TRIGGER_AXIS = 2  # Fully out = -1.0, Fully in = 1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
         RIGHT_STICK_Y_AXIS = 3  # Left = 1.0, Right = -1.0
         DPAD_HORIZONTAL_AXIS = 6  # Left = 1.0, Right = -1.0
         DPAD_VERTICAL_AXIS = 7  # Up = 1.0, Down = -1.0
@@ -76,8 +76,8 @@ class JoyPS4:
         LEFT_STICK_X_AXIS = 1  # down = -1.0, up = 1.0
         RIGHT_STICK_Y_AXIS = 2  # Left = 1.0, Right = -1.0
         RIGHT_STICK_X_AXIS = 3  # down = -1.0, up = 1.0
-        L2_TRIGGER_AXIS = 4  # Fully out = 1.0, Fully in = -1.0
-        R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
+        L2_TRIGGER_AXIS = 4  # Fully out = -1.0, Fully in = 1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
 
     elif CONTROLLER_LAYOUT == "FOXGLOVE":
         # General Button Mapping (0-indexed)
@@ -87,6 +87,8 @@ class JoyPS4:
         TRIANGLE = 3
         L1 = 4
         R1 = 5
+        L2 = 6
+        R2 = 7
         SHARE_BUTTON = 8
         OPTIONS_BUTTON = 9
         L3 = 10
@@ -101,10 +103,10 @@ class JoyPS4:
         # General Axis Mapping (0-indexed)
         LEFT_STICK_Y_AXIS = 0  # left = 1.0, right = -1.0
         LEFT_STICK_X_AXIS = 1  # down = -1.0, up = 1.0
-        L2_TRIGGER_AXIS = 2  # Fully out = 1.0, Fully in = -1.0
-        RIGHT_STICK_Y_AXIS = 3  # Left = 1.0, Right = -1.0
-        RIGHT_STICK_X_AXIS = 4  # down = -1.0, up = 1.0
-        R2_TRIGGER_AXIS = 5  # Fully out = 1.0, Fully in = -1.0
+        L2_TRIGGER_AXIS = 4  # Fully out = -1.0, Fully in = 1.0
+        RIGHT_STICK_Y_AXIS = 2  # Left = 1.0, Right = -1.0
+        RIGHT_STICK_X_AXIS = 3  # down = -1.0, up = 1.0
+        R2_TRIGGER_AXIS = 5  # Fully out = -1.0, Fully in = 1.0
 
 
 class JoyControlMapping:

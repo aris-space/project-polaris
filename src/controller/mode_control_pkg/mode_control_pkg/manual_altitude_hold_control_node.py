@@ -121,7 +121,7 @@ class ManualAltitudeHoldControlNode(Node):
         joy_msg.axes    -> list of floats (-1.0 to 1.0 for sticks, varies for triggers)
         joy_msg.buttons -> list of ints   (0 or 1)
 
-        Returns Int16MultiArray with 4 values: [x, y, z, r]
+        Returns Int16MultiArray with 6 values: [x, y, z, r, 0, 0]
         All axis values are int16: -1000 to 1000 (z: 0 to 1000, 500 = hold depth)
         """
         mc_msg = Int16MultiArray()
@@ -130,11 +130,11 @@ class ManualAltitudeHoldControlNode(Node):
         sway = joy_msg.axes[self.sway_axis]
         yaw = joy_msg.axes[self.yaw_axis]
 
-        # Triggers: commonly +1 unpressed, -1 pressed -> normalize to [0,1]
+        # Triggers: -1 unpressed, +1 pressed -> normalize to [0,1]
         l2_raw = joy_msg.axes[self.l2_axis]
         r2_raw = joy_msg.axes[self.r2_axis]
-        l2 = (1.0 - l2_raw) * 0.5  # [0..1]
-        r2 = (1.0 - r2_raw) * 0.5  # [0..1]
+        l2 = (l2_raw + 1.0) * 0.5  # [0..1]
+        r2 = (r2_raw + 1.0) * 0.5  # [0..1]
 
         # net vertical: + up, - down
         heave_net = r2 - l2  # [-1..1]
