@@ -13,10 +13,12 @@ import { createRoot } from "react-dom/client";
 // import { GamepadDebug } from "./components/GamepadDebug";
 import { GamepadView } from "./components/GamepadView";
 import { SimpleButtonView } from "./components/SimpleButtonView";
+import { JoyDataDisplay } from "./components/JoyDataDisplay";
 import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.json";
 import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
 import kbmapping1 from "./components/kbmapping1.json";
 import { useGamepad } from "./hooks/useGamepad";
+import { gamepadToRosJoy } from "./utils/gamepadToRosJoy";
 import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
 import { Joy } from "./types";
 
@@ -82,7 +84,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.dataSource ??= "sub-joy-topic";
     partialConfig.displayMode ??= "auto";
     partialConfig.debugGamepad ??= false;
-    partialConfig.layoutName ??= "steamdeck";
+    partialConfig.layoutName ??= "ps4";
     partialConfig.mapping_name ??= "TODO";
     partialConfig.keyboardMapping ??= "default";
     partialConfig.gamepadId ??= 0;
@@ -188,6 +190,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           return;
         }
 
+        // Convert Gamepad API to ROS /joy format using the mapping
+        const { buttons, axes } = gamepadToRosJoy(gp);
+
         const tmpJoy = {
           header: {
             frame_id: config.publishFrameId,
@@ -195,8 +200,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             // TODO: /clock
             stamp: fromDate(new Date()),
           },
-          axes: gp.axes.map((axis) => -axis),
-          buttons: gp.buttons.map((button) => button.value),
+          axes,
+          buttons,
         } as Joy;
 
         setJoy(tmpJoy);
@@ -299,23 +304,37 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       return;
     }
 
-    // Initialize with proper array sizes to prevent flickering
-    const axes: number[] = [0, 0, 0, 0]; // 4 axes for sticks
-    const buttons: number[] = [];
+    // Initialize with fixed array sizes so the raw display is always complete
+    const axes: number[] = new Array(6).fill(0);
+    const buttons: number[] = new Array(18).fill(0);
+    const triggerAxes = new Set<number>();
+
+    // Default trigger axes (L2/R2) to -1 when idle
+    axes[4] = -1;
+    axes[5] = -1;
+
+    trackedKeys?.forEach((value) => {
+      if (value.axis >= 0 && value.direction !== 0 && value.button >= 0) {
+        triggerAxes.add(value.axis);
+      }
+    });
+
+    triggerAxes.forEach((axis) => {
+      axes[axis] = -1;
+    });
 
     trackedKeys?.forEach((value) => {
       if (value.button >= 0) {
-        while (buttons.length <= value.button) {
-          buttons.push(0);
-        }
         buttons[value.button] = value.value;
-      } else if (value.axis >= 0 && value.direction !== 0) {
-        while (axes.length <= value.axis) {
-          axes.push(0);
-        }
-        // Safe to index because we've grown the array to accommodate
+      }
+
+      if (value.axis >= 0 && value.direction !== 0) {
         const direction = value.direction > 0 ? 1 : -1;
-        axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
+        if (triggerAxes.has(value.axis)) {
+          axes[value.axis] = -1 + 2 * (direction * value.value);
+        } else {
+          axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
+        }
       }
     });
 
@@ -438,13 +457,16 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         </FormGroup>
       ) : null}
       {config.displayMode === "auto" ? <SimpleButtonView joy={joy} /> : null}
-      {config.displayMode === "custom" ? (
+      {config.displayMode === "custom" && config.layoutName !== "rawjoy" ? (
         <GamepadView
           joy={joy}
           cbInteractChange={interactiveCb}
           layoutName={config.layoutName}
           kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
         />
+      ) : null}
+      {config.displayMode === "custom" || config.layoutName === "rawjoy" ? (
+        <JoyDataDisplay joy={joy} kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined} />
       ) : null}
       {/* {config.debugGamepad ? <GamepadDebug gamepads={gamepads} /> : null} */}
     </div>
