@@ -5,7 +5,8 @@
         "x": 397,
         "y": 276,
         "rot": 0,
-        "button": 0
+        "gamepadApi": 0,
+        "joyButton": 0
     },
     {
         "type": "button",
@@ -13,7 +14,8 @@
         "x": 430,
         "y": 242,
         "rot": 0,
-        "button": 1
+        "gamepadApi": 1,
+        "joyButton": 1
     },
     {
         "type": "button",
@@ -21,7 +23,8 @@
         "x": 363,
         "y": 242,
         "rot": 0,
-        "button": 2
+        "gamepadApi": 2,
+        "joyButton": 2
     },
     {
         "type": "button",
@@ -29,7 +32,8 @@
         "x": 397,
         "y": 210,
         "rot": 0,
-        "button": 3
+        "gamepadApi": 3,
+        "joyButton": 3
     },
     {
         "type": "button",
@@ -37,7 +41,8 @@
         "x": 121,
         "y": 131,
         "rot": 0,
-        "button": 4
+        "gamepadApi": 4,
+        "joyButton": 4
     },
     {
         "type": "button",
@@ -45,25 +50,28 @@
         "x": 393,
         "y": 131,
         "rot": 0,
-        "button": 5
+        "gamepadApi": 5,
+        "joyButton": 5
     },
     {
         "type": "bar",
         "text": "L2",
-        "axis": -1,
-        "button": 6,
+        "gamepadApi": 6,
+        "joyAxis": 4,
         "x": 121,
         "y": 60,
-        "rot": 0
+        "rot": 0,
+        "transform": "l2_normalize"
     },
     {
         "type": "bar",
         "text": "R2",
-        "axis": -1,
-        "button": 7,
+        "gamepadApi": 7,
+        "joyAxis": 5,
         "x": 393,
         "y": 60,
-        "rot": 0
+        "rot": 0,
+        "transform": "r2_normalize"
     },
     {
         "type": "button",
@@ -71,7 +79,8 @@
         "x": 211,
         "y": 242,
         "rot": 0,
-        "button": 8
+        "gamepadApi": 8,
+        "joyButton": 8
     },
     {
         "type": "button",
@@ -79,30 +88,48 @@
         "x": 302,
         "y": 242,
         "rot": 0,
-        "button": 9
+        "gamepadApi": 9,
+        "joyButton": 9
     },
- 
+    {
+        "type": "button",
+        "text": "PS",
+        "x": 256,
+        "y": 310,
+        "rot": 0,
+        "gamepadApi": 16,
+        "joyButton": 16
+    },
     {
         "type": "button",
         "text": "Touchpad",
         "x": 256,
         "y": 180,
         "rot": 0,
-        "button": 17
+        "gamepadApi": 17,
+        "joyButton": 17
     },
     {
         "type": "stick",
-        "axisX": 0,
-        "axisY": 1,
-        "button": 10,
+        "text": "L Stick",
+        "gamepadApiX": 0,
+        "gamepadApiY": 1,
+        "gamepadApiButton": 10,
+        "joyAxisX": 0,
+        "joyAxisY": 1,
+        "joyButton": 10,
         "x": 184,
         "y": 308
     },
     {
         "type": "stick",
-        "axisX": 2,
-        "axisY": 3,
-        "button": 11,
+        "text": "R Stick",
+        "gamepadApiX": 2,
+        "gamepadApiY": 3,
+        "gamepadApiButton": 11,
+        "joyAxisX": 2,
+        "joyAxisY": 3,
+        "joyButton": 11,
         "x": 329,
         "y": 308
     },
@@ -112,7 +139,8 @@
         "x": 117,
         "y": 218,
         "rot": 0,
-        "button": 12
+        "gamepadApi": 12,
+        "joyButton": 12
     },
     {
         "type": "button",
@@ -120,7 +148,8 @@
         "x": 117,
         "y": 268,
         "rot": 0,
-        "button": 13
+        "gamepadApi": 13,
+        "joyButton": 13
     },
     {
         "type": "button",
@@ -128,7 +157,8 @@
         "x": 92,
         "y": 243,
         "rot": 0,
-        "button": 14
+        "gamepadApi": 14,
+        "joyButton": 14
     },
     {
         "type": "button",
@@ -136,6 +166,7 @@
         "x": 142,
         "y": 243,
         "rot": 0,
-        "button": 15
+        "gamepadApi": 15,
+        "joyButton": 15
     }
 ]
