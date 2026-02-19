@@ -24,8 +24,8 @@ export function gamepadToRosJoy(gamepad: Gamepad): {
   axes: number[];
 } {
   // Initialize arrays with proper size for ROS Joy
-  const buttons: number[] = new Array(14).fill(0);
-  const axes: number[] = new Array(8).fill(0);
+  const buttons: number[] = new Array(18).fill(0);
+  const axes: number[] = new Array(6).fill(0);
 
   const config = (ps4Mapping as unknown as DisplayMapping) || [];
 
@@ -65,6 +65,12 @@ export function gamepadToRosJoy(gamepad: Gamepad): {
       if (gamepadApi >= 0 && joyAxis >= 0 && transformFunc) {
         const value = gamepad.axes[gamepadApi] ?? gamepad.buttons[gamepadApi]?.value ?? 0;
         axes[joyAxis] = transformFunc(value);
+        
+        // Also set button state for triggers (L2/R2 at indices 6 and 7)
+        if (gamepadApi === 6 || gamepadApi === 7) {
+          const btn_obj = gamepad.buttons[gamepadApi];
+          buttons[gamepadApi] = (btn_obj && btn_obj.pressed) ? 1 : 0;
+        }
       }
     } else if (element.type === "stick") {
       const stick = element as StickConfig;

@@ -4,46 +4,46 @@
         "button": -1,
         "toggle": false,
         "axis": 1,
-        "direction": "+"
+        "direction": "-"
     },
     "s": {
         "button": -1,
         "toggle": false,
         "axis": 1,
-        "direction": "-"
+        "direction": "+"
     },
     "d": {
         "button": -1,
         "toggle": false,
         "axis": 0,
-        "direction": "-"
+        "direction": "+"
     },
     "a": {
         "button": -1,
         "toggle": false,
         "axis": 0,
-        "direction": "+"
+        "direction": "-"
     },
     "ArrowUp": {
-        "axis": -1,
-        "direction": null,
+        "axis": 5,
+        "direction": "+",
         "button": 7,
         "toggle": false
     },
     "ArrowDown": {
-        "axis": -1,
-        "direction": null,
+        "axis": 4,
+        "direction": "+",
         "button": 6,
         "toggle": false
     },
     "ArrowRight": {
-        "axis": 2,
+        "axis": 3,
         "direction": "-",
         "button": -1,
         "toggle": false
     },
     "ArrowLeft": {
-        "axis": 2,
+        "axis": 3,
         "direction": "+",
         "button": -1,
         "toggle": false
