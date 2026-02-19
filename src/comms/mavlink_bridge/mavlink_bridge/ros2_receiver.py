@@ -127,9 +127,10 @@ class MavlinkBridgeReceiver(Node):
             0,  # Unused parameters
         )
 
+        self.get_logger().info(f"Sent {'arm' if arm_bool else 'disarm'} command to Pixhawk")
         # Wait for acknowledgment
-        ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
-        print(f"Arming status: {ack.result}")  # 0 = Success
+        # ack = self.port.recv_match(type="COMMAND_ACK", blocking=True)
+        # print(f"Arming status: {ack.result}")  # 0 = Success
 
     def mode_selection_cb(self, msg):
         """
