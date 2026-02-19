@@ -1,0 +1,141 @@
+[
+    {
+        "type": "button",
+        "text": "X",
+        "x": 397,
+        "y": 276,
+        "rot": 0,
+        "button": 0
+    },
+    {
+        "type": "button",
+        "text": "O",
+        "x": 430,
+        "y": 242,
+        "rot": 0,
+        "button": 1
+    },
+    {
+        "type": "button",
+        "text": "□",
+        "x": 363,
+        "y": 242,
+        "rot": 0,
+        "button": 2
+    },
+    {
+        "type": "button",
+        "text": "△",
+        "x": 397,
+        "y": 210,
+        "rot": 0,
+        "button": 3
+    },
+    {
+        "type": "button",
+        "text": "L1",
+        "x": 121,
+        "y": 131,
+        "rot": 0,
+        "button": 4
+    },
+    {
+        "type": "button",
+        "text": "R1",
+        "x": 393,
+        "y": 131,
+        "rot": 0,
+        "button": 5
+    },
+    {
+        "type": "bar",
+        "text": "L2",
+        "axis": -1,
+        "button": 6,
+        "x": 121,
+        "y": 60,
+        "rot": 0
+    },
+    {
+        "type": "bar",
+        "text": "R2",
+        "axis": -1,
+        "button": 7,
+        "x": 393,
+        "y": 60,
+        "rot": 0
+    },
+    {
+        "type": "button",
+        "text": "Share",
+        "x": 211,
+        "y": 242,
+        "rot": 0,
+        "button": 8
+    },
+    {
+        "type": "button",
+        "text": "Options",
+        "x": 302,
+        "y": 242,
+        "rot": 0,
+        "button": 9
+    },
+ 
+    {
+        "type": "button",
+        "text": "Touchpad",
+        "x": 256,
+        "y": 180,
+        "rot": 0,
+        "button": 17
+    },
+    {
+        "type": "stick",
+        "axisX": 0,
+        "axisY": 1,
+        "button": 10,
+        "x": 184,
+        "y": 308
+    },
+    {
+        "type": "stick",
+        "axisX": 2,
+        "axisY": 3,
+        "button": 11,
+        "x": 329,
+        "y": 308
+    },
+    {
+        "type": "button",
+        "text": "↑",
+        "x": 117,
+        "y": 218,
+        "rot": 0,
+        "button": 12
+    },
+    {
+        "type": "button",
+        "text": "↓",
+        "x": 117,
+        "y": 268,
+        "rot": 0,
+        "button": 13
+    },
+    {
+        "type": "button",
+        "text": "←",
+        "x": 92,
+        "y": 243,
+        "rot": 0,
+        "button": 14
+    },
+    {
+        "type": "button",
+        "text": "→",
+        "x": 142,
+        "y": 243,
+        "rot": 0,
+        "button": 15
+    }
+]
