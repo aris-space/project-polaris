@@ -22,8 +22,11 @@ class Ice_Measurement(Node):
 
         self.initialization = self.ping.initialize()
 
-        if self.initialization:
-            self.get_logger().info("Measurement device initalized")
+        if not self.initialization:
+            self.get_logger().error("Failed to initialize measurement device")
+            
+
+        self.get_logger().info("Measurement device initialized")
 
         # relevant parameters to configure
         self.scan_start = 0
