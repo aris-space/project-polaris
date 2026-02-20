@@ -1,6 +1,3 @@
-import brping
-
-print("brping loaded from:", brping.__file__)
 from brping import Ping1D, definitions
 from rclpy.node import Node
 import rclpy
@@ -34,7 +31,6 @@ class Ice_Measurement(Node):
             # Explicitly fetch the current range and config to "create" the internal attributes
             # and prevent the AttributeError during the 'verify' step later.
             self.ping.legacyRequest(definitions.PING1D_RANGE)
-            self.ping.legacyRequest(definitions.PING1D_OSS_PROFILE_CONFIGURATION)
             self.get_logger().info("Measurement device initialized")
 
         # relevant parameters to configure
@@ -51,12 +47,6 @@ class Ice_Measurement(Node):
         # set functions based on the config factors
         self.ping.set_range(self.scan_start, self.scan_length, verify=False)
         self.get_logger().info("Range set")
-
-        # scan_start, scan_length in mm
-        self.ping.set_oss_profile_configuration(
-            self.number_bins, self.scan_start, self.scan_length, verify=False
-        )
-        self.get_logger().info("Profile configuration set")
 
         self.recording = False
         self.mode_sub = self.create_subscription(
