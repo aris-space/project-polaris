@@ -18,7 +18,9 @@ class Ice_Measurement(Node):
         super().__init__("ice_measurement_publisher")
 
         self.ping = Ping1D()  # initializes object
-        self.ping.connect_udp(Comms.JETSON_IP_ADDRESS, Comms.PING_SONAR_PORT)  # specifies relevant port
+        self.ping.connect_udp(
+            Comms.JETSON_IP_ADDRESS, Comms.PING_SONAR_PORT
+        )  # specifies relevant port
 
         self.initialization = self.ping.initialize()
 
@@ -26,6 +28,10 @@ class Ice_Measurement(Node):
             self.get_logger().error("Failed to initialize measurement device")
             return
         else:
+            # Explicitly fetch the current range and config to "create" the internal attributes
+            # and prevent the AttributeError during the 'verify' step later.
+            self.ping.get_range()
+            self.ping.get_oss_profile_configuration()
             self.get_logger().info("Measurement device initialized")
 
         # relevant parameters to configure
@@ -44,13 +50,14 @@ class Ice_Measurement(Node):
             self.get_logger().error("Failed to set range")
         else:
             self.get_logger().info("Range set")
-         # scan_start, scan_length in mm
-        if not self.ping.set_oss_profile_configuration(self.number_bins, 0, 0, verify=True):
+        # scan_start, scan_length in mm
+        if not self.ping.set_oss_profile_configuration(
+            self.number_bins, 0, 0, verify=True
+        ):
             self.get_logger().error("Failed to set profile configuration")
         else:
             self.get_logger().info("Profile configuration set")
-            
-    
+
         self.recording = False
         self.mode_sub = self.create_subscription(
             String, "/ping_sonar/mode", self.mode_callback, 10
@@ -69,8 +76,12 @@ class Ice_Measurement(Node):
         self.first_timestamp = None
         self.timer = self.create_timer(self.ping_interval, self.logging_cb)
 
-        self.distance_publisher = self.create_publisher(String, "/ping_sonar/distance", 10)
-        self.profile_publisher = self.create_publisher(String, "/ping_sonar/profile", 10)
+        self.distance_publisher = self.create_publisher(
+            String, "/ping_sonar/distance", 10
+        )
+        self.profile_publisher = self.create_publisher(
+            String, "/ping_sonar/profile", 10
+        )
 
     def mode_callback(self, msg):
         if msg.data == "start":
@@ -83,7 +94,7 @@ class Ice_Measurement(Node):
     def logging_cb(self):
         if not self.recording:
             return
-        
+
         profile = self.ping.get_profile()
         distance = self.ping.get_distance_simple()
 
@@ -93,26 +104,28 @@ class Ice_Measurement(Node):
             return
 
         msg_distance = String()
-        msg_distance.data = json.dumps({
-            "distance": distance["distance"],
-            "confidence": distance["confidence"],
-        })
+        msg_distance.data = json.dumps(
+            {
+                "distance": distance["distance"],
+                "confidence": distance["confidence"],
+            }
+        )
 
         msg_profile = String()
-        msg_profile.data = json.dumps({
-            "scan_start": profile["scan_start"],
-            "scan_length": profile["scan_length"],
-            "ping_number": profile["ping_number"],
-            "profile_data": list(profile["profile_data"]),
-        })
+        msg_profile.data = json.dumps(
+            {
+                "scan_start": profile["scan_start"],
+                "scan_length": profile["scan_length"],
+                "ping_number": profile["ping_number"],
+                "profile_data": list(profile["profile_data"]),
+            }
+        )
 
         self.distance_publisher.publish(msg_distance)
         self.profile_publisher.publish(msg_profile)
 
         if self.first_timestamp is None:
-            self.first_timestamp = (
-                self.get_clock().now().nanoseconds / 1e9
-            )
+            self.first_timestamp = self.get_clock().now().nanoseconds / 1e9
 
         ping_num = profile["ping_number"]
         for i, intensity in enumerate(profile["profile_data"]):
