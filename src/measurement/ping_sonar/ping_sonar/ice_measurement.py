@@ -46,17 +46,12 @@ class Ice_Measurement(Node):
         )
 
         # set functions based on the config factors
-        if not self.ping.set_range(self.scan_start, self.scan_length, verify=True):
-            self.get_logger().error("Failed to set range")
-        else:
-            self.get_logger().info("Range set")
+        self.ping.set_range(self.scan_start, self.scan_length, verify=False)
+        self.get_logger().info("Range set")
+
         # scan_start, scan_length in mm
-        if not self.ping.set_oss_profile_configuration(
-            self.number_bins, 0, 0, verify=True
-        ):
-            self.get_logger().error("Failed to set profile configuration")
-        else:
-            self.get_logger().info("Profile configuration set")
+        self.ping.set_oss_profile_configuration(self.number_bins, 0, 0, verify=False)
+        self.get_logger().info("Profile configuration set")
 
         self.recording = False
         self.mode_sub = self.create_subscription(
