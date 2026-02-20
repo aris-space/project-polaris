@@ -16,7 +16,8 @@ public:
     // 1. Setup Serial Port (Jetson Nano Port 1 is usually /dev/ttyTHS1)
     serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY);
     setup_serial();
-    std::cout << "Serial port initialized for Ultrasonic Sensor" << std::endl;
+    RCLCPP_INFO(this->get_logger(), "Serial port initialized for Ultrasonic Sensor");
+
 
     // 2. Setup Publisher (Using Range message for ROS 2 standards)
     publisher_ = this->create_publisher<sensor_msgs::msg::Range>("/ultrasonic/distance", 10);
@@ -44,8 +45,10 @@ private:
   }
 
   void read_sensor() {
+    RCLCPP_INFO(this->get_logger(), "Reading Ultrasonic Sensor Data...");
     uint8_t COM = 0x55;
     write(serial_port_, &COM, 1); // Trigger the sensor
+    RCLCPP_INFO(this->get_logger(), "Triggered Ultrasonic Sensor");
 
     // Give the sensor a moment to respond
     std::this_thread::sleep_for(10ms);
