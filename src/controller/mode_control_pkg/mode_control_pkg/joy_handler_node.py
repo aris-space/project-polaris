@@ -14,9 +14,12 @@ Fusion priority logic:
   2. Mode active, keyboard inactive   -> mode + controller (mode buttons stripped from controller)
   3. Neither keyboard nor mode active -> pass through controller as-is
 
-A source is considered "active" when a message with non-neutral content
-(any axis deviating from its neutral value, or any pressed button) was received
-within DELTA_T seconds.  Neutral values: 0.0 for stick axes, -1.0 for L2/R2 triggers.
+A source is considered "active" when its last received message has non-neutral
+content (any axis deviating from neutral, or any pressed button).  A source
+with a neutral last message stays active for DELTA_T seconds after reception
+(grace period for transitions).  This allows keyboard sources that only publish
+on key state changes (not continuously) to keep buttons held.
+Neutral values: 0.0 for stick axes, -1.0 for L2/R2 triggers.
 
 The output message always has exactly NUM_AXES axes and NUM_BUTTONS buttons,
 regardless of the source message sizes, so downstream nodes can safely index
@@ -140,13 +143,16 @@ class JoyHandlerNode(Node):
     # ---- Activity detection ----------------------------------------------------
 
     def _is_active(self, msg, timestamp):
-        """True when a non-neutral message arrived within the last DELTA_T seconds."""
+        """True when the last received message has non-neutral content, or a
+        message (even neutral) arrived within the last DELTA_T seconds.
+        This keeps a source active while a key/button is held, even if the
+        publisher only sends on state changes rather than continuously."""
         if msg is None or timestamp is None:
             return False
+        if self._has_nonzero(msg):
+            return True
         elapsed = (self.get_clock().now() - timestamp).nanoseconds / 1e9
-        if elapsed > DELTA_T:
-            return False
-        return self._has_nonzero(msg)
+        return elapsed <= DELTA_T
 
     @staticmethod
     def _has_nonzero(msg):
@@ -163,20 +169,24 @@ class JoyHandlerNode(Node):
     # ---- Fusion strategies -----------------------------------------------------
 
     def _fuse_keyboard_and_mode(self, keyboard_msg, mode_msg):
-        """Keyboard provides movement, /joy_mode provides mode buttons."""
+        """Keyboard provides axes, /joy_mode provides all buttons.
+        Non-zero mode buttons override keyboard buttons (e.g. L1/R1 from keyboard
+        are kept unless mode also sets them)."""
         output = self._normalize(keyboard_msg)
-        for idx in MODE_BUTTON_INDICES:
-            if idx < len(mode_msg.buttons):
-                output.buttons[idx] = mode_msg.buttons[idx]
+        for i in range(min(len(mode_msg.buttons), NUM_BUTTONS)):
+            if mode_msg.buttons[i] != 0:
+                output.buttons[i] = mode_msg.buttons[i]
         return output
 
     def _fuse_mode_and_controller(self, mode_msg, controller_msg):
-        """Controller provides movement (mode buttons stripped), /joy_mode provides mode buttons."""
+        """Controller provides axes and non-mode buttons, /joy_mode overlays
+        all its non-zero buttons on top (mode buttons from controller are
+        stripped first so /joy_mode always wins for those)."""
         output = self._normalize(controller_msg)
         self._zero_mode_buttons(output)
-        for idx in MODE_BUTTON_INDICES:
-            if idx < len(mode_msg.buttons):
-                output.buttons[idx] = mode_msg.buttons[idx]
+        for i in range(min(len(mode_msg.buttons), NUM_BUTTONS)):
+            if mode_msg.buttons[i] != 0:
+                output.buttons[i] = mode_msg.buttons[i]
         return output
 
     # ---- Helpers ---------------------------------------------------------------
@@ -188,14 +198,13 @@ class JoyHandlerNode(Node):
 
     @staticmethod
     def _mode_only(mode_msg):
-        """Keep only mode buttons from the mode message; all axes and other buttons stay neutral."""
+        """Forward all buttons from the mode message; axes stay neutral (no controller for movement)."""
         out = Joy()
         out.header = mode_msg.header
         out.axes = list(NEUTRAL_AXES)
         out.buttons = [0] * NUM_BUTTONS
-        for idx in MODE_BUTTON_INDICES:
-            if idx < len(mode_msg.buttons):
-                out.buttons[idx] = mode_msg.buttons[idx]
+        for i in range(min(len(mode_msg.buttons), NUM_BUTTONS)):
+            out.buttons[i] = mode_msg.buttons[i]
         return out
 
     @staticmethod
