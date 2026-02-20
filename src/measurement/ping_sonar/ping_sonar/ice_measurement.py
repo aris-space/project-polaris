@@ -18,7 +18,7 @@ class Ice_Measurement(Node):
         super().__init__("ice_measurement_publisher")
 
         self.ping = Ping1D()  # initializes object
-        self.ping.connect_serial(Comms.PING_SONAR_PORT, Comms.PING_SONAR_BAUD_RATE)  # specifies relevant port
+        self.ping.connect_udp(Comms.JETSON_IP_ADDRESS, Comms.PING_SONAR_PORT)  # specifies relevant port
 
         self.initialization = self.ping.initialize()
 
