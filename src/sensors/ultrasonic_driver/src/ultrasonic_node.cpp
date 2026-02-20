@@ -14,7 +14,7 @@ class UltrasonicSensorNode : public rclcpp::Node {
 public:
   UltrasonicSensorNode() : Node("ultrasonic_sensor_node") {
     // 1. Setup Serial Port (Jetson Nano Port 1 is usually /dev/ttyTHS1)
-    serial_port_ = open("/dev/ttyTHS1", O_RDWR | O_NOCTTY);
+    serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY);
     setup_serial();
 
     // 2. Setup Publisher (Using Range message for ROS 2 standards)
