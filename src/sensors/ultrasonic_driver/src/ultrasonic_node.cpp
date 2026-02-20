@@ -16,12 +16,12 @@ class UltrasonicSensorNode : public rclcpp::Node
 public:
   UltrasonicSensorNode() : Node("ultrasonic_sensor_node")
   {
-    // Check /dev/ttyTHS1 if you are using Jetson GPIO pins, 
-    // or /dev/ttyUSB0 for a USB adapter.
+    // Open in Read/Write mode. O_NDELAY prevents the open call from blocking.
     serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY);
     
     if (serial_port_ < 0) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to open serial port: %s", std::strerror(errno));
+      RCLCPP_ERROR(this->get_logger(), "Could not open /dev/ttyUSB0. Error: %s", std::strerror(errno));
+      RCLCPP_ERROR(this->get_logger(), "TIP: Try 'sudo chmod 666 /dev/ttyUSB0'");
       return;
     }
 
@@ -29,10 +29,10 @@ public:
     
     publisher_ = this->create_publisher<sensor_msgs::msg::Range>("/ultrasonic/distance", 10);
     
-    // 10Hz polling rate (100ms) matches your Arduino loop delay
+    // 100ms timer = 10Hz frequency
     timer_ = this->create_wall_timer(100ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
     
-    RCLCPP_INFO(this->get_logger(), "Ultrasonic Node Started. Port: /dev/ttyUSB0");
+    RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on /dev/ttyUSB0");
   }
 
   ~UltrasonicSensorNode() {
@@ -44,104 +44,102 @@ private:
   {
     struct termios tty;
     if (tcgetattr(serial_port_, &tty) != 0) {
-      RCLCPP_ERROR(this->get_logger(), "tcgetattr failed");
+      RCLCPP_ERROR(this->get_logger(), "Error from tcgetattr: %s", std::strerror(errno));
       return;
     }
 
-    // Set Baud Rate
+    // Set Baud Rate to 115200 (Matches your Arduino code)
     cfsetospeed(&tty, B115200);
     cfsetispeed(&tty, B115200);
 
-    // 8N1 Mode
-    tty.c_cflag &= ~PARENB;        // No parity
-    tty.c_cflag &= ~CSTOPB;        // 1 stop bit
-    tty.c_cflag &= ~CSIZE;
-    tty.c_cflag |= CS8;            // 8 bits
-    tty.c_cflag |= (CLOCAL | CREAD); 
+    // Set hardware parameters: 8N1
+    tty.c_cflag &= ~PARENB;        // No parity bit
+    tty.c_cflag &= ~CSTOPB;        // Only one stop bit
+    tty.c_cflag &= ~CSIZE;         // Clear size mask
+    tty.c_cflag |= CS8;            // 8 data bits
+    tty.c_cflag |= (CLOCAL | CREAD); // Ignore modem lines, enable receiver
 
-    // Raw Mode (Non-canonical)
+    // Disable canonical mode (we want raw bytes, not lines)
     tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
     tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL);
     tty.c_oflag &= ~OPOST;
 
-    // Blocking behavior: Wait up to 100ms for at least 1 byte
+    // VMIN = 0, VTIME = 1: Read will return as soon as any data is received, 
+    // or timeout after 100ms if nothing arrives.
     tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 1; // 1 = 100ms
+    tty.c_cc[VTIME] = 1; 
 
     if (tcsetattr(serial_port_, TCSANOW, &tty) != 0) {
-      RCLCPP_ERROR(this->get_logger(), "tcsetattr failed");
+      RCLCPP_ERROR(this->get_logger(), "Error from tcsetattr: %s", std::strerror(errno));
     }
     
-    tcflush(serial_port_, TCIFLUSH);
+    // Clear buffers
+    tcflush(serial_port_, TCIOFLUSH);
   }
 
   void read_sensor()
   {
-    // 1. Flush old data to ensure we get a fresh reading
-    tcflush(serial_port_, TCIFLUSH);
-
-    // 2. Trigger the sensor
-    uint8_t cmd = 0x55;
-    if (write(serial_port_, &cmd, 1) != 1) {
-      RCLCPP_WARN(this->get_logger(), "Write failed");
+    // 1. Send Trigger Pulse (0x55)
+    uint8_t trigger_byte = 0x55;
+    if (write(serial_port_, &trigger_byte, 1) < 0) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to write to serial port");
       return;
     }
 
-    // 3. Wait for response (Sensor needs time to ping and calculate)
-    // Most sensors respond within 30-50ms
-    std::this_thread::sleep_for(60ms);
+    // 2. Wait for the sensor to process the ping and reply
+    // On USB-to-TTL, 50-70ms is the "sweet spot" to ensure the buffer is filled
+    std::this_thread::sleep_for(70ms);
 
-    uint8_t buffer[4];
+    // 3. Search for the Header (0xFF)
+    // We read one byte at a time until we find 0xFF to stay in sync
     uint8_t header = 0;
-    
-    // 4. Look for the start byte (0xFF)
+    int attempts = 0;
     bool found_header = false;
-    for (int i = 0; i < 10; ++i) { // Try a few times to find the header
-        if (read(serial_port_, &header, 1) > 0) {
-            if (header == 0xFF) {
-                found_header = true;
-                break;
-            }
+
+    while (attempts < 32) {
+      if (read(serial_port_, &header, 1) > 0) {
+        if (header == 0xFF) {
+          found_header = true;
+          break;
         }
+      }
+      attempts++;
     }
 
     if (!found_header) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Header 0xFF not found");
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Waiting for sensor data (Header 0xFF not found)...");
       return;
     }
 
-    // 5. Read the remaining 3 bytes (Data_H, Data_L, Checksum)
-    ssize_t n = read(serial_port_, buffer, 3);
+    // 4. Read the payload (3 bytes: High, Low, Checksum)
+    uint8_t data[3];
+    ssize_t n = read(serial_port_, data, 3);
+    
     if (n == 3) {
-      uint8_t high = buffer[0];
-      uint8_t low  = buffer[1];
-      uint8_t sum  = buffer[2];
+      uint8_t high = data[0];
+      uint8_t low  = data[1];
+      uint8_t received_sum = data[2];
       
-      // Calculate Checksum: (Header + High + Low) & 0x00FF
-      uint8_t calc_sum = (0xFF + high + low) & 0xFF;
+      // Arduino Logic: Checksum = Header + High + Low
+      uint8_t calculated_sum = (0xFF + high + low) & 0xFF;
 
-      if (sum == calc_sum) {
+      if (received_sum == calculated_sum) {
         int distance_mm = (high << 8) | low;
-        publish_range(distance_mm);
+        
+        auto msg = sensor_msgs::msg::Range();
+        msg.header.stamp = this->now();
+        msg.header.frame_id = "ultrasonic_link";
+        msg.radiation_type = sensor_msgs::msg::Range::ULTRASOUND;
+        msg.min_range = 0.03; // 3cm
+        msg.max_range = 4.5;  // 4.5m
+        msg.range = static_cast<float>(distance_mm) / 1000.0f; // mm to meters
+
+        publisher_->publish(msg);
+        RCLCPP_INFO(this->get_logger(), "Distance: %d mm", distance_mm);
       } else {
-        RCLCPP_WARN(this->get_logger(), "Checksum error! Calculated: %02X, Received: %02X", calc_sum, sum);
+        RCLCPP_WARN(this->get_logger(), "Checksum Failed!");
       }
     }
-  }
-
-  void publish_range(int mm)
-  {
-    auto msg = sensor_msgs::msg::Range();
-    msg.header.stamp = this->now();
-    msg.header.frame_id = "ultrasonic_link";
-    msg.radiation_type = sensor_msgs::msg::Range::ULTRASOUND;
-    msg.field_of_view = 0.5235; // Approx 30 degrees in radians
-    msg.min_range = 0.03;       // 3cm
-    msg.max_range = 4.0;        // 4m
-    msg.range = static_cast<float>(mm) / 1000.0f;
-
-    publisher_->publish(msg);
-    RCLCPP_INFO(this->get_logger(), "Distance: %d mm", mm);
   }
 
   int serial_port_;
