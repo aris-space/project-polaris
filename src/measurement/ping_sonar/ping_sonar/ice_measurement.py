@@ -50,7 +50,9 @@ class Ice_Measurement(Node):
         self.get_logger().info("Range set")
 
         # scan_start, scan_length in mm
-        self.ping.set_oss_profile_configuration(self.number_bins, 0, 0, verify=False)
+        self.ping.set_oss_profile_configuration(
+            self.number_bins, self.scan_start, self.scan_length, verify=False
+        )
         self.get_logger().info("Profile configuration set")
 
         self.recording = False
