@@ -16,6 +16,7 @@ public:
     // 1. Setup Serial Port (Jetson Nano Port 1 is usually /dev/ttyTHS1)
     serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY);
     setup_serial();
+    std::cout << "Serial port initialized for Ultrasonic Sensor" << std::endl;
 
     // 2. Setup Publisher (Using Range message for ROS 2 standards)
     publisher_ = this->create_publisher<sensor_msgs::msg::Range>("/ultrasonic/distance", 10);
