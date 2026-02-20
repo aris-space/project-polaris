@@ -1,3 +1,6 @@
+import brping
+
+print("brping loaded from:", brping.__file__)
 from .brping import Ping1D, definitions
 from rclpy.node import Node
 import rclpy
