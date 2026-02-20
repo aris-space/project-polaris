@@ -1,16 +1,13 @@
 #include <chrono>
 #include <cerrno>
 #include <cstring>
-#include <memory>
-#include <string>
-#include <thread>
-#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <memory>
 
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/range.hpp" // Better than a raw Int32 for distance
+#include "sensor_msgs/msg/range.hpp"
 
 using namespace std::chrono_literals;
 
@@ -19,226 +16,132 @@ class UltrasonicSensorNode : public rclcpp::Node
 public:
   UltrasonicSensorNode() : Node("ultrasonic_sensor_node")
   {
-    // 1. Setup Serial Port (Jetson Nano Port 1 is usually /dev/ttyTHS1)
-    serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY);
-    if (serial_port_ < 0)
-    {
-      RCLCPP_ERROR(this->get_logger(), "Failed to open serial port /dev/ttyUSB0");
+    // Check /dev/ttyTHS1 if you are using Jetson GPIO pins, 
+    // or /dev/ttyUSB0 for a USB adapter.
+    serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY);
+    
+    if (serial_port_ < 0) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to open serial port: %s", std::strerror(errno));
       return;
     }
 
     setup_serial();
-    RCLCPP_INFO(this->get_logger(), "Serial port initialized for Ultrasonic Sensor");
-
-    // 2. Setup Publisher (Using Range message for ROS 2 standards)
+    
     publisher_ = this->create_publisher<sensor_msgs::msg::Range>("/ultrasonic/distance", 10);
-
-    // 3. Setup Timer (Replaces the Arduino loop)
+    
+    // 10Hz polling rate (100ms) matches your Arduino loop delay
     timer_ = this->create_wall_timer(100ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
+    
+    RCLCPP_INFO(this->get_logger(), "Ultrasonic Node Started. Port: /dev/ttyUSB0");
   }
 
-  ~UltrasonicSensorNode()
-  {
-    if (serial_port_ >= 0)
-      close(serial_port_);
+  ~UltrasonicSensorNode() {
+    if (serial_port_ >= 0) close(serial_port_);
   }
 
 private:
-  bool wait_for_available_bytes(int min_bytes, std::chrono::milliseconds timeout)
-  {
-    auto deadline = std::chrono::steady_clock::now() + timeout;
-    int available_bytes = 0;
-
-    while (std::chrono::steady_clock::now() < deadline)
-    {
-      if (ioctl(serial_port_, FIONREAD, &available_bytes) == -1)
-      {
-        RCLCPP_WARN(this->get_logger(), "ioctl(FIONREAD) failed: %s", std::strerror(errno));
-        return false;
-      }
-
-      if (available_bytes >= min_bytes)
-      {
-        RCLCPP_DEBUG(this->get_logger(), "Serial bytes available: %d", available_bytes);
-        return true;
-      }
-
-      std::this_thread::sleep_for(2ms);
-    }
-
-    RCLCPP_WARN_THROTTLE(
-        this->get_logger(),
-        *this->get_clock(),
-        2000,
-        "No sensor bytes available after trigger (waited %ld ms)",
-        static_cast<long>(timeout.count()));
-    return false;
-  }
-
-  bool read_exact(uint8_t *buffer, size_t expected_len, std::chrono::milliseconds timeout)
-  {
-    size_t total_read = 0;
-    auto deadline = std::chrono::steady_clock::now() + timeout;
-
-    while (total_read < expected_len && std::chrono::steady_clock::now() < deadline)
-    {
-      ssize_t n = read(serial_port_, buffer + total_read, expected_len - total_read);
-      if (n > 0)
-      {
-        total_read += static_cast<size_t>(n);
-        continue;
-      }
-
-      if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-      {
-        RCLCPP_WARN(this->get_logger(), "Serial read error: %s", std::strerror(errno));
-        return false;
-      }
-
-      std::this_thread::sleep_for(1ms);
-    }
-
-    if (total_read != expected_len)
-    {
-      RCLCPP_WARN_THROTTLE(
-          this->get_logger(),
-          *this->get_clock(),
-          2000,
-          "Incomplete sensor response, bytes_read=%zu/%zu",
-          total_read,
-          expected_len);
-      return false;
-    }
-
-    return true;
-  }
-
   void setup_serial()
   {
     struct termios tty;
-    if (tcgetattr(serial_port_, &tty) != 0)
-    {
-      RCLCPP_ERROR(this->get_logger(), "tcgetattr failed while configuring serial port");
+    if (tcgetattr(serial_port_, &tty) != 0) {
+      RCLCPP_ERROR(this->get_logger(), "tcgetattr failed");
       return;
     }
 
+    // Set Baud Rate
     cfsetospeed(&tty, B115200);
     cfsetispeed(&tty, B115200);
 
-    tty.c_cflag |= (CLOCAL | CREAD); // Ignore modem lines, enable receiver
+    // 8N1 Mode
+    tty.c_cflag &= ~PARENB;        // No parity
+    tty.c_cflag &= ~CSTOPB;        // 1 stop bit
     tty.c_cflag &= ~CSIZE;
-    tty.c_cflag |= CS8;     // 8 bit chars
-    tty.c_cflag &= ~PARENB; // no parity
-    tty.c_cflag &= ~CSTOPB; // 1 stop bit
+    tty.c_cflag |= CS8;            // 8 bits
+    tty.c_cflag |= (CLOCAL | CREAD); 
 
-    tty.c_lflag = 0; // raw mode (non-canonical)
-    tty.c_oflag = 0;
-    tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-    tty.c_iflag &= ~(ICRNL | INLCR | IGNCR);
+    // Raw Mode (Non-canonical)
+    tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL);
+    tty.c_oflag &= ~OPOST;
+
+    // Blocking behavior: Wait up to 100ms for at least 1 byte
     tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 1; // 100 ms max per read call
+    tty.c_cc[VTIME] = 1; // 1 = 100ms
 
-    if (tcsetattr(serial_port_, TCSANOW, &tty) != 0)
-    {
-      RCLCPP_ERROR(this->get_logger(), "tcsetattr failed while configuring serial port");
-      return;
+    if (tcsetattr(serial_port_, TCSANOW, &tty) != 0) {
+      RCLCPP_ERROR(this->get_logger(), "tcsetattr failed");
     }
-
+    
     tcflush(serial_port_, TCIFLUSH);
-
-    RCLCPP_DEBUG(this->get_logger(), "Serial port configured: 115200 8N1");
   }
 
   void read_sensor()
   {
-    if (serial_port_ < 0)
-    {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Serial port is not available, skipping read");
+    // 1. Flush old data to ensure we get a fresh reading
+    tcflush(serial_port_, TCIFLUSH);
+
+    // 2. Trigger the sensor
+    uint8_t cmd = 0x55;
+    if (write(serial_port_, &cmd, 1) != 1) {
+      RCLCPP_WARN(this->get_logger(), "Write failed");
       return;
     }
 
-    RCLCPP_DEBUG(this->get_logger(), "Reading ultrasonic sensor data");
-
-    uint8_t COM = 0x55;
-    ssize_t bytes_written = write(serial_port_, &COM, 1); // Trigger the sensor
-    if (bytes_written != 1)
-    {
-      RCLCPP_WARN(this->get_logger(), "Failed to trigger ultrasonic sensor, bytes_written=%ld", static_cast<long>(bytes_written));
-      return;
-    }
-
-    if (tcdrain(serial_port_) != 0)
-    {
-      RCLCPP_WARN(this->get_logger(), "tcdrain failed after trigger write: %s", std::strerror(errno));
-      return;
-    }
-
-    RCLCPP_DEBUG(this->get_logger(), "Triggered ultrasonic sensor");
-
-    // Arduino-equivalent timing: delay(100) then delay(4)
-    std::this_thread::sleep_for(100ms);
-
-    if (!wait_for_available_bytes(1, 120ms))
-    {
-      return;
-    }
-
-    std::this_thread::sleep_for(4ms);
+    // 3. Wait for response (Sensor needs time to ping and calculate)
+    // Most sensors respond within 30-50ms
+    std::this_thread::sleep_for(60ms);
 
     uint8_t buffer[4];
-    if (!read_exact(buffer, 1, 20ms))
-    {
+    uint8_t header = 0;
+    
+    // 4. Look for the start byte (0xFF)
+    bool found_header = false;
+    for (int i = 0; i < 10; ++i) { // Try a few times to find the header
+        if (read(serial_port_, &header, 1) > 0) {
+            if (header == 0xFF) {
+                found_header = true;
+                break;
+            }
+        }
+    }
+
+    if (!found_header) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Header 0xFF not found");
       return;
     }
 
-    if (buffer[0] != 0xFF)
-    {
-      RCLCPP_WARN_THROTTLE(
-          this->get_logger(),
-          *this->get_clock(),
-          2000,
-          "Invalid frame header: 0x%02X",
-          buffer[0]);
-      return;
+    // 5. Read the remaining 3 bytes (Data_H, Data_L, Checksum)
+    ssize_t n = read(serial_port_, buffer, 3);
+    if (n == 3) {
+      uint8_t high = buffer[0];
+      uint8_t low  = buffer[1];
+      uint8_t sum  = buffer[2];
+      
+      // Calculate Checksum: (Header + High + Low) & 0x00FF
+      uint8_t calc_sum = (0xFF + high + low) & 0xFF;
+
+      if (sum == calc_sum) {
+        int distance_mm = (high << 8) | low;
+        publish_range(distance_mm);
+      } else {
+        RCLCPP_WARN(this->get_logger(), "Checksum error! Calculated: %02X, Received: %02X", calc_sum, sum);
+      }
     }
+  }
 
-    if (!read_exact(buffer + 1, 3, 40ms))
-    {
-      return;
-    }
+  void publish_range(int mm)
+  {
+    auto msg = sensor_msgs::msg::Range();
+    msg.header.stamp = this->now();
+    msg.header.frame_id = "ultrasonic_link";
+    msg.radiation_type = sensor_msgs::msg::Range::ULTRASOUND;
+    msg.field_of_view = 0.5235; // Approx 30 degrees in radians
+    msg.min_range = 0.03;       // 3cm
+    msg.max_range = 4.0;        // 4m
+    msg.range = static_cast<float>(mm) / 1000.0f;
 
-    uint8_t checksum = buffer[0] + buffer[1] + buffer[2];
-    if (buffer[3] != checksum)
-    {
-      RCLCPP_WARN_THROTTLE(
-          this->get_logger(),
-          *this->get_clock(),
-          2000,
-          "Checksum mismatch: recv=0x%02X expected=0x%02X",
-          buffer[3],
-          checksum);
-      return;
-    }
-
-    int distance_mm = (buffer[1] << 8) + buffer[2];
-
-    auto message = sensor_msgs::msg::Range();
-    message.header.stamp = this->now();
-    message.header.frame_id = "ultrasonic_link";
-    message.radiation_type = sensor_msgs::msg::Range::ULTRASOUND;
-    message.range = static_cast<float>(distance_mm) / 1000.0f; // Convert to Meters
-
-    RCLCPP_INFO(this->get_logger(), "Distance: %d mm", distance_mm);
-    publisher_->publish(message);
-
-    RCLCPP_DEBUG(
-        this->get_logger(),
-        "Published range: %.3f m (raw bytes: [%02X %02X %02X %02X])",
-        message.range,
-        buffer[0],
-        buffer[1],
-        buffer[2],
-        buffer[3]);
+    publisher_->publish(msg);
+    RCLCPP_INFO(this->get_logger(), "Distance: %d mm", mm);
   }
 
   int serial_port_;
