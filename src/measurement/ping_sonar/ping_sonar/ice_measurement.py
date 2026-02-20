@@ -19,7 +19,7 @@ class Ice_Measurement(Node):
 
         self.ping = Ping1D()  # initializes object
         self.ping.connect_udp(
-            Comms.JETSON_IP_ADDRESS, Comms.PING_SONAR_PORT
+            Comms.PING_SONAR_PORT, Comms.USB0_BAUD_RATE
         )  # specifies relevant port
 
         self.initialization = self.ping.initialize()
