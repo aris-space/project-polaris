@@ -24,9 +24,9 @@ class Ice_Measurement(Node):
 
         if not self.initialization:
             self.get_logger().error("Failed to initialize measurement device")
-            
-
-        self.get_logger().info("Measurement device initialized")
+            return
+        else:
+            self.get_logger().info("Measurement device initialized")
 
         # relevant parameters to configure
         self.scan_start = 0
@@ -40,15 +40,20 @@ class Ice_Measurement(Node):
         )
 
         # set functions based on the config factors
-        self.ping.set_range(
-            self.scan_start, self.scan_length
-        )  # scan_start, scan_length in mm
-        self.ping.set_oss_profile_configuration(
-            self.number_bins, 0, 0
-        )  # sets number of points
+        if not self.ping.set_range(self.scan_start, self.scan_length, verify=True):
+            self.get_logger().error("Failed to set range")
+        else:
+            self.get_logger().info("Range set")
+         # scan_start, scan_length in mm
+        if not self.ping.set_oss_profile_configuration(self.number_bins, 0, 0, verify=True):
+            self.get_logger().error("Failed to set profile configuration")
+        else:
+            self.get_logger().info("Profile configuration set")
+            
+    
         self.recording = False
         self.mode_sub = self.create_subscription(
-            String, "sonar/mode", self.mode_callback, 10
+            String, "/ping_sonar/mode", self.mode_callback, 10
         )
 
         # CSV setup
