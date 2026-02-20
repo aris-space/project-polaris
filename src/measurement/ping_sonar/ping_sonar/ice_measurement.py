@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from std_msgs.msg import String
 from config_pkg.constants import Logs, Comms
+from rcl_interfaces.msg import SetParametersResult
 
 
 class Ice_Measurement(Node):
@@ -48,7 +49,13 @@ class Ice_Measurement(Node):
         self.ping.set_range(self.scan_start, self.scan_length, verify=False)
         self.get_logger().info("Range set")
 
-        self.recording = False
+        # self.recording = False
+        # --- Parameter-controlled recording ---
+        self.declare_parameter("recording", False)
+        self.recording = bool(self.get_parameter("recording").value)
+
+        self.add_on_set_parameters_callback(self.params_cb)
+
         self.mode_sub = self.create_subscription(
             String, "/ping_sonar/mode", self.mode_callback, 10
         )
@@ -130,6 +137,20 @@ class Ice_Measurement(Node):
 
         self.csv_file.flush()
         self.get_logger().info(f"Ping {ping_num}")
+
+    def params_cb(self, params):
+        for param in params:
+            if param.name == "recording":
+
+                if param.type_ == param.Type.BOOL:
+                    self.recording = bool(param.value)
+                    self.get_logger().info(f"recording set to {self.recording}")
+                    return SetParametersResult(successful=True)
+                else:
+                    return SetParametersResult(
+                        successful=False,
+                        reason="recording must be a boolean",
+                    )
 
 
 def main(args=None):
