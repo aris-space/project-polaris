@@ -75,8 +75,9 @@ class Ice_Measurement(Node):
     def logging_cb(self):
         if not self.recording:
             return
+        
         profile = self.ping.get_profile()
-        distance = self.ping.get_distance()
+        distance = self.ping.get_distance_simple()
 
         if profile is None:
             return
