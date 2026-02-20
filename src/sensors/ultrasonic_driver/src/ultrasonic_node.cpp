@@ -44,7 +44,38 @@ public:
   }
 
 private:
-  bool read_exact(uint8_t * buffer, size_t expected_len, std::chrono::milliseconds timeout)
+  bool wait_for_available_bytes(int min_bytes, std::chrono::milliseconds timeout)
+  {
+    auto deadline = std::chrono::steady_clock::now() + timeout;
+    int available_bytes = 0;
+
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+      if (ioctl(serial_port_, FIONREAD, &available_bytes) == -1)
+      {
+        RCLCPP_WARN(this->get_logger(), "ioctl(FIONREAD) failed: %s", std::strerror(errno));
+        return false;
+      }
+
+      if (available_bytes >= min_bytes)
+      {
+        RCLCPP_DEBUG(this->get_logger(), "Serial bytes available: %d", available_bytes);
+        return true;
+      }
+
+      std::this_thread::sleep_for(2ms);
+    }
+
+    RCLCPP_WARN_THROTTLE(
+        this->get_logger(),
+        *this->get_clock(),
+        2000,
+        "No sensor bytes available after trigger (waited %ld ms)",
+        static_cast<long>(timeout.count()));
+    return false;
+  }
+
+  bool read_exact(uint8_t *buffer, size_t expected_len, std::chrono::milliseconds timeout)
   {
     size_t total_read = 0;
     auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -135,25 +166,20 @@ private:
       RCLCPP_WARN(this->get_logger(), "Failed to trigger ultrasonic sensor, bytes_written=%ld", static_cast<long>(bytes_written));
       return;
     }
+
+    if (tcdrain(serial_port_) != 0)
+    {
+      RCLCPP_WARN(this->get_logger(), "tcdrain failed after trigger write: %s", std::strerror(errno));
+      return;
+    }
+
     RCLCPP_DEBUG(this->get_logger(), "Triggered ultrasonic sensor");
 
     // Arduino-equivalent timing: delay(100) then delay(4)
     std::this_thread::sleep_for(100ms);
 
-    int available_bytes = 0;
-    if (ioctl(serial_port_, FIONREAD, &available_bytes) == -1)
+    if (!wait_for_available_bytes(1, 120ms))
     {
-      RCLCPP_WARN(this->get_logger(), "ioctl(FIONREAD) failed: %s", std::strerror(errno));
-      return;
-    }
-
-    if (available_bytes <= 0)
-    {
-      RCLCPP_WARN_THROTTLE(
-          this->get_logger(),
-          *this->get_clock(),
-          2000,
-          "No sensor bytes available after trigger");
       return;
     }
 
