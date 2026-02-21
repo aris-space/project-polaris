@@ -10,7 +10,7 @@ def generate_launch_description():
 
     # 1. Find the path to the child package
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
-    mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge_pkg")
+    mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
