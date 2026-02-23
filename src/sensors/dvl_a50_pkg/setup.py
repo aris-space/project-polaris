@@ -26,6 +26,8 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": [],
+        "console_scripts": [
+            "odometry_covariance_node = dvl_a50_pkg.odometry_covariance_node:main",
+        ],
     },
 )
