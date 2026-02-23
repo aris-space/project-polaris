@@ -7,7 +7,7 @@
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/range.hpp"
+#include "std_msgs/msg/float32.hpp"
 
 using namespace std::chrono_literals;
 
@@ -27,10 +27,10 @@ public:
 
     setup_serial();
     
-    publisher_ = this->create_publisher<sensor_msgs::msg::Range>("/ultrasonic/distance", 10);
+    publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance/", 10);
     
-    // 100ms timer = 10Hz frequency
-    timer_ = this->create_wall_timer(100ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
+    // 200ms timer = 5Hz frequency
+    timer_ = this->create_wall_timer(200ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
     
     RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on /dev/ttyUSB0");
   }
@@ -125,17 +125,12 @@ private:
 
       if (received_sum == calculated_sum) {
         int distance_mm = (high << 8) | low;
-        
-        auto msg = sensor_msgs::msg::Range();
-        msg.header.stamp = this->now();
-        msg.header.frame_id = "ultrasonic_link";
-        msg.radiation_type = sensor_msgs::msg::Range::ULTRASOUND;
-        msg.min_range = 0.03; // 3cm
-        msg.max_range = 4.5;  // 4.5m
-        msg.range = static_cast<float>(distance_mm) / 1000.0f; // mm to meters
+        float distance_m = static_cast<float>(distance_mm) / 1000.0f;
+        auto msg = std_msgs::msg::Float32();
+        msg.data = distance_m;
 
         publisher_->publish(msg);
-        RCLCPP_INFO(this->get_logger(), "Distance: %d mm", distance_mm);
+        RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
       } else {
         RCLCPP_WARN(this->get_logger(), "Checksum Failed!");
       }
@@ -144,7 +139,7 @@ private:
 
   int serial_port_;
   rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Publisher<sensor_msgs::msg::Range>::SharedPtr publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_;
 };
 
 int main(int argc, char *argv[])
