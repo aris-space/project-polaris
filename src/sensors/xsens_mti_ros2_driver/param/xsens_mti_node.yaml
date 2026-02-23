@@ -10,7 +10,7 @@
         # Option 1: Automatic Device Scanning
         # If set to 'true', the driver will ignore 'port' and 'baudrate' settings.
         # It will automatically scan all ports and select the first device found.
-        scan_for_devices: true
+        scan_for_devices: false
 
         # Option 2: Manual Device Configuration
         # If you prefer to manually specify the device port and baudrate,
@@ -24,15 +24,15 @@
         # to set baudrate to 115200, send the command: FA FF 30 00 D1, 
         # or to set it to 921600, send: FA FF 18 01 80 68.
 
-        # port: '/dev/ttyUSB0' # Uncomment and set your device's port.
-        # baudrate: 921600     # Uncomment and set your device's baudrate.
+        port: '/dev/xsens_imu' # Uncomment and set your device's port.
+        baudrate: 115200     # Uncomment and set your device's baudrate.
 
         # Device Scanning Selection
         # ----------------
         # Specify the device ID when operating multiple devices to select a specific one.
         # Format: Uppercase hexadecimal string.
         # Example: device_id: '00800210C2'
-        #device_id: '00800210C2'
+        # device_id: '00800210C2'
 
         # Publisher Configuration
         publisher_queue_size: 5
@@ -50,7 +50,7 @@
         # Logging Configuration
         # ---------------------
         # Enable or disable logging of sensor data into .mtb file. If enabled, logs are stored in /home/[user_name]/Documents/xsens_log.
-        enable_logging: false
+        enable_logging: true
 
         # Transform Frame ID
         # ------------------
@@ -62,7 +62,7 @@
         # ---------------------------
         # If you want to configure your sensor, firstly set this flag to true, then change desired values for the parameters below.
         # Note: This configuration is required only once, once it is successful, the configurations are stored in the sensor, then you could set this to false.
-        enable_deviceConfig: false
+        enable_deviceConfig: true
 
         # Sensor Extended Kalman Filter Option Configurations:
         # --------------------------
@@ -130,31 +130,31 @@
         # ------------------
         # Enable or disable publication of various sensor data:
         pub_utctime: true
-        pub_sampletime: true
+        pub_sampletime: false
         pub_imu: true
         pub_quaternion: true
         pub_euler: true
-        pub_free_acceleration: true
-        pub_angular_velocity: true
-        pub_acceleration: true
+        pub_free_acceleration: false
+        pub_angular_velocity: false
+        pub_acceleration: false
         pub_dq: false
         pub_dv: false
         pub_mag: true
-        pub_temperature: true
-        pub_pressure: true
+        pub_temperature: false
+        pub_pressure: false
         pub_accelerationhr: false      #High Rate Data Acceleration, when this is true, set enable_high_rate to true as well
         pub_angular_velocity_hr: false #High Rate Data Angular Velocity,  when this is true, set enable_high_rate to true as well
-        pub_transform: true
+        pub_transform: false
         pub_status: true
-        pub_twist: true         # For GNSS/INS Version of MTI only
-        pub_gnss: true          # For GNSS/INS Version of MTI only
-        pub_positionLLA: true   # For GNSS/INS Version of MTI only
-        pub_velocity: true      # For GNSS/INS Version of MTI only
-        pub_nmea: true          # For GNSS/INS Version of MTI only
-        pub_gnsspose: true      # For GNSS/INS Version of MTI only
+        pub_twist: false         # For GNSS/INS Version of MTI only
+        pub_gnss: false          # For GNSS/INS Version of MTI only
+        pub_positionLLA: false   # For GNSS/INS Version of MTI only
+        pub_velocity: false      # For GNSS/INS Version of MTI only
+        pub_nmea: false          # For GNSS/INS Version of MTI only
+        pub_gnsspose: false      # For GNSS/INS Version of MTI only
         pub_odometry: false     # For GNSS/INS Version of MTI only
         pub_euler_stddev: false # For Sirius and Avior AHRS/VRU only, this is for setouput config, and value will be published at /imu/data topic.
-        pub_ship_motion: true   # For Sirius and Avior AHRS Only
+        pub_ship_motion: false   # For Sirius and Avior AHRS Only
 
 
 
