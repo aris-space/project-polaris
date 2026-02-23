@@ -5,7 +5,7 @@ sensors:
       frame: "dvl_a50_link"
       rate: 30.0
       enable_on_activate: true      # Set true to auto-ping on activation
-      speed_of_sound: 1500
-      led_enabled: true
-      mounting_rotation_offset: 0
-      range_mode: "auto"
+      #speed_of_sound: 1500
+      #led_enabled: true
+      #mounting_rotation_offset: 0
+      #range_mode: "auto"
