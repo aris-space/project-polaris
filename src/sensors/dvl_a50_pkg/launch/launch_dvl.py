@@ -86,8 +86,7 @@ def generate_launch_description():
         name="dvl_odometry_covariance",
         namespace="sensors",
         parameters=[{
-            "sigma_min": 0.01,             # min horizontal std dev [m/s]
-            "sigma_scale": 0.0101,         # σ_xy = max(sigma_min, sigma_scale * |v|)
+            "dvl_variant": "performance",  # "standard" (±1.01%) or "performance" (±0.1%)
             "no_lock_variance": 1.0,       # variance when bottom lock lost [m²/s²]
             "angular_covariance": -1.0,    # -1 = not available (REP-135)
         }],
