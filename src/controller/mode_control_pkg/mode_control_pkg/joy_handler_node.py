@@ -59,11 +59,11 @@ AXIS_DEADZONE = 0.05
 MODE_BUTTON_INDICES = [
     0,   # Mode switch safety button (X)
     2,   # Settings safety button (Square)
+    11,  # Emergency Stop (R3)
     12,  # D-pad up  - Mode: Manual Altitude Hold / Settings: Arm Pixhawk
     13,  # D-pad down
     14,  # D-pad left - Mode: Manual 6DOF / Setting: Toggle Stabilisation
     15,  # D-pad right
-    17,  # Emergency Stop (Touchpad)
 ]
 
 
