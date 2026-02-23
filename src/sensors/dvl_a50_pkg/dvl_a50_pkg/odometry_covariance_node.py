@@ -2,6 +2,10 @@
 Subscribes to /sensors/dvl/odometry and republishes to /sensors/dvl/odometry_cov
 with dynamically computed twist covariance.
 
+DVL-A50 accuracy variants:
+  - "standard":    ±1.01% of measured speed  (sigma_scale = 0.0101)
+  - "performance": ±0.1%  of measured speed  (sigma_scale = 0.001)
+
 Covariance model:
   - σ_xy = max(σ_min, σ_scale * |v|)   speed-dependent horizontal std dev
   - σ_z  = 2 * σ_xy                    vertical is noisier
@@ -15,8 +19,7 @@ Quality-based inflation:
   - When bottom lock is held: normal speed-dependent covariance
 
 Parameters:
-    sigma_min          (double): Minimum horizontal std dev [m/s]   (default: 0.01)
-    sigma_scale        (double): Scale factor for |v|               (default: 0.0101)
+    dvl_variant        (string): "standard" or "performance"        (default: "performance")
     no_lock_variance   (double): Variance when bottom lock lost     (default: 1.0)
     angular_covariance (double): Angular rate variance              (default: -1.0)
 """
@@ -28,19 +31,39 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from marine_acoustic_msgs.msg import Dvl
 
+# DVL-A50 accuracy specs from Water Linked
+DVL_VARIANTS = {
+    "standard": {
+        "sigma_scale": 0.0101,   # ±1.01% of measured speed
+        "sigma_min": 0.01,       # floor at ~1 cm/s std dev
+    },
+    "performance": {
+        "sigma_scale": 0.001,    # ±0.1% of measured speed
+        "sigma_min": 0.001,      # floor at ~1 mm/s std dev
+    },
+}
+
 
 class OdometryCovarianceNode(Node):
 
     def __init__(self):
         super().__init__("dvl_odometry_covariance")
 
-        self.declare_parameter("sigma_min", 0.01)
-        self.declare_parameter("sigma_scale", 0.0101)
+        self.declare_parameter("dvl_variant", "performance")
         self.declare_parameter("no_lock_variance", 1.0)
         self.declare_parameter("angular_covariance", -1.0)
 
-        self.sigma_min = self.get_parameter("sigma_min").value
-        self.sigma_scale = self.get_parameter("sigma_scale").value
+        variant = self.get_parameter("dvl_variant").value
+        if variant not in DVL_VARIANTS:
+            self.get_logger().error(
+                f"Unknown dvl_variant '{variant}', "
+                f"expected one of {list(DVL_VARIANTS.keys())}. "
+                f"Falling back to 'standard'."
+            )
+            variant = "standard"
+
+        self.sigma_scale = DVL_VARIANTS[variant]["sigma_scale"]
+        self.sigma_min = DVL_VARIANTS[variant]["sigma_min"]
         self.no_lock_var = self.get_parameter("no_lock_variance").value
         self.ang_cov = self.get_parameter("angular_covariance").value
 
@@ -65,8 +88,8 @@ class OdometryCovarianceNode(Node):
         )
 
         self.get_logger().info(
-            f"DVL covariance injector: sigma_min={self.sigma_min}, "
-            f"sigma_scale={self.sigma_scale}, "
+            f"DVL covariance injector: variant={variant}, "
+            f"sigma_scale={self.sigma_scale}, sigma_min={self.sigma_min}, "
             f"no_lock_variance={self.no_lock_var}"
         )
 
