@@ -95,3 +95,15 @@ class CollisionAvoidanceNode(Node):
             if self.rearm_timer is None:
                 self.trigger_time = self.get_clock().now()
                 self.rearm_timer = self.create_timer(0.2, self.rearm_callback)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = CollisionAvoidanceNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
