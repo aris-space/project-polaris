@@ -30,7 +30,7 @@ public:
 
     setup_serial();
     
-    publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance/", 10);
+    publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
     
     // 200ms timer = 5Hz frequency
     timer_ = this->create_wall_timer(200ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
