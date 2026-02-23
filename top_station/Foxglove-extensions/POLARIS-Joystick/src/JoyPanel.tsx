@@ -78,7 +78,6 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   const [config, setConfig] = useState<Config>(() => {
     const partialConfig = context.initialState as Partial<Config>;
     partialConfig.subJoyTopic ??= "/joy";
-    partialConfig.pubJoyTopic ??= "/joy";
     partialConfig.publishMode ??= false;
     partialConfig.publishFrameId ??= "";
     partialConfig.dataSource ??= "sub-joy-topic";
@@ -88,6 +87,24 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.mapping_name ??= "TODO";
     partialConfig.keyboardMapping ??= "default";
     partialConfig.gamepadId ??= 0;
+    
+    // Set default pubJoyTopic based on data source and keyboard mapping
+    if (partialConfig.pubJoyTopic == undefined) {
+      if (partialConfig.dataSource === "gamepad") {
+        partialConfig.pubJoyTopic = "/joy_controller";
+      } else if (partialConfig.dataSource === "keyboard") {
+        if (partialConfig.keyboardMapping === "keyboard_movement") {
+          partialConfig.pubJoyTopic = "/joy_keyboard";
+        } else if (partialConfig.keyboardMapping === "keyboard_buttons") {
+          partialConfig.pubJoyTopic = "/joy_mode";
+        } else {
+          partialConfig.pubJoyTopic = "/joy";
+        }
+      } else {
+        partialConfig.pubJoyTopic = "/joy";
+      }
+    }
+    
     return partialConfig as Config;
   });
 
@@ -97,6 +114,30 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     },
     [setConfig],
   );
+
+  // Auto-update pubJoyTopic based on data source and keyboard mapping
+  useEffect(() => {
+    setConfig((prevConfig) => {
+      let newPubJoyTopic = prevConfig.pubJoyTopic;
+
+      if (prevConfig.dataSource === "gamepad") {
+        newPubJoyTopic = "/joy_controller";
+      } else if (prevConfig.dataSource === "keyboard") {
+        if (prevConfig.keyboardMapping === "keyboard_movement") {
+          newPubJoyTopic = "/joy_keyboard";
+        } else if (prevConfig.keyboardMapping === "keyboard_buttons") {
+          newPubJoyTopic = "/joy_mode";
+        } else {
+          newPubJoyTopic = "/joy"; // default for keyboard
+        }
+      }
+
+      if (newPubJoyTopic !== prevConfig.pubJoyTopic) {
+        return { ...prevConfig, pubJoyTopic: newPubJoyTopic };
+      }
+      return prevConfig;
+    });
+  }, [config.dataSource, config.keyboardMapping]);
 
   // Register the settings tree
   useEffect(() => {
