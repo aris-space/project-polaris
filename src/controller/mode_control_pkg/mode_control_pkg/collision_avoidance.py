@@ -7,7 +7,7 @@ class CollisionAvoidanceNode(Node):
     def __init__(self):
         super().__init__("collision_avoidance_node")
 
-        self.trigger_distance = 0.5  # Distance threshold for triggering emergency stop
+        self.trigger_distance = 0.05  # Distance threshold for triggering emergency stop
         self.rearm_delay = (
             10.0  # Time in seconds to wait before reactivating after an emergency stop
         )
@@ -15,7 +15,7 @@ class CollisionAvoidanceNode(Node):
             True  # Flag to indicate if we are currently checking for distance
         )
         self.rearm_distance = (
-            0.7  # Distance threshold for rearming the system after an emergency stop
+            0.07  # Distance threshold for rearming the system after an emergency stop
         )
         self.rearm_timer = None
         self.trigger_time = None
@@ -94,4 +94,4 @@ class CollisionAvoidanceNode(Node):
 
             if self.rearm_timer is None:
                 self.trigger_time = self.get_clock().now()
-                self.rearm_timer = self.create_timer(0.5, self.rearm_callback)
+                self.rearm_timer = self.create_timer(0.2, self.rearm_callback)
