@@ -5,6 +5,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <memory>
+#include <string>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32.hpp"
@@ -16,12 +17,14 @@ class UltrasonicSensorNode : public rclcpp::Node
 public:
   UltrasonicSensorNode() : Node("ultrasonic_sensor_node")
   {
+    serial_device_ = this->declare_parameter<std::string>("serial_device", "/dev/ultrasonic_front");
+
     // Open in Read/Write mode. O_NDELAY prevents the open call from blocking.
-    serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY);
+    serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
     
     if (serial_port_ < 0) {
-      RCLCPP_ERROR(this->get_logger(), "Could not open /dev/ttyUSB0. Error: %s", std::strerror(errno));
-      RCLCPP_ERROR(this->get_logger(), "TIP: Try 'sudo chmod 666 /dev/ttyUSB0'");
+      RCLCPP_ERROR(this->get_logger(), "Could not open %s. Error: %s", serial_device_.c_str(), std::strerror(errno));
+      RCLCPP_ERROR(this->get_logger(), "TIP: Try 'sudo chmod 666 %s'", serial_device_.c_str());
       return;
     }
 
@@ -32,7 +35,7 @@ public:
     // 200ms timer = 5Hz frequency
     timer_ = this->create_wall_timer(200ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
     
-    RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on /dev/ttyUSB0");
+    RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on %s", serial_device_.c_str());
   }
 
   ~UltrasonicSensorNode() {
@@ -138,6 +141,7 @@ private:
   }
 
   int serial_port_;
+  std::string serial_device_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_;
 };
