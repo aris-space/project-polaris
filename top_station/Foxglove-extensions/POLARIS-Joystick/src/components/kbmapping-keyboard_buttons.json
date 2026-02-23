@@ -27,7 +27,7 @@
     
     
     "Space": {
-        "button": 17,
+        "button": 11,
         "toggle": false,
         "axis": -1,
         "direction": null

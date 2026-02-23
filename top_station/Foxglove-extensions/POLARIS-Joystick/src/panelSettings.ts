@@ -1,6 +1,7 @@
 import { Topic, SettingsTreeNodes, SettingsTreeFields, SettingsTreeAction } from "@foxglove/studio";
 import { produce } from "immer";
 import * as _ from "lodash-es";
+import packageJson from "../package.json";
 
 export type Config = {
   dataSource: string;
@@ -200,6 +201,15 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     },
   };
 
+  const aboutFields: SettingsTreeFields = {
+    version: {
+      label: "Version",
+      input: "string",
+      value: packageJson.version,
+      readonly: true,
+    },
+  };
+
   const settings: SettingsTreeNodes = {
     dataSource: {
       label: "Data Source",
@@ -212,6 +222,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     display: {
       label: "Display",
       fields: displayFields,
+    },
+    about: {
+      label: "About",
+      fields: aboutFields,
     },
   };
 
