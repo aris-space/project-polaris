@@ -6,7 +6,7 @@ Change ENVIRONMENT to the appropriate value based on the testing environment:
 """
 
 ENVIRONMENT = "POOL"  # Options: "POOL", "OPEN_WATER", "ICE_LAKE"
-CONTROLLER_LAYOUT = "JETSON"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
+CONTROLLER_LAYOUT = "FOXGLOVE"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
 
 
 """
@@ -115,7 +115,7 @@ class JoyControlMapping:
     SETTING_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Square Button
     MODE_SAFETY_BUTTON_IDX = JoyPS4.X  # X Button
     SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # Share Button
-    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.TOUCHPAD_BUTTON  # Touchpad Button
+    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.R3  # R3 Button (was Touchpad in old layout)
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
