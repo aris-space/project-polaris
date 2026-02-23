@@ -5,13 +5,11 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    namespace = LaunchConfiguration('namespace')
     serial_device = LaunchConfiguration('serial_device')
-
     return LaunchDescription([
         DeclareLaunchArgument(
             'namespace',
-            default_value='ultrasonic_front',
+            default_value='default',
             description='Namespace for the ultrasonic node'
         ),
         DeclareLaunchArgument(
@@ -23,7 +21,7 @@ def generate_launch_description():
             package='ultrasonic_driver',
             executable='ultrasonic_node',
             name='ultrasonic_sensor_node',
-            namespace=namespace,
+            namespace='front',
             output='screen',
             parameters=[
                 {'serial_device': serial_device},
