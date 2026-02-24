@@ -5,6 +5,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
@@ -37,11 +38,26 @@ public:
     setup_serial();
     
     publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
+
+    const double publish_frequency_hz = this->declare_parameter<double>("publish_frequency_hz", 10.0);
+    if (publish_frequency_hz <= 0.0) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Invalid 'publish_frequency_hz' (%.3f). It must be > 0.",
+        publish_frequency_hz);
+      throw std::runtime_error("invalid parameter 'publish_frequency_hz'");
+    }
+
+    const auto timer_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(1.0 / publish_frequency_hz));
     
-    // 50ms timer = 20Hz frequency
-    timer_ = this->create_wall_timer(50ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
+    timer_ = this->create_wall_timer(timer_period, std::bind(&UltrasonicSensorNode::read_sensor, this));
     
-    RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on %s", serial_device_.c_str());
+    RCLCPP_INFO(
+      this->get_logger(),
+      "Ultrasonic Node initialized on %s at %.2f Hz",
+      serial_device_.c_str(),
+      publish_frequency_hz);
   }
 
   ~UltrasonicSensorNode() {

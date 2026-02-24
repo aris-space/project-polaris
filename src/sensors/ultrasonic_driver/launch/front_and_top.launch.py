@@ -10,8 +10,8 @@ def generate_launch_description():
 
     # 2. Define the sensors we want to launch
     sensors = [
-        {'name': 'front_sensor', 'ns': 'front', 'port': Ports.FRONT_ULTRASONIC_PORT},
-        {'name': 'top_sensor',   'ns': 'top',   'port': Ports.TOP_ULTRASONIC_PORT}
+        {'name': 'front_sensor', 'ns': 'front', 'publish_frequency_hz': 20.0, 'port': Ports.FRONT_ULTRASONIC_PORT},
+        {'name': 'top_sensor',   'ns': 'top', 'port': Ports.TOP_ULTRASONIC_PORT}
     ]
 
     nodes = []
@@ -26,6 +26,7 @@ def generate_launch_description():
                 output='screen',
                 parameters=[
                     {'serial_device': sensor['port']},
+                    {'publish_frequency_hz': sensor['publish_frequency_hz']},   
                 ],
             )
         )
