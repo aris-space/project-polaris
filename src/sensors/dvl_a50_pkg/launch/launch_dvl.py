@@ -77,6 +77,36 @@ def generate_launch_description():
         )
     )
 
+    # Static base_link -> dvl_a50_link transform for testing.
+    # Translation is a placeholder; replace with your measured mounting offsets.
+    # Quaternion maps ENU base frame to NED-aligned DVL frame.
+    static_tf_base_to_dvl = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_base_to_dvl",
+        arguments=[
+            "--x",
+            "0.0",
+            "--y",
+            "0.0",
+            "--z",
+            "0.0",
+            "--qx",
+            "0.70710678",
+            "--qy",
+            "0.70710678",
+            "--qz",
+            "0.0",
+            "--qw",
+            "0.0",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            "dvl_a50_link",
+        ],
+        output="screen",
+    )
+
     # Computes speed-dependent twist covariance with bottom-lock quality gating
     # Subscribes to /sensors/dvl/velocity (for lock flag) and /sensors/dvl/odometry
     # Publishes /sensors/dvl/odometry_cov
@@ -99,5 +129,6 @@ def generate_launch_description():
         activate_event,
         dvl_node,
         on_activated,
+        static_tf_base_to_dvl,
         covariance_node,
     ])
