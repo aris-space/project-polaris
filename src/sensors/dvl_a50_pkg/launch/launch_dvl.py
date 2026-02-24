@@ -88,7 +88,8 @@ def generate_launch_description():
         parameters=[{
             "dvl_variant": "performance",  # "standard" (±1.01%) or "performance" (±0.1%)
             "no_lock_variance": 1.0,       # variance when bottom lock lost [m²/s²]
-            "angular_covariance": -1.0,    # -1 = not available (REP-135)
+            "angular_covariance": 1000000.0,  # very uncertain angular rates (not provided by DVL)
+            "velocity_stale_timeout_sec": 0.5,  # stale lock flag timeout
         }],
         output="screen",
     )

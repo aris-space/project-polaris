@@ -10,18 +10,21 @@ Covariance model:
   - σ_xy = max(σ_min, σ_scale * |v|)   speed-dependent horizontal std dev
   - σ_z  = 2 * σ_xy                    vertical is noisier
   - variance = σ²                       placed on twist covariance diagonal
-  - angular covariance = -1.0           DVL does not measure angular rate (REP-135)
+  - angular covariance = large variance  DVL does not measure angular rate
 
 Quality-based inflation:
   - Subscribes to /sensors/dvl/velocity for the beam_velocities_valid flag
   - When bottom lock is lost: covariance inflated to no_lock_variance (1.0 m²/s²)
     so the EKF effectively ignores the measurement
   - When bottom lock is held: normal speed-dependent covariance
+  - If velocity messages are stale for longer than velocity_stale_timeout_sec,
+    treat as no lock
 
 Parameters:
     dvl_variant        (string): "standard" or "performance"        (default: "performance")
     no_lock_variance   (double): Variance when bottom lock lost     (default: 1.0)
-    angular_covariance (double): Angular rate variance              (default: -1.0)
+    angular_covariance (double): Angular rate variance              (default: 1000000.0)
+    velocity_stale_timeout_sec (double): lock flag timeout [s]      (default: 0.5)
 """
 
 import math
@@ -51,7 +54,8 @@ class OdometryCovarianceNode(Node):
 
         self.declare_parameter("dvl_variant", "performance")
         self.declare_parameter("no_lock_variance", 1.0)
-        self.declare_parameter("angular_covariance", -1.0)
+        self.declare_parameter("angular_covariance", 1000000.0)
+        self.declare_parameter("velocity_stale_timeout_sec", 0.5)
 
         variant = self.get_parameter("dvl_variant").value
         if variant not in DVL_VARIANTS:
@@ -66,8 +70,12 @@ class OdometryCovarianceNode(Node):
         self.sigma_min = DVL_VARIANTS[variant]["sigma_min"]
         self.no_lock_var = self.get_parameter("no_lock_variance").value
         self.ang_cov = self.get_parameter("angular_covariance").value
+        self.velocity_stale_timeout_sec = (
+            self.get_parameter("velocity_stale_timeout_sec").value
+        )
 
         self.bottom_lock = False
+        self.last_velocity_stamp = None
 
         self.vel_sub = self.create_subscription(
             Dvl,
@@ -90,16 +98,27 @@ class OdometryCovarianceNode(Node):
         self.get_logger().info(
             f"DVL covariance injector: variant={variant}, "
             f"sigma_scale={self.sigma_scale}, sigma_min={self.sigma_min}, "
-            f"no_lock_variance={self.no_lock_var}"
+            f"no_lock_variance={self.no_lock_var}, "
+            f"velocity_stale_timeout_sec={self.velocity_stale_timeout_sec}"
         )
 
     def velocity_callback(self, msg: Dvl):
+        # Driver maps DVL velocity_valid -> beam_velocities_valid.
+        # Use this as bottom-lock proxy and guard it with staleness timeout.
         self.bottom_lock = msg.beam_velocities_valid
+        self.last_velocity_stamp = self.get_clock().now()
+
+    def _lock_is_stale(self) -> bool:
+        if self.last_velocity_stamp is None:
+            return True
+
+        age = (self.get_clock().now() - self.last_velocity_stamp).nanoseconds / 1e9
+        return age > self.velocity_stale_timeout_sec
 
     def odometry_callback(self, msg: Odometry):
         cov = list(msg.twist.covariance)
 
-        if not self.bottom_lock:
+        if self._lock_is_stale() or not self.bottom_lock:
             cov[0] = self.no_lock_var
             cov[7] = self.no_lock_var
             cov[14] = self.no_lock_var
