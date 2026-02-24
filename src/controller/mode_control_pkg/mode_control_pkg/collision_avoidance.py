@@ -24,6 +24,7 @@ class CollisionAvoidanceNode(Node):
         self.rearm_timer = None
         self.trigger_time = None
         self.distance = float("inf")  # Initialize distance to infinity
+        self._rearm_last_log_time = 0.0  # For throttled debug logging
 
         self.distance_averager = deque(maxlen=5)
 
@@ -90,6 +91,7 @@ class CollisionAvoidanceNode(Node):
         - 10 seconds have elapsed since emergency, AND
         - Distance >= rearm_distance (safe zone).
         Stays in manual until safe; never auto-rearms in dangerous area.
+        Once rearmed (checking=True), emergency will trigger again when close.
         """
         if self.trigger_time is None:
             return
@@ -99,17 +101,30 @@ class CollisionAvoidanceNode(Node):
             return
 
         if self.distance < self.rearm_distance:
-            # Still in dangerous area - keep timer running, stay in manual
+            # Still in dangerous area - keep timer running (throttled debug)
+            now = self.get_clock().now().nanoseconds / 1e9
+            if now - self._rearm_last_log_time >= 5.0:
+                self.get_logger().info(
+                    "Rearm waiting: need distance>=%.2fm (current=%.3fm), "
+                    "elapsed=%.1fs",
+                    self.rearm_distance,
+                    self.distance,
+                    time_elapsed,
+                )
+                self._rearm_last_log_time = now
             return
 
-        # Safe distance reached - rearm collision avoidance only.
-        # Do NOT publish manual: operator must publish false to get manual control.
+        # Safe distance reached - rearm collision avoidance.
+        # checking=True so emergency can trigger again when close.
         self.checking = True
         self.trigger_time = None
-        self.rearm_timer.cancel()
-        self.rearm_timer = None
+        if self.rearm_timer is not None:
+            self.rearm_timer.cancel()
+            self.rearm_timer = None
         self.get_logger().info(
-            "Safe distance reached. Collision avoidance rearmed."
+            "Safe distance reached. Collision avoidance rearmed (checking=True). "
+            "Emergency will trigger again when distance < %.2f m.",
+            self.trigger_distance,
         )
 
     def distance_cb(self, msg):
