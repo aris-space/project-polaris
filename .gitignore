@@ -20,13 +20,12 @@ coverage.xml
 ping-python/
 src/measurement/ping_sonar/
 
+settings.json
+
 # ROS 2 workspace build artifacts
-/build/
-/install/
-/log/
-/src/build/
-/src/install/
-/src/log/
+**/build/
+**/install/
+**/log/
 
 #vs code extension artifact
 .vscode/settings.json
