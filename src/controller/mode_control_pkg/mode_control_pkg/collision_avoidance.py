@@ -92,6 +92,14 @@ class CollisionAvoidanceNode(Node):
             if self.distance >= self.rearm_distance:
 
                 if not self.checking:
+
+                    if not self.manual_mode_published:
+                        self.publish_mode("MANUAL")
+                        self.get_logger().info(
+                            "Manual override active: System mode set to MANUAL."
+                        )
+                        self.manual_mode_published = True
+
                     self.checking = True
                     self.get_logger().info("Collision avoidance system rearmed.")
 
