@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Float32, Bool
+from collections import deque
 
 
 class CollisionAvoidanceNode(Node):
@@ -23,6 +24,8 @@ class CollisionAvoidanceNode(Node):
         self.rearm_timer = None
         self.trigger_time = None
         self.distance = float("inf")  # Initialize distance to infinity
+
+        self.distance_averager = deque(maxlen=5)
 
         self.get_logger().info("CollisionAvoidanceNode: Node has been initialized")
 
@@ -88,7 +91,11 @@ class CollisionAvoidanceNode(Node):
                 self.rearm_timer = None
 
     def distance_cb(self, msg):
+
         self.distance = msg.data
+        self.distance_averager.append(self.distance)
+        self.distance = sum(self.distance_averager) / len(self.distance_averager)
+
         # self.get_logger().info(f'Distance: {self.distance}')
         if not self.checking:
 
@@ -102,7 +109,11 @@ class CollisionAvoidanceNode(Node):
             # Resets the latch automatically when checking becomes True again
             self.manual_mode_published = False
 
-        if self.distance < self.trigger_distance and self.checking:
+        if (
+            self.distance < self.trigger_distance
+            and len(self.distance_averager) == self.distance_averager.maxlen
+            and self.checking
+        ):
 
             # Trigger emergency stop: same as mode_control_node
             if self.current_mode != "emergency_stop":
