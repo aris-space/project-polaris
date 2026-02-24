@@ -17,7 +17,13 @@ class UltrasonicSensorNode : public rclcpp::Node
 public:
   UltrasonicSensorNode() : Node("ultrasonic_sensor_node")
   {
-    serial_device_ = this->declare_parameter<std::string>("serial_device", "/dev/ultrasonic_front");
+    this->declare_parameter<std::string>("serial_device");
+    if (!this->get_parameter("serial_device", serial_device_) || serial_device_.empty()) {
+      RCLCPP_FATAL(
+        this->get_logger(),
+        "Missing required parameter 'serial_device'. Run with: --ros-args -p serial_device:=/dev/ttyUSB0");
+      throw std::runtime_error("required parameter 'serial_device' not set");
+    }
 
     // Open in Read/Write mode. O_NDELAY prevents the open call from blocking.
     serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
@@ -32,8 +38,8 @@ public:
     
     publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
     
-    // 200ms timer = 5Hz frequency
-    timer_ = this->create_wall_timer(200ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
+    // 100ms timer = 10Hz frequency
+    timer_ = this->create_wall_timer(100ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
     
     RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on %s", serial_device_.c_str());
   }
