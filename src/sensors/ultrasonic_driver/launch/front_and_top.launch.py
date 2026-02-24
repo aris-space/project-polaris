@@ -11,7 +11,7 @@ def generate_launch_description():
     # 2. Define the sensors we want to launch
     sensors = [
         {'name': 'front_sensor', 'ns': 'front', 'publish_frequency_hz': 20.0, 'port': Ports.FRONT_ULTRASONIC_PORT},
-        {'name': 'top_sensor',   'ns': 'top', 'port': Ports.TOP_ULTRASONIC_PORT}
+        {'name': 'top_sensor',   'ns': 'top', 'publish_frequency_hz': 10.0, 'port': Ports.TOP_ULTRASONIC_PORT}
     ]
 
     nodes = []
