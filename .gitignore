@@ -27,3 +27,6 @@ src/measurement/ping_sonar/
 /src/build/
 /src/install/
 /src/log/
+
+#vs code extension artifact
+.vscode/settings.json
