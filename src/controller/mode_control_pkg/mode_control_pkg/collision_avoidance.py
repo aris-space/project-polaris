@@ -60,15 +60,18 @@ class CollisionAvoidanceNode(Node):
         self.current_mode = msg.data
 
     def checking_cb(self, msg):
-
-        self.checking = msg.data
-
-        if self.checking is False:
-            self.get_logger().info("Collision avoidance system deactivated.")
-        else:
-            self.manual_mode_published = (
-                False  # Reset manual mode latch when system is reactivated
-            )
+        """
+        Operator publishes False to get manual control (move vehicle away from obstacle).
+        Operator does not publish True - rearming is done internally when safe.
+        """
+        if msg.data is False:
+            self.checking = False
+            self.get_logger().info("Collision avoidance disabled by operator.")
+            self.publish_mode("manual_control")
+            self.publish_pixhawk_mode("MANUAL")
+            self.current_mode = "manual_control"
+            self.pixhawk_mode = "MANUAL"
+            self.manual_mode_published = True
 
     def publish_mode(self, mode: str):
         mode_msg = String()
@@ -82,49 +85,50 @@ class CollisionAvoidanceNode(Node):
         self.pixhawk_mode_publisher.publish(pixhawk_mode_msg)
 
     def rearm_callback(self):
-
+        """
+        Runs every 0.2s after emergency. Rearms only when:
+        - 10 seconds have elapsed since emergency, AND
+        - Distance >= rearm_distance (safe zone).
+        Stays in manual until safe; never auto-rearms in dangerous area.
+        """
         if self.trigger_time is None:
             return
 
         time_elapsed = (self.get_clock().now() - self.trigger_time).nanoseconds / 1e9
-        if time_elapsed >= self.rearm_delay:
+        if time_elapsed < self.rearm_delay:
+            return
 
-            if self.distance >= self.rearm_distance:
+        if self.distance < self.rearm_distance:
+            # Still in dangerous area - keep timer running, stay in manual
+            return
 
-                if not self.checking:
-
-                    if not self.manual_mode_published:
-                        self.publish_mode("MANUAL")
-                        self.get_logger().info(
-                            "Manual override active: System mode set to MANUAL."
-                        )
-                        self.manual_mode_published = True
-
-                    self.checking = True
-                    self.get_logger().info("Collision avoidance system rearmed.")
-
-                    self.rearm_timer.cancel()
-                    self.rearm_timer = None
+        # Safe distance reached - rearm collision avoidance
+        self.checking = True
+        self.publish_mode("manual_control")
+        self.publish_pixhawk_mode("MANUAL")
+        self.current_mode = "manual_control"
+        self.manual_mode_published = True
+        self.trigger_time = None
+        self.rearm_timer.cancel()
+        self.rearm_timer = None
+        self.get_logger().info(
+            "Safe distance reached. Collision avoidance rearmed."
+        )
 
     def distance_cb(self, msg):
-
         self.distance = msg.data
         self.distance_averager.append(self.distance)
         self.distance = sum(self.distance_averager) / len(self.distance_averager)
 
-        # self.get_logger().info(f'Distance: {self.distance}')
-        if not self.checking:
-
-            if not self.manual_mode_published:
-                self.publish_mode("MANUAL")
-                self.get_logger().info(
-                    "Manual override active: System mode set to MANUAL."
-                )
-                self.manual_mode_published = True
-        else:
-            # Resets the latch automatically when checking becomes True again
+        # When operator has disabled (checking=false), ensure manual mode for driving
+        if not self.checking and not self.manual_mode_published:
+            self.publish_mode("manual_control")
+            self.publish_pixhawk_mode("MANUAL")
+            self.manual_mode_published = True
+        elif self.checking:
             self.manual_mode_published = False
 
+        # Trigger emergency when too close and we are checking
         if (
             self.distance < self.trigger_distance
             and len(self.distance_averager) == self.distance_averager.maxlen
