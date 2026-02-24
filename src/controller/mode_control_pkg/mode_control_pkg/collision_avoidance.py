@@ -63,8 +63,12 @@ class CollisionAvoidanceNode(Node):
 
         self.checking = msg.data
 
-        if self.checking == False:
+        if self.checking is False:
             self.get_logger().info("Collision avoidance system deactivated.")
+        else:
+            self.manual_mode_published = (
+                False  # Reset manual mode latch when system is reactivated
+            )
 
     def publish_mode(self, mode: str):
         mode_msg = String()
@@ -78,6 +82,10 @@ class CollisionAvoidanceNode(Node):
         self.pixhawk_mode_publisher.publish(pixhawk_mode_msg)
 
     def rearm_callback(self):
+
+        if self.trigger_time is None:
+            return
+
         time_elapsed = (self.get_clock().now() - self.trigger_time).nanoseconds / 1e9
         if time_elapsed >= self.rearm_delay:
 
