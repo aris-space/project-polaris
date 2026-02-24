@@ -11,6 +11,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>marine_acoustic_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rclpy</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
