@@ -87,8 +87,8 @@ class CollisionAvoidanceNode(Node):
                     self.checking = True
                     self.get_logger().info("Collision avoidance system rearmed.")
 
-                self.rearm_timer.cancel()
-                self.rearm_timer = None
+                    self.rearm_timer.cancel()
+                    self.rearm_timer = None
 
     def distance_cb(self, msg):
 
