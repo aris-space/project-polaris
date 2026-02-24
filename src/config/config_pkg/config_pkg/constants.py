@@ -22,6 +22,10 @@ class SubConfig:
     MAX_DEPTH = 30.0  # meters
     LEAK_THRESHOLD = 500  # Analog value
 
+class Ports:
+    FRONT_ULTRASONIC_PORT = "/dev/ttyUSB0"
+    TOP_ULTRASONIC_PORT = "PLACEHOLDER"
+
 
 class Logs:
     LOG_DIR = "~/polaris_logs"  # Directory to save logs
