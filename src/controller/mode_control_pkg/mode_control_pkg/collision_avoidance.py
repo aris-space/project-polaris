@@ -38,7 +38,7 @@ class CollisionAvoidanceNode(Node):
         )
 
         self.checking_subscriber = self.create_subscription(
-            Bool, "/obstacle_avoidance/checking", self.checking_cb, 10
+            Bool, "/collision_avoidance/checking", self.checking_cb, 10
         )
 
         self.pixhawk_mode_publisher = self.create_publisher(
