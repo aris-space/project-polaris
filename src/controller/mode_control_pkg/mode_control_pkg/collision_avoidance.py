@@ -24,8 +24,6 @@ class CollisionAvoidanceNode(Node):
         self.rearm_timer = None
         self.trigger_time = None
         self.distance = float("inf")  # Initialize distance to infinity
-        self._rearm_last_log_time = 0.0  # For throttled debug logging
-
         self.distance_averager = deque(maxlen=5)
 
         self.get_logger().info("CollisionAvoidanceNode: Node has been initialized")
@@ -101,27 +99,14 @@ class CollisionAvoidanceNode(Node):
             return
 
         if self.distance < self.rearm_distance:
-            # Still in dangerous area - keep timer running (throttled debug)
-            now = self.get_clock().now().nanoseconds / 1e9
-            if now - self._rearm_last_log_time >= 5.0:
-                self.get_logger().info(
-                    f"Rearm waiting: need distance>={self.rearm_distance:.2f}m "
-                    f"(current={self.distance:.3f}m), elapsed={time_elapsed:.1f}s"
-                )
-                self._rearm_last_log_time = now
             return
 
-        # Safe distance reached - rearm collision avoidance.
-        # checking=True so emergency can trigger again when close.
         self.checking = True
         self.trigger_time = None
         if self.rearm_timer is not None:
             self.rearm_timer.cancel()
             self.rearm_timer = None
-        self.get_logger().info(
-            f"Safe distance reached. Collision avoidance rearmed (checking=True). "
-            f"Emergency will trigger again when distance < {self.trigger_distance:.2f} m."
-        )
+        self.get_logger().info("Collision avoidance rearmed.")
 
     def distance_cb(self, msg):
         self.distance = msg.data
