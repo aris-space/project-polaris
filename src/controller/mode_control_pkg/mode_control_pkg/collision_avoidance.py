@@ -102,12 +102,9 @@ class CollisionAvoidanceNode(Node):
             # Still in dangerous area - keep timer running, stay in manual
             return
 
-        # Safe distance reached - rearm collision avoidance
+        # Safe distance reached - rearm collision avoidance only.
+        # Do NOT publish manual: operator must publish false to get manual control.
         self.checking = True
-        self.publish_mode("manual_control")
-        self.publish_pixhawk_mode("MANUAL")
-        self.current_mode = "manual_control"
-        self.manual_mode_published = True
         self.trigger_time = None
         self.rearm_timer.cancel()
         self.rearm_timer = None
