@@ -38,8 +38,8 @@ public:
     
     publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
     
-    // 100ms timer = 10Hz frequency
-    timer_ = this->create_wall_timer(100ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
+    // 50ms timer = 20Hz frequency
+    timer_ = this->create_wall_timer(50ms, std::bind(&UltrasonicSensorNode::read_sensor, this));
     
     RCLCPP_INFO(this->get_logger(), "Ultrasonic Node initialized on %s", serial_device_.c_str());
   }

@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from config_pkg.constants import Ports
 
 
 def generate_launch_description():
@@ -14,7 +15,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'serial_device',
-            default_value='/dev/ttyUSB0',
+            default_value=Ports.FRONT_ULTRASONIC_PORT,
             description='Serial device path for the ultrasonic sensor'
         ),
         Node(
