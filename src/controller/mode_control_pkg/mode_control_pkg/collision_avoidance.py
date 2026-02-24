@@ -105,11 +105,8 @@ class CollisionAvoidanceNode(Node):
             now = self.get_clock().now().nanoseconds / 1e9
             if now - self._rearm_last_log_time >= 5.0:
                 self.get_logger().info(
-                    "Rearm waiting: need distance>=%.2fm (current=%.3fm), "
-                    "elapsed=%.1fs",
-                    self.rearm_distance,
-                    self.distance,
-                    time_elapsed,
+                    f"Rearm waiting: need distance>={self.rearm_distance:.2f}m "
+                    f"(current={self.distance:.3f}m), elapsed={time_elapsed:.1f}s"
                 )
                 self._rearm_last_log_time = now
             return
@@ -122,9 +119,8 @@ class CollisionAvoidanceNode(Node):
             self.rearm_timer.cancel()
             self.rearm_timer = None
         self.get_logger().info(
-            "Safe distance reached. Collision avoidance rearmed (checking=True). "
-            "Emergency will trigger again when distance < %.2f m.",
-            self.trigger_distance,
+            f"Safe distance reached. Collision avoidance rearmed (checking=True). "
+            f"Emergency will trigger again when distance < {self.trigger_distance:.2f} m."
         )
 
     def distance_cb(self, msg):
