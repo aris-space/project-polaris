@@ -20,20 +20,50 @@ for integration testing.
 """
 
 import os
+from datetime import datetime
 
 import launch
 import launch.events
 import lifecycle_msgs.msg
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import EmitEvent, LogInfo, RegisterEventHandler
+from launch.actions import (
+    DeclareLaunchArgument,
+    EmitEvent,
+    ExecuteProcess,
+    LogInfo,
+    RegisterEventHandler,
+)
+from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessStart
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 
 
 def generate_launch_description():
+    # Keep rosbags out of the workspace root by default.
+    default_bag_dir = "/ros2_ws/bags"
+    os.makedirs(default_bag_dir, exist_ok=True)
+    default_bag_name = os.path.join(
+        default_bag_dir, f"dvl_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+
+    record_dvl_bag = LaunchConfiguration("record_dvl_bag")
+    dvl_bag_name = LaunchConfiguration("dvl_bag_name")
+
+    record_dvl_bag_arg = DeclareLaunchArgument(
+        "record_dvl_bag",
+        default_value="false",
+        description="If true, start rosbag recording for DVL topics.",
+    )
+    dvl_bag_name_arg = DeclareLaunchArgument(
+        "dvl_bag_name",
+        default_value=default_bag_name,
+        description="Output folder name for rosbag2 recording.",
+    )
+
     # Load project-specific config (IP address, speed of sound, etc.)
     config = os.path.join(
         get_package_share_directory("dvl_a50_pkg"),
@@ -140,11 +170,32 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Optional rosbag recorder for DVL integration/testing data
+    dvl_rosbag_record = ExecuteProcess(
+        cmd=[
+            "ros2",
+            "bag",
+            "record",
+            "-o",
+            dvl_bag_name,
+            "/sensors/dvl/velocity",
+            "/sensors/dvl/dead_reckoning",
+            "/sensors/dvl/odometry",
+            "/sensors/dvl/odometry_cov",
+            "/tf_static",
+        ],
+        condition=IfCondition(record_dvl_bag),
+        output="screen",
+    )
+
     return LaunchDescription([
+        record_dvl_bag_arg,
+        dvl_bag_name_arg,
         dvl_node,
         on_process_start,
         on_inactive,
         on_activated,
         static_tf_base_to_dvl,
         covariance_node,
+        dvl_rosbag_record,
     ])
