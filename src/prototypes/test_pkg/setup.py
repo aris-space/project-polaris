@@ -24,6 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'robot_health = test_pkg.diagnostics:main',
         ],
     },
 )
