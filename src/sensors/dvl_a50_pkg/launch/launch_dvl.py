@@ -44,7 +44,7 @@ from launch_ros.events.lifecycle import ChangeState
 
 def generate_launch_description():
     # Keep rosbags out of the workspace root by default.
-    default_bag_dir = "/ros2_ws/bags"
+    default_bag_dir = "/bags"
     os.makedirs(default_bag_dir, exist_ok=True)
     default_bag_name = os.path.join(
         default_bag_dir, f"dvl_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
