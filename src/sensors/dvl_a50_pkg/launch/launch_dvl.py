@@ -15,9 +15,8 @@ Published topics (under /sensors/dvl/):
   - dvl/odometry             (nav_msgs/Odometry)          — raw from driver
   - dvl/odometry_cov         (nav_msgs/Odometry)          — with twist covariance filled
 
-Note: After activation, pinging is still disabled by default to prevent
-overheating when out of water. Call the /sensors/dvl_a50/enable service
-to start receiving data once the DVL is submerged.
+This launch file also publishes a static base_link -> dvl_a50_link transform
+for integration testing.
 """
 
 import os
@@ -28,6 +27,7 @@ import lifecycle_msgs.msg
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import EmitEvent, LogInfo, RegisterEventHandler
+from launch.event_handlers import OnProcessStart
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
@@ -51,7 +51,7 @@ def generate_launch_description():
         output="screen",
     )
 
-    # Lifecycle transitions: configure and activate the node on startup
+    # Lifecycle transition actions
     configure_event = EmitEvent(
         event=ChangeState(
             lifecycle_node_matcher=launch.events.matches_action(dvl_node),
@@ -66,7 +66,24 @@ def generate_launch_description():
         )
     )
 
-    # Log confirmation when the node reaches active state
+    # on process start -> configure
+    on_process_start = RegisterEventHandler(
+        OnProcessStart(
+            target_action=dvl_node,
+            on_start=[configure_event],
+        )
+    )
+
+    # on inactive -> activate
+    on_inactive = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=dvl_node,
+            goal_state="inactive",
+            entities=[activate_event],
+        )
+    )
+
+    # on active -> log
     on_activated = RegisterEventHandler(
         OnStateTransition(
             target_lifecycle_node=dvl_node,
@@ -79,7 +96,8 @@ def generate_launch_description():
 
     # Static base_link -> dvl_a50_link transform for testing.
     # Translation is a placeholder; replace with your measured mounting offsets.
-    # Quaternion maps ENU base frame to NED-aligned DVL frame.
+    # RPY maps ENU base frame to NED-aligned DVL frame:
+    # roll = pi, pitch = 0, yaw = +pi/4.
     static_tf_base_to_dvl = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -91,14 +109,12 @@ def generate_launch_description():
             "0.0",
             "--z",
             "0.0",
-            "--qx",
-            "0.70710678",
-            "--qy",
-            "0.70710678",
-            "--qz",
+            "--roll",
+            "3.141592653589793",
+            "--pitch",
             "0.0",
-            "--qw",
-            "0.0",
+            "--yaw",
+            "0.7853981633974483",
             "--frame-id",
             "base_link",
             "--child-frame-id",
@@ -125,9 +141,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        configure_event,
-        activate_event,
         dvl_node,
+        on_process_start,
+        on_inactive,
         on_activated,
         static_tf_base_to_dvl,
         covariance_node,
