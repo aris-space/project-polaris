@@ -52,6 +52,7 @@ def generate_launch_description():
 
     record_dvl_bag = LaunchConfiguration("record_dvl_bag")
     dvl_bag_name = LaunchConfiguration("dvl_bag_name")
+    range_mode = LaunchConfiguration("range_mode")
 
     record_dvl_bag_arg = DeclareLaunchArgument(
         "record_dvl_bag",
@@ -62,6 +63,14 @@ def generate_launch_description():
         "dvl_bag_name",
         default_value=default_bag_name,
         description="Output folder name for rosbag2 recording.",
+    )
+    range_mode_arg = DeclareLaunchArgument(
+        "range_mode",
+        default_value="auto",
+        description=(
+            "DVL range mode: auto, '=a', or 'a<=b' "
+            "(examples: auto, =3, 2<=3)."
+        ),
     )
 
     # Load project-specific config (IP address, speed of sound, etc.)
@@ -77,7 +86,10 @@ def generate_launch_description():
         package="dvl_a50",
         executable="dvl_a50_node",
         name="dvl_a50",
-        parameters=[config],
+        parameters=[
+            config,
+            {"range_mode": range_mode},
+        ],
         output="screen",
     )
 
@@ -191,6 +203,7 @@ def generate_launch_description():
     return LaunchDescription([
         record_dvl_bag_arg,
         dvl_bag_name_arg,
+        range_mode_arg,
         dvl_node,
         on_process_start,
         on_inactive,
