@@ -28,6 +28,7 @@ setup(
     entry_points={
         "console_scripts": [
             "odometry_covariance_node = dvl_a50_pkg.odometry_covariance_node:main",
+            "recommend_dvl_range_mode = dvl_a50_pkg.range_mode_from_bags:main",
         ],
     },
 )
