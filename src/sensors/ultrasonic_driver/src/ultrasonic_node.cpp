@@ -28,7 +28,7 @@ public:
     }
 
     // Open in Read/Write mode. O_NDELAY prevents the open call from blocking.
-    serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
+    serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY);
 
     if (serial_port_ < 0)
     {
