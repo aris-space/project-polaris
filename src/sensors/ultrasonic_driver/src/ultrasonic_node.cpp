@@ -19,56 +19,62 @@ public:
   UltrasonicSensorNode() : Node("ultrasonic_sensor_node")
   {
     this->declare_parameter<std::string>("serial_device");
-    if (!this->get_parameter("serial_device", serial_device_) || serial_device_.empty()) {
+    if (!this->get_parameter("serial_device", serial_device_) || serial_device_.empty())
+    {
       RCLCPP_FATAL(
-        this->get_logger(),
-        "Missing required parameter 'serial_device'. Run with: --ros-args -p serial_device:=/dev/ttyUSB0");
+          this->get_logger(),
+          "Missing required parameter 'serial_device'. Run with: --ros-args -p serial_device:=/dev/ttyUSB0");
       throw std::runtime_error("required parameter 'serial_device' not set");
     }
 
     // Open in Read/Write mode. O_NDELAY prevents the open call from blocking.
     serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
-    
-    if (serial_port_ < 0) {
+
+    if (serial_port_ < 0)
+    {
       RCLCPP_ERROR(this->get_logger(), "Could not open %s. Error: %s", serial_device_.c_str(), std::strerror(errno));
       RCLCPP_ERROR(this->get_logger(), "TIP: Try 'sudo chmod 666 %s'", serial_device_.c_str());
       return;
     }
 
     setup_serial();
-    
+
     publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
 
     const double publish_frequency_hz = this->declare_parameter<double>("publish_frequency_hz", 10.0);
-    if (publish_frequency_hz <= 0.0) {
+    if (publish_frequency_hz <= 0.0)
+    {
       RCLCPP_FATAL(
-        this->get_logger(),
-        "Invalid 'publish_frequency_hz' (%.3f). It must be > 0.",
-        publish_frequency_hz);
+          this->get_logger(),
+          "Invalid 'publish_frequency_hz' (%.3f). It must be > 0.",
+          publish_frequency_hz);
       throw std::runtime_error("invalid parameter 'publish_frequency_hz'");
     }
 
     const auto timer_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::duration<double>(1.0 / publish_frequency_hz));
-    
+        std::chrono::duration<double>(1.0 / publish_frequency_hz));
+
     timer_ = this->create_wall_timer(timer_period, std::bind(&UltrasonicSensorNode::read_sensor, this));
-    
+
     RCLCPP_INFO(
-      this->get_logger(),
-      "Ultrasonic Node initialized on %s at %.2f Hz",
-      serial_device_.c_str(),
-      publish_frequency_hz);
+        this->get_logger(),
+        "Ultrasonic Node initialized on %s at %.2f Hz",
+        serial_device_.c_str(),
+        publish_frequency_hz);
   }
 
-  ~UltrasonicSensorNode() {
-    if (serial_port_ >= 0) close(serial_port_);
+  ~UltrasonicSensorNode()
+  {
+    if (serial_port_ >= 0)
+      close(serial_port_);
   }
 
 private:
   void setup_serial()
   {
     struct termios tty;
-    if (tcgetattr(serial_port_, &tty) != 0) {
+    if (tcgetattr(serial_port_, &tty) != 0)
+    {
       RCLCPP_ERROR(this->get_logger(), "Error from tcgetattr: %s", std::strerror(errno));
       return;
     }
@@ -78,10 +84,10 @@ private:
     cfsetispeed(&tty, B115200);
 
     // Set hardware parameters: 8N1
-    tty.c_cflag &= ~PARENB;        // No parity bit
-    tty.c_cflag &= ~CSTOPB;        // Only one stop bit
-    tty.c_cflag &= ~CSIZE;         // Clear size mask
-    tty.c_cflag |= CS8;            // 8 data bits
+    tty.c_cflag &= ~PARENB;          // No parity bit
+    tty.c_cflag &= ~CSTOPB;          // Only one stop bit
+    tty.c_cflag &= ~CSIZE;           // Clear size mask
+    tty.c_cflag |= CS8;              // 8 data bits
     tty.c_cflag |= (CLOCAL | CREAD); // Ignore modem lines, enable receiver
 
     // Disable canonical mode (we want raw bytes, not lines)
@@ -89,15 +95,16 @@ private:
     tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL);
     tty.c_oflag &= ~OPOST;
 
-    // VMIN = 0, VTIME = 1: Read will return as soon as any data is received, 
+    // VMIN = 0, VTIME = 1: Read will return as soon as any data is received,
     // or timeout after 100ms if nothing arrives.
     tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 1; 
+    tty.c_cc[VTIME] = 1;
 
-    if (tcsetattr(serial_port_, TCSANOW, &tty) != 0) {
+    if (tcsetattr(serial_port_, TCSANOW, &tty) != 0)
+    {
       RCLCPP_ERROR(this->get_logger(), "Error from tcsetattr: %s", std::strerror(errno));
     }
-    
+
     // Clear buffers
     tcflush(serial_port_, TCIOFLUSH);
   }
@@ -106,7 +113,8 @@ private:
   {
     // 1. Send Trigger Pulse (0x55)
     uint8_t trigger_byte = 0x55;
-    if (write(serial_port_, &trigger_byte, 1) < 0) {
+    if (write(serial_port_, &trigger_byte, 1) < 0)
+    {
       RCLCPP_ERROR(this->get_logger(), "Failed to write to serial port");
       return;
     }
@@ -121,9 +129,12 @@ private:
     int attempts = 0;
     bool found_header = false;
 
-    while (attempts < 32) {
-      if (read(serial_port_, &header, 1) > 0) {
-        if (header == 0xFF) {
+    while (attempts < 32)
+    {
+      if (read(serial_port_, &header, 1) > 0)
+      {
+        if (header == 0xFF)
+        {
           found_header = true;
           break;
         }
@@ -131,7 +142,8 @@ private:
       attempts++;
     }
 
-    if (!found_header) {
+    if (!found_header)
+    {
       RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Waiting for sensor data (Header 0xFF not found)...");
       return;
     }
@@ -139,16 +151,18 @@ private:
     // 4. Read the payload (3 bytes: High, Low, Checksum)
     uint8_t data[3];
     ssize_t n = read(serial_port_, data, 3);
-    
-    if (n == 3) {
+
+    if (n == 3)
+    {
       uint8_t high = data[0];
-      uint8_t low  = data[1];
+      uint8_t low = data[1];
       uint8_t received_sum = data[2];
-      
+
       // Arduino Logic: Checksum = Header + High + Low
       uint8_t calculated_sum = (0xFF + high + low) & 0xFF;
 
-      if (received_sum == calculated_sum) {
+      if (received_sum == calculated_sum)
+      {
         int distance_mm = (high << 8) | low;
         float distance_m = static_cast<float>(distance_mm) / 1000.0f;
         auto msg = std_msgs::msg::Float32();
@@ -156,9 +170,17 @@ private:
 
         publisher_->publish(msg);
         RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
-      } else {
+      }
+      else
+      {
         RCLCPP_WARN(this->get_logger(), "Checksum Failed!");
       }
+    }
+
+    else
+    {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                           "Header found but read() returned %zd bytes for payload", n);
     }
   }
 
