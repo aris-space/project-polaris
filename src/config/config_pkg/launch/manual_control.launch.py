@@ -4,6 +4,8 @@ from launch import LaunchDescription
 from launch.actions import ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
+from datetime import datetime
+from config_pkg.constants import Logs
 
 
 def generate_launch_description():
@@ -33,8 +35,12 @@ def generate_launch_description():
         output="screen",
     )
 
+
+    timestamp = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
+    bag_path = os.path.join(Logs.ROSBAG_DIR, f"bag_{timestamp}")
+    
     rosbag_record = ExecuteProcess(
-        cmd=["ros2", "bag", "record", "-a", "-s", "mcap"],
+        cmd=["ros2", "bag", "record", "-a", "-s", "mcap", "-o", bag_path],
         output="screen",
     )
 

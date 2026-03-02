@@ -29,6 +29,7 @@ class Ports:
 
 class Logs:
     LOG_DIR = "~/polaris_logs"  # Directory to save logs
+    ROSBAG_DIR = "/ros2_ws/recordings/"  # Directory to save rosbag recordings
 
 
 class JoyPS4:
