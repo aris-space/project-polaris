@@ -44,7 +44,7 @@ class ManualControlNode(Node):
         # Keep roll/pitch lower by default to reduce aggressive attitude commands.
         self.declare_parameter('controller_gain_x', 1000.0)
         self.declare_parameter('controller_gain_y', 500.0)
-        self.declare_parameter('controller_gain_z', 500.0)
+        self.declare_parameter('controller_gain_z', 250.0)
         self.declare_parameter('controller_gain_r', 500.0)
         self.declare_parameter('controller_gain_s', 300.0)
         self.declare_parameter('controller_gain_t', 300.0)
@@ -52,7 +52,7 @@ class ManualControlNode(Node):
 
         self.declare_parameter('keyboard_gain_x', 1000.0)
         self.declare_parameter('keyboard_gain_y', 500.0)
-        self.declare_parameter('keyboard_gain_z', 500.0)
+        self.declare_parameter('keyboard_gain_z', 250.0)
         self.declare_parameter('keyboard_gain_r', 500.0)
         self.declare_parameter('keyboard_gain_s', 300.0)
         self.declare_parameter('keyboard_gain_t', 300.0)

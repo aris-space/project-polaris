@@ -48,13 +48,13 @@ class ManualAltitudeHoldControlNode(Node):
         # Source-specific gains (live-tunable via ROS params).
         self.declare_parameter("controller_gain_x", 1000.0)
         self.declare_parameter("controller_gain_y", 500.0)
-        self.declare_parameter("controller_gain_z", 500.0)
+        self.declare_parameter("controller_gain_z", 250.0)
         self.declare_parameter("controller_gain_r", 500.0)
         self.declare_parameter("controller_axis_deadzone", 0.05)
 
         self.declare_parameter("keyboard_gain_x", 1000.0)
         self.declare_parameter("keyboard_gain_y", 500.0)
-        self.declare_parameter("keyboard_gain_z", 500.0)
+        self.declare_parameter("keyboard_gain_z", 250.0)
         self.declare_parameter("keyboard_gain_r", 500.0)
         self.declare_parameter("keyboard_x_single_press_gain", 500.0)
         self.declare_parameter("keyboard_x_double_press_gain", 1000.0)
