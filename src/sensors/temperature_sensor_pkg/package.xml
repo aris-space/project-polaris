@@ -14,8 +14,10 @@
   <exec_depend>python3-jetson-gpio</exec_depend>
   
   
-  <depend>pyserial<depend>
-  <depend>rclpy<depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>config_pkg</exec_depend>
 
   
   <test_depend>ament_copyright</test_depend>
