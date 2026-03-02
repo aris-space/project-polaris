@@ -1,7 +1,7 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 
@@ -33,10 +33,16 @@ def generate_launch_description():
         output="screen",
     )
 
+    rosbag_record = ExecuteProcess(
+        cmd=["ros2", "bag", "record", "-a", "-s", "mcap"],
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             mode_control_launch,
             mavlink_launch,
             foxglove_bridge_node,
+            rosbag_record,
         ]
     )
