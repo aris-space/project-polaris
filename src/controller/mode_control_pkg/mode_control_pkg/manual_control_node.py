@@ -48,6 +48,7 @@ class ManualControlNode(Node):
         self.declare_parameter('controller_gain_r', 500.0)
         self.declare_parameter('controller_gain_s', 300.0)
         self.declare_parameter('controller_gain_t', 300.0)
+        self.declare_parameter('controller_axis_deadzone', 0.05)
 
         self.declare_parameter('keyboard_gain_x', 1000.0)
         self.declare_parameter('keyboard_gain_y', 500.0)
@@ -169,6 +170,18 @@ class ManualControlNode(Node):
         roll = float(roll_pos - roll_neg)  # [-1..1]
 
         gain_prefix = 'keyboard' if self._is_keyboard_source(joy_msg) else 'controller'
+        if gain_prefix == 'controller':
+            deadzone = (
+                self.get_parameter('controller_axis_deadzone')
+                .get_parameter_value()
+                .double_value
+            )
+            surge = self._apply_deadzone(surge, deadzone)
+            sway = self._apply_deadzone(sway, deadzone)
+            yaw = self._apply_deadzone(yaw, deadzone)
+            pitch = self._apply_deadzone(pitch, deadzone)
+            heave_net = self._apply_deadzone(heave_net, deadzone)
+
         gain_x = self._get_gain(gain_prefix, 'x')
         gain_y = self._get_gain(gain_prefix, 'y')
         gain_z = self._get_gain(gain_prefix, 'z')
@@ -249,6 +262,12 @@ class ManualControlNode(Node):
     @staticmethod
     def _clamp_int(value, lower, upper):
         return int(max(lower, min(upper, value)))
+
+    @staticmethod
+    def _apply_deadzone(value, deadzone):
+        if abs(value) <= deadzone:
+            return 0.0
+        return value
 
 
 def main(args=None):
