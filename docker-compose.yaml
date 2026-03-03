@@ -7,6 +7,8 @@ services:
     environment:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
+      - NTRIP_USERNAME=${NTRIP_USERNAME:-}
+      - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
     devices:
       - /dev:/dev
     volumes:
