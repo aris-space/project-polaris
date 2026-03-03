@@ -22,7 +22,7 @@ def generate_launch_description():
             Node(
                 package="ultrasonic_driver",
                 executable="ultrasonic_node",
-                name="ultrasonic_sensor_node",
+                name="front_ultrasonic_sensor",
                 namespace="front",
                 output="screen",
                 parameters=[
