@@ -56,6 +56,12 @@ class Temperature_sensor(Node):
             if not values:
                 continue
 
+            for sensor_i in range(len(values)):
+                if values[sensor_i] > 50: #TODO: Might need to be adapted
+                    self.get_logger().warning(f"Sensor {sensor_i} is hot: {values[sensor_i]}°C") #TODO: Add which sensor_i corresponds to which position in the Hardware
+                    return
+
+
             msg = Float32MultiArray()
             msg.data = values
             self.publisher_.publish(msg)
