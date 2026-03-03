@@ -59,6 +59,10 @@ class Temperature_sensor(Node):
             msg = Float32MultiArray()
             msg.data = values
             self.publisher_.publish(msg)
+            self.get_logger().info(
+                "Temperatures [°C]: [%s]"
+                % ", ".join(f"{v:.2f}" for v in values)
+            )
 
 
 def main():
