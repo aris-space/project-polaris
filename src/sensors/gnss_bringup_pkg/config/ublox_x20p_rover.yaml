@@ -7,6 +7,9 @@
 
     # Keep NMEA off for ROS-only UBX workflow.
     CFG_USBOUTPROT_NMEA: false
+    CFG_USBINPROT_RTCM3X: true
+    CFG_USBINPROT_UBX: true
+    CFG_USBOUTPROT_UBX: true
 
     # Measurement/navigation rates.
     # CFG_RATE_MEAS is in milliseconds, CFG_RATE_NAV is number of measurement cycles.
