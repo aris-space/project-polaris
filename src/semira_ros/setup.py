@@ -14,7 +14,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='root',
-    maintainer_email='semira.kir@epfl.ch',
+    maintainer_email='semkir@ethz.ch',
     description='TODO: Package description',
     license='TODO: License declaration',
     extras_require={
