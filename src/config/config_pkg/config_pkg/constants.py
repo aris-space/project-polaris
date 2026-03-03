@@ -26,7 +26,7 @@ class SubConfig:
 class Ports:
     FRONT_ULTRASONIC_PORT = "/dev/ttyUSB0"
     TOP_ULTRASONIC_PORT = "PLACEHOLDER"
-    ARDUINO_PORT = "/dev/ttyACM0"
+    ARDUINO_PORT = "/dev/arduino_nano"
 
 
 class Logs:
