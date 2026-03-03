@@ -54,7 +54,7 @@ class IceEstimation(Node):
 
         # Thickness formula
         T = (1.0 / rho_ice) * (
-            (omega_corr - v_sonar) * rho_water
+            ( v_sonar- omega_corr) * rho_water
             - h_s * rho_s
             - P_ext / g
         )
