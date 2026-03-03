@@ -8,9 +8,7 @@ services:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
     devices:
-      - /dev/v4l/by-path/platform-3610000.usb-usb-0:2.3:1.0-video-index0:/dev/cam_front
-      - /dev/v4l/by-path/platform-3610000.usb-usb-0:2.1:1.0-video-index0:/dev/cam_tube
-      - /dev/input/js*
+      - /dev:/dev
     volumes:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
