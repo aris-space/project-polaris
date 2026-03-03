@@ -27,6 +27,13 @@ def generate_launch_description():
                 executable="joy_handler_node",
                 name="joy_handler_node",
                 output="screen",
+                parameters=[
+                    {
+                        "keyboard_source_frame_id": "keyboard",
+                        "controller_source_frame_id": "controller",
+                        "mode_only_source_frame_id": "mode",
+                    }
+                ],
             ),
             Node(
                 package="mode_control_pkg",
@@ -39,12 +46,50 @@ def generate_launch_description():
                 executable="manual_control_node",
                 name="manual_control_node",
                 output="screen",
+                parameters=[
+                    {
+                        "keyboard_source_frame_id": "keyboard",
+                        "controller_source_frame_id": "controller",
+                        "controller_gain_x": 1000.0,
+                        "controller_gain_y": 500.0,
+                        "controller_gain_z": 500.0,
+                        "controller_gain_r": 500.0,
+                        "controller_gain_s": 300.0,
+                        "controller_gain_t": 300.0,
+                        "keyboard_gain_x": 1000.0,
+                        "keyboard_gain_y": 500.0,
+                        "keyboard_gain_z": 500.0,
+                        "keyboard_gain_r": 500.0,
+                        "keyboard_gain_s": 300.0,
+                        "keyboard_gain_t": 300.0,
+                        "keyboard_x_single_press_gain": 500.0,
+                        "keyboard_x_double_press_gain": 1000.0,
+                        "keyboard_x_double_press_window_s": 0.2,
+                    }
+                ],
             ),
             Node(
                 package="mode_control_pkg",
                 executable="manual_altitude_hold_control_node",
                 name="manual_altitude_hold_control_node",
                 output="screen",
+                parameters=[
+                    {
+                        "keyboard_source_frame_id": "keyboard",
+                        "controller_source_frame_id": "controller",
+                        "controller_gain_x": 1000.0,
+                        "controller_gain_y": 500.0,
+                        "controller_gain_z": 500.0,
+                        "controller_gain_r": 500.0,
+                        "keyboard_gain_x": 1000.0,
+                        "keyboard_gain_y": 500.0,
+                        "keyboard_gain_z": 500.0,
+                        "keyboard_gain_r": 500.0,
+                        "keyboard_x_single_press_gain": 500.0,
+                        "keyboard_x_double_press_gain": 1000.0,
+                        "keyboard_x_double_press_window_s": 0.2,
+                    }
+                ],
             ),
             Node(
                 package="mode_control_pkg",
