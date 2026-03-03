@@ -9,6 +9,7 @@ services:
       - ROS_WS=/ros2_ws
     devices:
       - /dev:/dev
+      - /dev/arduino_nano:/dev/arduino_nano
     volumes:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
