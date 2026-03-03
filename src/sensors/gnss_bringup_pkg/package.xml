@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gnss_bringup_pkg</name>
+  <version>0.0.0</version>
+  <description>Project-local GNSS wrapper launch and configuration.</description>
+  <maintainer email="buehlern@student.ethz.ch">root</maintainer>
+  <license>TODO: License declaration</license>
+
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>ublox_dgnss_node</depend>
+  <depend>ublox_nav_sat_fix_hp_node</depend>
+  <depend>ntrip_client_node</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
