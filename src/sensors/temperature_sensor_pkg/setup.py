@@ -27,7 +27,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "test_temp = temperature_sensor_pkg.temperature_sensor_node:main",
+            "temperature_sensor_node = temperature_sensor_pkg.temperature_sensor_node:main",
         ],
     },
 )
