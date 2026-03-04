@@ -26,21 +26,21 @@
     },
     
     
-    "Space": {
+    "<": {
         "button": 11,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
     
-    "ü": {
+    ".": {
         "button": 3,
         "toggle": false,
         "axis": 1,
         "direction": null
     },
 
-    "ö": {
+    ",": {
         "button": 2,
         "toggle": false,
         "axis": -1,
@@ -48,27 +48,27 @@
     },
 
 
-    "-": {
+    "Space": {
         "button": 0,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
 
-    "ä": {
+    "-": {
         "button": 1,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
 
-    "§": {
+    "9": {
         "button": 8,
         "toggle": false,
         "axis": -1,
         "direction": null
     },
-    "'": {
+    "0": {
         "button": 9,
         "toggle": false,
         "axis": -1,
