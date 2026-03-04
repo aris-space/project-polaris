@@ -43,7 +43,7 @@ class IceEstimation(Node):
         v = P / (rho_water * g)
 
         sensor_offset = 0.05
-        v_sonar = v + sensor_offset
+        v_sonar = v - sensor_offset
 
         # Correct omega for pitch & roll
         omega_corr = omega * np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))
