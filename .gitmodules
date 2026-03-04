@@ -1,4 +1,0 @@
-[submodule "src/sensors/ublox_dgnss"]
-	path = src/sensors/ublox_dgnss
-	url = https://github.com/aussierobots/ublox_dgnss
-	branch = main
