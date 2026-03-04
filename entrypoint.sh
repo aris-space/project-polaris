@@ -12,17 +12,6 @@ fi
 
 cd "${ROS_WS}"
 
-# Ensure submodules are available before build (e.g. ublox_dgnss).
-# Keep this non-fatal so container startup does not crash-loop when git metadata
-# is unavailable/misconfigured in a bind-mounted workspace.
-if command -v git >/dev/null 2>&1 && git -C "${ROS_WS}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  git config --global --add safe.directory "${ROS_WS}" >/dev/null 2>&1 || true
-  git -C "${ROS_WS}" submodule sync --recursive || echo "[entrypoint] WARN: submodule sync failed"
-  git -C "${ROS_WS}" submodule update --init --recursive || echo "[entrypoint] WARN: submodule update failed"
-else
-  echo "[entrypoint] INFO: skipping submodule init (no git worktree at ${ROS_WS})"
-fi
-
 # Optional clean build: set CLEAN_BUILD=1 in compose/environment when needed
 if [ "${CLEAN_BUILD:-0}" = "1" ]; then
   rm -rf build install log
