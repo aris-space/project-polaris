@@ -43,7 +43,7 @@ class IceEstimation(Node):
         v = P / (rho_water * g)
 
         sensor_offset = 0.05
-        v_sonar = v - sensor_offset
+        v_druck = v - sensor_offset
 
         # Correct omega for pitch & roll
         omega_corr = omega * np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))
@@ -54,7 +54,7 @@ class IceEstimation(Node):
 
         # Thickness formula
         T = (1.0 / rho_ice) * (
-            ( v_sonar- omega_corr) * rho_water
+            ( v_druck- omega_corr) * rho_water
             - h_s * rho_s
             - P_ext / g
         )
