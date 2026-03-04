@@ -35,7 +35,7 @@ class Temperature_sensor(Node):
         )
 
         self.get_logger().info(f"Successfully opened serial port {Ports.ARDUINO_PORT}")
-        
+
         self.timer = self.create_timer(0.01, self.timer_callback)
         self.buffer = bytearray()
         self.max_buffer_size = 1024  # Maximum buffer size to prevent overflow
@@ -102,11 +102,11 @@ class Temperature_sensor(Node):
                 if v <= DISCONNECTED_TEMP:
                     level = DiagnosticStatus.ERROR
                     message = f"Sensor {i} disconnected (-127°C)"
-                    break
+                    
                 elif v >= self.error_level:
                     level = DiagnosticStatus.ERROR
                     message = f"Sensor {i} temperature >= {self.error_level}°C"
-                    break
+                    
                 elif v >= self.warn_level and level < DiagnosticStatus.WARN:
                     level = DiagnosticStatus.WARN
                     message = f"Sensor {i} temperature >= {self.warn_level}°C"
