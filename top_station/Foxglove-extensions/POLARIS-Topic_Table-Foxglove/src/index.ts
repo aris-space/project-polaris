@@ -4,7 +4,7 @@ import { initExamplePanel } from "./Main-panel";
 
 export function activate(extensionContext: ExtensionContext): void {
   extensionContext.registerPanel({
-    name: "polaris-ros-topic-tables",
+    name: "ROS topics table (POLARIS)",
     initPanel: initExamplePanel,
   });
 }
