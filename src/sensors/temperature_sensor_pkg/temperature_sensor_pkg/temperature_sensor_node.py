@@ -19,8 +19,8 @@ class Temperature_sensor(Node):
             DiagnosticArray, "/diagnostics", 10
         )
 
-        self.warn_level = 30
-        self.error_level = 50
+        self.warn_level = 100
+        self.error_level = 140
 
         self.get_logger().info(
             "Temperature Sensor Node started. warn_level=%.1f°C, error_level=%.1f°C"
