@@ -22,9 +22,11 @@ class SubConfig:
     MAX_DEPTH = 30.0  # meters
     LEAK_THRESHOLD = 500  # Analog value
 
+
 class Ports:
     FRONT_ULTRASONIC_PORT = "/dev/ttyUSB0"
     TOP_ULTRASONIC_PORT = "PLACEHOLDER"
+    ARDUINO_PORT = "/dev/arduino_nano"
 
 
 class Logs:
@@ -157,4 +159,3 @@ class Comms:
     SERIAL_PORT1 = "/dev/ttyTHS1"
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 57600
-

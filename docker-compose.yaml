@@ -7,11 +7,10 @@ services:
     environment:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
-    devices:
-      - /dev:/dev
     volumes:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
+      - /dev:/dev
     working_dir: /ros2_ws
     entrypoint: /bin/bash /ros2_ws/entrypoint.sh
     stdin_open: true # Equivalent to -i
