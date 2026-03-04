@@ -1,10 +1,12 @@
 import {
   Immutable,
   PanelExtensionContext,
-  Topic,
   SettingsTreeAction,
+  SettingsTreeNodeAction,
+  SettingsTreeNodes,
+  Topic,
 } from "@foxglove/extension";
-import { ReactElement, useEffect, useLayoutEffect, useState } from "react";
+import { ReactElement, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 interface TopicConfig {
@@ -53,12 +55,12 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
         const messageMap = new Map<string, unknown>();
         const timestampMap = new Map<string, number>();
         const currentTime = Date.now();
-        
+
         for (const message of renderState.currentFrame) {
           messageMap.set(message.topic, message.message);
           timestampMap.set(message.topic, currentTime);
         }
-        
+
         setMessages((prevMessages) => {
           const newMessages = new Map(prevMessages);
           messageMap.forEach((msg, topic) => {
@@ -66,7 +68,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           });
           return newMessages;
         });
-        
+
         setLastUpdateTimes((prevTimes) => {
           const newTimes = new Map(prevTimes);
           timestampMap.forEach((time, topic) => {
@@ -74,7 +76,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           });
           return newTimes;
         });
-        
+
         setLastUpdateTime(now);
       }
     };
@@ -85,7 +87,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
 
   // Load saved settings on mount
   useEffect(() => {
-    const savedSettings = context.initialState as PanelSettings | undefined;
+    const savedSettings = context.initialState as Partial<PanelSettings> | undefined;
     if (savedSettings?.trackedTopics) {
       const settingsWithFrequency: PanelSettings = {
         trackedTopics: savedSettings.trackedTopics,
@@ -103,24 +105,19 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     if (config.staleAfterMissedUpdates === 0) {
       return;
     }
-    
-    const interval = setInterval(() => {
-      setForceUpdate(prev => prev + 1);
-    }, 500); // Update every 500ms to refresh staleness
-    
-    return () => clearInterval(interval);
-  }, [config.staleAfterMissedUpdates]);
 
-  // Handle settings tree updates
-  useLayoutEffect(() => {
-    updateSettingsTree();
-  }, [config, topics]);
+    const interval = setInterval(() => {
+      setForceUpdate((prev) => prev + 1);
+    }, 500); // Update every 500ms to refresh staleness
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [config.staleAfterMissedUpdates]);
 
   // Handle settings changes
   useEffect(() => {
-    if (config.trackedTopics.length > 0) {
-      context.subscribe(config.trackedTopics.map((t) => ({ topic: t.topicName })));
-    }
+    context.subscribe(config.trackedTopics.map((t) => ({ topic: t.topicName })));
     context.saveState(config);
   }, [config, context]);
 
@@ -129,10 +126,114 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     renderDone?.();
   }, [renderDone]);
 
-  const updateSettingsTree = () => {
-    const nodes: Record<string, any> = {};
+  const handleAddTopic = useCallback((topicName: string) => {
+    if (!topicName) {
+      return;
+    }
 
-    // Add update frequency selector
+    setConfig((prevConfig) => {
+      if (prevConfig.trackedTopics.some((t) => t.topicName === topicName)) {
+        return prevConfig;
+      }
+
+      const newId = `topic-${Date.now()}`;
+      return {
+        ...prevConfig,
+        trackedTopics: [...prevConfig.trackedTopics, { id: newId, topicName }],
+      };
+    });
+  }, []);
+
+  const handleRemoveTopic = useCallback((id: string) => {
+    setConfig((prevConfig) => ({
+      ...prevConfig,
+      trackedTopics: prevConfig.trackedTopics.filter((t) => t.id !== id),
+    }));
+  }, []);
+
+  const handleMoveUp = useCallback((id: string) => {
+    setConfig((prevConfig) => {
+      const index = prevConfig.trackedTopics.findIndex((t) => t.id === id);
+      if (index <= 0) {
+        return prevConfig;
+      }
+
+      const newTopics = [...prevConfig.trackedTopics];
+      const currentTopic = newTopics[index];
+      const previousTopic = newTopics[index - 1];
+      if (!currentTopic || !previousTopic) {
+        return prevConfig;
+      }
+
+      newTopics[index - 1] = currentTopic;
+      newTopics[index] = previousTopic;
+
+      return { ...prevConfig, trackedTopics: newTopics };
+    });
+  }, []);
+
+  const handleMoveDown = useCallback((id: string) => {
+    setConfig((prevConfig) => {
+      const index = prevConfig.trackedTopics.findIndex((t) => t.id === id);
+      if (index === -1 || index >= prevConfig.trackedTopics.length - 1) {
+        return prevConfig;
+      }
+
+      const newTopics = [...prevConfig.trackedTopics];
+      const currentTopic = newTopics[index];
+      const nextTopic = newTopics[index + 1];
+      if (!currentTopic || !nextTopic) {
+        return prevConfig;
+      }
+
+      newTopics[index] = nextTopic;
+      newTopics[index + 1] = currentTopic;
+
+      return { ...prevConfig, trackedTopics: newTopics };
+    });
+  }, []);
+
+  const handleSettingsAction = useCallback(
+    (action: SettingsTreeAction) => {
+      if (action.action === "update") {
+        const { path, value } = action.payload;
+        if (path[0] === "updateFrequency" && typeof value === "number") {
+          const fieldKey = path[path.length - 1];
+          if (fieldKey === "staleAfterMissedUpdates") {
+            setConfig((prevConfig) => ({ ...prevConfig, staleAfterMissedUpdates: value }));
+          } else {
+            setConfig((prevConfig) => ({ ...prevConfig, updateFrequency: value }));
+          }
+        } else if (path[0] === "showHeader" && typeof value === "boolean") {
+          const fieldKey = path[path.length - 1];
+          if (fieldKey === "showFullTopicPath") {
+            setConfig((prevConfig) => ({ ...prevConfig, showFullTopicPath: value }));
+          } else {
+            setConfig((prevConfig) => ({ ...prevConfig, showHeader: value }));
+          }
+        } else if (path[0] === "addTopic" && typeof value === "string" && value) {
+          handleAddTopic(value);
+        }
+        return;
+      }
+
+      const { path, id } = action.payload;
+      if (typeof path[0] === "string") {
+        if (id === "remove") {
+          handleRemoveTopic(path[0]);
+        } else if (id === "moveUp") {
+          handleMoveUp(path[0]);
+        } else if (id === "moveDown") {
+          handleMoveDown(path[0]);
+        }
+      }
+    },
+    [handleAddTopic, handleMoveDown, handleMoveUp, handleRemoveTopic],
+  );
+
+  const updateSettingsTree = useCallback(() => {
+    const nodes: SettingsTreeNodes = {};
+
     nodes.updateFrequency = {
       label: "Update Rate",
       fields: {
@@ -167,7 +268,6 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       },
     };
 
-    // Add header visibility toggle
     nodes.showHeader = {
       label: "Display",
       fields: {
@@ -184,7 +284,6 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       },
     };
 
-    // Add topic selector
     const availableTopicNames = (topics ?? [])
       .filter((t) => !config.trackedTopics.some((ct) => ct.topicName === t.name))
       .map((topic) => topic.name);
@@ -204,10 +303,9 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       },
     };
 
-    // Add tracked topics with remove and reorder actions
     config.trackedTopics.forEach((trackedTopic, index) => {
-      const actions: any[] = [];
-      
+      const actions: SettingsTreeNodeAction[] = [];
+
       if (index > 0) {
         actions.push({
           id: "moveUp",
@@ -215,7 +313,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           label: "Move Up",
         });
       }
-      
+
       if (index < config.trackedTopics.length - 1) {
         actions.push({
           id: "moveDown",
@@ -223,7 +321,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           label: "Move Down",
         });
       }
-      
+
       actions.push({
         id: "remove",
         type: "action",
@@ -240,160 +338,87 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       actionHandler: handleSettingsAction,
       nodes,
     });
-  };
+  }, [config, context, handleSettingsAction, topics]);
 
-  const handleSettingsAction = (action: SettingsTreeAction) => {
-    if (action.action === "update") {
-      const { path, value } = action.payload;
-      if (path[0] === "updateFrequency" && typeof value === "number") {
-        const fieldKey = path[path.length - 1];
-        if (fieldKey === "staleAfterMissedUpdates") {
-          setConfig({ ...config, staleAfterMissedUpdates: value });
-        } else {
-          setConfig({ ...config, updateFrequency: value });
-        }
-      } else if (path[0] === "showHeader" && typeof value === "boolean") {
-        const fieldKey = path[path.length - 1];
-        if (fieldKey === "showFullTopicPath") {
-          setConfig({ ...config, showFullTopicPath: value });
-        } else {
-          setConfig({ ...config, showHeader: value });
-        }
-      } else if (path[0] === "addTopic" && typeof value === "string" && value) {
-        handleAddTopic(value);
-      }
-    } else if (action.action === "perform-node-action") {
-      const { path, id } = action.payload;
-      if (typeof path[0] === "string") {
-        if (id === "remove") {
-          handleRemoveTopic(path[0]);
-        } else if (id === "moveUp") {
-          handleMoveUp(path[0]);
-        } else if (id === "moveDown") {
-          handleMoveDown(path[0]);
-        }
-      }
-    }
-  };
-
-  const handleAddTopic = (topicName: string) => {
-    if (topicName && !config.trackedTopics.some((t) => t.topicName === topicName)) {
-      const newId = `topic-${Date.now()}`;
-      setConfig({
-        ...config,
-        trackedTopics: [...config.trackedTopics, { id: newId, topicName }],
-      });
-    }
-  };
-
-  const handleRemoveTopic = (id: string) => {
-    setConfig({
-      ...config,
-      trackedTopics: config.trackedTopics.filter((t) => t.id !== id),
-    });
-  };
-
-  const handleMoveUp = (id: string) => {
-    const index = config.trackedTopics.findIndex((t) => t.id === id);
-    if (index <= 0) {
-      return;
-    }
-
-    const newTopics = [...config.trackedTopics];
-    const currentTopic = newTopics[index];
-    const previousTopic = newTopics[index - 1];
-
-    if (!currentTopic || !previousTopic) {
-      return;
-    }
-
-    newTopics[index - 1] = currentTopic;
-    newTopics[index] = previousTopic;
-    setConfig({ ...config, trackedTopics: newTopics });
-  };
-
-  const handleMoveDown = (id: string) => {
-    const index = config.trackedTopics.findIndex((t) => t.id === id);
-    if (index === -1 || index >= config.trackedTopics.length - 1) {
-      return;
-    }
-
-    const newTopics = [...config.trackedTopics];
-    const currentTopic = newTopics[index];
-    const nextTopic = newTopics[index + 1];
-
-    if (!currentTopic || !nextTopic) {
-      return;
-    }
-
-    newTopics[index] = nextTopic;
-    newTopics[index + 1] = currentTopic;
-    setConfig({ ...config, trackedTopics: newTopics });
-  };
+  // Handle settings tree updates
+  useLayoutEffect(() => {
+    updateSettingsTree();
+  }, [updateSettingsTree]);
 
   const formatValue = (value: unknown): string => {
-    if (value === undefined) {
+    if (typeof value === "undefined") {
       return "No data";
     }
 
-    if (value === null) {
+    if (value == null) {
       return "null";
     }
-    
+
     if (typeof value === "object") {
       if (Array.isArray(value)) {
         // Show array contents if small, otherwise show length
         if (value.length <= 3) {
-          return `[${value.map(v => formatValue(v)).join(", ")}]`;
+          return `[${value.map((v) => formatValue(v)).join(", ")}]`;
         }
         return `Array[${value.length}]`;
       }
-      
+
       // Handle common ROS message patterns
       const obj = value as Record<string, unknown>;
-      
+
       // Check for std_msgs pattern (single 'data' field)
       if (Object.keys(obj).length === 1 && "data" in obj) {
         return formatValue(obj.data);
       }
-      
-      // Try to stringify if it's a small object
+
+      // Show object fields without curly braces
       try {
-        const str = JSON.stringify(value);
-        if (str.length <= 50) {
-          return str;
-        }
-        // Show a summary of the object
         const keys = Object.keys(obj);
-        if (keys.length <= 3) {
-          return `{${keys.map(k => `${k}: ${formatValue(obj[k])}`).join(", ")}}`;
+        if (keys.length === 0) {
+          return "Object";
         }
-        return `Object {${keys.slice(0, 3).join(", ")}...}`;
+        if (keys.length <= 3) {
+          return keys.map((key) => `${key}: ${formatValue(obj[key])}`).join(", ");
+        }
+        return `${keys.slice(0, 3).join(", ")}...`;
       } catch {
         return "Object";
       }
     }
-    
+
     // Handle primitives
     if (typeof value === "number") {
       // Format numbers with reasonable precision
       return Number.isInteger(value) ? String(value) : value.toFixed(3);
     }
-    
-    return String(value);
+
+    if (typeof value === "string") {
+      return value;
+    }
+
+    if (typeof value === "boolean" || typeof value === "bigint") {
+      return String(value);
+    }
+
+    if (typeof value === "symbol") {
+      return value.description != undefined ? `Symbol(${value.description})` : "Symbol";
+    }
+
+    return "Unsupported";
   };
 
   const isStale = (topicName: string): boolean => {
     if (config.staleAfterMissedUpdates === 0) {
       return false;
     }
-    
+
     const lastUpdate = lastUpdateTimes.get(topicName);
-    if (!lastUpdate) {
+    if (lastUpdate == undefined) {
       return false; // No data yet, not considered stale
     }
-    
-    const expectedUpdateIntervalMs = config.updateFrequency > 0 ? 1000 / config.updateFrequency : 1000;
+
+    const expectedUpdateIntervalMs =
+      config.updateFrequency > 0 ? 1000 / config.updateFrequency : 1000;
     const staleAfterMs = expectedUpdateIntervalMs * config.staleAfterMissedUpdates;
 
     const now = Date.now();
@@ -471,7 +496,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             ) : (
               config.trackedTopics.map((t) => {
                 const stale = isStale(t.topicName);
-                
+
                 return (
                   <tr
                     key={t.id}
@@ -491,14 +516,17 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {stale && "⚠️ "}{formatTopicName(t.topicName)}
+                      {stale && "⚠️ "}
+                      {formatTopicName(t.topicName)}
                     </td>
-                    <td style={{ 
-                      padding: "0.75rem", 
-                      wordBreak: "break-all", 
-                      color: stale ? "#ff8800" : "white",
-                      opacity: stale ? 0.6 : 1,
-                    }}>
+                    <td
+                      style={{
+                        padding: "0.75rem",
+                        wordBreak: "break-all",
+                        color: stale ? "#ff8800" : "white",
+                        opacity: stale ? 0.6 : 1,
+                      }}
+                    >
                       {formatValue(messages.get(t.topicName))}
                     </td>
                   </tr>
