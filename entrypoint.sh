@@ -12,6 +12,14 @@ fi
 
 cd "${ROS_WS}"
 
+# Ensure submodules are available before build (e.g. ublox_dgnss).
+# Bind-mounts can trigger git "dubious ownership", so mark workspace as safe.
+if [ -d .git ]; then
+  git config --global --add safe.directory "${ROS_WS}" || true
+  git submodule sync --recursive
+  git submodule update --init --recursive
+fi
+
 # Optional clean build: set CLEAN_BUILD=1 in compose/environment when needed
 if [ "${CLEAN_BUILD:-0}" = "1" ]; then
   rm -rf build install log
