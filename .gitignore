@@ -21,6 +21,7 @@ ping-python/
 src/measurement/ping_sonar/
 
 settings.json
+.env
 
 # ROS 2 workspace build artifacts
 **/build/
