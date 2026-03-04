@@ -6,7 +6,7 @@
     FRAME_ID: "gnss_link"
 
     # Keep NMEA off for ROS-only UBX workflow.
-    CFG_USBOUTPROT_NMEA: true
+    CFG_USBOUTPROT_NMEA: false
     CFG_USBINPROT_RTCM3X: true
     CFG_USBINPROT_UBX: true
     CFG_USBOUTPROT_UBX: true
