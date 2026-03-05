@@ -22,6 +22,7 @@ interface PanelSettings {
   showFullTopicPath: boolean;
   leftColumnWidth: number; // Percentage width of left column (0-100)
   showRawMessage: boolean; // Show original JSON format vs formatted
+  compactMode: boolean; // Use compact row spacing
 }
 
 function TopicsTablePanel({ context }: { context: PanelExtensionContext }): ReactElement {
@@ -31,12 +32,13 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [config, setConfig] = useState<PanelSettings>({
     trackedTopics: [],
-    updateFrequency: 0, // 0 = every frame
+    updateFrequency: 5, // 5 Hz
     showHeader: true,
-    staleAfterMissedUpdates: 3, // stale after 3 missed updates by default
-    showFullTopicPath: true,
+    staleAfterMissedUpdates: 5, // stale after 5 missed updates by default
+    showFullTopicPath: false,
     leftColumnWidth: 40, // Default to 40%
     showRawMessage: false, // Default to formatted view
+    compactMode: false, // Default to normal spacing
   });
   const [isDragging, setIsDragging] = useState(false);
   const [isDividerHovered, setIsDividerHovered] = useState(false);
@@ -98,12 +100,13 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     if (savedSettings?.trackedTopics) {
       const settingsWithFrequency: PanelSettings = {
         trackedTopics: savedSettings.trackedTopics,
-        updateFrequency: savedSettings.updateFrequency ?? 0,
+        updateFrequency: savedSettings.updateFrequency ?? 5,
         showHeader: savedSettings.showHeader ?? true,
-        staleAfterMissedUpdates: savedSettings.staleAfterMissedUpdates ?? 3,
-        showFullTopicPath: savedSettings.showFullTopicPath ?? true,
+        staleAfterMissedUpdates: savedSettings.staleAfterMissedUpdates ?? 5,
+        showFullTopicPath: savedSettings.showFullTopicPath ?? false,
         leftColumnWidth: savedSettings.leftColumnWidth ?? 40,
         showRawMessage: savedSettings.showRawMessage ?? false,
+        compactMode: savedSettings.compactMode ?? false,
       };
       setConfig(settingsWithFrequency);
     }
@@ -219,6 +222,8 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             setConfig((prevConfig) => ({ ...prevConfig, showFullTopicPath: value }));
           } else if (fieldKey === "showRawMessage") {
             setConfig((prevConfig) => ({ ...prevConfig, showRawMessage: value }));
+          } else if (fieldKey === "compactMode") {
+            setConfig((prevConfig) => ({ ...prevConfig, compactMode: value }));
           } else {
             setConfig((prevConfig) => ({ ...prevConfig, showHeader: value }));
           }
@@ -249,22 +254,22 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       label: "Update Rate",
       fields: {
         updateFrequency: {
-          label: "How often to update values",
+          label: "Update interval",
           input: "select",
           options: [
             { label: "Every frame (max)", value: 0 },
-            { label: "30 Hz", value: 30 },
-            { label: "10 Hz", value: 10 },
-            { label: "5 Hz", value: 5 },
-            { label: "2 Hz", value: 2 },
-            { label: "1 Hz", value: 1 },
-            { label: "0.5 Hz", value: 0.5 },
-            { label: "0.2 Hz", value: 0.2 },
+            { label: "30 Hz (0.033 s)", value: 30 },
+            { label: "10 Hz (0.1 s)", value: 10 },
+            { label: "5 Hz (0.2 s)", value: 5 },
+            { label: "2 Hz (0.5 s)", value: 2 },
+            { label: "1 Hz (1 s)", value: 1 },
+            { label: "0.5 Hz (2 s)", value: 0.5 },
+            { label: "0.2 Hz (5 s)", value: 0.2 },
           ],
           value: config.updateFrequency,
         },
         staleAfterMissedUpdates: {
-          label: "Mark stale after missed updates",
+          label: "Stale threshold",
           input: "select",
           options: [
             { label: "Disabled", value: 0 },
@@ -273,6 +278,11 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             { label: "3 missed updates", value: 3 },
             { label: "5 missed updates", value: 5 },
             { label: "10 missed updates", value: 10 },
+            { label: "15 missed updates", value: 15 },
+            { label: "20 missed updates", value: 20 },
+            { label: "25 missed updates", value: 25 },
+            { label: "30 missed updates", value: 30 },
+            { label: "50 missed updates", value: 50 },
           ],
           value: config.staleAfterMissedUpdates,
         },
@@ -283,19 +293,24 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       label: "Display",
       fields: {
         showHeader: {
-          label: "Show header row",
+          label: "Header row",
           input: "boolean",
           value: config.showHeader,
         },
         showFullTopicPath: {
-          label: "Show full topic path",
+          label: "Full topic path",
           input: "boolean",
           value: config.showFullTopicPath,
         },
         showRawMessage: {
-          label: "Show raw message format",
+          label: "Raw format",
           input: "boolean",
           value: config.showRawMessage,
+        },
+        compactMode: {
+          label: "Compact spacing",
+          input: "boolean",
+          value: config.compactMode,
         },
       },
     };
@@ -584,7 +599,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                 <th
                   style={{
                     textAlign: "left",
-                    padding: "0.75rem",
+                    padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                     borderRight: "1px solid #555",
                     fontWeight: "bold",
                     color: "white",
@@ -599,7 +614,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                 <th
                   style={{
                     textAlign: "left",
-                    padding: "0.75rem",
+                    padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                     fontWeight: "bold",
                     color: "white",
                     overflow: "hidden",
@@ -632,7 +647,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                   >
                     <td
                       style={{
-                        padding: "0.75rem",
+                        padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                         borderRight: "1px solid #444",
                         fontWeight: 500,
                         color: stale ? "#ff8800" : "white",
@@ -644,7 +659,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                     </td>
                     <td
                       style={{
-                        padding: "0.75rem",
+                        padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                         color: stale ? "#ff8800" : "white",
                         opacity: stale ? 0.6 : 1,
                         wordBreak: "break-word",
