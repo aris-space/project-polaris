@@ -9,6 +9,8 @@
 
   <depend>launch</depend>
   <depend>launch_ros</depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
   <depend>ublox_dgnss_node</depend>
   <depend>ublox_nav_sat_fix_hp_node</depend>
   <depend>ntrip_client</depend>
