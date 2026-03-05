@@ -55,6 +55,12 @@ def generate_launch_description():
     ntrip_node = GroupAction(
         condition=IfCondition(use_ntrip),
         actions=[
+            Node(
+                package="gnss_bringup_pkg",
+                executable="fix_qos_bridge",
+                name="fix_qos_bridge",
+                output="screen",
+            ),
             PushRosNamespace("ntrip_client"),
             Node(
                 package="ntrip_client",
@@ -73,10 +79,6 @@ def generate_launch_description():
                         "ntrip_version": ntrip_version,
                         "rtcm_message_package": "rtcm_msgs",
                     }
-                ],
-                remappings=[
-                    # ntrip_client subscribes to 'fix' and forwards GGA upstream.
-                    ("fix", "/fix"),
                 ],
             )
         ],

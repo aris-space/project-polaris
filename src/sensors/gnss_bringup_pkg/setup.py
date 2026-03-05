@@ -26,6 +26,8 @@ setup(
         ],
     },
     entry_points={
-        "console_scripts": [],
+        "console_scripts": [
+            "fix_qos_bridge = gnss_bringup_pkg.fix_qos_bridge:main",
+        ],
     },
 )
