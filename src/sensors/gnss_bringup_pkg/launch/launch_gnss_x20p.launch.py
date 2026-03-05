@@ -2,10 +2,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.conditions import IfCondition
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
-from launch_ros.actions import ComposableNodeContainer
+from launch_ros.actions import ComposableNodeContainer, Node, PushRosNamespace
 from launch_ros.descriptions import ComposableNode
 
 
@@ -24,7 +24,7 @@ def generate_launch_description():
     ntrip_mountpoint = LaunchConfiguration("ntrip_mountpoint")
     ntrip_username = LaunchConfiguration("ntrip_username")
     ntrip_password = LaunchConfiguration("ntrip_password")
-    ntrip_maxage_conn = LaunchConfiguration("ntrip_maxage_conn")
+    ntrip_version = LaunchConfiguration("ntrip_version")
 
     gnss_container = ComposableNodeContainer(
         name="ublox_dgnss_container",
@@ -50,30 +50,33 @@ def generate_launch_description():
         ],
     )
 
-    ntrip_container = ComposableNodeContainer(
-        name="ntrip_client_container",
-        namespace="",
-        package="rclcpp_components",
-        executable="component_container_mt",
-        output="screen",
+    # Use LORD ntrip_client here because it can consume /fix and generate/sent GGA
+    # upstream to VRS casters such as SWIPOS.
+    ntrip_node = GroupAction(
         condition=IfCondition(use_ntrip),
-        arguments=["--ros-args", "--log-level", log_level],
-        composable_node_descriptions=[
-            ComposableNode(
-                package="ntrip_client_node",
-                plugin="ublox_dgnss::NTRIPClientNode",
+        actions=[
+            PushRosNamespace("ntrip_client"),
+            Node(
+                package="ntrip_client",
+                executable="ntrip_ros.py",
                 name="ntrip_client",
-                namespace=namespace,
+                output="screen",
                 parameters=[
                     {
-                        "use_https": ntrip_use_https,
                         "host": ntrip_host,
                         "port": ntrip_port,
                         "mountpoint": ntrip_mountpoint,
+                        "authenticate": True,
                         "username": ntrip_username,
                         "password": ntrip_password,
-                        "maxage_conn": ntrip_maxage_conn,
+                        "ssl": ntrip_use_https,
+                        "ntrip_version": ntrip_version,
+                        "rtcm_message_package": "rtcm_msgs",
                     }
+                ],
+                remappings=[
+                    # ntrip_client subscribes to 'fix' and forwards GGA upstream.
+                    ("fix", "/fix"),
                 ],
             )
         ],
@@ -89,6 +92,7 @@ def generate_launch_description():
             DeclareLaunchArgument("ntrip_host", default_value=""),
             DeclareLaunchArgument("ntrip_port", default_value="443"),
             DeclareLaunchArgument("ntrip_mountpoint", default_value=""),
+            DeclareLaunchArgument("ntrip_version", default_value="Ntrip/1.0"),
             DeclareLaunchArgument(
                 "ntrip_username",
                 default_value=EnvironmentVariable(
@@ -101,8 +105,7 @@ def generate_launch_description():
                     "NTRIP_PASSWORD", default_value=""
                 ),
             ),
-            DeclareLaunchArgument("ntrip_maxage_conn", default_value="30"),
             gnss_container,
-            ntrip_container,
+            ntrip_node,
         ]
     )
