@@ -81,12 +81,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.publishMode ??= false;
     partialConfig.publishFrameId ??= "";
     partialConfig.dataSource ??= "sub-joy-topic";
-    partialConfig.displayMode ??= "auto";
-    partialConfig.debugGamepad ??= false;
     partialConfig.layoutName ??= "ps4";
     partialConfig.mapping_name ??= "TODO";
     partialConfig.keyboardMapping ??= "default";
     partialConfig.gamepadId ??= 0;
+    partialConfig.uiScale ??= 1;
     
     // Set default pubJoyTopic based on data source and keyboard mapping
     if (partialConfig.pubJoyTopic == undefined) {
@@ -480,36 +479,47 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   }, [context, config]);
 
   return (
-    <div>
-      {config.dataSource === "keyboard" ? (
-        <FormGroup>
-          <FormControlLabel
-            control={<Switch checked={kbEnabled} onChange={handleKbSwitch} />}
-            label={`Enable ${
-              config.keyboardMapping === "default"
-                ? "Default"
-                : config.keyboardMapping === "keyboard_movement"
-                  ? "Keyboard Movement"
-                  : config.keyboardMapping === "keyboard_buttons"
-                    ? "Keyboard Buttons"
-                    : config.keyboardMapping
-            }`}
+    <div style={{ 
+      height: "100%", 
+      width: "100%", 
+      overflow: "auto", 
+      boxSizing: "border-box",
+      padding: `${10 * config.uiScale}px`
+    }}>
+      <div style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: `${8 * config.uiScale}px`
+      }}>
+        {config.dataSource === "keyboard" ? (
+          <FormGroup sx={{ margin: 0 }}>
+            <FormControlLabel
+              control={<Switch checked={kbEnabled} onChange={handleKbSwitch} />}
+              label={`Enable ${
+                config.keyboardMapping === "default"
+                  ? "Default"
+                  : config.keyboardMapping === "keyboard_movement"
+                    ? "Keyboard Movement"
+                    : config.keyboardMapping === "keyboard_buttons"
+                      ? "Keyboard Buttons"
+                      : config.keyboardMapping
+              }`}
+            />
+          </FormGroup>
+        ) : null}
+        {config.layoutName !== "rawjoy" ? (
+          <GamepadView
+            joy={joy}
+            cbInteractChange={interactiveCb}
+            layoutName={config.layoutName}
+            kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
+            uiScale={config.uiScale}
           />
-        </FormGroup>
-      ) : null}
-      {config.displayMode === "auto" ? <SimpleButtonView joy={joy} /> : null}
-      {config.displayMode === "custom" && config.layoutName !== "rawjoy" ? (
-        <GamepadView
-          joy={joy}
-          cbInteractChange={interactiveCb}
-          layoutName={config.layoutName}
-          kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
-        />
-      ) : null}
-      {config.displayMode === "custom" || config.layoutName === "rawjoy" ? (
-        <JoyDataDisplay joy={joy} kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined} />
-      ) : null}
-      {/* {config.debugGamepad ? <GamepadDebug gamepads={gamepads} /> : null} */}
+        ) : null}
+        {config.layoutName === "rawjoy" || config.layoutName === "ps4rawjoy" ? (
+          <JoyDataDisplay joy={joy} kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined} uiScale={config.uiScale} />
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { Topic, SettingsTreeNodes, SettingsTreeFields, SettingsTreeAction } from "@foxglove/studio";
 import { produce } from "immer";
 import * as _ from "lodash-es";
-import packageJson from "../package.json";
 
 export type Config = {
   dataSource: string;
@@ -10,18 +9,23 @@ export type Config = {
   publishMode: boolean;
   pubJoyTopic: string;
   publishFrameId: string;
-  displayMode: string;
-  debugGamepad: boolean;
   layoutName: string;
   mapping_name: string;
   keyboardMapping: string;
+  uiScale: number;
 };
 
 export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAction): Config {
   return produce(prevConfig, (draft) => {
     if (action.action === "update") {
       const { path, value } = action.payload;
-      _.set(draft, path.slice(1), value);
+      const pathStr = path.join(".");
+      // Handle compact mode toggle conversion
+      if (pathStr.includes("uiScale") && typeof value === "boolean") {
+        draft.uiScale = value ? 0.6 : 1;
+      } else {
+        _.set(draft, path.slice(1), value);
+      }
     }
   });
 }
@@ -82,26 +86,6 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           label: "2",
           value: "2",
         },
-        {
-          label: "TODO Make this auto populate",
-          value: "3",
-        },
-      ],
-    },
-    gamepadMapping: {
-      label: "GP->Joy Mapping",
-      input: "select",
-      value: "default",
-      disabled: config.dataSource !== "gamepad",
-      options: [
-        {
-          label: "Default",
-          value: "default",
-        },
-        {
-          label: "TODO Make selectable",
-          value: "todo",
-        },
       ],
     },
     keyboardMapping: {
@@ -146,25 +130,9 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     },
   };
   const displayFields: SettingsTreeFields = {
-    displayMode: {
-      label: "Display Mode",
-      input: "select",
-      value: config.displayMode,
-      options: [
-        {
-          label: "Auto-Generated",
-          value: "auto",
-        },
-        {
-          label: "Custom Display",
-          value: "custom",
-        },
-      ],
-    },
     layoutName: {
       label: "Layout",
       input: "select",
-      disabled: config.displayMode === "auto",
       value: config.layoutName,
       options: [
         {
@@ -176,10 +144,19 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           value: "ps4",
         },
         {
+          label: "PS4 + Raw Joy",
+          value: "ps4rawjoy",
+        },
+        {
           label: "Raw Joy",
           value: "rawjoy",
         },
       ],
+    },
+    uiScale: {
+      label: "Compact Mode",
+      input: "boolean",
+      value: config.uiScale !== 1,
     },
 
     // mapping: {
@@ -194,20 +171,6 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     //     },
     //   ],
     // },
-    debugGamepad: {
-      label: "Debug Gamepad",
-      input: "boolean",
-      value: config.debugGamepad,
-    },
-  };
-
-  const aboutFields: SettingsTreeFields = {
-    version: {
-      label: "Version",
-      input: "string",
-      value: packageJson.version,
-      readonly: true,
-    },
   };
 
   const settings: SettingsTreeNodes = {
@@ -222,10 +185,6 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     display: {
       label: "Display",
       fields: displayFields,
-    },
-    about: {
-      label: "About",
-      fields: aboutFields,
     },
   };
 
