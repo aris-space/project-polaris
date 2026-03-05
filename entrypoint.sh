@@ -13,8 +13,8 @@ source_with_relaxed_nounset() {
 # --- Config defaults ---
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
-AUTO_BUILD="${AUTO_BUILD:-0}"
-ROSDEP_INSTALL="${ROSDEP_INSTALL:-0}"
+AUTO_BUILD="${AUTO_BUILD:-1}"
+ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"
 
 # 1) Source base ROS env (already present in image, but keep explicit here).
 if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
@@ -29,8 +29,15 @@ fi
 cd "${ROS_WS}"
 
 # 2) Optional dependency install for mounted workspaces.
-if [ "${ROSDEP_INSTALL}" = "1" ] && command -v rosdep-install-workspace >/dev/null 2>&1; then
-  rosdep-install-workspace "${ROS_WS}"
+if [ "${ROSDEP_INSTALL}" = "1" ]; then
+  if command -v rosdep-install-workspace >/dev/null 2>&1; then
+    rosdep-install-workspace "${ROS_WS}"
+  elif command -v rosdep >/dev/null 2>&1; then
+    rosdep install --from-paths src --ignore-src -r -y
+  else
+    echo "ROSDEP_INSTALL=1 but neither 'rosdep-install-workspace' nor 'rosdep' was found."
+    exit 1
+  fi
 fi
 
 # 3) Optional build step (disabled by default for runtime images).
