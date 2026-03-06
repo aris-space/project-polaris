@@ -16,7 +16,7 @@ using namespace std::chrono_literals;
 class UltrasonicSensorNode : public rclcpp::Node
 {
 public:
-  UltrasonicSensorNode() : Node("ultrasonic_sensor_node"), serial_port_(-1)
+  UltrasonicSensorNode() : Node("ultrasonic_sensor_node"), serial_port_(-1), timer_(nullptr)
   {
     // --- 1. DECLARE PARAMETERS ---
     // Using basic descriptors without ranges for simple text/numeric inputs
@@ -132,20 +132,47 @@ private:
         std::bind(&UltrasonicSensorNode::read_sensor, this));
   }
 
-  void read_sensor()
-  {
-    if (serial_port_ < 0)
-      return;
-    uint8_t trigger_byte = 0x55;
-    if (write(serial_port_, &trigger_byte, 1) < 0)
-      return;
-    std::this_thread::sleep_for(70ms);
-    uint8_t buf[4];
-    if (read(serial_port_, buf, 4) > 0)
-    {
-      // Logic remains same as your original sensor reading
+void read_sensor()
+{
+  if (serial_port_ < 0) return;
+
+  // 1. Send Trigger
+  uint8_t trigger_byte = 0x55;
+  if (write(serial_port_, &trigger_byte, 1) < 0) return;
+
+  // 2. Wait for sensor response
+  std::this_thread::sleep_for(70ms);
+
+  // 3. Sync to Header (0xFF)
+  uint8_t header = 0;
+  bool found_header = false;
+  for (int i = 0; i < 32; ++i) { // Try up to 32 bytes to find the start
+    if (read(serial_port_, &header, 1) > 0 && header == 0xFF) {
+      found_header = true;
+      break;
     }
   }
+
+  if (!found_header) return;
+
+  // 4. Read Payload
+  uint8_t data[3]; // High, Low, Checksum
+  if (read(serial_port_, data, 3) == 3) {
+    uint8_t high = data[0];
+    uint8_t low  = data[1];
+    uint8_t sum  = data[2];
+
+    if (((0xFF + high + low) & 0xFF) == sum) {
+      float distance_m = static_cast<float>((high << 8) | low) / 1000.0f;
+      
+      auto msg = std_msgs::msg::Float32();
+      msg.data = distance_m;
+      publisher_->publish(msg);
+      
+      RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
+    }
+  }
+}
 
   int serial_port_;
   std::string serial_device_;
