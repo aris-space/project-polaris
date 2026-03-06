@@ -30,6 +30,12 @@ fi
 
 cd "${ROS_WS}"
 
+# Bind-mounted workspaces often have host ownership that differs from the
+# container user. Mark workspace as safe for git before submodule operations.
+if command -v git >/dev/null 2>&1; then
+  git config --global --add safe.directory "${ROS_WS}" || true
+fi
+
 # Ensure the DVL source package exists when this workspace is mounted fresh.
 # dvl_a50 is provided as a git submodule, not as a public rosdep key.
 # The directory may exist but still be uninitialized, so check package.xml.
