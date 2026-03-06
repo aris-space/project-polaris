@@ -25,6 +25,8 @@ def generate_launch_description():
     ntrip_username = LaunchConfiguration("ntrip_username")
     ntrip_password = LaunchConfiguration("ntrip_password")
     ntrip_version = LaunchConfiguration("ntrip_version")
+    respawn = LaunchConfiguration("respawn")
+    respawn_delay = LaunchConfiguration("respawn_delay")
 
     gnss_container = ComposableNodeContainer(
         name="ublox_dgnss_container",
@@ -32,6 +34,8 @@ def generate_launch_description():
         package="rclcpp_components",
         executable="component_container_mt",
         output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
         arguments=["--ros-args", "--log-level", log_level],
         composable_node_descriptions=[
             ComposableNode(
@@ -60,6 +64,8 @@ def generate_launch_description():
                 executable="fix_qos_bridge",
                 name="fix_qos_bridge",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
             ),
             PushRosNamespace("ntrip_client"),
             Node(
@@ -67,6 +73,8 @@ def generate_launch_description():
                 executable="ntrip_ros.py",
                 name="ntrip_client",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
                 parameters=[
                     {
                         "host": ntrip_host,
@@ -95,6 +103,16 @@ def generate_launch_description():
             DeclareLaunchArgument("ntrip_port", default_value="443"),
             DeclareLaunchArgument("ntrip_mountpoint", default_value=""),
             DeclareLaunchArgument("ntrip_version", default_value="Ntrip/1.0"),
+            DeclareLaunchArgument(
+                "respawn",
+                default_value="true",
+                description="Automatically relaunch node if it exits/crashes.",
+            ),
+            DeclareLaunchArgument(
+                "respawn_delay",
+                default_value="2.0",
+                description="Seconds to wait before restarting a crashed node.",
+            ),
             DeclareLaunchArgument(
                 "ntrip_username",
                 default_value=EnvironmentVariable(
