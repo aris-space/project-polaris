@@ -1,4 +1,3 @@
-import os
 import glob
 from setuptools import setup
 
@@ -11,7 +10,8 @@ setup(
     package_dir={'': 'src'},
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        (os.path.join('share', package_name), ['package.xml', *glob.glob('launch/*')]),
+        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/launch', glob.glob('launch/*.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
