@@ -1,30 +1,63 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# 1. Source base ROS environment first (required for colcon and package discovery)
-if [ -f "/opt/ros/${ROS_DISTRO:-humble}/setup.bash" ]; then
-    source "/opt/ros/${ROS_DISTRO:-humble}/setup.bash"
+# ROS setup scripts may reference optional vars that are unset.
+# Temporarily disable nounset while sourcing them.
+source_with_relaxed_nounset() {
+  set +u
+  # shellcheck disable=SC1090
+  source "$1"
+  set -u
+}
+
+# --- Config defaults ---
+ROS_DISTRO="${ROS_DISTRO:-humble}"
+ROS_WS="${ROS_WS:-/ros2_ws}"
+AUTO_BUILD="${AUTO_BUILD:-1}"
+ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"
+
+# 1) Source base ROS env (already present in image, but keep explicit here).
+if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
+  source_with_relaxed_nounset "/opt/ros/${ROS_DISTRO}/setup.bash"
 fi
 
-cd "${ROS_WS:-/ros2_ws}"
+if [ ! -d "${ROS_WS}" ]; then
+  echo "Workspace directory not found: ${ROS_WS}"
+  exit 1
+fi
 
-# Optional clean build: set CLEAN_BUILD=1 in compose/environment when needed
-if [ "${CLEAN_BUILD:-0}" = "1" ]; then
+cd "${ROS_WS}"
+
+# 2) Optional dependency install for mounted workspaces.
+if [ "${ROSDEP_INSTALL}" = "1" ]; then
+  if command -v rosdep-install-workspace >/dev/null 2>&1; then
+    rosdep-install-workspace "${ROS_WS}"
+  elif command -v rosdep >/dev/null 2>&1; then
+    rosdep install --from-paths src --ignore-src -r -y
+  else
+    echo "ROSDEP_INSTALL=1 but neither 'rosdep-install-workspace' nor 'rosdep' was found."
+    exit 1
+  fi
+fi
+
+# 3) Optional build step (disabled by default for runtime images).
+if [ "${AUTO_BUILD}" = "1" ]; then
+  if [ "${CLEAN_BUILD:-0}" = "1" ]; then
     rm -rf build install log
+  fi
+
+  if ! command -v colcon >/dev/null 2>&1; then
+    echo "AUTO_BUILD=1 but 'colcon' was not found in PATH."
+    exit 1
+  fi
+
+  colcon build --symlink-install
 fi
 
-# 2. Build workspace
-colcon build --symlink-install
-
-# 3. Source local workspace for this process tree
-if [ -f "${ROS_WS:-/ros2_ws}/install/setup.bash" ]; then
-    source "${ROS_WS:-/ros2_ws}/install/setup.bash"
+# 4) Source overlay for this process tree when available.
+if [ -f "${ROS_WS}/install/setup.bash" ]; then
+  source_with_relaxed_nounset "${ROS_WS}/install/setup.bash"
 fi
 
-# 4. Ensure interactive shells (e.g. docker exec -it ... bash) are sourced too
-if ! grep -qxF 'source ${ROS_WS:-/ros2_ws}/install/setup.bash' /root/.bashrc 2>/dev/null; then
-    echo 'source ${ROS_WS:-/ros2_ws}/install/setup.bash' >> /root/.bashrc
-fi
-
-# 5. Execute command passed to docker (e.g., sleep infinity)
+# 5) Execute command passed by docker/compose.
 exec "$@"
