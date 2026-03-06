@@ -15,6 +15,7 @@ from sensor_msgs.msg import (
     BatteryState,  # BATTERY_STATUS
     FluidPressure,  # SCALED_PRESSURE (depth)
 )
+from config_pkg.constants import Comms
 
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
@@ -75,7 +76,7 @@ class MavlinkBridgeSender(Node):
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
 
-        self.port = mavutil.mavlink_connection("udp:10.5.11.50:14600") # UDP connection to companion computer (BlueOS)
+        self.port = mavutil.mavlink_connection(f"{Comms.JETSON_IP_ADDRESS}:14600") # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # Serial connection straight to Pixhawk
 
         self.port.wait_heartbeat()
