@@ -16,17 +16,34 @@ node matching the current mode will actually send data at any given time.
 """
 
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    respawn = LaunchConfiguration("respawn")
+    respawn_delay = LaunchConfiguration("respawn_delay")
+
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "respawn",
+                default_value="true",
+                description="Automatically relaunch node if it exits/crashes.",
+            ),
+            DeclareLaunchArgument(
+                "respawn_delay",
+                default_value="2.0",
+                description="Seconds to wait before restarting a crashed node.",
+            ),
             Node(
                 package="mode_control_pkg",
                 executable="joy_handler_node",
                 name="joy_handler_node",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
                 parameters=[
                     {
                         "keyboard_source_frame_id": "keyboard",
@@ -40,12 +57,16 @@ def generate_launch_description():
                 executable="mode_control_node",
                 name="mode_control_node",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
             ),
             Node(
                 package="mode_control_pkg",
                 executable="manual_control_node",
                 name="manual_control_node",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
                 parameters=[
                     {
                         "keyboard_source_frame_id": "keyboard",
@@ -73,6 +94,8 @@ def generate_launch_description():
                 executable="manual_altitude_hold_control_node",
                 name="manual_altitude_hold_control_node",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
                 parameters=[
                     {
                         "keyboard_source_frame_id": "keyboard",
@@ -96,6 +119,8 @@ def generate_launch_description():
                 executable="emergency_stop_mode_node",
                 name="emergency_stop_mode_node",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
             ),
             Node(
                 package="mode_control_pkg",
