@@ -35,12 +35,18 @@ cd "${ROS_WS}"
 if command -v git >/dev/null 2>&1; then
   git config --global --add safe.directory "${ROS_WS}" || true
   git config --global --add safe.directory "${ROS_WS}/src/sensors/dvl_a50" || true
+  git config --global --add safe.directory "${ROS_WS}/src/sensors/dvl_a50/include/dvl_a50/json" || true
 fi
 
 # Ensure the DVL source package (and its nested json submodule) is initialized.
 # dvl_a50 is provided as a git submodule, not as a public rosdep key.
 if [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
-  git -C "${ROS_WS}" submodule update --init --recursive -- "src/sensors/dvl_a50"
+  git -C "${ROS_WS}" submodule sync --recursive || true
+  if ! git -C "${ROS_WS}" submodule update --init --recursive -- "src/sensors/dvl_a50"; then
+    echo "[entrypoint] repairing nested dvl_a50 json submodule checkout..."
+    rm -rf "${ROS_WS}/src/sensors/dvl_a50/include/dvl_a50/json"
+    git -C "${ROS_WS}" submodule update --init --recursive --force -- "src/sensors/dvl_a50"
+  fi
 fi
 
 # 2) Optional dependency install for mounted workspaces.
