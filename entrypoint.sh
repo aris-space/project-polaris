@@ -14,7 +14,7 @@ source_with_relaxed_nounset() {
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
 AUTO_BUILD="${AUTO_BUILD:-1}"
-ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"s
+ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"
 REFRESH_PY_PACKAGES="${REFRESH_PY_PACKAGES:-1}"
 ROSDEP_SKIP_KEYS="${ROSDEP_SKIP_KEYS:-pymavlink dvl_a50 python3-jetson-gpio}"
 
@@ -34,12 +34,12 @@ cd "${ROS_WS}"
 # container user. Mark workspace as safe for git before submodule operations.
 if command -v git >/dev/null 2>&1; then
   git config --global --add safe.directory "${ROS_WS}" || true
+  git config --global --add safe.directory "${ROS_WS}/src/sensors/dvl_a50" || true
 fi
 
-# Ensure the DVL source package exists when this workspace is mounted fresh.
+# Ensure the DVL source package (and its nested json submodule) is initialized.
 # dvl_a50 is provided as a git submodule, not as a public rosdep key.
-# The directory may exist but still be uninitialized, so check package.xml.
-if [ ! -f "${ROS_WS}/src/sensors/dvl_a50/package.xml" ] && [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
+if [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
   git -C "${ROS_WS}" submodule update --init --recursive -- "src/sensors/dvl_a50"
 fi
 
