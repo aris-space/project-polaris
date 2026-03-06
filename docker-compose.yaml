@@ -9,6 +9,10 @@ services:
       - ROS_WS=/ros2_ws
       - NTRIP_USERNAME=${NTRIP_USERNAME:-}
       - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
+      - AUTO_BUILD=1
+      - REFRESH_PY_PACKAGES=1
+      - CLEAN_BUILD=1
+      - ROSDEP_INSTALL=1
     devices:
       - /dev:/dev
     volumes:

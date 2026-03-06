@@ -15,6 +15,7 @@ ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
 AUTO_BUILD="${AUTO_BUILD:-1}"
 ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"
+REFRESH_PY_PACKAGES="${REFRESH_PY_PACKAGES:-1}"
 
 # 1) Source base ROS env (already present in image, but keep explicit here).
 if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
@@ -44,6 +45,15 @@ fi
 if [ "${AUTO_BUILD}" = "1" ]; then
   if [ "${CLEAN_BUILD:-0}" = "1" ]; then
     rm -rf build install log
+  elif [ "${REFRESH_PY_PACKAGES}" = "1" ]; then
+    # Generic safeguard for Python package entry-point changes:
+    # rebuild Python packages from a clean package-local state.
+    # This avoids stale install artifacts when setup.py console_scripts change.
+    while IFS= read -r -d '' setup_py; do
+      pkg_dir="$(dirname "${setup_py}")"
+      pkg_name="$(basename "${pkg_dir}")"
+      rm -rf "build/${pkg_name}" "install/${pkg_name}"
+    done < <(find "${ROS_WS}/src" -name setup.py -print0)
   fi
 
   if ! command -v colcon >/dev/null 2>&1; then
