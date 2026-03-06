@@ -97,5 +97,11 @@ def generate_launch_description():
                 name="emergency_stop_mode_node",
                 output="screen",
             ),
+            Node(
+                package="mode_control_pkg",
+                executable="collision_avoidance_node",
+                name="collision_avoidance_node",
+                output="screen",
+            ),
         ]
     )
