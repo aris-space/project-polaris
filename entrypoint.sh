@@ -29,6 +29,12 @@ fi
 
 cd "${ROS_WS}"
 
+# Ensure the DVL source package exists when this workspace is mounted fresh.
+# dvl_a50 is provided as a git submodule, not as a public rosdep key.
+if [ ! -d "${ROS_WS}/src/sensors/dvl_a50" ] && [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
+  git -C "${ROS_WS}" submodule update --init --recursive -- "src/sensors/dvl_a50"
+fi
+
 # 2) Optional dependency install for mounted workspaces.
 if [ "${ROSDEP_INSTALL}" = "1" ]; then
   if command -v rosdep-install-workspace >/dev/null 2>&1; then
