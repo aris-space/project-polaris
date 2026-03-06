@@ -3,7 +3,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from datetime import datetime
 from config_pkg.constants import Logs
@@ -13,6 +13,14 @@ def generate_launch_description():
     # IncludeLaunchDescription arguments must remain launch substitutions/strings.
     respawn_arg_value = LaunchConfiguration("respawn")
     respawn_delay_arg_value = LaunchConfiguration("respawn_delay")
+    use_ntrip_arg_value = LaunchConfiguration("use_ntrip")
+    ntrip_use_https_arg_value = LaunchConfiguration("ntrip_use_https")
+    ntrip_host_arg_value = LaunchConfiguration("ntrip_host")
+    ntrip_port_arg_value = LaunchConfiguration("ntrip_port")
+    ntrip_mountpoint_arg_value = LaunchConfiguration("ntrip_mountpoint")
+    ntrip_version_arg_value = LaunchConfiguration("ntrip_version")
+    ntrip_username_arg_value = LaunchConfiguration("ntrip_username")
+    ntrip_password_arg_value = LaunchConfiguration("ntrip_password")
 
     # Node action fields can safely use concrete python values.
     respawn = True
@@ -57,6 +65,14 @@ def generate_launch_description():
         launch_arguments={
             "respawn": respawn_arg_value,
             "respawn_delay": respawn_delay_arg_value,
+            "use_ntrip": use_ntrip_arg_value,
+            "ntrip_use_https": ntrip_use_https_arg_value,
+            "ntrip_host": ntrip_host_arg_value,
+            "ntrip_port": ntrip_port_arg_value,
+            "ntrip_mountpoint": ntrip_mountpoint_arg_value,
+            "ntrip_version": ntrip_version_arg_value,
+            "ntrip_username": ntrip_username_arg_value,
+            "ntrip_password": ntrip_password_arg_value,
         }.items(),
     )
 
@@ -152,6 +168,41 @@ def generate_launch_description():
                 "respawn_delay",
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed process.",
+            ),
+            DeclareLaunchArgument(
+                "use_ntrip",
+                default_value=EnvironmentVariable("USE_NTRIP", default_value="true"),
+                description="Enable NTRIP client inside GNSS bringup.",
+            ),
+            DeclareLaunchArgument(
+                "ntrip_use_https",
+                default_value=EnvironmentVariable("NTRIP_USE_HTTPS", default_value="false"),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_host",
+                default_value=EnvironmentVariable("NTRIP_HOST", default_value="www.swipos.ch"),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_port",
+                default_value=EnvironmentVariable("NTRIP_PORT", default_value="2101"),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_mountpoint",
+                default_value=EnvironmentVariable(
+                    "NTRIP_MOUNTPOINT", default_value="MSM_GISGEO_LV95LHN95"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_version",
+                default_value=EnvironmentVariable("NTRIP_VERSION", default_value="Ntrip/1.0"),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_username",
+                default_value=EnvironmentVariable("NTRIP_USERNAME", default_value=""),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_password",
+                default_value=EnvironmentVariable("NTRIP_PASSWORD", default_value=""),
             ),
             mode_control_launch,
             mavlink_launch,
