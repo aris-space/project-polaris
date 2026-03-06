@@ -14,8 +14,9 @@ source_with_relaxed_nounset() {
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
 AUTO_BUILD="${AUTO_BUILD:-1}"
-ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"
+ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"s
 REFRESH_PY_PACKAGES="${REFRESH_PY_PACKAGES:-1}"
+ROSDEP_SKIP_KEYS="${ROSDEP_SKIP_KEYS:-pymavlink dvl_a50 python3-jetson-gpio}"
 
 # 1) Source base ROS env (already present in image, but keep explicit here).
 if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
@@ -31,7 +32,8 @@ cd "${ROS_WS}"
 
 # Ensure the DVL source package exists when this workspace is mounted fresh.
 # dvl_a50 is provided as a git submodule, not as a public rosdep key.
-if [ ! -d "${ROS_WS}/src/sensors/dvl_a50" ] && [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
+# The directory may exist but still be uninitialized, so check package.xml.
+if [ ! -f "${ROS_WS}/src/sensors/dvl_a50/package.xml" ] && [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
   git -C "${ROS_WS}" submodule update --init --recursive -- "src/sensors/dvl_a50"
 fi
 
@@ -40,7 +42,7 @@ if [ "${ROSDEP_INSTALL}" = "1" ]; then
   if command -v rosdep-install-workspace >/dev/null 2>&1; then
     rosdep-install-workspace "${ROS_WS}"
   elif command -v rosdep >/dev/null 2>&1; then
-    rosdep install --from-paths src --ignore-src -r -y
+    rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
   else
     echo "ROSDEP_INSTALL=1 but neither 'rosdep-install-workspace' nor 'rosdep' was found."
     exit 1
