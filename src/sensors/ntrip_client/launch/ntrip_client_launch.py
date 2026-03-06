@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch.actions import SetEnvironmentVariable
 
@@ -12,14 +12,14 @@ def generate_launch_description():
           DeclareLaunchArgument('respawn',               default_value='true'),
           DeclareLaunchArgument('respawn_delay',         default_value='2.0'),
           DeclareLaunchArgument('debug',                 default_value='false'),
-          DeclareLaunchArgument('host',                  default_value='20.185.11.35'),
-          DeclareLaunchArgument('port',                  default_value='2101'),
-          DeclareLaunchArgument('mountpoint',            default_value='VRS_RTCM3'),
-          DeclareLaunchArgument('ntrip_version',         default_value='None'),
+          DeclareLaunchArgument('host',                  default_value=EnvironmentVariable('NTRIP_HOST', default_value='www.swipos.ch')),
+          DeclareLaunchArgument('port',                  default_value=EnvironmentVariable('NTRIP_PORT', default_value='2101')),
+          DeclareLaunchArgument('mountpoint',            default_value=EnvironmentVariable('NTRIP_MOUNTPOINT', default_value='MSM_GISGEO_LV95LHN95')),
+          DeclareLaunchArgument('ntrip_version',         default_value='Ntrip/1.0'),
           DeclareLaunchArgument('authenticate',          default_value='True'),
-          DeclareLaunchArgument('username',              default_value='user'),
-          DeclareLaunchArgument('password',              default_value='pass'),
-          DeclareLaunchArgument('ssl',                   default_value='False'),
+          DeclareLaunchArgument('username',              default_value=EnvironmentVariable('NTRIP_USERNAME', default_value='')),
+          DeclareLaunchArgument('password',              default_value=EnvironmentVariable('NTRIP_PASSWORD', default_value='')),
+          DeclareLaunchArgument('ssl',                   default_value=EnvironmentVariable('NTRIP_USE_HTTPS', default_value='False')),
           DeclareLaunchArgument('cert',                  default_value='None'),
           DeclareLaunchArgument('key',                   default_value='None'),
           DeclareLaunchArgument('ca_cert',               default_value='None'),

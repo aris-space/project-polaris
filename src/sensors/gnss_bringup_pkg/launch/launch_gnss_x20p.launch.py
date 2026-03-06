@@ -98,10 +98,28 @@ def generate_launch_description():
             DeclareLaunchArgument("log_level", default_value="INFO"),
             DeclareLaunchArgument("namespace", default_value=""),
             DeclareLaunchArgument("use_ntrip", default_value="false"),
-            DeclareLaunchArgument("ntrip_use_https", default_value="true"),
-            DeclareLaunchArgument("ntrip_host", default_value=""),
-            DeclareLaunchArgument("ntrip_port", default_value="443"),
-            DeclareLaunchArgument("ntrip_mountpoint", default_value=""),
+            DeclareLaunchArgument(
+                "ntrip_use_https",
+                default_value=EnvironmentVariable(
+                    "NTRIP_USE_HTTPS", default_value="false"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_host",
+                default_value=EnvironmentVariable(
+                    "NTRIP_HOST", default_value="www.swipos.ch"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_port",
+                default_value=EnvironmentVariable("NTRIP_PORT", default_value="2101"),
+            ),
+            DeclareLaunchArgument(
+                "ntrip_mountpoint",
+                default_value=EnvironmentVariable(
+                    "NTRIP_MOUNTPOINT", default_value="MSM_GISGEO_LV95LHN95"
+                ),
+            ),
             DeclareLaunchArgument("ntrip_version", default_value="Ntrip/1.0"),
             DeclareLaunchArgument(
                 "respawn",

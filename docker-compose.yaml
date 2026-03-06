@@ -7,6 +7,10 @@ services:
     environment:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
+      - NTRIP_HOST=${NTRIP_HOST:-www.swipos.ch}
+      - NTRIP_PORT=${NTRIP_PORT:-2101}
+      - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT:-MSM_GISGEO_LV95LHN95}
+      - NTRIP_USE_HTTPS=${NTRIP_USE_HTTPS:-false}
       - NTRIP_USERNAME=${NTRIP_USERNAME:-}
       - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
       - AUTO_BUILD=1
