@@ -56,9 +56,9 @@ def generate_launch_description():
         }.items(),
     )
 
-    ultrasonic_launch = IncludeLaunchDescription(
+    ntrip_client_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(ultrasonic_driver_pkg_dir, "launch", "front_and_top.launch.py")
+            os.path.join(ntrip_client_pkg_dir, "launch", "ntrip_client_launch.py")
         ),
         launch_arguments={
             "respawn": respawn,
@@ -66,9 +66,9 @@ def generate_launch_description():
         }.items(),
     )
 
-    ntrip_client_launch = IncludeLaunchDescription(
+    ultrasonic_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(ntrip_client_pkg_dir, "launch", "ntrip_client_launch.py")
+            os.path.join(ultrasonic_driver_pkg_dir, "launch", "front_and_top.launch.py")
         ),
         launch_arguments={
             "respawn": respawn,
