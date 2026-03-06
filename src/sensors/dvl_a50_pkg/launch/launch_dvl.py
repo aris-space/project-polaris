@@ -53,8 +53,8 @@ def generate_launch_description():
     record_dvl_bag = LaunchConfiguration("record_dvl_bag")
     dvl_bag_name = LaunchConfiguration("dvl_bag_name")
     range_mode = LaunchConfiguration("range_mode")
-    respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
+    respawn = True
+    respawn_delay = 2.0
 
     record_dvl_bag_arg = DeclareLaunchArgument(
         "record_dvl_bag",
