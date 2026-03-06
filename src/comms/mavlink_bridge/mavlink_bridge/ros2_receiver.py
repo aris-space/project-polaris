@@ -83,6 +83,10 @@ class MavlinkBridgeReceiver(Node):
             Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, Comms.SUB_QOS_DEPTH
         )
 
+        self.pixhawk_reboot_subscriber = self.create_subscription(
+            Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
+        )
+    
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
@@ -259,6 +263,27 @@ class MavlinkBridgeReceiver(Node):
             int(pitch),  # s (Extension 1)
             int(roll),  # t (Extension 2)
         )
+    
+    def reboot_cb(self, msg):
+        """
+        Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
+        """
+        if msg.data:
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                0,
+                1, #1 to reboot, 2 for shutdown
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            self.get_logger().info("Sent reboot command to Pixhawk")
+            self._file_logger.info("Sent reboot command to Pixhawk")
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
