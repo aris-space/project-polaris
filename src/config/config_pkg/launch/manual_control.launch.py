@@ -10,6 +10,11 @@ from config_pkg.constants import Logs
 
 
 def generate_launch_description():
+    # IncludeLaunchDescription arguments must remain launch substitutions/strings.
+    respawn_arg_value = LaunchConfiguration("respawn")
+    respawn_delay_arg_value = LaunchConfiguration("respawn_delay")
+
+    # Node action fields can safely use concrete python values.
     respawn = True
     respawn_delay = 2.0
 
@@ -30,8 +35,8 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -40,8 +45,8 @@ def generate_launch_description():
             os.path.join(mavlink_bridge_pkg_dir, "launch", "mavlink_bridge.launch.py")
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -50,8 +55,8 @@ def generate_launch_description():
             os.path.join(gnss_bringup_pkg_dir, "launch", "launch_gnss_x20p.launch.py")
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -60,8 +65,8 @@ def generate_launch_description():
             os.path.join(ultrasonic_driver_pkg_dir, "launch", "front_and_top.launch.py")
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -72,8 +77,8 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -82,8 +87,8 @@ def generate_launch_description():
             os.path.join(xsens_mti_pkg_dir, "launch", "xsens_mti_node.launch.py")
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -92,8 +97,8 @@ def generate_launch_description():
             os.path.join(dvl_a50_pkg_dir, "launch", "launch_dvl.py")
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
@@ -102,8 +107,8 @@ def generate_launch_description():
             os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.py")
         ),
         launch_arguments={
-            "respawn": respawn,
-            "respawn_delay": respawn_delay,
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
 
