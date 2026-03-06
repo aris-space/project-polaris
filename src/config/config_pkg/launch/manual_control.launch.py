@@ -10,8 +10,8 @@ from config_pkg.constants import Logs
 
 
 def generate_launch_description():
-    respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
+    respawn = True
+    respawn_delay = 2.0
 
     # 1. Find the path to the child package
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")

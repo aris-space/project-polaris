@@ -6,8 +6,8 @@ from ament_index_python.packages import get_package_share_directory
 from pathlib import Path
 
 def generate_launch_description():
-    respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
+    respawn = True
+    respawn_delay = 2.0
 
     ld = LaunchDescription()
 
