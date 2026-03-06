@@ -9,6 +9,8 @@ def generate_launch_description():
           # Declare arguments with default values
           DeclareLaunchArgument('namespace',             default_value='/'),
           DeclareLaunchArgument('node_name',             default_value='ntrip_client'),
+          DeclareLaunchArgument('respawn',               default_value='true'),
+          DeclareLaunchArgument('respawn_delay',         default_value='2.0'),
           DeclareLaunchArgument('debug',                 default_value='false'),
           DeclareLaunchArgument('host',                  default_value='20.185.11.35'),
           DeclareLaunchArgument('port',                  default_value='2101'),
@@ -34,6 +36,8 @@ def generate_launch_description():
                 namespace=LaunchConfiguration('namespace'),
                 package='ntrip_client',
                 executable='ntrip_ros.py',
+                respawn=LaunchConfiguration('respawn'),
+                respawn_delay=LaunchConfiguration('respawn_delay'),
                 parameters=[
                   {
                     # Required parameters used to connect to the NTRIP server

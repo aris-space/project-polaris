@@ -17,6 +17,12 @@ def generate_launch_description():
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
     mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
     gnss_bringup_pkg_dir = get_package_share_directory("gnss_bringup_pkg")
+    ntrip_client_pkg_dir = get_package_share_directory("ntrip_client")
+    ultrasonic_driver_pkg_dir = get_package_share_directory("ultrasonic_driver")
+    temperature_sensor_pkg_dir = get_package_share_directory("temperature_sensor_pkg")
+    xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
+    dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
+    usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -43,7 +49,73 @@ def generate_launch_description():
     gnss_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(gnss_bringup_pkg_dir, "launch", "launch_gnss_x20p.launch.py")
-        )
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
+    )
+
+    ultrasonic_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ultrasonic_driver_pkg_dir, "launch", "front_and_top.launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
+    )
+
+    ntrip_client_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ntrip_client_pkg_dir, "launch", "ntrip_client_launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
+    )
+
+    temperature_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                temperature_sensor_pkg_dir, "launch", "launch_temperature_sensors.launch.py"
+            )
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
+    )
+
+    xsens_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(xsens_mti_pkg_dir, "launch", "xsens_mti_node.launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
+    )
+
+    dvl_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(dvl_a50_pkg_dir, "launch", "launch_dvl.py")
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
+    )
+
+    usb_cam_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.py")
+        ),
+        launch_arguments={
+            "respawn": respawn,
+            "respawn_delay": respawn_delay,
+        }.items(),
     )
 
     foxglove_bridge_node = Node(
@@ -66,6 +138,15 @@ def generate_launch_description():
         respawn_delay=respawn_delay,
     )
 
+    ping_sonar_node = Node(
+        package="ping_sonar",
+        executable="ice_measurement",
+        name="ice_measurement_publisher",
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -81,6 +162,13 @@ def generate_launch_description():
             mode_control_launch,
             mavlink_launch,
             gnss_launch,
+            ntrip_client_launch,
+            ultrasonic_launch,
+            temperature_launch,
+            xsens_launch,
+            dvl_launch,
+            usb_cam_launch,
+            ping_sonar_node,
             foxglove_bridge_node,
             rosbag_record,
         ]

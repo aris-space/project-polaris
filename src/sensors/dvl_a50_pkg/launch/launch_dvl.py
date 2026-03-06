@@ -53,6 +53,8 @@ def generate_launch_description():
     record_dvl_bag = LaunchConfiguration("record_dvl_bag")
     dvl_bag_name = LaunchConfiguration("dvl_bag_name")
     range_mode = LaunchConfiguration("range_mode")
+    respawn = LaunchConfiguration("respawn")
+    respawn_delay = LaunchConfiguration("respawn_delay")
 
     record_dvl_bag_arg = DeclareLaunchArgument(
         "record_dvl_bag",
@@ -71,6 +73,16 @@ def generate_launch_description():
             "DVL range mode: auto, '=a', or 'a<=b' "
             "(examples: auto, =3, 2<=3)."
         ),
+    )
+    respawn_arg = DeclareLaunchArgument(
+        "respawn",
+        default_value="true",
+        description="Automatically relaunch node if it exits/crashes.",
+    )
+    respawn_delay_arg = DeclareLaunchArgument(
+        "respawn_delay",
+        default_value="2.0",
+        description="Seconds to wait before restarting a crashed node.",
     )
 
     # Load project-specific config (IP address, speed of sound, etc.)
@@ -91,6 +103,8 @@ def generate_launch_description():
             {"range_mode": range_mode},
         ],
         output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
     )
 
     # Lifecycle transition actions
@@ -163,6 +177,8 @@ def generate_launch_description():
             "dvl_a50_link",
         ],
         output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
     )
 
     # Computes speed-dependent twist covariance with bottom-lock quality gating
@@ -180,6 +196,8 @@ def generate_launch_description():
             "velocity_stale_timeout_sec": 0.5,  # stale lock flag timeout
         }],
         output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
     )
 
     # Optional rosbag recorder for DVL integration/testing data
@@ -198,12 +216,16 @@ def generate_launch_description():
         ],
         condition=IfCondition(record_dvl_bag),
         output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
     )
 
     return LaunchDescription([
         record_dvl_bag_arg,
         dvl_bag_name_arg,
         range_mode_arg,
+        respawn_arg,
+        respawn_delay_arg,
         dvl_node,
         on_process_start,
         on_inactive,
