@@ -11,7 +11,7 @@ services:
       - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
       - AUTO_BUILD=1
       - REFRESH_PY_PACKAGES=1
-      - CLEAN_BUILD=1
+      - CLEAN_BUILD=0
       - ROSDEP_INSTALL=1
     devices:
       - /dev:/dev
