@@ -13,6 +13,7 @@ def generate_launch_description():
     # 1. Find the path to the child package
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
     mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
+    gnss_bringup_pkg_dir = get_package_share_directory("gnss_bringup_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -25,6 +26,12 @@ def generate_launch_description():
     mavlink_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(mavlink_bridge_pkg_dir, "launch", "mavlink_bridge.launch.py")
+        )
+    )
+
+    gnss_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(gnss_bringup_pkg_dir, "launch", "launch_gnss_x20p.launch.py")
         )
     )
 
@@ -48,6 +55,7 @@ def generate_launch_description():
         [
             mode_control_launch,
             mavlink_launch,
+            gnss_launch,
             foxglove_bridge_node,
             rosbag_record,
         ]
