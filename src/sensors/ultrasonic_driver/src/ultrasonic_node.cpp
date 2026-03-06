@@ -42,7 +42,7 @@ public:
     callback_handle_ = this->add_on_set_parameters_callback(
         std::bind(&UltrasonicSensorNode::on_set_parameters, this, std::placeholders::_1));
 
-    RCLCPP_INFO(this->get_logger(), "Node started. Parameters are now dynamic and visible in Foxglove.");
+    RCLCPP_INFO(this->get_logger(), "Node started. Parameters are now dynamic.");
   }
 
   ~UltrasonicSensorNode()
