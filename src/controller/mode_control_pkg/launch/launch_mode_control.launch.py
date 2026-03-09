@@ -22,8 +22,8 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
+    respawn = True
+    respawn_delay = 2.0
 
     return LaunchDescription(
         [
@@ -127,6 +127,8 @@ def generate_launch_description():
                 executable="collision_avoidance_node",
                 name="collision_avoidance_node",
                 output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
             ),
         ]
     )
