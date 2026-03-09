@@ -26,6 +26,7 @@ class ModeControlNode(Node):
         self.prev_arm_button_state = 0
         self.prev_disarm_button_state = 0
         self.prev_stabilization_button_state = 0
+        self.prev_collision_avoidance_button_state = 0
 
         # Publishers & Subscribers
         self.mode_publisher = self.create_publisher(
@@ -126,7 +127,11 @@ class ModeControlNode(Node):
             self.prev_disarm_button_state = current_disarm_button_state
 
             # 3.3. Stabilization Setting Toggle
-            current_stabilization_button_state = buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1
+            current_stabilization_button_state = (
+                axes[JoyControlMapping.SETTING_STABILIZATION_AXIS_IDX] == 1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else
+                buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1)
             if current_stabilization_button_state and not self.prev_stabilization_button_state:
                 if self.current_mode != "manual_control":
                     self.get_logger().info(
@@ -140,6 +145,16 @@ class ModeControlNode(Node):
                         self.last_pixhawk_mode_before_stabilization = self.pixhawk_mode
                         self.pixhawk_mode = "STABILIZATION"
             self.prev_stabilization_button_state = current_stabilization_button_state
+
+            # 3.4. Collision Avoidance Setting Toggle
+            current_collision_avoidance_button_state = (
+                axes[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_AXIS_IDX] == -1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else buttons[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_BUTTON_IDX] == 1)
+            if current_collision_avoidance_button_state and not self.prev_collision_avoidance_button_state:
+                self.get_logger().info("Toggling Collision Avoidance Setting")
+                # Implement collision avoidance toggle logic here
+            self.prev_collision_avoidance_button_state = current_collision_avoidance_button_state
 
         # 4. Only publish and log if the state has actually changed
         if self.current_mode != self.prev_mode:
