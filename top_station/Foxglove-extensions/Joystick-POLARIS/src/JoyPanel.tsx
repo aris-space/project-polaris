@@ -12,14 +12,19 @@ import { createRoot } from "react-dom/client";
 
 // import { GamepadDebug } from "./components/GamepadDebug";
 import { GamepadView } from "./components/GamepadView";
-import { SimpleButtonView } from "./components/SimpleButtonView";
 import { JoyDataDisplay } from "./components/JoyDataDisplay";
+import { VisualButtonsPanel } from "./components/VisualButtonsPanel";
 import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.json";
 import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
 import kbmapping1 from "./components/kbmapping1.json";
 import { useGamepad } from "./hooks/useGamepad";
 import { gamepadToRosJoy } from "./utils/gamepadToRosJoy";
-import { Config, buildSettingsTree, settingsActionReducer } from "./panelSettings";
+import {
+  Config,
+  buildSettingsTree,
+  defaultVisualButtons,
+  settingsActionReducer,
+} from "./panelSettings";
 import { Joy } from "./types";
 
 type KbMap = {
@@ -72,6 +77,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     buildKeyMap(kbmapping1),
   );
   const [currentKbMapping, setCurrentKbMapping] = useState<Record<string, RawKbMap> | undefined>();
+  const [activeVisualButtonIndices, setActiveVisualButtonIndices] = useState<Set<number>>(new Set());
 
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
@@ -89,6 +95,16 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.keyboardMapping ??= "default";
     partialConfig.gamepadId ??= 0;
     partialConfig.uiScale ??= 1;
+    const defaultButtons = defaultVisualButtons();
+    partialConfig.visualButtons = (partialConfig.visualButtons ?? defaultButtons).map(
+      (mapping, index) => ({
+        label: mapping?.label ?? defaultButtons[index]?.label ?? `B${index + 1}`,
+        primaryButton: Number(mapping?.primaryButton ?? defaultButtons[index]?.primaryButton ?? -1),
+        secondaryButton: Number(
+          mapping?.secondaryButton ?? defaultButtons[index]?.secondaryButton ?? -1,
+        ),
+      }),
+    );
     
     // Set default pubJoyTopic based on data source and keyboard mapping
     if (partialConfig.pubJoyTopic == undefined) {
@@ -102,6 +118,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         } else {
           partialConfig.pubJoyTopic = "/joy";
         }
+      } else if (partialConfig.dataSource === "buttons") {
+        partialConfig.pubJoyTopic = "/joy_buttons";
       } else {
         partialConfig.pubJoyTopic = "/joy";
       }
@@ -132,6 +150,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         } else {
           newPubJoyTopic = "/joy"; // default for keyboard
         }
+      } else if (prevConfig.dataSource === "buttons") {
+        newPubJoyTopic = "/joy_buttons";
       }
 
       if (newPubJoyTopic !== prevConfig.pubJoyTopic) {
@@ -376,6 +396,40 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     setCurrentKbMapping(mapping as Record<string, RawKbMap>);
   }, [config.keyboardMapping]);
 
+  // Generate Joy from visual button presses
+  useEffect(() => {
+    if (config.dataSource !== "buttons") {
+      return;
+    }
+
+    const axes: number[] = [0, 0, 0, 0, -1, -1];
+    const buttons: number[] = new Array(18).fill(0);
+
+    activeVisualButtonIndices.forEach((index) => {
+      const mapping = config.visualButtons[index];
+      if (!mapping) {
+        return;
+      }
+
+      if (mapping.primaryButton >= 0 && mapping.primaryButton < buttons.length) {
+        buttons[mapping.primaryButton] = 1;
+      }
+
+      if (mapping.secondaryButton >= 0 && mapping.secondaryButton < buttons.length) {
+        buttons[mapping.secondaryButton] = 1;
+      }
+    });
+
+    setJoy({
+      header: {
+        frame_id: config.publishFrameId || "joystick_frame",
+        stamp: fromDate(new Date()),
+      },
+      axes,
+      buttons,
+    });
+  }, [activeVisualButtonIndices, config.dataSource, config.publishFrameId, config.visualButtons]);
+
   // Generate Joy from Keys
   useEffect(() => {
     if (config.dataSource !== "keyboard") {
@@ -577,6 +631,28 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     context.saveState(config);
   }, [context, config]);
 
+  const handleVisualButtonPress = useCallback((index: number) => {
+    setActiveVisualButtonIndices((prev) => {
+      if (prev.has(index)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+  }, []);
+
+  const handleVisualButtonRelease = useCallback((index: number) => {
+    setActiveVisualButtonIndices((prev) => {
+      if (!prev.has(index)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+  }, []);
+
   // Cleanup effect - unadvertise topic on unmount
   useEffect(() => {
     return () => {
@@ -619,7 +695,15 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             />
           </FormGroup>
         ) : null}
-        {config.layoutName !== "rawjoy" ? (
+        {config.dataSource === "buttons" ? (
+          <VisualButtonsPanel
+            mappings={config.visualButtons}
+            activeIndices={activeVisualButtonIndices}
+            onPress={handleVisualButtonPress}
+            onRelease={handleVisualButtonRelease}
+          />
+        ) : null}
+        {config.layoutName !== "rawjoy" && config.dataSource !== "buttons" ? (
           <GamepadView
             joy={joy}
             cbInteractChange={interactiveCb}
