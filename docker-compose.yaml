@@ -15,6 +15,18 @@ services:
     environment:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
+      - NTRIP_HOST=${NTRIP_HOST:-www.swipos.ch}
+      - NTRIP_PORT=${NTRIP_PORT:-2101}
+      - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT:-MSM_GISGEO_LV95LHN95}
+      - NTRIP_USE_HTTPS=${NTRIP_USE_HTTPS:-false}
+      - NTRIP_USERNAME=${NTRIP_USERNAME:-}
+      - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
+      - AUTO_BUILD=1
+      - REFRESH_PY_PACKAGES=1
+      - CLEAN_BUILD=0
+      - ROSDEP_INSTALL=1
+    devices:
+      - /dev:/dev
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
@@ -23,7 +35,7 @@ services:
       - /dev:/dev
     working_dir: /ros2_ws
     entrypoint: /bin/bash /ros2_ws/entrypoint.sh
-    stdin_open: true 
-    tty: true 
+    stdin_open: true # Equivalent to -i
+    tty: true # Equivalent to -t
     command: bash -lc "sleep infinity"
     restart: unless-stopped

@@ -8,8 +8,8 @@ def generate_launch_description():
     """
     Launches MAVLink bridge nodes with optional automatic respawn.
     """
-    respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
+    respawn = True
+    respawn_delay = 2.0
 
     return LaunchDescription(
         [
