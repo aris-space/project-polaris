@@ -4,16 +4,26 @@ services:
     container_name: jetson-container
     privileged: true
     network_mode: host
+    # Added hardware acceleration block
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
       - /dev:/dev
     working_dir: /ros2_ws
     entrypoint: /bin/bash /ros2_ws/entrypoint.sh
-    stdin_open: true # Equivalent to -i
-    tty: true # Equivalent to -t
+    stdin_open: true 
+    tty: true 
     command: bash -lc "sleep infinity"
     restart: unless-stopped
