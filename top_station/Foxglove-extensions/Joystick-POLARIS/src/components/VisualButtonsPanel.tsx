@@ -15,23 +15,29 @@ export function VisualButtonsPanel({
   onPress,
   onRelease,
 }: VisualButtonsPanelProps): JSX.Element {
+  const buttonCount = mappings.length;
+  const minButtonWidth = buttonCount > 10 ? 82 : 96;
+
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-        gap: "12px",
+        gridTemplateColumns: `repeat(auto-fill, minmax(${minButtonWidth}px, 1fr))`,
+        gap: "8px",
         width: "100%",
       }}
     >
       {mappings.map((mapping, idx) => {
         const isActive = activeIndices.has(idx);
+        const buttonColor = mapping.color as "primary" | "secondary" | "success" | "error" | "info" | "warning";
         return (
           <Button
             key={`vb-${idx}`}
             variant={isActive ? "contained" : "outlined"}
-            color={isActive ? "success" : "primary"}
-            size="large"
+            color={buttonColor}
+            size="small"
+            disableRipple
+            disableTouchRipple
             onPointerDown={(e) => {
               e.preventDefault();
               onPress(idx);
@@ -50,9 +56,13 @@ export function VisualButtonsPanel({
               }
             }}
             sx={{
-              minHeight: "56px",
+              minHeight: "40px",
+              px: 1,
               fontWeight: 700,
+              fontSize: "0.78rem",
+              lineHeight: 1.2,
               textTransform: "none",
+              transition: "none",
             }}
           >
             {mapping.label || `B${idx + 1}`}

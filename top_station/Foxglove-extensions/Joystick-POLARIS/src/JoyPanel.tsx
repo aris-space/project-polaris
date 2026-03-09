@@ -44,7 +44,6 @@ type RawKbMap = {
 };
 
 const keyboardMappings: Record<string, Record<string, RawKbMap>> = {
-  default: kbmapping1,
   keyboard_movement: kbmappingKeyboardMovement,
   keyboard_buttons: kbmappingKeyboardButtons,
 };
@@ -92,7 +91,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.dataSource ??= "sub-joy-topic";
     partialConfig.layoutName ??= "ps4";
     partialConfig.mapping_name ??= "TODO";
-    partialConfig.keyboardMapping ??= "default";
+    partialConfig.keyboardMapping ??= "keyboard_movement";
     partialConfig.gamepadId ??= 0;
     partialConfig.uiScale ??= 1;
     const defaultButtons = defaultVisualButtons();
@@ -103,6 +102,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         secondaryButton: Number(
           mapping?.secondaryButton ?? defaultButtons[index]?.secondaryButton ?? -1,
         ),
+        color: mapping?.color ?? defaultButtons[index]?.color ?? "primary",
       }),
     );
     
@@ -684,13 +684,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             <FormControlLabel
               control={<Switch checked={kbEnabled} onChange={handleKbSwitch} />}
               label={`Enable ${
-                config.keyboardMapping === "default"
-                  ? "Default"
-                  : config.keyboardMapping === "keyboard_movement"
-                    ? "Keyboard Movement"
-                    : config.keyboardMapping === "keyboard_buttons"
-                      ? "Keyboard Buttons"
-                      : config.keyboardMapping
+                config.keyboardMapping === "keyboard_movement"
+                  ? "Keyboard Movement"
+                  : config.keyboardMapping === "keyboard_buttons"
+                    ? "Keyboard Buttons"
+                    : config.keyboardMapping
               }`}
             />
           </FormGroup>
@@ -703,7 +701,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             onRelease={handleVisualButtonRelease}
           />
         ) : null}
-        {config.layoutName !== "rawjoy" && config.dataSource !== "buttons" ? (
+        {config.layoutName !== "rawjoy" && config.layoutName !== "empty" ? (
           <GamepadView
             joy={joy}
             cbInteractChange={interactiveCb}

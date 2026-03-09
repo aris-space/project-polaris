@@ -201,6 +201,11 @@ export function GamepadView(props: {
   uiScale?: number;
 }): React.ReactElement {
   const { joy, cbInteractChange, layoutName, kbMapping } = props;
+
+  if (layoutName === "empty") {
+    return <></>;
+  }
+
   const dispItems = [];
 
   // Build set of mapped button indices for highlighting only active buttons
