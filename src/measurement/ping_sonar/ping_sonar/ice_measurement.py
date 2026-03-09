@@ -23,7 +23,7 @@ class Ice_Measurement(Node):
         self.ping.connect_serial(
             Comms.PING_SONAR_PORT, Comms.USB0_BAUD_RATE
         )  # specifies relevant port
-        time.sleep(0.5)
+        time.sleep(3)
         self.initialization = self.ping.initialize()
 
         if not self.initialization:
