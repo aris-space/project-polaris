@@ -84,11 +84,11 @@ class MavlinkBridgeSender(Node):
 
         self.heartbeat_publisher = self.create_publisher(State, "/pixhawk/heartbeat", 10)
 
-        self.attitude_publisher = self.create_publisher(Imu, "/pixhawk/attitude", 10)
+        # self.attitude_publisher = self.create_publisher(Imu, "/pixhawk/attitude", 10)
 
-        self.rc_channel_publisher = self.create_publisher(
-            RCIn, "/pixhawk/rc_channels", 10
-        )
+        # self.rc_channel_publisher = self.create_publisher(
+        #     RCIn, "/pixhawk/rc_channels", 10
+        # )
 
         self.battery_publisher = self.create_publisher(
             BatteryState, "/pixhawk/battery", 10
@@ -102,7 +102,7 @@ class MavlinkBridgeSender(Node):
             Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
-        self.timer = self.create_timer(0.5, self.mavlink_callback)
+        self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz to avoid serial buffer overflow
 
         # Request MANUAL_CONTROL messages at 10 Hz
         self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
@@ -119,31 +119,41 @@ class MavlinkBridgeSender(Node):
             f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
         )
 
+        self.msg_type_counter = {
+            "HEARTBEAT": 0,
+            "ATTITUDE": 0,
+            "RC_CHANNELS": 0,
+            "BATTERY_STATUS": 0,
+            "SCALED_PRESSURE2": 0,
+            "MANUAL_CONTROL": 0
+        }
+        self.msg_type_counter_interval = 10
+
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
         # Process ALL available messages in the buffer (not just one)
         while True:
             msg = self.port.recv_match(blocking=False)
             msg_serial = self.serial_port.recv_match(blocking=False)
-            if msg is None:
-                break  # No more messages in buffer
+            if msg is None and msg_serial is None:
+                break  # No more messages in either buffer
 
             if msg_serial is not None:
-                self.logger.info(f"Received from serial: {msg_serial.get_type()}")
+                #i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
                 if msg_serial.get_type() == "MANUAL_CONTROL":
                     self.handle_manual_control(msg_serial)
                 # We can choose to process serial messages differently if needed
                 # For now, we will just log them and not publish to ROS2
 
             if msg is not None:
-                self.logger.info(f"Received: {msg.get_type()}")
+                #self.logger.info(f"Received: {msg.get_type()}")
 
                 if msg.get_type() == "HEARTBEAT":
                     self.handle_heartbeat(msg)
-                elif msg.get_type() == "ATTITUDE":
-                    self.handle_attitude(msg)
-                elif msg.get_type() == "RC_CHANNELS":
-                    self.handle_rc_channels(msg)
+                #elif msg.get_type() == "ATTITUDE":
+                #    self.handle_attitude(msg)
+                #elif msg.get_type() == "RC_CHANNELS":
+                #    self.handle_rc_channels(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
@@ -151,12 +161,27 @@ class MavlinkBridgeSender(Node):
 
         
 
+    def message_counter(self, msg_type: str) -> bool:
+        """Only process every Nth message per message type."""
+        count = self.msg_type_counter.get(msg_type, 0) + 1
+        self.msg_type_counter[msg_type] = count
+
+        if count % self.msg_type_counter_interval == 0:
+            self.msg_type_counter[msg_type] = 0
+            return True
+        else:
+            return False
+
+
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
         # Filter: only process heartbeats from actual autopilots, not GCS or other components
         # MAV_AUTOPILOT_INVALID (8) means it's not an autopilot (e.g., GCS, companion computer)
         if msg.autopilot == mavutil.mavlink.MAV_AUTOPILOT_INVALID:
             return  # Skip non-autopilot heartbeats
+
+        if not self.message_counter("HEARTBEAT"):
+            return
 
         ros_msg = State()
         # MAVLink system status (uint8)
@@ -177,44 +202,48 @@ class MavlinkBridgeSender(Node):
             f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
         )
 
-    def handle_attitude(self, msg):
-        """Process ATTITUDE message and publish to ROS2"""
-        ros_msg = Imu()
+    # def handle_attitude(self, msg):
+    #     """Process ATTITUDE message and publish to ROS2"""
+    #     ros_msg = Imu()
 
-        # Convert Euler angles (radians) to Quaternion
-        roll = msg.roll
-        pitch = msg.pitch
-        yaw = msg.yaw
+    #     # Convert Euler angles (radians) to Quaternion
+    #     roll = msg.roll
+    #     pitch = msg.pitch
+    #     yaw = msg.yaw
 
-        # Euler to Quaternion conversion
-        cy = math.cos(yaw * 0.5)
-        sy = math.sin(yaw * 0.5)
-        cp = math.cos(pitch * 0.5)
-        sp = math.sin(pitch * 0.5)
-        cr = math.cos(roll * 0.5)
-        sr = math.sin(roll * 0.5)
+    #     # Euler to Quaternion conversion
+    #     cy = math.cos(yaw * 0.5)
+    #     sy = math.sin(yaw * 0.5)
+    #     cp = math.cos(pitch * 0.5)
+    #     sp = math.sin(pitch * 0.5)
+    #     cr = math.cos(roll * 0.5)
+    #     sr = math.sin(roll * 0.5)
 
-        ros_msg.orientation.w = cr * cp * cy + sr * sp * sy
-        ros_msg.orientation.x = sr * cp * cy - cr * sp * sy
-        ros_msg.orientation.y = cr * sp * cy + sr * cp * sy
-        ros_msg.orientation.z = cr * cp * sy - sr * sp * cy
+    #     ros_msg.orientation.w = cr * cp * cy + sr * sp * sy
+    #     ros_msg.orientation.x = sr * cp * cy - cr * sp * sy
+    #     ros_msg.orientation.y = cr * sp * cy + sr * cp * sy
+    #     ros_msg.orientation.z = cr * cp * sy - sr * sp * cy
 
-        self.attitude_publisher.publish(ros_msg)
-        self.logger.info(
-            f"Published Attitude: Roll={roll:.2f}, Pitch={pitch:.2f}, Yaw={yaw:.2f}"
-        )
+    #     self.attitude_publisher.publish(ros_msg)
+    #     self.logger.info(
+    #         f"Published Attitude: Roll={roll:.2f}, Pitch={pitch:.2f}, Yaw={yaw:.2f}"
+    #     )
 
-    def handle_rc_channels(self, msg):
-        """Process RC_CHANNELS message and publish to ROS2"""
-        ros_msg = RCIn()
-        # First 4 channels
-        ros_msg.channels = [msg.chan1_raw, msg.chan2_raw, msg.chan3_raw, msg.chan4_raw]
+    # def handle_rc_channels(self, msg):
+    #     """Process RC_CHANNELS message and publish to ROS2"""
+    #     ros_msg = RCIn()
+    #     # First 4 channels
+    #     ros_msg.channels = [msg.chan1_raw, msg.chan2_raw, msg.chan3_raw, msg.chan4_raw]
 
-        self.rc_channel_publisher.publish(ros_msg)
-        self.logger.info(f"Published RC: {ros_msg.channels}")
+    #     self.rc_channel_publisher.publish(ros_msg)
+    #     self.logger.info(f"Published RC: {ros_msg.channels}")
 
     def handle_battery(self, msg):
         """Process BATTERY_STATUS message and publish to ROS2"""
+
+        if not self.message_counter("BATTERY_STATUS"):
+            return
+        
         ros_msg = BatteryState()
         # current_battery is in 10*mA (centiamperes), divide by 100 to get Amperes
         ros_msg.current = float(msg.current_battery) / 100.0
@@ -228,6 +257,9 @@ class MavlinkBridgeSender(Node):
 
     def handle_scaled_pressure(self, msg):
         """Process SCALED_PRESSURE2(this is the bluerobotics pressure sensor) message and publish to ROS2"""
+        if not self.message_counter("SCALED_PRESSURE2"):
+            return
+        
         ros_msg = FluidPressure()
         # Differential pressure: MAVLink uses hPa, ROS2 expects Pa (multiply by 100)
         ros_msg.fluid_pressure = float(msg.press_abs) * 100.0
@@ -238,6 +270,9 @@ class MavlinkBridgeSender(Node):
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
         # This is a placeholder for handling manual control messages if needed
+        if not self.message_counter("MANUAL_CONTROL"):
+            return
+        
         self.logger.info("manual control callback triggered")
         ros_msg = Int16MultiArray()
         ros_msg.data = [msg.x, msg.y, msg.z, msg.r, msg.buttons, msg.s, msg.t]
