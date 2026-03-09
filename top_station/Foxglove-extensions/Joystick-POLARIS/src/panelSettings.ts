@@ -37,9 +37,32 @@ export type VisualButtonMapping = {
   color: string;
 };
 
-const BUTTON_NODE_PREFIX = "button-";
+// Hierarchical button section (used in buttonContent)
+export type ButtonSectionHierarchical = {
+  title: string;
+  buttons: VisualButtonMapping[];
+  color: string;
+};
 
-function parseButtonIndex(nodeKey: string | number | undefined): number | undefined {
+// Flat button section reference (used for rendering)
+export type ButtonSection = {
+  title: string;
+  buttonIndices: number[];
+  color: string;
+};
+
+export type ButtonContent = ButtonSectionHierarchical;
+
+export type ButtonPreset = "uuv-settings" | "empty";
+
+const BUTTON_NODE_PREFIX = "button-";
+const SECTION_NODE_PREFIX = "section-";
+
+function isButtonSection(item: ButtonContent): item is ButtonSectionHierarchical {
+  return "buttons" in item;
+}
+
+function parseContentIndex(nodeKey: string | number | undefined): number | undefined {
   if (typeof nodeKey !== "string") {
     return undefined;
   }
@@ -50,26 +73,151 @@ function parseButtonIndex(nodeKey: string | number | undefined): number | undefi
   return Number(match[1]);
 }
 
-function parseButtonIndexFromPath(path: readonly string[]): number | undefined {
-  if (path[0] !== "buttons") {
+function parseSectionButtonIndex(path: readonly string[]): { sectionIdx: number; buttonIdx: number } | undefined {
+  if (path[0] !== "buttons" || !path[1]?.startsWith(SECTION_NODE_PREFIX)) {
     return undefined;
   }
-  return parseButtonIndex(path[1]);
+  const sectionMatch = path[1].match(/^section-(\d+)$/);
+  if (!sectionMatch) {
+    return undefined;
+  }
+  const sectionIdx = Number(sectionMatch[1]);
+  const buttonIdx = parseContentIndex(path[2]);
+  if (buttonIdx === undefined) {
+    return undefined;
+  }
+  return { sectionIdx, buttonIdx };
 }
 
-export function defaultVisualButtons(): VisualButtonMapping[] {
+function parseSectionIndex(path: readonly string[]): number | undefined {
+  if (path[0] !== "buttons" || typeof path[1] !== "string") {
+    return undefined;
+  }
+  const sectionMatch = path[1].match(/^section-(\d+)$/);
+  if (!sectionMatch) {
+    return undefined;
+  }
+  return Number(sectionMatch[1]);
+}
+
+export function defaultButtonContent(): ButtonContent[] {
   return [
-    { label: "X", primaryButton: 12, secondaryButton: 2, color: "primary" },
-    { label: "Y", primaryButton: 13, secondaryButton: 1, color: "secondary" },
-    { label: "A", primaryButton: 14, secondaryButton: -1, color: "info" },
-    { label: "B", primaryButton: 15, secondaryButton: -1, color: "warning" },
-    { label: "L", primaryButton: 4, secondaryButton: -1, color: "error" },
-    { label: "R", primaryButton: 5, secondaryButton: -1, color: "success" },
+    {
+      title: "Face Buttons",
+      buttons: [
+        { label: "X", primaryButton: 12, secondaryButton: 2, color: "primary" },
+        { label: "Y", primaryButton: 13, secondaryButton: 1, color: "primary" },
+        { label: "A", primaryButton: 14, secondaryButton: -1, color: "primary" },
+        { label: "B", primaryButton: 15, secondaryButton: -1, color: "primary" },
+      ],
+      color: "primary",
+    },
+    {
+      title: "Shoulder Buttons",
+      buttons: [
+        { label: "L", primaryButton: 4, secondaryButton: -1, color: "primary" },
+        { label: "R", primaryButton: 5, secondaryButton: -1, color: "primary" },
+      ],
+      color: "primary",
+    },
   ];
+}
+
+export function buttonContentFromPreset(preset: ButtonPreset): ButtonContent[] {
+  if (preset === "empty") {
+    return [];
+  }
+  if (preset === "uuv-settings") {
+    return defaultButtonContent().map((item) => ({
+      ...item,
+      buttons: [...item.buttons],
+    }));
+  }
+  return [];
+}
+
+export function normalizeButtonContent(content: unknown): ButtonContent[] {
+  if (!Array.isArray(content)) {
+    return defaultButtonContent();
+  }
+
+  const sections: ButtonContent[] = [];
+  const looseButtons: VisualButtonMapping[] = [];
+
+  for (const item of content) {
+    if (item && typeof item === "object" && "buttons" in (item as Record<string, unknown>)) {
+      const maybeSection = item as Partial<ButtonSectionHierarchical>;
+      sections.push({
+        title: String(maybeSection.title ?? `Section ${sections.length + 1}`),
+        color: String(maybeSection.color ?? "primary"),
+        buttons: Array.isArray(maybeSection.buttons)
+          ? maybeSection.buttons.map((button, buttonIdx) => ({
+              label: String(button?.label ?? `B${buttonIdx + 1}`),
+              primaryButton: Number(button?.primaryButton ?? -1),
+              secondaryButton: Number(button?.secondaryButton ?? -1),
+              color: "primary",
+            }))
+          : [],
+      });
+      continue;
+    }
+
+    if (item && typeof item === "object") {
+      const maybeButton = item as Partial<VisualButtonMapping>;
+      looseButtons.push({
+        label: String(maybeButton.label ?? `B${looseButtons.length + 1}`),
+        primaryButton: Number(maybeButton.primaryButton ?? -1),
+        secondaryButton: Number(maybeButton.secondaryButton ?? -1),
+        color: "primary",
+      });
+    }
+  }
+
+  if (looseButtons.length > 0) {
+    sections.unshift({
+      title: "Buttons",
+      color: "primary",
+      buttons: looseButtons,
+    });
+  }
+
+  return sections;
+}
+
+// Helper function to flatten buttonContent into a list of all buttons
+export function flattenButtonContent(content: ButtonContent[]): VisualButtonMapping[] {
+  const flattened: VisualButtonMapping[] = [];
+  content.forEach((item) => {
+    flattened.push(...item.buttons.map((button) => ({ ...button, color: "primary" })));
+  });
+  return flattened;
+}
+
+// Helper function to build section references from hierarchical content
+export function buildSectionReferences(content: ButtonContent[]): ButtonSection[] {
+  const sections: ButtonSection[] = [];
+  let currentButtonIndex = 0;
+
+  content.forEach((item) => {
+    const buttonIndices: number[] = [];
+    const itemButtonCount = item.buttons.length;
+    for (let i = 0; i < itemButtonCount; i++) {
+      buttonIndices.push(currentButtonIndex + i);
+    }
+    sections.push({
+      title: item.title,
+      buttonIndices,
+      color: "primary",
+    });
+    currentButtonIndex += itemButtonCount;
+  });
+
+  return sections;
 }
 
 export type Config = {
   dataSource: string;
+  buttonsPreset: ButtonPreset;
   subJoyTopic: string;
   gamepadId: number;
   publishMode: boolean;
@@ -79,43 +227,108 @@ export type Config = {
   mapping_name: string;
   keyboardMapping: string;
   uiScale: number;
-  visualButtons: VisualButtonMapping[];
+  buttonContent: ButtonContent[];
 };
 
 export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAction): Config {
   return produce(prevConfig, (draft) => {
     if (action.action !== "update") {
       const { id, path } = action.payload;
-      const nodeKey = path[0];
-      const buttonIndex = parseButtonIndexFromPath(path);
 
-      if (id === "add" && nodeKey === "buttons") {
-        draft.visualButtons.push({
-          label: `B${draft.visualButtons.length + 1}`,
-          primaryButton: -1,
-          secondaryButton: -1,
-          color: "primary",
-        });
-        return;
-      }
+      // Handle top-level button/section actions
+      if (path[0] === "buttons") {
+        const sectionIdx = parseSectionIndex(path);
+        const sectionButtonIdx = parseSectionButtonIndex(path);
 
-      if (id === "remove" && buttonIndex != undefined) {
-        draft.visualButtons.splice(buttonIndex, 1);
-        return;
-      }
+        // Add section at top level
+        if (id === "add-section" && path.length === 1) {
+          draft.buttonContent.push({
+            title: `Section ${draft.buttonContent.length + 1}`,
+            buttons: [],
+            color: "primary",
+          });
+          return;
+        }
 
-      if (id === "moveUp" && buttonIndex != undefined && buttonIndex > 0) {
-        const temp = draft.visualButtons[buttonIndex - 1];
-        draft.visualButtons[buttonIndex - 1] = draft.visualButtons[buttonIndex]!;
-        draft.visualButtons[buttonIndex] = temp!;
-        return;
-      }
+        // Add button to a section
+        if (id === "add-button" && sectionIdx !== undefined && path.length === 2) {
+          const section = draft.buttonContent[sectionIdx];
+          if (section && isButtonSection(section)) {
+            section.buttons.push({
+              label: `B${section.buttons.length + 1}`,
+              primaryButton: -1,
+              secondaryButton: -1,
+              color: "primary",
+            });
+          }
+          return;
+        }
 
-      if (id === "moveDown" && buttonIndex != undefined && buttonIndex < draft.visualButtons.length - 1) {
-        const temp = draft.visualButtons[buttonIndex + 1];
-        draft.visualButtons[buttonIndex + 1] = draft.visualButtons[buttonIndex]!;
-        draft.visualButtons[buttonIndex] = temp!;
-        return;
+        // Remove top-level content (button or section)
+        // Remove button from section
+        if (id === "remove" && sectionButtonIdx && path.length >= 3) {
+          const section = draft.buttonContent[sectionButtonIdx.sectionIdx];
+          if (section && isButtonSection(section)) {
+            section.buttons.splice(sectionButtonIdx.buttonIdx, 1);
+          }
+          return;
+        }
+
+        // Remove section
+        if (id === "remove" && sectionIdx !== undefined && path.length === 2) {
+          draft.buttonContent.splice(sectionIdx, 1);
+          return;
+        }
+
+        // Move up section
+        if (id === "moveUp" && sectionIdx !== undefined && path.length === 2 && sectionIdx > 0) {
+          const temp = draft.buttonContent[sectionIdx - 1]!;
+          draft.buttonContent[sectionIdx - 1] = draft.buttonContent[sectionIdx]!;
+          draft.buttonContent[sectionIdx] = temp;
+          return;
+        }
+
+        // Move down section
+        if (
+          id === "moveDown" &&
+          sectionIdx !== undefined &&
+          path.length === 2 &&
+          sectionIdx < draft.buttonContent.length - 1
+        ) {
+          const temp = draft.buttonContent[sectionIdx + 1]!;
+          draft.buttonContent[sectionIdx + 1] = draft.buttonContent[sectionIdx]!;
+          draft.buttonContent[sectionIdx] = temp;
+          return;
+        }
+
+        // Move up within section
+        if (id === "moveUp" && sectionButtonIdx && path.length >= 3 && sectionButtonIdx.buttonIdx > 0) {
+          const section = draft.buttonContent[sectionButtonIdx.sectionIdx];
+          if (section && isButtonSection(section)) {
+            const temp = section.buttons[sectionButtonIdx.buttonIdx - 1]!;
+            section.buttons[sectionButtonIdx.buttonIdx - 1] =
+              section.buttons[sectionButtonIdx.buttonIdx]!;
+            section.buttons[sectionButtonIdx.buttonIdx] = temp;
+          }
+          return;
+        }
+
+        // Move down within section
+        if (
+          id === "moveDown" &&
+          sectionButtonIdx &&
+          path.length >= 3 &&
+          sectionButtonIdx.buttonIdx < ((draft.buttonContent[sectionButtonIdx.sectionIdx] as ButtonSectionHierarchical)?.buttons.length ?? 0) - 1
+        ) {
+          const section = draft.buttonContent[sectionButtonIdx.sectionIdx];
+          if (section && isButtonSection(section)) {
+            const temp = section.buttons[sectionButtonIdx.buttonIdx + 1]!;
+            section.buttons[sectionButtonIdx.buttonIdx + 1] =
+              section.buttons[sectionButtonIdx.buttonIdx]!;
+            section.buttons[sectionButtonIdx.buttonIdx] = temp;
+          }
+          return;
+        }
       }
       return;
     }
@@ -123,28 +336,57 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
     if (action.action === "update") {
       const { path, value } = action.payload;
       const pathStr = path.join(".");
-      const buttonIndex = parseButtonIndexFromPath(path);
-      const buttonField = path[2];
 
       // Handle compact mode toggle conversion
       if (pathStr.includes("uiScale") && typeof value === "boolean") {
         draft.uiScale = value ? 0.6 : 1;
-      } else if (buttonIndex != undefined) {
-        const target = draft.visualButtons[buttonIndex];
-        if (!target) {
+        return;
+      }
+
+      if (pathStr.includes("buttonsPreset")) {
+        const preset = value === "empty" ? "empty" : "uuv-settings";
+        draft.buttonsPreset = preset;
+        draft.buttonContent = buttonContentFromPreset(preset);
+        return;
+      }
+
+      // Handle updates to top-level items
+      if (path[0] === "buttons") {
+        const sectionIdx = parseSectionIndex(path);
+        const sectionButtonIdx = parseSectionButtonIndex(path);
+
+        // Update section title
+        if (sectionIdx !== undefined && path.length >= 3 && path[2] === "title") {
+          const item = draft.buttonContent[sectionIdx];
+          if (item && isButtonSection(item)) {
+            item.title = String(value);
+          }
           return;
         }
 
-        if (buttonField === "label") {
-          target.label = String(value);
-        } else if (buttonField === "primaryButton") {
-          target.primaryButton = Number(value);
-        } else if (buttonField === "secondaryButton") {
-          target.secondaryButton = Number(value);
-        } else if (buttonField === "color") {
-          target.color = String(value);
+        // Update button properties within section
+        if (sectionButtonIdx) {
+          const section = draft.buttonContent[sectionButtonIdx.sectionIdx];
+          if (section && isButtonSection(section)) {
+            const button = section.buttons[sectionButtonIdx.buttonIdx];
+            if (button) {
+              if (path[3] === "label") {
+                button.label = String(value);
+              } else if (path[3] === "primaryButton") {
+                button.primaryButton = Number(value);
+              } else if (path[3] === "secondaryButton") {
+                button.secondaryButton = Number(value);
+              } else if (path[3] === "color") {
+                button.color = "primary";
+              }
+            }
+          }
+          return;
         }
-      } else if (
+      }
+
+      // Fallback for other updates
+      if (
         pathStr.includes("gamepadId") ||
         pathStr.includes("primaryButton") ||
         pathStr.includes("secondaryButton")
@@ -246,6 +488,25 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     };
   }
 
+  if (config.dataSource === "buttons") {
+    dataSourceFields.buttonsPreset = {
+      label: "Buttons Preset",
+      input: "select",
+      value: config.buttonsPreset,
+      help: "Prefill button mapping from a preset; you can still edit afterward",
+      options: [
+        {
+          label: "UUV Settings",
+          value: "uuv-settings",
+        },
+        {
+          label: "Empty",
+          value: "empty",
+        },
+      ],
+    };
+  }
+
   const publishFields: SettingsTreeFields = {
     publishMode: {
       label: "Publish Mode",
@@ -337,9 +598,9 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Buttons Mapping",
       actions: [
         {
-          id: "add",
+          id: "add-section",
           type: "action",
-          label: "Add Button",
+          label: "Add Section",
         } satisfies SettingsTreeNodeAction,
       ],
       children: {},
@@ -351,10 +612,12 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
     return settings;
   }
 
-  config.visualButtons.forEach((mapping, idx) => {
+  // Render all top-level content (buttons and sections)
+  config.buttonContent.forEach((item, idx) => {
+    const contentKey = `${SECTION_NODE_PREFIX}${idx}`;
     const actions: SettingsTreeNodeAction[] = [];
 
-    // Add Move Up action if not first button
+    // Add Move Up action if not first
     if (idx > 0) {
       actions.push({
         id: "moveUp",
@@ -363,8 +626,8 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       });
     }
 
-    // Add Move Down action if not last button
-    if (idx < config.visualButtons.length - 1) {
+    // Add Move Down action if not last
+    if (idx < config.buttonContent.length - 1) {
       actions.push({
         id: "moveDown",
         type: "action",
@@ -379,46 +642,85 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Remove",
     });
 
-    buttonChildren[`${BUTTON_NODE_PREFIX}${idx}`] = {
-      label: mapping.label?.trim() ? mapping.label : `Button ${idx + 1}`,
+    // Render section
+    const sectionActions: SettingsTreeNodeAction[] = [
+      {
+        id: "add-button",
+        type: "action",
+        label: "Add Button",
+      },
+      ...actions,
+    ];
+
+    buttonChildren[contentKey] = {
+      label: item.title,
       fields: {
-        label: {
-          label: "Label",
+        title: {
+          label: "Title",
           input: "string",
-          value: mapping.label ?? `B${idx + 1}`,
+          value: item.title,
           disabled: config.dataSource !== "buttons",
-        },
-        color: {
-          label: "Color",
-          input: "select",
-          value: mapping.color ?? "primary",
-          disabled: config.dataSource !== "buttons",
-          options: [
-            { label: "Blue", value: "primary" },
-            { label: "Purple", value: "secondary" },
-            { label: "Green", value: "success" },
-            { label: "Red", value: "error" },
-            { label: "Light Blue", value: "info" },
-            { label: "Orange", value: "warning" },
-          ],
-        },
-        primaryButton: {
-          label: "Primary",
-          input: "select",
-          value: String(mapping.primaryButton ?? -1),
-          disabled: config.dataSource !== "buttons",
-          options: PS_BUTTON_OPTIONS,
-        },
-        secondaryButton: {
-          label: "Secondary",
-          input: "select",
-          value: String(mapping.secondaryButton ?? -1),
-          disabled: config.dataSource !== "buttons",
-          options: PS_BUTTON_OPTIONS,
         },
       },
-      actions,
+      actions: sectionActions,
+      children: {},
     };
+
+    // Render buttons inside section
+    const sectionButtonChildren = buttonChildren[contentKey]!.children!;
+    item.buttons.forEach((button, buttonIdx) => {
+      const buttonKey = `${BUTTON_NODE_PREFIX}${buttonIdx}`;
+      const buttonActions: SettingsTreeNodeAction[] = [];
+
+      if (buttonIdx > 0) {
+        buttonActions.push({
+          id: "moveUp",
+          type: "action",
+          label: "Move Up",
+        });
+      }
+
+      if (buttonIdx < item.buttons.length - 1) {
+        buttonActions.push({
+          id: "moveDown",
+          type: "action",
+          label: "Move Down",
+        });
+      }
+
+      buttonActions.push({
+        id: "remove",
+        type: "action",
+        label: "Remove",
+      });
+
+      sectionButtonChildren[buttonKey] = {
+        label: button.label?.trim() ? button.label : `Button ${buttonIdx + 1}`,
+        fields: {
+          label: {
+            label: "Label",
+            input: "string",
+            value: button.label ?? `B${buttonIdx + 1}`,
+            disabled: config.dataSource !== "buttons",
+          },
+          primaryButton: {
+            label: "Primary",
+            input: "select",
+            value: String(button.primaryButton ?? -1),
+            disabled: config.dataSource !== "buttons",
+            options: PS_BUTTON_OPTIONS,
+          },
+          secondaryButton: {
+            label: "Secondary",
+            input: "select",
+            value: String(button.secondaryButton ?? -1),
+            disabled: config.dataSource !== "buttons",
+            options: PS_BUTTON_OPTIONS,
+          },
+        },
+        actions: buttonActions,
+      };
+    });
   });
 
   return settings;
