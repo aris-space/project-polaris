@@ -76,7 +76,7 @@ class MavlinkBridgeSender(Node):
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
 
-        self.port = mavutil.mavlink_connection(f"udp:10.5.10.15:14600") # UDP connection to companion computer (BlueOS)
+        self.port = mavutil.mavlink_connection("udpin:10.5.10.15:14600") # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # Serial connection straight to Pixhawk
 
         self.port.wait_heartbeat()
