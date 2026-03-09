@@ -8,7 +8,7 @@ const colStroke = "#ddd";
 const colPrim = "blue";
 const colSec = "cornflowerblue";
 const colAlt = "red";
-const colToggled = "#ffff00";
+const colToggled = "#D68910";
 
 interface Interaction {
   pointerId: number;

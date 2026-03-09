@@ -18,17 +18,16 @@ import kbmappingKeyboardButtons from "./components/kbmapping-keyboard_buttons.js
 import kbmappingKeyboardMovement from "./components/kbmapping-keyboard_movement.json";
 import kbmapping1 from "./components/kbmapping1.json";
 import { useGamepad } from "./hooks/useGamepad";
-import { gamepadToRosJoy } from "./utils/gamepadToRosJoy";
 import {
   Config,
   buildSettingsTree,
   defaultButtonContent,
   flattenButtonContent,
   buildSectionReferences,
-  normalizeButtonContent,
   settingsActionReducer,
 } from "./panelSettings";
 import { Joy } from "./types";
+import { gamepadToRosJoy } from "./utils/gamepadToRosJoy";
 
 type KbMap = {
   button: number;
@@ -79,7 +78,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     buildKeyMap(kbmapping1),
   );
   const [currentKbMapping, setCurrentKbMapping] = useState<Record<string, RawKbMap> | undefined>();
-  const [activeVisualButtonIndices, setActiveVisualButtonIndices] = useState<Set<number>>(new Set());
+  const [activeVisualButtonIndices, setActiveVisualButtonIndices] = useState<Set<number>>(
+    new Set(),
+  );
 
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
@@ -97,13 +98,21 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.keyboardMapping ??= "keyboard_movement";
     partialConfig.gamepadId ??= 0;
     partialConfig.uiScale ??= 1;
-    partialConfig.buttonsPreset ??= (partialConfig.buttonContent?.length ?? 0) === 0 ? "empty" : "uuv-settings";
+    partialConfig.buttonsPreset ??=
+      (partialConfig.buttonContent?.length ?? 0) === 0 ? "empty" : "uuv-settings";
     if (partialConfig.buttonContent == undefined) {
       partialConfig.buttonContent =
         partialConfig.buttonsPreset === "empty" ? [] : defaultButtonContent();
     }
-    partialConfig.buttonContent = normalizeButtonContent(partialConfig.buttonContent);
-    
+    partialConfig.buttonContent = partialConfig.buttonContent.map((section) => ({
+      title: section.title,
+      buttons: section.buttons.map((button) => ({
+        label: button.label,
+        primaryButton: Number(button.primaryButton),
+        secondaryButton: Number(button.secondaryButton),
+      })),
+    }));
+
     // Set default pubJoyTopic based on data source and keyboard mapping
     if (partialConfig.pubJoyTopic == undefined) {
       if (partialConfig.dataSource === "gamepad") {
@@ -122,7 +131,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         partialConfig.pubJoyTopic = "/joy";
       }
     }
-    
+
     return partialConfig as Config;
   });
 
@@ -215,21 +224,23 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   // If subscribing
   useEffect(() => {
     const latestJoy = messages?.[messages.length - 1]?.message as Joy | undefined;
-    if (latestJoy) {
+    if (latestJoy != undefined) {
       // Validate array sizes for safety
-      const axes = Array.from(latestJoy.axes || []);
-      const buttons = Array.from(latestJoy.buttons || []);
-      
+      const axes = Array.from(latestJoy.axes);
+      const buttons = Array.from(latestJoy.buttons);
+
       // Ensure we don't have malformed data
       if (axes.length > 100 || buttons.length > 100) {
-        console.error("[POLARIS Joystick] Received malformed Joy message with excessive array sizes. Ignoring.");
+        console.error(
+          "[POLARIS Joystick] Received malformed Joy message with excessive array sizes. Ignoring.",
+        );
         return;
       }
-      
-      const tmpMsg = {
+
+      const tmpMsg: Joy = {
         header: {
           stamp: latestJoy.header.stamp,
-          frame_id: config.publishFrameId || "joystick_frame",
+          frame_id: config.publishFrameId,
         },
         axes,
         buttons,
@@ -282,11 +293,14 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   // Keyboard mode
   const normalizeKey = useCallback((event: KeyboardEvent): string => {
     // Prevent keyboard input if we're typing in an input field
-    const target = event.target as HTMLElement;
-    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+    const target = event.target as HTMLElement | null;
+    if (
+      target != null &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+    ) {
       return "";
     }
-    
+
     const { code, key } = event;
     if (code.startsWith("Key")) {
       return code.slice(3).toLowerCase();
@@ -305,12 +319,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       if (!kbEnabled) {
         return;
       }
-      
+
       const normalizedKey = normalizeKey(event);
       if (!normalizedKey) {
         return; // Ignore if in input field
       }
-      
+
       setTrackedKeys((oldTrackedKeys) => {
         if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
           event.preventDefault(); // Prevent default browser behavior for mapped keys
@@ -339,12 +353,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       if (!kbEnabled) {
         return;
       }
-      
+
       const normalizedKey = normalizeKey(event);
       if (!normalizedKey) {
         return; // Ignore if in input field
       }
-      
+
       setTrackedKeys((oldTrackedKeys) => {
         if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
           event.preventDefault(); // Prevent default browser behavior for mapped keys
@@ -401,7 +415,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     }
 
     const axes: number[] = [0, 0, 0, 0, -1, -1];
-    const buttons: number[] = new Array(18).fill(0);
+    const buttons = Array<number>(18).fill(0);
 
     const flattenedButtons = flattenButtonContent(config.buttonContent);
 
@@ -440,8 +454,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     }
 
     // Initialize with fixed array sizes so the raw display is always complete
-    const axes: number[] = new Array(6).fill(0);
-    const buttons: number[] = new Array(18).fill(0);
+    const axes = Array<number>(6).fill(0);
+    const buttons = Array<number>(18).fill(0);
     const triggerAxes = new Set<number>();
 
     // Default trigger axes (L2/R2) to -1 when idle
@@ -463,7 +477,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       if (value.button >= 0 && value.button < buttons.length) {
         buttons[value.button] = value.value;
       } else if (value.button >= buttons.length) {
-        console.warn(`[POLARIS Joystick] Button index ${value.button} out of bounds (max: ${buttons.length - 1})`);
+        console.warn(
+          `[POLARIS Joystick] Button index ${value.button} out of bounds (max: ${
+            buttons.length - 1
+          })`,
+        );
       }
 
       if (value.axis >= 0 && value.axis < axes.length && value.direction !== 0) {
@@ -474,7 +492,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
         }
       } else if (value.axis >= axes.length) {
-        console.warn(`[POLARIS Joystick] Axis index ${value.axis} out of bounds (max: ${axes.length - 1})`);
+        console.warn(
+          `[POLARIS Joystick] Axis index ${value.axis} out of bounds (max: ${axes.length - 1})`,
+        );
       }
     });
 
@@ -502,7 +522,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   useEffect(() => {
     // Don't allow publish mode when subscribing to a topic
     if (config.dataSource === "sub-joy-topic" && config.publishMode) {
-      console.warn("[POLARIS Joystick] Publish mode is not allowed when subscribing to a topic. Disabling publish mode.");
+      console.warn(
+        "[POLARIS Joystick] Publish mode is not allowed when subscribing to a topic. Disabling publish mode.",
+      );
       setConfig((prev) => ({ ...prev, publishMode: false }));
       return;
     }
@@ -522,15 +544,18 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         // Validate topic name
         if (!config.pubJoyTopic || config.pubJoyTopic.trim() === "") {
           console.error("[POLARIS Joystick] Cannot publish: topic name is empty");
-          return oldTopic || "";
+          return oldTopic ?? "";
         }
-        
+
         try {
           context.advertise?.(config.pubJoyTopic, "sensor_msgs/Joy");
           return config.pubJoyTopic;
         } catch (error) {
-          console.error(`[POLARIS Joystick] Failed to advertise topic ${config.pubJoyTopic}:`, error);
-          return oldTopic || "";
+          console.error(
+            `[POLARIS Joystick] Failed to advertise topic ${config.pubJoyTopic}:`,
+            error,
+          );
+          return oldTopic ?? "";
         }
       } else {
         // Unadvertise if publish mode is disabled
@@ -558,7 +583,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     }
 
     // Validate joy message exists and has required fields
-    if (!joy || !joy.axes || !joy.buttons) {
+    if (joy == undefined) {
       return;
     }
 
@@ -584,7 +609,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     // Clear all key values when disabled for safety
     if (!enabled) {
       setTrackedKeys((oldTrackedKeys) => {
-        if (!oldTrackedKeys) return oldTrackedKeys;
+        if (!oldTrackedKeys) {
+          return oldTrackedKeys;
+        }
         const newKeys = new Map(oldTrackedKeys);
         newKeys.forEach((value) => {
           value.value = 0;
@@ -600,19 +627,16 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       if (config.dataSource !== "interactive") {
         return;
       }
-      
+
       // Validate input
-      if (!interactiveJoy || !interactiveJoy.axes || !interactiveJoy.buttons) {
-        console.error("[POLARIS Joystick] Invalid interactive joy message");
-        return;
-      }
-      
       // Check for reasonable array sizes
       if (interactiveJoy.axes.length > 100 || interactiveJoy.buttons.length > 100) {
-        console.error("[POLARIS Joystick] Interactive joy message has excessive array sizes. Ignoring.");
+        console.error(
+          "[POLARIS Joystick] Interactive joy message has excessive array sizes. Ignoring.",
+        );
         return;
       }
-      
+
       const tmpJoy = {
         header: {
           frame_id: config.publishFrameId || "joystick_frame",
@@ -667,18 +691,22 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   }, [pubTopic, context]);
 
   return (
-    <div style={{ 
-      height: "100%", 
-      width: "100%", 
-      overflow: "auto", 
-      boxSizing: "border-box",
-      padding: `${10 * config.uiScale}px`
-    }}>
-      <div style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: `${8 * config.uiScale}px`
-      }}>
+    <div
+      style={{
+        height: "100%",
+        width: "100%",
+        overflow: "auto",
+        boxSizing: "border-box",
+        padding: `${10 * config.uiScale}px`,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: `${8 * config.uiScale}px`,
+        }}
+      >
         {config.dataSource === "keyboard" ? (
           <FormGroup sx={{ margin: 0 }}>
             <FormControlLabel
@@ -712,7 +740,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           />
         ) : null}
         {config.layoutName === "rawjoy" || config.layoutName === "ps4rawjoy" ? (
-          <JoyDataDisplay joy={joy} kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined} uiScale={config.uiScale} />
+          <JoyDataDisplay
+            joy={joy}
+            kbMapping={config.dataSource === "keyboard" ? currentKbMapping : undefined}
+            uiScale={config.uiScale}
+          />
         ) : null}
       </div>
     </div>

@@ -47,8 +47,10 @@ export function VisualButtonsPanel({
           >
             {section.buttonIndices.map((btnIdx) => {
               const mapping = mappings[btnIdx];
-              if (!mapping) return null;
-              
+              if (!mapping) {
+                return null;
+              }
+
               const isActive = activeIndices.has(btnIdx);
               return (
                 <Button

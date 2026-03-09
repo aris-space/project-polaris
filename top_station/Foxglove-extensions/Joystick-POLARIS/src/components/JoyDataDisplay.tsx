@@ -96,9 +96,9 @@ export function JoyDataDisplay({ joy, kbMapping, uiScale = 1 }: JoyDataDisplayPr
               style={{
                 padding: `${10 * uiScale}px ${Math.max(2, 4 * uiScale)}px`,
                 border: "1px solid #555",
-                backgroundColor: value === 1 ? "#4a4" : "#2a2a2a",
+                backgroundColor: value === 1 ? "#D68910" : "#2a2a2a",
                 textAlign: "center",
-                color: value === 1 ? "#000" : "#ccc",
+                color: value === 1 ? "#fff" : "#ccc",
                 borderRadius: `${6 * uiScale}px`,
                 transition: "all 0.15s ease",
               }}
@@ -107,17 +107,17 @@ export function JoyDataDisplay({ joy, kbMapping, uiScale = 1 }: JoyDataDisplayPr
                 style={{
                   fontSize: `${12 * uiScale}px`,
                   fontWeight: "700",
-                  color: value !== 0 ? "#4af" : "#ccc",
+                  color: value === 1 ? "#fff" : value !== 0 ? "#4af" : "#ccc",
                   marginBottom: `${6 * uiScale}px`,
                 }}
               >
                 [{idx}] = {value}
               </div>
-              <div style={{ fontSize: `${16 * uiScale}px`, fontWeight: "600", color: value === 1 ? "#000" : "#fff" }}>
+              <div style={{ fontSize: `${16 * uiScale}px`, fontWeight: "600", color: "#fff" }}>
                 {buttonNames[idx] || `B${idx}`}
               </div>
               {kbButtonLabels.has(idx) ? (
-                <div style={{ fontSize: `${10 * uiScale}px`, fontWeight: "500", color: "#bbb", marginTop: `${6 * uiScale}px` }}>
+                <div style={{ fontSize: `${10 * uiScale}px`, fontWeight: "500", color: value === 1 ? "#fff" : "#bbb", marginTop: `${6 * uiScale}px` }}>
                   {(kbButtonLabels.get(idx) ?? []).join(", ")}
                 </div>
               ) : null}
