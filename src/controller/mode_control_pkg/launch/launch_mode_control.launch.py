@@ -122,5 +122,11 @@ def generate_launch_description():
                 respawn=respawn,
                 respawn_delay=respawn_delay,
             ),
+            Node(
+                package="mode_control_pkg",
+                executable="collision_avoidance_node",
+                name="collision_avoidance_node",
+                output="screen",
+            ),
         ]
     )
