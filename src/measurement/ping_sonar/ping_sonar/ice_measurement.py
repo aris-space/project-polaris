@@ -1,4 +1,3 @@
-from brping import Ping1D, definitions
 from rclpy.node import Node
 import rclpy
 import csv
@@ -10,6 +9,14 @@ from config_pkg.constants import Logs, Comms
 from rcl_interfaces.msg import SetParametersResult
 import time
 
+try:
+    from brping import Ping1D, definitions
+    _BRPING_IMPORT_ERROR = None
+except Exception as exc:
+    Ping1D = None
+    definitions = None
+    _BRPING_IMPORT_ERROR = exc
+
 
 class Ice_Measurement(Node):
     """
@@ -18,6 +25,13 @@ class Ice_Measurement(Node):
 
     def __init__(self):
         super().__init__("ice_measurement_publisher")
+        if _BRPING_IMPORT_ERROR is not None:
+            self.get_logger().error(
+                "Failed to import brping/Ping1D: "
+                f"{_BRPING_IMPORT_ERROR}. "
+                "Make sure PYTHONPATH includes '/ros2_ws/ping-python'."
+            )
+            raise RuntimeError("brping import failed")
 
         self.ping = Ping1D()  # initializes object
         self.ping.connect_serial(
