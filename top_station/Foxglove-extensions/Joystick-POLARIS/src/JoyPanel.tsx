@@ -126,7 +126,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           partialConfig.pubJoyTopic = "/joy";
         }
       } else if (partialConfig.dataSource === "buttons") {
-        partialConfig.pubJoyTopic = "/joy_buttons";
+        partialConfig.pubJoyTopic = "/joy_mode";
       } else {
         partialConfig.pubJoyTopic = "/joy";
       }
@@ -158,7 +158,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           newPubJoyTopic = "/joy"; // default for keyboard
         }
       } else if (prevConfig.dataSource === "buttons") {
-        newPubJoyTopic = "/joy_buttons";
+        newPubJoyTopic = "/joy_mode";
       }
 
       if (newPubJoyTopic !== prevConfig.pubJoyTopic) {

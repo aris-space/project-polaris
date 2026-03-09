@@ -73,14 +73,13 @@ export function VisualButtonsPanel({
                     onRelease(btnIdx);
                   }}
                   onPointerLeave={(e) => {
-                    if (e.buttons === 0) {
-                      onRelease(btnIdx);
-                    }
+                    e.preventDefault();
+                    onRelease(btnIdx);
                   }}
                   sx={{
                     minHeight: "34px",
                     px: 0.75,
-                    fontWeight: 700,
+                    fontWeight: 400,
                     fontSize: "0.72rem",
                     lineHeight: 1.2,
                     textTransform: "none",
