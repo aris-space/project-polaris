@@ -36,6 +36,7 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Data Source",
       input: "select",
       value: config.dataSource,
+        help: "Select where joystick data comes from",
       options: [
         {
           label: "Subscribed Joy Topic",
@@ -60,19 +61,20 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       input: "select",
       value: config.subJoyTopic,
       disabled: config.dataSource !== "sub-joy-topic",
+        help: "Select ROS Joy topic to monitor",
       options: (topics ?? [])
         .filter((topic) => topic.datatype === "sensor_msgs/msg/Joy")
         .map((topic) => ({
           label: topic.name,
           value: topic.name,
         })),
-      // error: (!config.topic ? "Topic name is empty" : null),
     },
     gamepadId: {
       label: "Gamepad ID",
       input: "select",
       value: config.gamepadId.toString(),
       disabled: config.dataSource !== "gamepad",
+        help: "Select which gamepad to use (0 is primary)",
       options: [
         {
           label: "0",
@@ -93,6 +95,7 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       input: "select",
       value: config.keyboardMapping,
       disabled: config.dataSource !== "keyboard",
+        help: "Select how keyboard keys map to Joy messages",
       options: [
         {
           label: "Default",
@@ -114,19 +117,26 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Publish Mode",
       input: "boolean",
       value: config.publishMode,
-      // eslint-disable-next-line no-warning-comments
-      // TODO also need to force publish mode to false when in sub mode
       disabled: config.dataSource === "sub-joy-topic",
+      help: "Publish mode is disabled when subscribing to a topic for safety",
     },
     pubJoyTopic: {
       label: "Pub Joy Topic",
       input: "string",
       value: config.pubJoyTopic,
+      error: config.publishMode && (!config.pubJoyTopic || config.pubJoyTopic.trim() === "") 
+        ? "Topic name cannot be empty in publish mode" 
+        : undefined,
+      help: "ROS topic name to publish Joy messages to",
     },
     publishFrameId: {
       label: "Joy Frame ID",
       input: "string",
       value: config.publishFrameId,
+      error: config.publishMode && (!config.publishFrameId || config.publishFrameId.trim() === "")
+        ? "Frame ID cannot be empty"
+        : undefined,
+      help: "TF frame_id for published Joy messages (default: joystick_frame)",
     },
   };
   const displayFields: SettingsTreeFields = {

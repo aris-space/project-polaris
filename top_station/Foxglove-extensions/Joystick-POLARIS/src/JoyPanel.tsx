@@ -79,7 +79,10 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     const partialConfig = context.initialState as Partial<Config>;
     partialConfig.subJoyTopic ??= "/joy";
     partialConfig.publishMode ??= false;
-    partialConfig.publishFrameId ??= "";
+    partialConfig.publishFrameId ??= "joystick_frame";
+    if (partialConfig.publishFrameId.trim() === "") {
+      partialConfig.publishFrameId = "joystick_frame";
+    }
     partialConfig.dataSource ??= "sub-joy-topic";
     partialConfig.layoutName ??= "ps4";
     partialConfig.mapping_name ??= "TODO";
@@ -195,13 +198,23 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   useEffect(() => {
     const latestJoy = messages?.[messages.length - 1]?.message as Joy | undefined;
     if (latestJoy) {
+      // Validate array sizes for safety
+      const axes = Array.from(latestJoy.axes || []);
+      const buttons = Array.from(latestJoy.buttons || []);
+      
+      // Ensure we don't have malformed data
+      if (axes.length > 100 || buttons.length > 100) {
+        console.error("[POLARIS Joystick] Received malformed Joy message with excessive array sizes. Ignoring.");
+        return;
+      }
+      
       const tmpMsg = {
         header: {
           stamp: latestJoy.header.stamp,
-          frame_id: config.publishFrameId,
+          frame_id: config.publishFrameId || "joystick_frame",
         },
-        axes: Array.from(latestJoy.axes),
-        buttons: Array.from(latestJoy.buttons),
+        axes,
+        buttons,
       };
       setJoy(tmpMsg);
     }
@@ -235,9 +248,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
         const tmpJoy = {
           header: {
-            frame_id: config.publishFrameId,
-            // eslint-disable-next-line no-warning-comments
-            // TODO: /clock
+            frame_id: config.publishFrameId || "joystick_frame",
             stamp: fromDate(new Date()),
           },
           axes,
@@ -252,6 +263,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
   // Keyboard mode
   const normalizeKey = useCallback((event: KeyboardEvent): string => {
+    // Prevent keyboard input if we're typing in an input field
+    const target = event.target as HTMLElement;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+      return "";
+    }
+    
     const { code, key } = event;
     if (code.startsWith("Key")) {
       return code.slice(3).toLowerCase();
@@ -267,9 +284,18 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      if (!kbEnabled) {
+        return;
+      }
+      
       const normalizedKey = normalizeKey(event);
+      if (!normalizedKey) {
+        return; // Ignore if in input field
+      }
+      
       setTrackedKeys((oldTrackedKeys) => {
         if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
+          event.preventDefault(); // Prevent default browser behavior for mapped keys
           const newKeys = new Map(oldTrackedKeys);
           const k = newKeys.get(normalizedKey);
           if (k) {
@@ -287,14 +313,23 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         return oldTrackedKeys;
       });
     },
-    [normalizeKey],
+    [normalizeKey, kbEnabled],
   );
 
   const handleKeyUp = useCallback(
     (event: KeyboardEvent) => {
+      if (!kbEnabled) {
+        return;
+      }
+      
       const normalizedKey = normalizeKey(event);
+      if (!normalizedKey) {
+        return; // Ignore if in input field
+      }
+      
       setTrackedKeys((oldTrackedKeys) => {
         if (oldTrackedKeys && oldTrackedKeys.has(normalizedKey)) {
+          event.preventDefault(); // Prevent default browser behavior for mapped keys
           const newKeys = new Map(oldTrackedKeys);
           const k = newKeys.get(normalizedKey);
           if (k) {
@@ -309,24 +344,30 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         return oldTrackedKeys;
       });
     },
-    [normalizeKey],
+    [normalizeKey, kbEnabled],
   );
 
-  // Key down Listener
+  // Key down Listener - only active when keyboard mode is enabled
   useEffect(() => {
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [handleKeyDown]);
+    if (config.dataSource === "keyboard") {
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }
+    return undefined;
+  }, [handleKeyDown, config.dataSource]);
 
-  // Key up Listener
+  // Key up Listener - only active when keyboard mode is enabled
   useEffect(() => {
-    document.addEventListener("keyup", handleKeyUp);
-    return () => {
-      document.removeEventListener("keyup", handleKeyUp);
-    };
-  }, [handleKeyUp]);
+    if (config.dataSource === "keyboard") {
+      document.addEventListener("keyup", handleKeyUp);
+      return () => {
+        document.removeEventListener("keyup", handleKeyUp);
+      };
+    }
+    return undefined;
+  }, [handleKeyUp, config.dataSource]);
 
   // Reload mapping when selection changes
   useEffect(() => {
@@ -364,17 +405,22 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     });
 
     trackedKeys?.forEach((value) => {
-      if (value.button >= 0) {
+      // Bounds checking for safety
+      if (value.button >= 0 && value.button < buttons.length) {
         buttons[value.button] = value.value;
+      } else if (value.button >= buttons.length) {
+        console.warn(`[POLARIS Joystick] Button index ${value.button} out of bounds (max: ${buttons.length - 1})`);
       }
 
-      if (value.axis >= 0 && value.direction !== 0) {
+      if (value.axis >= 0 && value.axis < axes.length && value.direction !== 0) {
         const direction = value.direction > 0 ? 1 : -1;
         if (triggerAxes.has(value.axis)) {
           axes[value.axis] = -1 + 2 * (direction * value.value);
         } else {
           axes[value.axis] = (axes[value.axis] ?? 0) + direction * value.value;
         }
+      } else if (value.axis >= axes.length) {
+        console.warn(`[POLARIS Joystick] Axis index ${value.axis} out of bounds (max: ${axes.length - 1})`);
       }
     });
 
@@ -387,9 +433,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       if (axesChanged || buttonsChanged) {
         return {
           header: {
-            frame_id: config.publishFrameId,
-            // eslint-disable-next-line no-warning-comments
-            // TODO: /clock
+            frame_id: config.publishFrameId || "joystick_frame",
             stamp: fromDate(new Date()),
           },
           axes,
@@ -402,23 +446,51 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
   // Advertise the topic to publish
   useEffect(() => {
-    if (config.publishMode) {
-      setPubTopic((oldTopic) => {
-        if (config.publishMode) {
-          if (oldTopic) {
-            context.unadvertise?.(oldTopic);
-          }
+    // Don't allow publish mode when subscribing to a topic
+    if (config.dataSource === "sub-joy-topic" && config.publishMode) {
+      console.warn("[POLARIS Joystick] Publish mode is not allowed when subscribing to a topic. Disabling publish mode.");
+      setConfig((prev) => ({ ...prev, publishMode: false }));
+      return;
+    }
+
+    setPubTopic((oldTopic) => {
+      // Clean up old topic if it exists and is different
+      if (oldTopic && oldTopic !== config.pubJoyTopic) {
+        try {
+          context.unadvertise?.(oldTopic);
+        } catch (error) {
+          console.error(`[POLARIS Joystick] Failed to unadvertise topic ${oldTopic}:`, error);
+        }
+      }
+
+      // Advertise new topic if publish mode is enabled
+      if (config.publishMode) {
+        // Validate topic name
+        if (!config.pubJoyTopic || config.pubJoyTopic.trim() === "") {
+          console.error("[POLARIS Joystick] Cannot publish: topic name is empty");
+          return oldTopic || "";
+        }
+        
+        try {
           context.advertise?.(config.pubJoyTopic, "sensor_msgs/Joy");
           return config.pubJoyTopic;
-        } else {
-          if (oldTopic) {
-            context.unadvertise?.(oldTopic);
-          }
-          return "";
+        } catch (error) {
+          console.error(`[POLARIS Joystick] Failed to advertise topic ${config.pubJoyTopic}:`, error);
+          return oldTopic || "";
         }
-      });
-    }
-  }, [config.pubJoyTopic, config.publishMode, context]);
+      } else {
+        // Unadvertise if publish mode is disabled
+        if (oldTopic) {
+          try {
+            context.unadvertise?.(oldTopic);
+          } catch (error) {
+            console.error(`[POLARIS Joystick] Failed to unadvertise topic ${oldTopic}:`, error);
+          }
+        }
+        return "";
+      }
+    });
+  }, [config.pubJoyTopic, config.publishMode, config.dataSource, context]);
 
   // Publish the joy message
   useEffect(() => {
@@ -426,10 +498,25 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       return;
     }
 
-    if (pubTopic && pubTopic === config.pubJoyTopic) {
-      context.publish?.(pubTopic, joy);
+    // Safety check: don't publish if we're in subscribe mode
+    if (config.dataSource === "sub-joy-topic") {
+      return;
     }
-  }, [context, config.pubJoyTopic, config.publishMode, joy, pubTopic]);
+
+    // Validate joy message exists and has required fields
+    if (!joy || !joy.axes || !joy.buttons) {
+      return;
+    }
+
+    // Validate topic is properly advertised
+    if (pubTopic && pubTopic === config.pubJoyTopic) {
+      try {
+        context.publish?.(pubTopic, joy);
+      } catch (error) {
+        console.error(`[POLARIS Joystick] Failed to publish to topic ${pubTopic}:`, error);
+      }
+    }
+  }, [context, config.pubJoyTopic, config.publishMode, config.dataSource, joy, pubTopic]);
 
   // Invoke the done callback once the render is complete
   useEffect(() => {
@@ -437,20 +524,21 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   }, [renderDone]);
 
   const handleKbSwitch = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setKbEnabled(event.target.checked);
+    const enabled = event.target.checked;
+    setKbEnabled(enabled);
 
-    // eslint-disable-next-line no-warning-comments
-    // TODO Clear key values when disabled
-    // setTrackedKeys((oldTrackedKeys) => {
-    //   const newKeys = new Map(oldTrackedKeys);
-    //   newKeys.forEach((value, key, map) => {
-    //     const k = map.get(key);
-    //     if (k) {
-    //       k.value = 0;
-    //     }
-    //   });
-    //   return newKeys;
-    // });
+    // Clear all key values when disabled for safety
+    if (!enabled) {
+      setTrackedKeys((oldTrackedKeys) => {
+        if (!oldTrackedKeys) return oldTrackedKeys;
+        const newKeys = new Map(oldTrackedKeys);
+        newKeys.forEach((value) => {
+          value.value = 0;
+          value.toggled = false;
+        });
+        return newKeys;
+      });
+    }
   };
 
   const interactiveCb = useCallback(
@@ -458,11 +546,22 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       if (config.dataSource !== "interactive") {
         return;
       }
+      
+      // Validate input
+      if (!interactiveJoy || !interactiveJoy.axes || !interactiveJoy.buttons) {
+        console.error("[POLARIS Joystick] Invalid interactive joy message");
+        return;
+      }
+      
+      // Check for reasonable array sizes
+      if (interactiveJoy.axes.length > 100 || interactiveJoy.buttons.length > 100) {
+        console.error("[POLARIS Joystick] Interactive joy message has excessive array sizes. Ignoring.");
+        return;
+      }
+      
       const tmpJoy = {
         header: {
-          frame_id: config.publishFrameId,
-          // eslint-disable-next-line no-warning-comments
-          // TODO: /clock
+          frame_id: config.publishFrameId || "joystick_frame",
           stamp: fromDate(new Date()),
         },
         axes: interactiveJoy.axes,
@@ -477,6 +576,19 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   useEffect(() => {
     context.saveState(config);
   }, [context, config]);
+
+  // Cleanup effect - unadvertise topic on unmount
+  useEffect(() => {
+    return () => {
+      if (pubTopic) {
+        try {
+          context.unadvertise?.(pubTopic);
+        } catch (error) {
+          console.error(`[POLARIS Joystick] Failed to unadvertise topic on cleanup:`, error);
+        }
+      }
+    };
+  }, [pubTopic, context]);
 
   return (
     <div style={{ 
