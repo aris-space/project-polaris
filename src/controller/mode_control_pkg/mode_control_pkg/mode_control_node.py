@@ -27,6 +27,7 @@ class ModeControlNode(Node):
         self.prev_disarm_button_state = 0
         self.prev_stabilization_button_state = 0
         self.prev_collision_avoidance_button_state = 0
+        self.current_collision_avoidance_checking_state = False
 
         # Publishers & Subscribers
         self.mode_publisher = self.create_publisher(
@@ -38,6 +39,10 @@ class ModeControlNode(Node):
         self.arm_cmd_publisher = self.create_publisher(Bool, "/pixhawk/arm_cmd", 10)
         self.joy_subscriber = self.create_subscription(
             Joy, "/joy", self.command_callback, 10
+        )
+
+        self.collision_avoidance_checking_publisher = self.create_publisher(
+            Bool, "/collision_avoidance/checking", 10
         )
 
         self.get_logger().info("Mode Control Node Started. Default: manual_control")
@@ -153,7 +158,16 @@ class ModeControlNode(Node):
                 else buttons[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_BUTTON_IDX] == 1)
             if current_collision_avoidance_button_state and not self.prev_collision_avoidance_button_state:
                 self.get_logger().info("Toggling Collision Avoidance Setting")
-                # Implement collision avoidance toggle logic here
+                if self.current_mode == "emergency_stop":
+                    self.get_logger().info(
+                        "Collision Avoidance not available in Emergency Stop mode"
+                    )
+                elif self.current_collision_avoidance_checking_state:
+                    self.current_collision_avoidance_checking_state = False
+                    self.publish_collision_avoidance_checking(False)
+                elif not self.current_collision_avoidance_checking_state:
+                    self.current_collision_avoidance_checking_state = True
+                    self.publish_collision_avoidance_checking(True)
             self.prev_collision_avoidance_button_state = current_collision_avoidance_button_state
 
         # 4. Only publish and log if the state has actually changed
@@ -183,6 +197,12 @@ class ModeControlNode(Node):
         arm_cmd_msg = Bool()
         arm_cmd_msg.data = arm_bool
         self.arm_cmd_publisher.publish(arm_cmd_msg)
+
+    def publish_collision_avoidance_checking(self, checking_bool):
+        checking_msg = Bool()
+        checking_msg.data = checking_bool
+        self.get_logger().info(f"Published /collision_avoidance/checking: {checking_bool}")
+        self.collision_avoidance_checking_publisher.publish(checking_msg)
 
     def mode_safety_button_pressed(self, msg):
         # This function should check the state of the safety button
