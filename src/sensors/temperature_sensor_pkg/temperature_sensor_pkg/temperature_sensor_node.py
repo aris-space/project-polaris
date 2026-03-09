@@ -19,8 +19,8 @@ class Temperature_sensor(Node):
             DiagnosticArray, "/diagnostics", 10
         )
 
-        self.warn_level = 100
-        self.error_level = 140
+        self.warn_level = 60
+        self.error_level = 80
 
         self.get_logger().info(
             "Temperature Sensor Node started. warn_level=%.1f°C, error_level=%.1f°C"
@@ -89,7 +89,7 @@ class Temperature_sensor(Node):
                     )  
 
                 if values[sensor_i] >= 28:  # TODO: Might need to be adapted
-                    self.get_logger().warning(
+                    self.get_logger().error(
                         f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is too hot and throttles down some ESCs: {values[sensor_i]}°C"
                     )  
 
