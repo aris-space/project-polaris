@@ -49,8 +49,8 @@ class JoyPS4:
         SHARE_BUTTON = 8
         OPTIONS_BUTTON = 9
         PS_BUTTON = 10
-        L3_BUTTON = 11  # Left stick click
-        R3_BUTTON = 12  # Right stick click
+        L3 = 11  # Left stick click
+        R3 = 12  # Right stick click
 
         # General Axis Mapping (0-indexed)
         LEFT_STICK_X_AXIS = 1  # Up = 1.0, Down = -1.0
@@ -71,8 +71,8 @@ class JoyPS4:
         SHARE_BUTTON = 4
         PS_BUTTON = 5
         OPTIONS_BUTTON = 6
-        L3_BUTTON = 7  # Left stick click
-        R3_BUTTON = 8  # Right stick click
+        L3 = 7  # Left stick click
+        R3 = 8  # Right stick click
         L1 = 9
         R1 = 10
         DPAD_UP = 11
