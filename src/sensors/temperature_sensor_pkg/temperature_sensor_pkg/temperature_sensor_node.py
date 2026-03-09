@@ -29,13 +29,13 @@ class Temperature_sensor(Node):
 
         self.serial = serial.Serial(
             port=Ports.ARDUINO_PORT,
-            baudrate=9600,
+            baudrate=115200,
             timeout=0,
         )
 
         self.get_logger().info(f"Successfully opened serial port {Ports.ARDUINO_PORT}")
 
-        self.timer = self.create_timer(0.01, self.timer_callback) #TODO Lower Frequency?!
+        self.timer = self.create_timer(0.1, self.timer_callback)
         self.buffer = bytearray()
         self.max_buffer_size = 1024  # Maximum buffer size to prevent overflow
 
@@ -79,8 +79,8 @@ class Temperature_sensor(Node):
                 "Temperatures [°C]: [%s]" % ", ".join(f"{v:.2f}" for v in values)
             )
 
-            #TODO: The Arduino should publish in the order below!!!
-            sensors_with_position = {0: "Back", 1: "Middle", 2: "Front"} # TODO: Add which sensor_i corresponds to which position in the Hardware
+            # Which sensor_i corresponds to which position in the Hardware
+            sensors_with_position = {0: "Back", 1: "Middle", 2: "Front"} 
 
             for sensor_i in range(len(values)):
                 if values[sensor_i] > 26:  # TODO: Might need to be adapted
@@ -88,7 +88,7 @@ class Temperature_sensor(Node):
                         f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is hot and it will soon throttle down some ESCs: {values[sensor_i]}°C"
                     )  
 
-                if values[sensor_i] >= 60:  # TODO: Might need to be adapted
+                if values[sensor_i] >= 28:  # TODO: Might need to be adapted
                     self.get_logger().warning(
                         f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is too hot and throttles down some ESCs: {values[sensor_i]}°C"
                     )  
