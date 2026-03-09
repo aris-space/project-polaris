@@ -79,6 +79,29 @@ Currently consist of a `.json` to determine button locations and an entry in `Ga
     - [x] Options for axes to be sticks, d-pads, triggers, or more
     - [ ] General improved customisability
 
+## Safety Features
+
+This extension has been hardened for submarine deployment with the following safety features:
+
+- **Publish Mode Safety**: Publish mode is automatically disabled when subscribing to a topic to prevent feedback loops
+- **Array Bounds Checking**: All array accesses are validated to prevent out-of-bounds errors
+- **Input Validation**: Joy messages are validated for reasonable array sizes before processing
+- **Error Handling**: All ROS operations (advertise, unadvertise, publish) are wrapped in try-catch blocks
+- **Frame ID Validation**: Default frame_id is set to "joystick_frame" instead of empty string
+- **Keyboard Event Isolation**: Keyboard listeners only active when keyboard mode is enabled and ignore input fields
+- **Key State Clearing**: All keyboard states are cleared when keyboard mode is disabled
+- **Resource Cleanup**: Topics are properly unadvertised on unmount to prevent resource leaks
+- **Gamepad Validation**: Gamepad indices are validated before access
+- **Configuration Validation**: Settings panel shows errors for invalid configurations
+
+### Production Recommendations
+
+1. **Always set a valid Frame ID** in publish settings (default: "joystick_frame")
+2. **Verify topic names** before enabling publish mode
+3. **Test keyboard mappings** in a safe environment before submarine deployment
+4. **Monitor console** for any warning or error messages during operation
+5. **Use Subscribe Mode** for monitoring without risk of accidental control inputs
+
 
 
 ## Contributions
@@ -92,3 +115,12 @@ This extension has been updated by the POLARIS team to:
 - Improve TypeScript type safety and strict mode compliance
 - Fix linting errors and code quality issues
 - Enhance null/undefined handling for better runtime safety
+- Add comprehensive safety features for submarine deployment
+- Implement array bounds checking and input validation throughout
+- Add error handling for all ROS operations (advertise, unadvertise, publish)
+- Implement proper resource cleanup and memory management
+- Add configuration validation with helpful error messages in settings panel
+- Improve keyboard event handling with input field detection to prevent conflicts
+- Add extensive logging for debugging and monitoring in production
+- Fix frame_id defaults and validation
+- Implement publish mode safety to prevent feedback loops
