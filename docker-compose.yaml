@@ -4,14 +4,8 @@ services:
     container_name: jetson-container
     privileged: true
     network_mode: host
-    # Added hardware acceleration block
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # 1. Use the explicit NVIDIA runtime (crucial for Jetson)
+    runtime: nvidia
     environment:
       - ROS_DOMAIN_ID=0
       - ROS_WS=/ros2_ws
@@ -25,8 +19,7 @@ services:
       - REFRESH_PY_PACKAGES=1
       - CLEAN_BUILD=0
       - ROSDEP_INSTALL=1
-    devices:
-      - /dev:/dev
+      # 2. These belong in Environment, not Devices
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
@@ -35,7 +28,7 @@ services:
       - /dev:/dev
     working_dir: /ros2_ws
     entrypoint: /bin/bash /ros2_ws/entrypoint.sh
-    stdin_open: true # Equivalent to -i
-    tty: true # Equivalent to -t
+    stdin_open: true 
+    tty: true 
     command: bash -lc "sleep infinity"
     restart: unless-stopped
