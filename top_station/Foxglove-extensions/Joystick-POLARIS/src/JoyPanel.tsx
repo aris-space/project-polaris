@@ -22,7 +22,10 @@ import { gamepadToRosJoy } from "./utils/gamepadToRosJoy";
 import {
   Config,
   buildSettingsTree,
-  defaultVisualButtons,
+  defaultButtonContent,
+  flattenButtonContent,
+  buildSectionReferences,
+  normalizeButtonContent,
   settingsActionReducer,
 } from "./panelSettings";
 import { Joy } from "./types";
@@ -94,17 +97,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.keyboardMapping ??= "keyboard_movement";
     partialConfig.gamepadId ??= 0;
     partialConfig.uiScale ??= 1;
-    const defaultButtons = defaultVisualButtons();
-    partialConfig.visualButtons = (partialConfig.visualButtons ?? defaultButtons).map(
-      (mapping, index) => ({
-        label: mapping?.label ?? defaultButtons[index]?.label ?? `B${index + 1}`,
-        primaryButton: Number(mapping?.primaryButton ?? defaultButtons[index]?.primaryButton ?? -1),
-        secondaryButton: Number(
-          mapping?.secondaryButton ?? defaultButtons[index]?.secondaryButton ?? -1,
-        ),
-        color: mapping?.color ?? defaultButtons[index]?.color ?? "primary",
-      }),
-    );
+    partialConfig.buttonsPreset ??= (partialConfig.buttonContent?.length ?? 0) === 0 ? "empty" : "uuv-settings";
+    if (partialConfig.buttonContent == undefined) {
+      partialConfig.buttonContent =
+        partialConfig.buttonsPreset === "empty" ? [] : defaultButtonContent();
+    }
+    partialConfig.buttonContent = normalizeButtonContent(partialConfig.buttonContent);
     
     // Set default pubJoyTopic based on data source and keyboard mapping
     if (partialConfig.pubJoyTopic == undefined) {
@@ -405,8 +403,10 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     const axes: number[] = [0, 0, 0, 0, -1, -1];
     const buttons: number[] = new Array(18).fill(0);
 
+    const flattenedButtons = flattenButtonContent(config.buttonContent);
+
     activeVisualButtonIndices.forEach((index) => {
-      const mapping = config.visualButtons[index];
+      const mapping = flattenedButtons[index];
       if (!mapping) {
         return;
       }
@@ -428,7 +428,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       axes,
       buttons,
     });
-  }, [activeVisualButtonIndices, config.dataSource, config.publishFrameId, config.visualButtons]);
+  }, [activeVisualButtonIndices, config.dataSource, config.publishFrameId, config.buttonContent]);
 
   // Generate Joy from Keys
   useEffect(() => {
@@ -695,7 +695,8 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         ) : null}
         {config.dataSource === "buttons" ? (
           <VisualButtonsPanel
-            mappings={config.visualButtons}
+            mappings={flattenButtonContent(config.buttonContent)}
+            sections={buildSectionReferences(config.buttonContent)}
             activeIndices={activeVisualButtonIndices}
             onPress={handleVisualButtonPress}
             onRelease={handleVisualButtonRelease}
