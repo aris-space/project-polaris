@@ -34,6 +34,7 @@ export type VisualButtonMapping = {
   label: string;
   primaryButton: number;
   secondaryButton: number;
+  color: string;
 };
 
 const BUTTON_NODE_PREFIX = "button-";
@@ -58,12 +59,12 @@ function parseButtonIndexFromPath(path: readonly string[]): number | undefined {
 
 export function defaultVisualButtons(): VisualButtonMapping[] {
   return [
-    { label: "X", primaryButton: 12, secondaryButton: 2 },
-    { label: "Y", primaryButton: 13, secondaryButton: 1 },
-    { label: "A", primaryButton: 14, secondaryButton: -1 },
-    { label: "B", primaryButton: 15, secondaryButton: -1 },
-    { label: "L", primaryButton: 4, secondaryButton: -1 },
-    { label: "R", primaryButton: 5, secondaryButton: -1 },
+    { label: "X", primaryButton: 12, secondaryButton: 2, color: "primary" },
+    { label: "Y", primaryButton: 13, secondaryButton: 1, color: "secondary" },
+    { label: "A", primaryButton: 14, secondaryButton: -1, color: "info" },
+    { label: "B", primaryButton: 15, secondaryButton: -1, color: "warning" },
+    { label: "L", primaryButton: 4, secondaryButton: -1, color: "error" },
+    { label: "R", primaryButton: 5, secondaryButton: -1, color: "success" },
   ];
 }
 
@@ -93,12 +94,28 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
           label: `B${draft.visualButtons.length + 1}`,
           primaryButton: -1,
           secondaryButton: -1,
+          color: "primary",
         });
         return;
       }
 
       if (id === "remove" && buttonIndex != undefined) {
         draft.visualButtons.splice(buttonIndex, 1);
+        return;
+      }
+
+      if (id === "moveUp" && buttonIndex != undefined && buttonIndex > 0) {
+        const temp = draft.visualButtons[buttonIndex - 1];
+        draft.visualButtons[buttonIndex - 1] = draft.visualButtons[buttonIndex]!;
+        draft.visualButtons[buttonIndex] = temp!;
+        return;
+      }
+
+      if (id === "moveDown" && buttonIndex != undefined && buttonIndex < draft.visualButtons.length - 1) {
+        const temp = draft.visualButtons[buttonIndex + 1];
+        draft.visualButtons[buttonIndex + 1] = draft.visualButtons[buttonIndex]!;
+        draft.visualButtons[buttonIndex] = temp!;
+        return;
       }
       return;
     }
@@ -124,6 +141,8 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
           target.primaryButton = Number(value);
         } else if (buttonField === "secondaryButton") {
           target.secondaryButton = Number(value);
+        } else if (buttonField === "color") {
+          target.color = String(value);
         }
       } else if (
         pathStr.includes("gamepadId") ||
@@ -144,7 +163,7 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Data Source",
       input: "select",
       value: config.dataSource,
-        help: "Select where joystick data comes from",
+      help: "Select where joystick data comes from",
       options: [
         {
           label: "Subscribed Joy Topic",
@@ -168,25 +187,29 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
         },
       ],
     },
-    subJoyTopic: {
+  };
+
+  if (config.dataSource === "sub-joy-topic") {
+    dataSourceFields.subJoyTopic = {
       label: "Subsc. Joy Topic",
       input: "select",
       value: config.subJoyTopic,
-      disabled: config.dataSource !== "sub-joy-topic",
-        help: "Select ROS Joy topic to monitor",
+      help: "Select ROS Joy topic to monitor",
       options: (topics ?? [])
         .filter((topic) => topic.datatype === "sensor_msgs/msg/Joy")
         .map((topic) => ({
           label: topic.name,
           value: topic.name,
         })),
-    },
-    gamepadId: {
+    };
+  }
+
+  if (config.dataSource === "gamepad") {
+    dataSourceFields.gamepadId = {
       label: "Gamepad ID",
       input: "select",
       value: config.gamepadId.toString(),
-      disabled: config.dataSource !== "gamepad",
-        help: "Select which gamepad to use (0 is primary)",
+      help: "Select which gamepad to use (0 is primary)",
       options: [
         {
           label: "0",
@@ -201,18 +224,16 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           value: "2",
         },
       ],
-    },
-    keyboardMapping: {
+    };
+  }
+
+  if (config.dataSource === "keyboard") {
+    dataSourceFields.keyboardMapping = {
       label: "KB->Joy Mapping",
       input: "select",
       value: config.keyboardMapping,
-      disabled: config.dataSource !== "keyboard",
-        help: "Select how keyboard keys map to Joy messages",
+      help: "Select how keyboard keys map to Joy messages",
       options: [
-        {
-          label: "Default",
-          value: "default",
-        },
         {
           label: "Keyboard Movement",
           value: "keyboard_movement",
@@ -222,8 +243,8 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           value: "keyboard_buttons",
         },
       ],
-    },
-  };
+    };
+  }
 
   const publishFields: SettingsTreeFields = {
     publishMode: {
@@ -309,7 +330,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Display",
       fields: displayFields,
     },
-    buttons: {
+  };
+
+  if (config.dataSource === "buttons") {
+    settings.buttons = {
       label: "Buttons Mapping",
       actions: [
         {
@@ -319,8 +343,8 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
         } satisfies SettingsTreeNodeAction,
       ],
       children: {},
-    },
-  };
+    };
+  }
   const buttonChildren = settings.buttons?.children;
 
   if (!buttonChildren) {
@@ -328,13 +352,32 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
   }
 
   config.visualButtons.forEach((mapping, idx) => {
-    const actions: SettingsTreeNodeAction[] = [
-      {
-        id: "remove",
+    const actions: SettingsTreeNodeAction[] = [];
+
+    // Add Move Up action if not first button
+    if (idx > 0) {
+      actions.push({
+        id: "moveUp",
         type: "action",
-        label: "Remove",
-      },
-    ];
+        label: "Move Up",
+      });
+    }
+
+    // Add Move Down action if not last button
+    if (idx < config.visualButtons.length - 1) {
+      actions.push({
+        id: "moveDown",
+        type: "action",
+        label: "Move Down",
+      });
+    }
+
+    // Add Remove action
+    actions.push({
+      id: "remove",
+      type: "action",
+      label: "Remove",
+    });
 
     buttonChildren[`${BUTTON_NODE_PREFIX}${idx}`] = {
       label: mapping.label?.trim() ? mapping.label : `Button ${idx + 1}`,
@@ -344,6 +387,20 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
           input: "string",
           value: mapping.label ?? `B${idx + 1}`,
           disabled: config.dataSource !== "buttons",
+        },
+        color: {
+          label: "Color",
+          input: "select",
+          value: mapping.color ?? "primary",
+          disabled: config.dataSource !== "buttons",
+          options: [
+            { label: "Blue", value: "primary" },
+            { label: "Purple", value: "secondary" },
+            { label: "Green", value: "success" },
+            { label: "Red", value: "error" },
+            { label: "Light Blue", value: "info" },
+            { label: "Orange", value: "warning" },
+          ],
         },
         primaryButton: {
           label: "Primary",
