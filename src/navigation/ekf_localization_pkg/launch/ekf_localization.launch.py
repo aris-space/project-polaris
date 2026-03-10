@@ -38,7 +38,7 @@ def generate_launch_description():
                 "input_topic": "/pixhawk/z_ned",
                 "output_topic": "/sensors/pressure/pose_enu",
                 "output_frame_id": "odom",
-                "z_variance": 4.16,
+                "z_variance": 0.04,
                 "unused_variance": 1000000.0,
             }
         ],
