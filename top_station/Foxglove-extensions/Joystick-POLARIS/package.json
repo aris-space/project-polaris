@@ -1,11 +1,11 @@
 {
-  "name": "polaris-joystick",
+  "name": "joystick-POLARIS",
   "displayName": "Joystick (POLARIS)",
   "description": "POLARIS Joystick panel extension for joystick/gamepad control.",
-  "publisher": "Josh Newans, POLARIS",
+  "publisher": "polaris",
   "homepage": "",
 
-  "version": "1.5.0",
+  "version": "2.0.2",
 
   "license": "MIT",
   "main": "./dist/extension.js",

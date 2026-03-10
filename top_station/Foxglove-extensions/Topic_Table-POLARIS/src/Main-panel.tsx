@@ -20,6 +20,9 @@ interface PanelSettings {
   showHeader: boolean;
   staleAfterMissedUpdates: number; // Number of missed updates before marking stale (0 = disabled)
   showFullTopicPath: boolean;
+  leftColumnWidth: number; // Percentage width of left column (0-100)
+  showRawMessage: boolean; // Show original JSON format vs formatted
+  compactMode: boolean; // Use compact row spacing
 }
 
 function TopicsTablePanel({ context }: { context: PanelExtensionContext }): ReactElement {
@@ -29,11 +32,17 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [config, setConfig] = useState<PanelSettings>({
     trackedTopics: [],
-    updateFrequency: 0, // 0 = every frame
+    updateFrequency: 5, // 5 Hz
     showHeader: true,
-    staleAfterMissedUpdates: 3, // stale after 3 missed updates by default
-    showFullTopicPath: true,
+    staleAfterMissedUpdates: 5, // stale after 5 missed updates by default
+    showFullTopicPath: false,
+    leftColumnWidth: 40, // Default to 40%
+    showRawMessage: false, // Default to formatted view
+    compactMode: false, // Default to normal spacing
   });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDividerHovered, setIsDividerHovered] = useState(false);
+  const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
   const [, setForceUpdate] = useState(0); // For forcing re-renders to update staleness
 
@@ -91,10 +100,13 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     if (savedSettings?.trackedTopics) {
       const settingsWithFrequency: PanelSettings = {
         trackedTopics: savedSettings.trackedTopics,
-        updateFrequency: savedSettings.updateFrequency ?? 0,
+        updateFrequency: savedSettings.updateFrequency ?? 5,
         showHeader: savedSettings.showHeader ?? true,
-        staleAfterMissedUpdates: savedSettings.staleAfterMissedUpdates ?? 3,
-        showFullTopicPath: savedSettings.showFullTopicPath ?? true,
+        staleAfterMissedUpdates: savedSettings.staleAfterMissedUpdates ?? 5,
+        showFullTopicPath: savedSettings.showFullTopicPath ?? false,
+        leftColumnWidth: savedSettings.leftColumnWidth ?? 40,
+        showRawMessage: savedSettings.showRawMessage ?? false,
+        compactMode: savedSettings.compactMode ?? false,
       };
       setConfig(settingsWithFrequency);
     }
@@ -208,6 +220,10 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           const fieldKey = path[path.length - 1];
           if (fieldKey === "showFullTopicPath") {
             setConfig((prevConfig) => ({ ...prevConfig, showFullTopicPath: value }));
+          } else if (fieldKey === "showRawMessage") {
+            setConfig((prevConfig) => ({ ...prevConfig, showRawMessage: value }));
+          } else if (fieldKey === "compactMode") {
+            setConfig((prevConfig) => ({ ...prevConfig, compactMode: value }));
           } else {
             setConfig((prevConfig) => ({ ...prevConfig, showHeader: value }));
           }
@@ -238,22 +254,22 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       label: "Update Rate",
       fields: {
         updateFrequency: {
-          label: "How often to update values",
+          label: "Update interval",
           input: "select",
           options: [
             { label: "Every frame (max)", value: 0 },
-            { label: "30 Hz", value: 30 },
-            { label: "10 Hz", value: 10 },
-            { label: "5 Hz", value: 5 },
-            { label: "2 Hz", value: 2 },
-            { label: "1 Hz", value: 1 },
-            { label: "0.5 Hz", value: 0.5 },
-            { label: "0.2 Hz", value: 0.2 },
+            { label: "30 Hz (0.033 s)", value: 30 },
+            { label: "10 Hz (0.1 s)", value: 10 },
+            { label: "5 Hz (0.2 s)", value: 5 },
+            { label: "2 Hz (0.5 s)", value: 2 },
+            { label: "1 Hz (1 s)", value: 1 },
+            { label: "0.5 Hz (2 s)", value: 0.5 },
+            { label: "0.2 Hz (5 s)", value: 0.2 },
           ],
           value: config.updateFrequency,
         },
         staleAfterMissedUpdates: {
-          label: "Mark stale after missed updates",
+          label: "Stale threshold",
           input: "select",
           options: [
             { label: "Disabled", value: 0 },
@@ -262,6 +278,11 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             { label: "3 missed updates", value: 3 },
             { label: "5 missed updates", value: 5 },
             { label: "10 missed updates", value: 10 },
+            { label: "15 missed updates", value: 15 },
+            { label: "20 missed updates", value: 20 },
+            { label: "25 missed updates", value: 25 },
+            { label: "30 missed updates", value: 30 },
+            { label: "50 missed updates", value: 50 },
           ],
           value: config.staleAfterMissedUpdates,
         },
@@ -272,14 +293,24 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       label: "Display",
       fields: {
         showHeader: {
-          label: "Show header row",
+          label: "Header row",
           input: "boolean",
           value: config.showHeader,
         },
         showFullTopicPath: {
-          label: "Show full topic path",
+          label: "Full topic path",
           input: "boolean",
           value: config.showFullTopicPath,
+        },
+        showRawMessage: {
+          label: "Raw format",
+          input: "boolean",
+          value: config.showRawMessage,
+        },
+        compactMode: {
+          label: "Compact spacing",
+          input: "boolean",
+          value: config.compactMode,
         },
       },
     };
@@ -345,7 +376,38 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     updateSettingsTree();
   }, [updateSettingsTree]);
 
-  const formatValue = (value: unknown): string => {
+  const formatRawValue = (value: unknown): string => {
+    if (typeof value === "undefined") {
+      return "No data";
+    }
+
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  };
+
+  const isComplexObject = (value: unknown): boolean => {
+    if (typeof value !== "object" || value == null) {
+      return false;
+    }
+    
+    if (Array.isArray(value)) {
+      return value.length > 3 || value.some((v) => typeof v === "object" && v != null);
+    }
+    
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    
+    // Complex if more than 3 keys or has nested objects/arrays
+    return keys.length > 3 || keys.some((key) => {
+      const val = obj[key];
+      return typeof val === "object" && val != null;
+    });
+  };
+
+  const formatValue = (value: unknown, indent = ""): string => {
     if (typeof value === "undefined") {
       return "No data";
     }
@@ -356,11 +418,23 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
 
     if (typeof value === "object") {
       if (Array.isArray(value)) {
-        // Show array contents if small, otherwise show length
-        if (value.length <= 3) {
-          return `[${value.map((v) => formatValue(v)).join(", ")}]`;
+        // Show array contents if small and simple
+        if (value.length === 0) {
+          return "[]";
         }
-        return `Array[${value.length}]`;
+        
+        const hasComplexItems = value.some((v) => typeof v === "object" && v != null);
+        
+        if (value.length <= 3 && !hasComplexItems) {
+          return `[${value.map((v) => formatValue(v, indent)).join(", ")}]`;
+        }
+        
+        // For larger or complex arrays, show with line breaks
+        const items = value.map((v, i) => {
+          const formatted = formatValue(v, indent + "  ");
+          return `${indent}  [${i}]: ${formatted}`;
+        });
+        return `\n${items.join("\n")}`;
       }
 
       // Handle common ROS message patterns
@@ -368,17 +442,33 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
 
       // Check for std_msgs pattern (single 'data' field)
       if (Object.keys(obj).length === 1 && "data" in obj) {
-        return formatValue(obj.data);
+        return formatValue(obj.data, indent);
       }
 
-      // Show object fields without curly braces
       try {
         const keys = Object.keys(obj);
         if (keys.length === 0) {
-          return "Object";
+          return "{}";
         }
+        
+        // Check if this is a complex object
+        if (isComplexObject(obj)) {
+          // Format with line breaks
+          const lines = keys.map((key) => {
+            const val = obj[key];
+            const formattedValue = formatValue(val, indent + "  ");
+            // If the formatted value starts with a newline, it's a nested structure
+            if (formattedValue.startsWith("\n")) {
+              return `${indent}  ${key}:${formattedValue}`;
+            }
+            return `${indent}  ${key}: ${formattedValue}`;
+          });
+          return `\n${lines.join("\n")}`;
+        }
+        
+        // Simple object - show inline
         if (keys.length <= 3) {
-          return keys.map((key) => `${key}: ${formatValue(obj[key])}`).join(", ");
+          return keys.map((key) => `${key}: ${formatValue(obj[key], indent)}`).join(", ");
         }
         return `${keys.slice(0, 3).join(", ")}...`;
       } catch {
@@ -435,9 +525,57 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     return parts.length > 0 ? parts[parts.length - 1]! : topicName;
   };
 
+  const handleMouseDown = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isDragging || !containerRef) {
+        return;
+      }
+
+      const rect = containerRef.getBoundingClientRect();
+      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+      
+      // Clamp between 20% and 80% for usability
+      const clampedWidth = Math.max(20, Math.min(80, newWidth));
+      
+      setConfig((prevConfig) => ({
+        ...prevConfig,
+        leftColumnWidth: clampedWidth,
+      }));
+    },
+    [isDragging, containerRef],
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  useEffect(() => {
+    if (isDragging) {
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+
+      return () => {
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+    }
+    return undefined;
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "1rem" }}>
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div 
+        ref={setContainerRef} 
+        style={{ flex: 1, overflowY: "auto", position: "relative" }}
+      >
         <table
           style={{
             width: "100%",
@@ -447,8 +585,8 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           }}
         >
           <colgroup>
-            <col style={{ width: "40%" }} />
-            <col style={{ width: "60%" }} />
+            <col style={{ width: `${config.leftColumnWidth}%` }} />
+            <col style={{ width: `${100 - config.leftColumnWidth}%` }} />
           </colgroup>
           {config.showHeader && (
             <thead>
@@ -461,12 +599,14 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                 <th
                   style={{
                     textAlign: "left",
-                    padding: "0.75rem",
+                    padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                     borderRight: "1px solid #555",
                     fontWeight: "bold",
                     color: "white",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 0,
                   }}
                 >
                   Topic Name
@@ -474,7 +614,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                 <th
                   style={{
                     textAlign: "left",
-                    padding: "0.75rem",
+                    padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                     fontWeight: "bold",
                     color: "white",
                     overflow: "hidden",
@@ -507,13 +647,11 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                   >
                     <td
                       style={{
-                        padding: "0.75rem",
+                        padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                         borderRight: "1px solid #444",
                         fontWeight: 500,
                         color: stale ? "#ff8800" : "white",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        wordBreak: "break-word",
                       }}
                     >
                       {stale && "⚠️ "}
@@ -521,13 +659,17 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
                     </td>
                     <td
                       style={{
-                        padding: "0.75rem",
-                        wordBreak: "break-all",
+                        padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
                         color: stale ? "#ff8800" : "white",
                         opacity: stale ? 0.6 : 1,
+                        wordBreak: "break-word",
+                        whiteSpace: "pre-wrap",
+                        fontFamily: config.showRawMessage ? "monospace" : "inherit",
                       }}
                     >
-                      {formatValue(messages.get(t.topicName))}
+                      {config.showRawMessage
+                        ? formatRawValue(messages.get(t.topicName))
+                        : formatValue(messages.get(t.topicName)).replace(/^\n/, "")}
                     </td>
                   </tr>
                 );
@@ -535,6 +677,26 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             )}
           </tbody>
         </table>
+        <div
+          onMouseDown={handleMouseDown}
+          onMouseEnter={() => {
+            setIsDividerHovered(true);
+          }}
+          onMouseLeave={() => {
+            setIsDividerHovered(false);
+          }}
+          style={{
+            position: "absolute",
+            left: `calc(${config.leftColumnWidth}% - 4px)`,
+            top: 0,
+            bottom: 0,
+            width: 8,
+            cursor: "col-resize",
+            zIndex: 20,
+            backgroundColor: isDragging || isDividerHovered ? "#4488ff66" : "transparent",
+            transition: "background-color 0.15s",
+          }}
+        />
       </div>
     </div>
   );

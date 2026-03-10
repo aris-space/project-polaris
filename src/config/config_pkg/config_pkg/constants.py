@@ -24,9 +24,12 @@ class SubConfig:
 
 
 class Ports:
-    FRONT_ULTRASONIC_PORT = "/dev/ttyUSB0"
-    TOP_ULTRASONIC_PORT = "PLACEHOLDER"
+    FRONT_ULTRASONIC_PORT = "/dev/uart_port_1"
+    PING_SONAR_PORT = "/dev/uart_port_2"
+    TOP_ULTRASONIC_PORT = "/dev/uart_port_3"
     ARDUINO_PORT = "/dev/arduino_nano"
+    USB_CAM_FRONT_PORT = "/dev/cam_front"
+    USB_CAM_TUBE_PORT = "/dev/cam_tube"
     SERIAL_PORT1 = "/dev/ttyTHS1"
 
 
