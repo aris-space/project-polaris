@@ -31,9 +31,3 @@ settings.json
 # VS Code extension artifact
 .vscode/settings.json
 
-# MAVLink / Ground Control Station logs
-*.tlog
-*.tlog.raw
-*.parm
-*.bak
-*.log
