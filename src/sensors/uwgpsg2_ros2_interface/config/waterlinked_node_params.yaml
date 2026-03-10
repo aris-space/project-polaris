@@ -1,0 +1,38 @@
+korkyra/uwgps:
+  waterlinked_localization_node:
+    ros__parameters:
+      ros_rate: 2.0 # as max defined 2-4Hz in http://store.waterlinked.com/wp-content/uploads/2020/09/W-MK-20010-1_Underwater_GPS_G2_Datasheet.pdf
+      waterlinked_url: 'http://demo.waterlinked.com' # 'http://10.0.108.6' # 'http://demo.waterlinked.com' # 'http://192.168.2.94' # #
+      
+      # Params for purely ROS-based UW Locator global position projection as a function of 
+      # its relative position w.r.t. the topside and 
+      # external topside GPS/IMU measurements 
+      # If ROS is used for frame transform, "wl_api_use_external*" boolean params should all be False
+      use_ros_based_frame_transform: False   
+
+      # Topic names if (use_ros_based_frame_transform OR wl_api_use_external_*_measurements 
+      # external_gps_measurements_topic: '/korkyra/fix' # sensor_msgs/msg/NavSatFix
+      # external_heading_measurements_topic: '/korkyra/navrelposned' # ublox_msgs/msg/NavRELPOSNED9
+      # external_ned_measurements_topic: '/usv/gps_ned' # geometry_msgs/msg/Vector3Stamped
+      # external_map_origin_measurements_topic: '/usv/map_origin' #geometry_msgs/msg/GeoPointStamped 
+      # external_imu_measurements_topic: '/usv/imu/imu' # sensor_msgs/msg/Imu
+      # external_navigation_status_measurements_topic: '/usv/applanix_position'
+      ros_rate_topside: 10.0 #Hz
+
+      # Params for external Locator relative position emulation
+      use_ros_based_locator_relative_position: False  #should be false if UWGPS is connected
+      #external_locator_relative_position_topic: '/locator_position_relative_wrt_topside' 
+
+      # Params for using WaterLinked API to set external fixed/changing GPS and heading measurements
+      # If global position of the UW Locator corrections through API are used, 
+      # either *fixed and *measurements boolean vars can be True 
+      waterlinked_api_external_master_path: '/api/v1/external/master'
+      # API fixed params
+      wl_api_use_external_gps_fixed: False
+      wl_api_use_external_heading_fixed: False
+      external_gps_fixed_lat: 0.0 # degrees
+      external_gps_fixed_lon: 0.0 # degrees             
+      external_heading_fixed_value: 0.0 # degrees
+      # API external params
+      wl_api_use_external_gps_measurements: True #False
+      wl_api_use_external_heading_measurements: True #False
