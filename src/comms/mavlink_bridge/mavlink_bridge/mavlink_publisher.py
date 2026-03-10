@@ -78,7 +78,7 @@ class MavlinkBridgeSender(Node):
 
         self.port = mavutil.mavlink_connection(f"{Comms.JETSON_IP_ADDRESS}:14600") # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # Serial connection straight to Pixhawk
-
+        
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
 
@@ -138,9 +138,9 @@ class MavlinkBridgeSender(Node):
         self.msg_type_counter_interval = 10
 
         self.logger.info("Requesting LOCAL_POSITION_NED message stream from Pixhawk...")
-        self.serial_port.mav.command_long_send(
-            self.serial_port.target_system,
-            self.serial_port.target_component,
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
             0,  # confirmation
             32,  # message ID = 32 (LOCAL_POSITION_NED)
@@ -159,16 +159,15 @@ class MavlinkBridgeSender(Node):
         # Process ALL available messages in the buffer (not just one)
         while True:
             msg = self.port.recv_match(blocking=False)
-            msg_serial = self.serial_port.recv_match(blocking=False)
-            if msg is None and msg_serial is None:
-                break  # No more messages in either buffer
+            if msg is None:
+                break
 
-            if msg_serial is not None:
-                self.logger.info(f"Received from serial: {msg_serial.get_type()}")
-                if msg_serial.get_type() == "MANUAL_CONTROL":
-                    self.handle_manual_control(msg_serial)
-                elif msg_serial.get_type() == "LOCAL_POSITION_NED":
-                    self.handle_position_ned(msg_serial)
+            # if msg_udp is not None:
+            #     self.logger.info(f"Received from udp: {msg_udp.get_type()}")
+            #     if msg_udp.get_type() == "MANUAL_CONTROL":
+            #         self.handle_manual_control(msg_udp)
+            #     elif msg_udp.get_type() == "LOCAL_POSITION_NED":
+            #         self.handle_position_ned(msg_udp)
                 # We can choose to process serial messages differently if needed
                 # For now, we will just log them and not publish to ROS2
 
@@ -185,6 +184,9 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
+                elif msg.get_type() == "LOCAL_POSITION_NED":
+                    self.logger.info(f"z_ned: LOCAL_POSITION_NED received z={msg.z:.3f}")
+                    self.handle_position_ned(msg)
 
         
 
