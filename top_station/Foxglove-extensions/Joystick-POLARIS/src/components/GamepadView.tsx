@@ -8,7 +8,7 @@ const colStroke = "#ddd";
 const colPrim = "blue";
 const colSec = "cornflowerblue";
 const colAlt = "red";
-const colToggled = "#ffff00";
+const colToggled = "#D68910";
 
 interface Interaction {
   pointerId: number;
@@ -198,8 +198,14 @@ export function GamepadView(props: {
   cbInteractChange: (joy: Joy) => void;
   layoutName: string;
   kbMapping?: Record<string, KbMappingEntry>;
+  uiScale?: number;
 }): React.ReactElement {
   const { joy, cbInteractChange, layoutName, kbMapping } = props;
+
+  if (layoutName === "empty") {
+    return <></>;
+  }
+
   const dispItems = [];
 
   // Build set of mapped button indices for highlighting only active buttons
@@ -228,7 +234,7 @@ export function GamepadView(props: {
   const [displayMapping, setDisplayMapping] = useState<DisplayMapping>([]);
 
   useEffect(() => {
-    if (layoutName === "ps4") {
+    if (layoutName === "ps4" || layoutName === "ps4rawjoy") {
       setDisplayMapping(ps4 as DisplayMapping);
     } else {
       setDisplayMapping([]);
@@ -540,9 +546,15 @@ export function GamepadView(props: {
   }
 
   return (
-    <div>
-      {displayMapping.length === 0 && layoutName !== "empty" ? <h2>No mapping!</h2> : null}
-      <svg viewBox="0 0 512 512" className="preventPan">
+    <div style={{ 
+      width: "100%", 
+      maxWidth: "100%",
+      overflow: "visible",
+      margin: 0,
+      padding: 0
+    }}>
+      {displayMapping.length === 0 && layoutName !== "empty" ? <h2 style={{ margin: 0, fontSize: `${16 * (props.uiScale ?? 1)}px` }}>No mapping!</h2> : null}
+      <svg viewBox="0 0 512 512" className="preventPan" style={{ maxWidth: "100%", height: "auto", display: "block", margin: 0, padding: 0, width: `${512 * (props.uiScale ?? 1)}px` }}>
         <GamepadBackground layoutName={layoutName} />
         {dispItems}
       </svg>
