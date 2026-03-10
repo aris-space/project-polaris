@@ -9,7 +9,7 @@ class CollisionAvoidanceNode(Node):
         super().__init__("collision_avoidance_node")
 
         self.trigger_distance = 0.05  # Distance threshold for triggering emergency stop
-        self.checking = True  # Set via /collision_avoidance/checking (operator controlled)
+        self.checking = False  # Set via /collision_avoidance/checking (operator controlled)
         self.manual_mode_published = False  # Flag to track if manual mode has been published
         self.distance = float("inf")  # Initialize distance to infinity
         self.distance_averager = deque(maxlen=5)
