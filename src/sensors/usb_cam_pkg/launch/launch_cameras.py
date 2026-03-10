@@ -2,7 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
+from config_pkg.constants import Ports
 
 def generate_launch_description():
     respawn = True
@@ -29,7 +29,7 @@ def generate_launch_description():
                 respawn_delay=respawn_delay,
                 parameters=[
                     {
-                        "video_device": "/dev/cam_front",
+                        "video_device": Ports.USB_CAM_FRONT_PORT,
                         "pixel_format": "mjpeg2rgb",  # The format that fixed the crash
                         "image_width": 640,
                         "image_height": 480,
@@ -45,7 +45,7 @@ def generate_launch_description():
                 respawn_delay=respawn_delay,
                 parameters=[
                     {
-                        "video_device": "/dev/cam_tube",
+                        "video_device": Ports.USB_CAM_TUBE_PORT,
                         "pixel_format": "mjpeg2rgb",
                         "image_width": 640,
                         "image_height": 480,

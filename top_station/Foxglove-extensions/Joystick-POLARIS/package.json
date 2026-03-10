@@ -5,7 +5,7 @@
   "publisher": "Josh Newans, POLARIS",
   "homepage": "",
 
-  "version": "1.5.0",
+  "version": "2.0.1",
 
   "license": "MIT",
   "main": "./dist/extension.js",
