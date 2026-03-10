@@ -244,9 +244,9 @@ class MavlinkBridgeReceiver(Node):
         newer MAVLink 2.0 implementations. This has to be tested!
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self.get_logger().info(
-            f"Sending 6DOF command with control input: {control_input}"
-        )
+        # self.get_logger().info(
+        #     f"Sending 6DOF command with control input: {control_input}"
+        # )
         self._file_logger.info(
             f"Sending 6DOF command with control input: {control_input}"
         )
