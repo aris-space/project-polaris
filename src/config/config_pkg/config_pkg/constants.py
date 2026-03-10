@@ -27,6 +27,7 @@ class Ports:
     FRONT_ULTRASONIC_PORT = "/dev/ttyUSB0"
     TOP_ULTRASONIC_PORT = "PLACEHOLDER"
     ARDUINO_PORT = "/dev/arduino_nano"
+    SERIAL_PORT1 = "/dev/ttyTHS1"
 
 
 class Logs:
@@ -156,7 +157,6 @@ class JoyControlMapping:
 
 class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
-    SERIAL_PORT1 = "/dev/ttyTHS1"
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 57600
     PING_SONAR_PORT = "/dev/ttyUSB3"
