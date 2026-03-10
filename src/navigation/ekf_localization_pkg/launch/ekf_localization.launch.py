@@ -28,4 +28,20 @@ def generate_launch_description():
         parameters=[LaunchConfiguration("params_file")],
     )
 
-    return LaunchDescription([params_file_arg, ekf_node])
+    pressure_adapter_node = Node(
+        package="ekf_localization_pkg",
+        executable="pressure_z_ned_to_pose_node",
+        name="pressure_z_ned_to_pose_node",
+        output="screen",
+        parameters=[
+            {
+                "input_topic": "/pixhawk/z_ned",
+                "output_topic": "/sensors/pressure/pose_enu",
+                "output_frame_id": "odom",
+                "z_variance": 4.16,
+                "unused_variance": 1000000.0,
+            }
+        ],
+    )
+
+    return LaunchDescription([params_file_arg, pressure_adapter_node, ekf_node])

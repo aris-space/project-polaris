@@ -25,5 +25,9 @@ setup(
             "pytest",
         ],
     },
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "pressure_z_ned_to_pose_node = ekf_localization_pkg.pressure_z_ned_to_pose_node:main",
+        ]
+    },
 )
