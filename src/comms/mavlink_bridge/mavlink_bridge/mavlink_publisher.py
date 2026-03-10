@@ -4,7 +4,7 @@ import logging, os
 from rclpy.node import Node
 from pymavlink import mavutil
 from datetime import datetime
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Float32, Int16MultiArray
 from mavros_msgs.msg import (
     State,  # HEARTBEAT
     RCIn,  # RC_CHANNELS
@@ -82,6 +82,9 @@ class MavlinkBridgeSender(Node):
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
 
+        self.serial_port.wait_heartbeat()
+        self.logger.info(f"Serial heartbeat received from system {self.serial_port.target_system}")
+
         self.heartbeat_publisher = self.create_publisher(State, "/pixhawk/heartbeat", 10)
 
         # self.attitude_publisher = self.create_publisher(Imu, "/pixhawk/attitude", 10)
@@ -101,6 +104,11 @@ class MavlinkBridgeSender(Node):
         self.manual_control_publisher = self.create_publisher(
             Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
+
+        self.position_publisher = self.create_publisher(
+            Float32, "/pixhawk/z_ned", 10
+        )
+
 
         self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz to avoid serial buffer overflow
 
@@ -129,6 +137,23 @@ class MavlinkBridgeSender(Node):
         }
         self.msg_type_counter_interval = 10
 
+        self.logger.info("Requesting LOCAL_POSITION_NED message stream from Pixhawk...")
+        self.serial_port.mav.command_long_send(
+            self.serial_port.target_system,
+            self.serial_port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            32,  # message ID = 32 (LOCAL_POSITION_NED)
+            100000,  # interval in microseconds (100ms = 10Hz)
+            0, 0, 0, 0, 0
+        )
+        self.logger.info(
+            "LOCAL_POSITION_NED request sent (interval=100ms)"
+        )
+
+
+
+
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
         # Process ALL available messages in the buffer (not just one)
@@ -142,6 +167,8 @@ class MavlinkBridgeSender(Node):
                 #i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
                 if msg_serial.get_type() == "MANUAL_CONTROL":
                     self.handle_manual_control(msg_serial)
+                elif msg_serial.get_type() == "LOCAL_POSITION_NED":
+                    self.handle_position_ned(msg_serial)
                 # We can choose to process serial messages differently if needed
                 # For now, we will just log them and not publish to ROS2
 
@@ -270,8 +297,8 @@ class MavlinkBridgeSender(Node):
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
         # This is a placeholder for handling manual control messages if needed
-        if not self.message_counter("MANUAL_CONTROL"):
-            return
+        if not self.message_counter("MANUAL_CONTROL"): 
+            return 
         
         self.logger.info("manual control callback triggered")
         ros_msg = Int16MultiArray()
@@ -280,6 +307,13 @@ class MavlinkBridgeSender(Node):
         self.logger.info(
             f"Published Manual Control: x={msg.x}, y={msg.y}, z={msg.z}, r={msg.r}, s={msg.s}, t={msg.t}"
         ) 
+    
+    def handle_position_ned(self, msg):
+        """Process POSITION_NED message and publish to ROS2"""
+        ros_msg = Float32()
+        ros_msg.data = msg.z
+        self.position_publisher.publish(ros_msg)
+        self.logger.info(f"Published Position: z={ros_msg.data}")
 
 
 def main(args=None):
