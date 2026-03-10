@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime
 from std_msgs.msg import String
-from config_pkg.constants import Logs, Comms
+from config_pkg.constants import Logs, Comms, Ports
 from rcl_interfaces.msg import SetParametersResult
 import time
 
@@ -35,7 +35,7 @@ class Ice_Measurement(Node):
 
         self.ping = Ping1D()  # initializes object
         self.ping.connect_serial(
-            Comms.PING_SONAR_PORT, Comms.USB0_BAUD_RATE
+            Ports.PING_SONAR_PORT, 115200
         )  # specifies relevant port
         time.sleep(10)
         self.initialization = self.ping.initialize()
