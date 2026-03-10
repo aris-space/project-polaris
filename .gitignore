@@ -28,5 +28,6 @@ settings.json
 **/install/
 **/log/
 /recordings/
-# VS Code extension artifact
+
+#vs code extension artifact
 .vscode/settings.json
