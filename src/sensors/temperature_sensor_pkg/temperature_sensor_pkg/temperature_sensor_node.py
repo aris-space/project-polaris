@@ -75,9 +75,9 @@ class Temperature_sensor(Node):
             msg = Float32MultiArray()
             msg.data = values
             self.publisher_.publish(msg)
-            self.get_logger().info(
-                "Temperatures [°C]: [%s]" % ", ".join(f"{v:.2f}" for v in values)
-            )
+            # self.get_logger().info(
+            #     "Temperatures [°C]: [%s]" % ", ".join(f"{v:.2f}" for v in values)
+            # )
 
             for sensor_i in range(len(values)):
                 if values[sensor_i] > 26:  # TODO: Might need to be adapted
