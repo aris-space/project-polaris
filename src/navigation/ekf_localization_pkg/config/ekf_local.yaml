@@ -1,6 +1,6 @@
 ekf_local_node:
   ros__parameters:
-    frequency: 50.0
+    frequency: 30.0
     sensor_timeout: 0.2
     two_d_mode: false
     print_diagnostics: true
@@ -19,8 +19,8 @@ ekf_local_node:
       false, false, false,
       true,  true,  true,
       false, false, false,
-      true,  true,  true,
-      true,  true,  true
+      false,  false,  false,
+      false,  false,  false
     ]
     imu0_queue_size: 20
     imu0_nodelay: false
@@ -29,39 +29,52 @@ ekf_local_node:
     imu0_remove_gravitational_acceleration: false
 
     # DVL velocity update (from covariance-injected odometry)
-    dvl0: /sensors/dvl/odometry_cov
-    dvl0_config: [
+    odom0: /sensors/dvl/odometry_cov
+    odom0_config: [
       false, false, false,
       false, false, false,
       true,  true,  true,
       false, false, false,
       false, false, false
     ]
-    dvl0_queue_size: 10
-    dvl0_nodelay: false
-    dvl0_differential: false
-    dvl0_relative: false
+    odom0_queue_size: 10
+    odom0_nodelay: false
+    odom0_differential: false
+    odom0_relative: false
+
+    # Pressure depth update from /pixhawk/z_ned converted to ENU pose-z.
+    pose0: /sensors/pressure/pose_enu
+    pose0_config: [
+      false, false, true,
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    pose0_queue_size: 20
+    pose0_nodelay: false
+    pose0_differential: false
+    pose0_relative: false
 
     # Process noise covariance (15x15, row-major)
     process_noise_covariance: [
-      0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.05, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.06, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.06, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.06, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.03, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.02
+      0.12, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.12, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.09, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.06, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005
     ]
 
-    # Pressure integration placeholder:
-    # If you later provide depth as an Odometry/Pose source in ENU,
-    # add pressure0 here and enable only Z in pressure0_config.
-    # For MAVLink LOCAL_POSITION_NED (id 32), convert first: z_enu = -z_ned.
+    # Pressure source notes:
+    # /pixhawk/z_ned is Float32 in NED and is converted by
+    # pressure_z_ned_to_pose_node to /sensors/pressure/pose_enu (z_enu = -z_ned).
