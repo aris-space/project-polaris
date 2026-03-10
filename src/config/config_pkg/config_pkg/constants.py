@@ -30,6 +30,7 @@ class Ports:
     ARDUINO_PORT = "/dev/arduino_nano"
     USB_CAM_FRONT_PORT = "/dev/cam_front"
     USB_CAM_TUBE_PORT = "/dev/cam_tube"
+    SERIAL_PORT1 = "/dev/ttyTHS1"
 
 
 class Logs:
@@ -159,10 +160,8 @@ class JoyControlMapping:
 
 class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
-    SERIAL_PORT1 = "/dev/ttyTHS1"
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 57600
-    PING_SONAR_PORT = "/dev/ttyUSB3"
     JETSON_IP_ADDRESS = "192.168.194.20"
     # PING_SONAR_BAUD_RATE = 115200
     USB0_BAUD_RATE = 115200
