@@ -1,18 +1,25 @@
 import rclpy
+from rclpy import parameter_service
 from rclpy.node import Node
 from std_msgs.msg import String, Float32, Bool
 from collections import deque
+from rcl_interfaces.msg import SetParametersResult
 
 
 class CollisionAvoidanceNode(Node):
     def __init__(self):
         super().__init__("collision_avoidance_node")
 
-        self.trigger_distance = 0.05  # Distance threshold for triggering emergency stop
+        #self.trigger_distance = 0.05  # Distance threshold for triggering emergency stop
         self.checking = False  # Set via /collision_avoidance/checking (operator controlled)
         self.manual_mode_published = False  # Flag to track if manual mode has been published
         self.distance = float("inf")  # Initialize distance to infinity
         self.distance_averager = deque(maxlen=5)
+
+        self.declare_parameter("min_distance", 0.5)
+        self.min_distance = float(self.get_parameter("min_distance").value)
+        self.add_on_set_parameters_callback(self.min_distance_callback)
+
 
         self.get_logger().info("CollisionAvoidanceNode: Node has been initialized")
 
@@ -39,6 +46,19 @@ class CollisionAvoidanceNode(Node):
         self.current_mode = ""
         self.pixhawk_mode = ""
 
+    
+    def min_distance_callback(self, params):
+        """
+        Called when the min_distance parameter is changed.
+        """
+        for param in params:
+            if param.name == "min_distance":
+                self.min_distance = float(param.value)
+                self.get_logger().info(f"Min distance changed! New Min Distance: {self.min_distance}")
+                return SetParametersResult(successful=True)
+        
+        return SetParametersResult(successful=False)
+    
     def mode_cb(self, msg):
         """
         Called when a new mode is published by mode_control_node. This is important because otherwise if the mode is changed after the collision avoidance
@@ -89,7 +109,7 @@ class CollisionAvoidanceNode(Node):
 
         # Trigger emergency when too close and we are checking
         if (
-            self.distance < self.trigger_distance
+            self.distance < self.min_distance
             and len(self.distance_averager) == self.distance_averager.maxlen
             and self.checking
         ):
