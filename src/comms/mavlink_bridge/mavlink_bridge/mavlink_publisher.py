@@ -164,7 +164,7 @@ class MavlinkBridgeSender(Node):
                 break  # No more messages in either buffer
 
             if msg_serial is not None:
-                #i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
+                self.logger.info(f"Received from serial: {msg_serial.get_type()}")
                 if msg_serial.get_type() == "MANUAL_CONTROL":
                     self.handle_manual_control(msg_serial)
                 elif msg_serial.get_type() == "LOCAL_POSITION_NED":
