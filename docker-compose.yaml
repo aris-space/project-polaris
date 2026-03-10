@@ -23,9 +23,10 @@ services:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
       - /dev:/dev
+      - ./mavlink_logs:/root/polaris_logs/
     working_dir: /ros2_ws
-    entrypoint: ["/bin/bash", "/ros2_ws/entrypoint.sh"]
+    entrypoint: [ "/bin/bash", "/ros2_ws/entrypoint.sh" ]
     stdin_open: true
     tty: true
-    command: ["bash", "-lc", "sleep infinity"]
+    command: [ "bash", "-lc", "sleep infinity" ]
     restart: unless-stopped
