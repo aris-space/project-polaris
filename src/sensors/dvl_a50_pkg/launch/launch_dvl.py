@@ -18,9 +18,7 @@ Published topics (under /sensors/dvl/):
 This launch file also publishes a static base_link -> dvl_a50_link transform
 for integration testing.
 """
-
 import os
-from datetime import datetime
 
 import launch
 import launch.events
@@ -30,11 +28,9 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
-    ExecuteProcess,
     LogInfo,
     RegisterEventHandler,
 )
-from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
@@ -43,36 +39,16 @@ from launch_ros.events.lifecycle import ChangeState
 
 
 def generate_launch_description():
-    # Keep rosbags out of the workspace root by default.
-    default_bag_dir = "/bags"
-    os.makedirs(default_bag_dir, exist_ok=True)
-    default_bag_name = os.path.join(
-        default_bag_dir, f"dvl_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    )
-
-    record_dvl_bag = LaunchConfiguration("record_dvl_bag")
-    dvl_bag_name = LaunchConfiguration("dvl_bag_name")
+    # Launch Configurations
     range_mode = LaunchConfiguration("range_mode")
-    respawn = True
-    respawn_delay = 2.0
+    respawn = LaunchConfiguration("respawn")
+    respawn_delay = LaunchConfiguration("respawn_delay")
 
-    record_dvl_bag_arg = DeclareLaunchArgument(
-        "record_dvl_bag",
-        default_value="false",
-        description="If true, start rosbag recording for DVL topics.",
-    )
-    dvl_bag_name_arg = DeclareLaunchArgument(
-        "dvl_bag_name",
-        default_value=default_bag_name,
-        description="Output folder name for rosbag2 recording.",
-    )
+    # Arguments
     range_mode_arg = DeclareLaunchArgument(
         "range_mode",
         default_value="auto",
-        description=(
-            "DVL range mode: auto, '=a', or 'a<=b' "
-            "(examples: auto, =3, 2<=3)."
-        ),
+        description="DVL range mode: auto, '=a', or 'a<=b'",
     )
     respawn_arg = DeclareLaunchArgument(
         "respawn",
@@ -85,14 +61,14 @@ def generate_launch_description():
         description="Seconds to wait before restarting a crashed node.",
     )
 
-    # Load project-specific config (IP address, speed of sound, etc.)
+    # Load project-specific config
     config = os.path.join(
         get_package_share_directory("dvl_a50_pkg"),
         "config",
         "dvl_a50.yaml",
     )
 
-    # The dvl_a50_node executable comes from the dvl_a50 C++ driver package
+    # DVL Lifecycle Node
     dvl_node = LifecycleNode(
         namespace="sensors",
         package="dvl_a50",
@@ -107,7 +83,7 @@ def generate_launch_description():
         respawn_delay=respawn_delay,
     )
 
-    # Lifecycle transition actions
+    # Lifecycle transition events
     configure_event = EmitEvent(
         event=ChangeState(
             lifecycle_node_matcher=launch.events.matches_action(dvl_node),
@@ -122,15 +98,11 @@ def generate_launch_description():
         )
     )
 
-    # on process start -> configure
+    # Event Handlers for State Management
     on_process_start = RegisterEventHandler(
-        OnProcessStart(
-            target_action=dvl_node,
-            on_start=[configure_event],
-        )
+        OnProcessStart(target_action=dvl_node, on_start=[configure_event])
     )
 
-    # on inactive -> activate
     on_inactive = RegisterEventHandler(
         OnStateTransition(
             target_lifecycle_node=dvl_node,
@@ -139,90 +111,48 @@ def generate_launch_description():
         )
     )
 
-    # on active -> log
     on_activated = RegisterEventHandler(
         OnStateTransition(
             target_lifecycle_node=dvl_node,
             goal_state="active",
-            entities=[
-                LogInfo(msg="DVL-A50 reached the 'ACTIVE' state"),
-            ],
+            entities=[LogInfo(msg="DVL-A50 reached the 'ACTIVE' state")],
         )
     )
 
-    # Static base_link -> dvl_a50_link transform for testing.
-    # Translation is a placeholder; replace with your measured mounting offsets.
-    # RPY maps ENU base frame to NED-aligned DVL frame:
-    # roll = pi, pitch = 0, yaw = +pi/4.
+    # Static Transform
     static_tf_base_to_dvl = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="static_tf_base_to_dvl",
         arguments=[
-            "--x",
-            "0.0",
-            "--y",
-            "0.0",
-            "--z",
-            "0.0",
-            "--roll",
-            "3.141592653589793",
-            "--pitch",
-            "0.0",
-            "--yaw",
-            "0.7853981633974483",
-            "--frame-id",
-            "base_link",
-            "--child-frame-id",
-            "dvl_a50_link",
+            "--x", "0.0", "--y", "0.0", "--z", "0.0",
+            "--roll", "3.141592653589793", "--pitch", "0.0", "--yaw", "0.7853981633974483",
+            "--frame-id", "base_link",
+            "--child-frame-id", "dvl_a50_link",
         ],
         output="screen",
         respawn=respawn,
         respawn_delay=respawn_delay,
     )
 
-    # Computes speed-dependent twist covariance with bottom-lock quality gating
-    # Subscribes to /sensors/dvl/velocity (for lock flag) and /sensors/dvl/odometry
-    # Publishes /sensors/dvl/odometry_cov
+    # Covariance Processor
     covariance_node = Node(
         package="dvl_a50_pkg",
         executable="odometry_covariance_node",
         name="dvl_odometry_covariance",
         namespace="sensors",
         parameters=[{
-            "dvl_variant": "performance",  # "standard" (±1.01%) or "performance" (±0.1%)
-            "no_lock_variance": 1.0,       # variance when bottom lock lost [m²/s²]
-            "angular_covariance": 1000000.0,  # very uncertain angular rates (not provided by DVL)
-            "velocity_stale_timeout_sec": 0.5,  # stale lock flag timeout
+            "dvl_variant": "performance",
+            "no_lock_variance": 1.0,
+            "angular_covariance": 1000000.0,
+            "velocity_stale_timeout_sec": 0.5,
         }],
         output="screen",
         respawn=respawn,
         respawn_delay=respawn_delay,
     )
 
-    # Optional rosbag recorder for DVL integration/testing data
-    dvl_rosbag_record = ExecuteProcess(
-        cmd=[
-            "ros2",
-            "bag",
-            "record",
-            "-o",
-            dvl_bag_name,
-            "/sensors/dvl/velocity",
-            "/sensors/dvl/dead_reckoning",
-            "/sensors/dvl/odometry",
-            "/sensors/dvl/odometry_cov",
-            "/tf_static",
-        ],
-        condition=IfCondition(record_dvl_bag),
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
-    )
-
     return LaunchDescription([
-        record_dvl_bag_arg,
-        dvl_bag_name_arg,
         range_mode_arg,
         respawn_arg,
         respawn_delay_arg,
@@ -232,5 +162,4 @@ def generate_launch_description():
         on_activated,
         static_tf_base_to_dvl,
         covariance_node,
-        dvl_rosbag_record,
     ])
