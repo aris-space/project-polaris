@@ -31,14 +31,14 @@ def generate_launch_description():
                 respawn=respawn,
                 respawn_delay=respawn_delay,
             ),
-            Node(
-                package="mavlink_bridge",
-                executable="output_monitor",
-                name="output_monitor",
-                output="screen",
-                respawn=respawn,
-                respawn_delay=respawn_delay,
-            ),
+            # Node(
+            #     package="mavlink_bridge",
+            #     executable="output_monitor",
+            #     name="output_monitor",
+            #     output="screen",
+            #     respawn=respawn,
+            #     respawn_delay=respawn_delay,
+            # ),
             Node(
                 package="mavlink_bridge",
                 executable="ros2_receiver",

@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 import logging, os
 from datetime import datetime
-from config_pkg.constants import Logs, Comms
+from config_pkg.constants import Logs, Comms, Ports
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
@@ -47,7 +47,7 @@ class MavlinkBridgeReceiver(Node):
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection(
-            Comms.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
+            Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
         )  # For sending commands to Pixhawk
         # self.port_in = mavutil.mavlink_connection(
         #     "/dev/ttyTHS1", baud=57600
@@ -244,9 +244,9 @@ class MavlinkBridgeReceiver(Node):
         newer MAVLink 2.0 implementations. This has to be tested!
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self.get_logger().info(
-            f"Sending 6DOF command with control input: {control_input}"
-        )
+        # self.get_logger().info(
+        #     f"Sending 6DOF command with control input: {control_input}"
+        # )
         self._file_logger.info(
             f"Sending 6DOF command with control input: {control_input}"
         )
