@@ -14,18 +14,40 @@
 
     # Measurement/navigation rates.
     # CFG_RATE_MEAS is in milliseconds, CFG_RATE_NAV is number of measurement cycles.
-    # 40ms + 1 cycle -> 25Hz navigation output.
-    CFG_RATE_MEAS: 40
+    # 500ms + 1 cycle -> 2Hz navigation output.
+    CFG_RATE_MEAS: 500
     CFG_RATE_NAV: 1
 
     # UBX outputs over main X20P USB interface (0x01ab).
+    # Keep only the POLARIS-required topics enabled; force other UBX outputs off.
     CFG_MSGOUT_UBX_NAV_HPPOSLLH_USB: 1
     CFG_MSGOUT_UBX_NAV_STATUS_USB: 1
     CFG_MSGOUT_UBX_NAV_COV_USB: 1
-    CFG_MSGOUT_UBX_RXM_COR_USB: 0
-    CFG_MSGOUT_UBX_RXM_RTCM_USB: 1
-
-    # Optional debugging/monitoring messages.
     CFG_MSGOUT_UBX_NAV_PVT_USB: 1
     CFG_MSGOUT_UBX_NAV_SAT_USB: 1
+    CFG_MSGOUT_UBX_RXM_RTCM_USB: 1
+
+    # Explicitly disable other UBX USB outputs to reduce topic noise.
+    CFG_MSGOUT_UBX_MON_COMMS_USB: 0
+    CFG_MSGOUT_UBX_NAV_CLOCK_USB: 0
+    CFG_MSGOUT_UBX_NAV_DOP_USB: 0
+    CFG_MSGOUT_UBX_NAV_EOE_USB: 0
+    CFG_MSGOUT_UBX_NAV_HPPOSECEF_USB: 0
+    CFG_MSGOUT_UBX_NAV_ODO_USB: 0
+    CFG_MSGOUT_UBX_NAV_ORB_USB: 0
+    CFG_MSGOUT_UBX_NAV_POSECEF_USB: 0
+    CFG_MSGOUT_UBX_NAV_POSLLH_USB: 0
+    CFG_MSGOUT_UBX_NAV_RELPOSNED_USB: 0
     CFG_MSGOUT_UBX_NAV_SIG_USB: 0
+    CFG_MSGOUT_UBX_NAV_SVIN_USB: 0
+    CFG_MSGOUT_UBX_NAV_TIMEUTC_USB: 0
+    CFG_MSGOUT_UBX_NAV_VELECEF_USB: 0
+    CFG_MSGOUT_UBX_NAV_VELNED_USB: 0
+    CFG_MSGOUT_UBX_RXM_COR_USB: 0
+    CFG_MSGOUT_UBX_RXM_MEASX_USB: 0
+    CFG_MSGOUT_UBX_RXM_RAWX_USB: 0
+    CFG_MSGOUT_UBX_RXM_SPARTN_USB: 0
+    CFG_MSGOUT_UBX_ESF_MEAS_USB: 0
+    CFG_MSGOUT_UBX_ESF_STATUS_USB: 0
+    CFG_MSGOUT_UBX_SEC_SIG_USB: 0
+    CFG_MSGOUT_UBX_SEC_SIGLOG_USB: 0
