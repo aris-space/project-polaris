@@ -19,11 +19,17 @@ env/
 coverage.xml
 ping-python/
 src/measurement/ping_sonar/
+/.vscode/
+
+settings.json
+.env
 
 # ROS 2 workspace build artifacts
-/build/
-/install/
-/log/
-/src/build/
-/src/install/
-/src/log/
+**/build/
+**/install/
+**/log/
+/recordings/
+# VS Code extension artifact
+.vscode/settings.json
+src/sensors/dvl_a50/
+src/sensors/uwgpsg2_ros2_interface/

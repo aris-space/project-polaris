@@ -59,17 +59,23 @@ AXIS_DEADZONE = 0.05
 MODE_BUTTON_INDICES = [
     0,   # Mode switch safety button (X)
     2,   # Settings safety button (Square)
+    11,  # Emergency Stop (R3)
     12,  # D-pad up  - Mode: Manual Altitude Hold / Settings: Arm Pixhawk
     13,  # D-pad down
     14,  # D-pad left - Mode: Manual 6DOF / Setting: Toggle Stabilisation
     15,  # D-pad right
-    17,  # Emergency Stop (Touchpad)
 ]
 
 
 class JoyHandlerNode(Node):
     def __init__(self):
         super().__init__("joy_handler_node")
+
+        # Tag outgoing /joy messages with the active source so downstream
+        # control nodes can apply source-specific behavior.
+        self.declare_parameter("keyboard_source_frame_id", "keyboard")
+        self.declare_parameter("controller_source_frame_id", "controller")
+        self.declare_parameter("mode_only_source_frame_id", "mode")
 
         self.last_controller_msg = None
         self.last_keyboard_msg = None
@@ -123,16 +129,20 @@ class JoyHandlerNode(Node):
             else:
                 output = self._normalize(self.last_keyboard_msg)
                 self._zero_mode_buttons(output)
+            self._set_source_frame_id(output, "keyboard")
         elif mode_active:
             if self.last_controller_msg is not None:
                 output = self._fuse_mode_and_controller(
                     self.last_mode_msg, self.last_controller_msg
                 )
+                self._set_source_frame_id(output, "controller")
             else:
                 output = self._mode_only(self.last_mode_msg)
+                self._set_source_frame_id(output, "mode_only")
         else:
             if self.last_controller_msg is not None:
                 output = self._normalize(self.last_controller_msg)
+                self._set_source_frame_id(output, "controller")
 
         if output is None:
             return
@@ -219,6 +229,26 @@ class JoyHandlerNode(Node):
         for i in range(min(len(msg.buttons), NUM_BUTTONS)):
             out.buttons[i] = msg.buttons[i]
         return out
+
+    def _set_source_frame_id(self, msg, source):
+        if source == "keyboard":
+            msg.header.frame_id = (
+                self.get_parameter("keyboard_source_frame_id")
+                .get_parameter_value()
+                .string_value
+            )
+        elif source == "controller":
+            msg.header.frame_id = (
+                self.get_parameter("controller_source_frame_id")
+                .get_parameter_value()
+                .string_value
+            )
+        else:
+            msg.header.frame_id = (
+                self.get_parameter("mode_only_source_frame_id")
+                .get_parameter_value()
+                .string_value
+            )
 
 
 def main(args=None):

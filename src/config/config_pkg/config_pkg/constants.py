@@ -6,7 +6,7 @@ Change ENVIRONMENT to the appropriate value based on the testing environment:
 """
 
 ENVIRONMENT = "POOL"  # Options: "POOL", "OPEN_WATER", "ICE_LAKE"
-CONTROLLER_LAYOUT = "JETSON"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
+CONTROLLER_LAYOUT = "FOXGLOVE"  # Options: "DESKTOP", "JETSON", "FOXGLOVE"
 
 
 """
@@ -23,8 +23,18 @@ class SubConfig:
     LEAK_THRESHOLD = 500  # Analog value
 
 
+class Ports:
+    FRONT_ULTRASONIC_PORT = "/dev/uart_port_1"
+    PING_SONAR_PORT = "/dev/uart_port_2"
+    TOP_ULTRASONIC_PORT = "/dev/uart_port_3"
+    ARDUINO_PORT = "/dev/arduino_nano"
+    USB_CAM_FRONT_PORT = "/dev/cam_front"
+    USB_CAM_TUBE_PORT = "/dev/cam_tube"
+
+
 class Logs:
     LOG_DIR = "~/polaris_logs"  # Directory to save logs
+    ROSBAG_DIR = "/ros2_ws/recordings/"  # Directory to save rosbag recordings
 
 
 class JoyPS4:
@@ -115,7 +125,8 @@ class JoyControlMapping:
     SETTING_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Square Button
     MODE_SAFETY_BUTTON_IDX = JoyPS4.X  # X Button
     SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # Share Button
-    EMERGENCY_STOP_BUTTON_IDX = JoyPS4.TOUCHPAD_BUTTON  # Touchpad Button
+    EMERGENCY_STOP_BUTTON_IDX_LEFT = JoyPS4.L3
+    EMERGENCY_STOP_BUTTON_IDX_RIGHT = JoyPS4.R3  # R3 Button
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
     ROLL_RATE_POSITIVE_AXIS_IDX = JoyPS4.R1  # R1 Button
 
@@ -151,4 +162,7 @@ class Comms:
     SERIAL_PORT1 = "/dev/ttyTHS1"
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 57600
-
+    PING_SONAR_PORT = "/dev/ttyUSB3"
+    JETSON_IP_ADDRESS = "192.168.194.20"
+    # PING_SONAR_BAUD_RATE = 115200
+    USB0_BAUD_RATE = 115200
