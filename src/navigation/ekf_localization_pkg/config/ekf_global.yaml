@@ -56,7 +56,7 @@ ekf_global_node:
     odom1_differential: false
     odom1_relative: false
 
-    # Pressure depth update from /pixhawk/z_ned converted to ENU pose-z.
+    # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
     pose0: /sensors/pressure/pose_enu
     pose0_config: [
       false, false, true,
