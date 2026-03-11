@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 import logging, os
 from datetime import datetime
-from config_pkg.constants import Logs, Comms
+from config_pkg.constants import Logs, Comms, Ports
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
@@ -47,7 +47,7 @@ class MavlinkBridgeReceiver(Node):
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection(
-            Comms.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
+            Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
         )  # For sending commands to Pixhawk
         # self.port_in = mavutil.mavlink_connection(
         #     "/dev/ttyTHS1", baud=57600
@@ -83,6 +83,10 @@ class MavlinkBridgeReceiver(Node):
             Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, Comms.SUB_QOS_DEPTH
         )
 
+        self.pixhawk_reboot_subscriber = self.create_subscription(
+            Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
+        )
+    
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
@@ -240,9 +244,9 @@ class MavlinkBridgeReceiver(Node):
         newer MAVLink 2.0 implementations. This has to be tested!
         Input values: -1000 to 1000 (except heave, see below)
         """
-        self.get_logger().info(
-            f"Sending 6DOF command with control input: {control_input}"
-        )
+        # self.get_logger().info(
+        #     f"Sending 6DOF command with control input: {control_input}"
+        # )
         self._file_logger.info(
             f"Sending 6DOF command with control input: {control_input}"
         )
@@ -259,6 +263,27 @@ class MavlinkBridgeReceiver(Node):
             int(pitch),  # s (Extension 1)
             int(roll),  # t (Extension 2)
         )
+    
+    def reboot_cb(self, msg):
+        """
+        Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
+        """
+        if msg.data:
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                0,
+                1, #1 to reboot, 2 for shutdown
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            self.get_logger().info("Sent reboot command to Pixhawk")
+            self._file_logger.info("Sent reboot command to Pixhawk")
 
     """--------------------------------------------- main function ---------------------------------------------"""
 

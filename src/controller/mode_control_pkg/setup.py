@@ -30,6 +30,7 @@ setup(
             "manual_altitude_hold_control_node = mode_control_pkg.manual_altitude_hold_control_node:main",
             "emergency_stop_mode_node = mode_control_pkg.emergency_stop_mode_node:main",
             "mode_control_node = mode_control_pkg.mode_control_node:main",
+            "collision_avoidance_node = mode_control_pkg.collision_avoidance:main",
         ],
     },
 )
