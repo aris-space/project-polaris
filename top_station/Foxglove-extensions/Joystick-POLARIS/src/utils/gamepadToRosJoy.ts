@@ -23,6 +23,12 @@ export function gamepadToRosJoy(gamepad: Gamepad): {
   buttons: number[];
   axes: number[];
 } {
+    // Validate gamepad input
+    if (!gamepad) {
+      console.error("[POLARIS Joystick] Invalid gamepad object");
+      return { buttons: new Array(18).fill(0), axes: new Array(6).fill(0) };
+    }
+
   // Initialize arrays with proper size for ROS Joy
   const buttons: number[] = new Array(18).fill(0);
   const axes: number[] = new Array(6).fill(0);
@@ -63,11 +69,21 @@ export function gamepadToRosJoy(gamepad: Gamepad): {
       const transformFunc = AXIS_TRANSFORMS[transform];
 
       if (gamepadApi >= 0 && joyAxis >= 0 && transformFunc) {
+                // Bounds checking
+                if (joyAxis >= axes.length) {
+                  console.warn(`[POLARIS Joystick] Joy axis index ${joyAxis} out of bounds`);
+                  continue;
+                }
+                if (gamepadApi >= gamepad.axes.length && gamepadApi >= gamepad.buttons.length) {
+                  console.warn(`[POLARIS Joystick] Gamepad axis/button index ${gamepadApi} out of bounds`);
+                  continue;
+                }
+        
         const value = gamepad.axes[gamepadApi] ?? gamepad.buttons[gamepadApi]?.value ?? 0;
         axes[joyAxis] = transformFunc(value);
         
         // Also set button state for triggers (L2/R2 at indices 6 and 7)
-        if (gamepadApi === 6 || gamepadApi === 7) {
+        if ((gamepadApi === 6 || gamepadApi === 7) && gamepadApi < gamepad.buttons.length && gamepadApi < buttons.length) {
           const btn_obj = gamepad.buttons[gamepadApi];
           buttons[gamepadApi] = (btn_obj && btn_obj.pressed) ? 1 : 0;
         }
@@ -82,16 +98,22 @@ export function gamepadToRosJoy(gamepad: Gamepad): {
       const joyButton = stick.joyButton ?? -1;
 
       if (gamepadApiX >= 0 && joyAxisX >= 0) {
-        axes[joyAxisX] = gamepad.axes[gamepadApiX] ?? 0;
+        if (gamepadApiX < gamepad.axes.length && joyAxisX < axes.length) {
+          axes[joyAxisX] = gamepad.axes[gamepadApiX] ?? 0;
+        }
       }
 
       if (gamepadApiY >= 0 && joyAxisY >= 0) {
-        axes[joyAxisY] = gamepad.axes[gamepadApiY] ?? 0;
+        if (gamepadApiY < gamepad.axes.length && joyAxisY < axes.length) {
+          axes[joyAxisY] = gamepad.axes[gamepadApiY] ?? 0;
+        }
       }
 
       if (gamepadApiButton >= 0 && joyButton >= 0) {
-        const btn_obj = gamepad.buttons[gamepadApiButton];
-        buttons[joyButton] = (btn_obj && btn_obj.pressed) ? 1 : 0;
+        if (gamepadApiButton < gamepad.buttons.length && joyButton < buttons.length) {
+          const btn_obj = gamepad.buttons[gamepadApiButton];
+          buttons[joyButton] = (btn_obj && btn_obj.pressed) ? 1 : 0;
+        }
       }
     }
   }

@@ -49,7 +49,7 @@ class ModeControlNode(Node):
         axes = msg.axes
 
         # 1. High Priority: Emergency Stop (Touchpad Button)
-        if buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX] == 1:
+        if buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX_LEFT] == 1 or buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX_RIGHT] == 1:
             self.current_mode = "emergency_stop"
             if self.pixhawk_mode != "MANUAL":
                 self.pixhawk_mode = (
