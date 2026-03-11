@@ -1,0 +1,19 @@
+services:
+  jetson-container:
+    image: ghcr.io/aris-space/project-polaris-docker:runtime
+    container_name: jetson-container
+    privileged: true
+    network_mode: host
+    environment:
+      - ROS_DOMAIN_ID=0
+      - ROS_WS=/ros2_ws
+    volumes:
+      - .:/ros2_ws
+      - ./recordings:/ros2_ws/recordings
+      - /dev:/dev
+    working_dir: /ros2_ws
+    entrypoint: /bin/bash /ros2_ws/entrypoint.sh
+    stdin_open: true # Equivalent to -i
+    tty: true # Equivalent to -t
+    command: bash -lc "sleep infinity"
+    restart: unless-stopped
