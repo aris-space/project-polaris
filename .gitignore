@@ -31,5 +31,4 @@ settings.json
 /recordings/
 # VS Code extension artifact
 .vscode/settings.json
-src/sensors/dvl_a50/
-src/sensors/uwgpsg2_ros2_interface/
+
