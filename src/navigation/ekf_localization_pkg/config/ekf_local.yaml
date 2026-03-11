@@ -42,7 +42,7 @@ ekf_local_node:
     odom0_differential: false
     odom0_relative: false
 
-    # Pressure depth update from /pixhawk/z_ned converted to ENU pose-z.
+    # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
     pose0: /sensors/pressure/pose_enu
     pose0_config: [
       false, false, true,
@@ -76,5 +76,5 @@ ekf_local_node:
     ]
 
     # Pressure source notes:
-    # /pixhawk/z_ned is Float32 in NED and is converted by
-    # pressure_z_ned_to_pose_node to /sensors/pressure/pose_enu (z_enu = -z_ned).
+    # pressure_z_ned_to_pose_node calibrates p_surface at startup and computes
+    # depth = (p_abs - p_surface)/(rho*g), then z_enu = -depth, and publishes pose0.

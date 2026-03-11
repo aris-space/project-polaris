@@ -82,11 +82,18 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {
-                "input_topic": "/pixhawk/z_ned",
+                "input_topic": "/pixhawk/scaled_pressure",
                 "output_topic": "/sensors/pressure/pose_enu",
                 "output_frame_id": "odom",
                 "z_variance": 0.04,
                 "unused_variance": 1000000.0,
+                "water_density_kg_m3": 1000.0,
+                "gravity_m_s2": 9.80665,
+                "calibration_duration_sec": 8.0,
+                "sensor_z_offset_m": 0.0,
+                "update_surface_when_surfaced": False,
+                "surfaced_depth_threshold_m": 0.15,
+                "surface_update_alpha": 0.02,
             }
         ],
     )
