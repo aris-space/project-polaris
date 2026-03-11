@@ -14,18 +14,17 @@
 
     # Measurement/navigation rates.
     # CFG_RATE_MEAS is in milliseconds, CFG_RATE_NAV is number of measurement cycles.
-    # 40ms + 1 cycle -> 25Hz navigation output.
-    CFG_RATE_MEAS: 40
+    # 500ms + 1 cycle -> 2Hz navigation output.
+    CFG_RATE_MEAS: 500
     CFG_RATE_NAV: 1
 
     # UBX outputs over main X20P USB interface (0x01ab).
+    # Keep only the POLARIS-required topics enabled; force other UBX outputs off.
     CFG_MSGOUT_UBX_NAV_HPPOSLLH_USB: 1
     CFG_MSGOUT_UBX_NAV_STATUS_USB: 1
     CFG_MSGOUT_UBX_NAV_COV_USB: 1
-    CFG_MSGOUT_UBX_RXM_COR_USB: 0
-    CFG_MSGOUT_UBX_RXM_RTCM_USB: 1
-
-    # Optional debugging/monitoring messages.
     CFG_MSGOUT_UBX_NAV_PVT_USB: 1
     CFG_MSGOUT_UBX_NAV_SAT_USB: 1
-    CFG_MSGOUT_UBX_NAV_SIG_USB: 0
+    CFG_MSGOUT_UBX_RXM_RTCM_USB: 1
+
+    
