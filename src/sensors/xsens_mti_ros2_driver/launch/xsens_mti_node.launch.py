@@ -43,4 +43,34 @@ def generate_launch_description():
             )
     ld.add_action(xsens_mti_node)
 
+    # Static base_link -> imu_link transform for integration/testing.
+    # TODO: Replace translation/rotation with measured IMU mounting values.
+    static_tf_base_to_imu = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_base_to_imu",
+        arguments=[
+            "--x",
+            "0.0",
+            "--y",
+            "0.0",
+            "--z",
+            "0.0",
+            "--roll",
+            "0.0",
+            "--pitch",
+            "0.0",
+            "--yaw",
+            "0.0",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            "imu_link",
+        ],
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+    ld.add_action(static_tf_base_to_imu)
+
     return ld
