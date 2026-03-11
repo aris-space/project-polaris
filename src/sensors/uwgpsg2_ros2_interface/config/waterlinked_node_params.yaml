@@ -2,7 +2,7 @@ korkyra/uwgps:
   waterlinked_localization_node:
     ros__parameters:
       ros_rate: 2.0 # as max defined 2-4Hz in http://store.waterlinked.com/wp-content/uploads/2020/09/W-MK-20010-1_Underwater_GPS_G2_Datasheet.pdf
-      waterlinked_url: 'http://demo.waterlinked.com' # 'http://10.0.108.6' # 'http://demo.waterlinked.com' # 'http://192.168.2.94' # #
+      waterlinked_url: 'http://demo.waterlinked.com' # TODO: Change this to the actual static IP address of the Topside Unit when available!
       
       # Params for purely ROS-based UW Locator global position projection as a function of 
       # its relative position w.r.t. the topside and 
