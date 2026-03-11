@@ -31,7 +31,7 @@ def generate_launch_description():
     )
     odom_topic_arg = DeclareLaunchArgument(
         "odom_topic",
-        default_value="/odometry/filtered",
+        default_value="/odometry/filtered/local",
         description="Filtered odometry topic from ekf_node.",
     )
 

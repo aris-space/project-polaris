@@ -19,6 +19,11 @@ def generate_launch_description():
         "config",
         "navsat_transform.yaml",
     )
+    default_global_params = Path(
+        get_package_share_directory("ekf_localization_pkg"),
+        "config",
+        "ekf_global.yaml",
+    )
 
     params_file_arg = DeclareLaunchArgument(
         "params_file",
@@ -35,6 +40,16 @@ def generate_launch_description():
         default_value=str(default_navsat_params),
         description="Path to navsat_transform_node parameters YAML.",
     )
+    use_global_ekf_arg = DeclareLaunchArgument(
+        "use_global_ekf",
+        default_value="true",
+        description="Launch global map-frame EKF node.",
+    )
+    global_params_file_arg = DeclareLaunchArgument(
+        "global_params_file",
+        default_value=str(default_global_params),
+        description="Path to robot_localization global EKF parameters YAML.",
+    )
     gps_fix_topic_arg = DeclareLaunchArgument(
         "gps_fix_topic",
         default_value="/fix",
@@ -47,7 +62,7 @@ def generate_launch_description():
     )
     odom_topic_arg = DeclareLaunchArgument(
         "odom_topic",
-        default_value="/odometry/filtered",
+        default_value="/odometry/filtered/local",
         description="EKF odometry topic for navsat_transform_node.",
     )
 
@@ -57,6 +72,7 @@ def generate_launch_description():
         name="ekf_local_node",
         output="screen",
         parameters=[LaunchConfiguration("params_file")],
+        remappings=[("odometry/filtered", "/odometry/filtered/local")],
     )
 
     pressure_adapter_node = Node(
@@ -89,16 +105,29 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_navsat_transform")),
     )
 
+    ekf_global_node = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_global_node",
+        output="screen",
+        parameters=[LaunchConfiguration("global_params_file")],
+        remappings=[("odometry/filtered", "/odometry/filtered/global")],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
     return LaunchDescription(
         [
             params_file_arg,
             use_navsat_arg,
             navsat_params_file_arg,
+            use_global_ekf_arg,
+            global_params_file_arg,
             gps_fix_topic_arg,
             imu_topic_arg,
             odom_topic_arg,
             pressure_adapter_node,
             ekf_node,
             navsat_node,
+            ekf_global_node,
         ]
     )
