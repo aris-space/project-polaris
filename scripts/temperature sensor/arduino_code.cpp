@@ -44,9 +44,9 @@ void loop() {
   long dynamicDelay = constrain((long)(rawDelay), 5000, 65000);
 
   Serial.print("DATA,");
-  Serial.print(t4); Serial.print(",");
-  Serial.print(t5); Serial.print(",");
-  Serial.println(t2);  
+  Serial.print(t4); Serial.print(","); //Front
+  Serial.print(t5); Serial.print(","); //Middle
+  Serial.println(t2);  //Back
 
   delay(dynamicDelay);
 }

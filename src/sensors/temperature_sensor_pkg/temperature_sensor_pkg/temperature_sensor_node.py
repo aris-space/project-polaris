@@ -80,8 +80,7 @@ class Temperature_sensor(Node):
             )
 
             # Which sensor_i corresponds to which position in the Hardware
-            # TODO: Needs to be changed based on new Hardware electronicstube design.
-            sensors_with_position = {0: "Back", 1: "Middle", 2: "Front"} 
+            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
 
             for sensor_i in range(len(values)):
                 if values[sensor_i] > 50:
