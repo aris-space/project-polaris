@@ -27,7 +27,7 @@ class UltraIceEstimation(Node):
 
         self.get_logger().info("Ice Ultra Thickness Node Started")
     
-    def  ice_ulta_thickness(self, t1, t2, salz, temp ,pitch, roll):
+    def  ice_ultra_thickness(self, t1, t2, salz, temp ,pitch, roll):
         delta_t = t2-t1
         c_ice = 3500.0 + (temp*0.6)-(salz*0.3)
         T =(c_ice*delta_t)/2.0
@@ -47,7 +47,7 @@ class UltraIceEstimation(Node):
         pitch = msg.data[5]
 
         # Compute thickness
-        thickness = self.ice_ulta_thickness(t1, t2, salz, temp, pitch, roll)
+        thickness = self.ice_ultra_thickness(t1, t2, salz, temp, pitch, roll)
 
         # Publish result
         out_msg = Float64()
