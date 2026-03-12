@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray 
 from std_msgs.msg import Float64
+from sensor_msgs.msg import FluidPressure
 import random
 
 class SubmarineValues(Node):
@@ -10,7 +11,7 @@ class SubmarineValues(Node):
         super().__init__('submarine_values')
 
         self.pressure_sub = self.create_subscription(
-            Float64,
+            FluidPressure,
             '/pixhawk/scaled_pressure', 
             self.pressure_callback,
             10
@@ -36,6 +37,7 @@ class SubmarineValues(Node):
     
     def pressure_callback(self, msg):
         self.current_pressure_pa = msg.data
+        #TODO Anpassen an Fluidpressure msg type
 
     def timer_callback(self):
 
