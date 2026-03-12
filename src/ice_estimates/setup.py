@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'semira_ros'
+package_name = 'ice_estimates'
 
 setup(
     name=package_name,
@@ -24,9 +24,12 @@ setup(
     },
     entry_points={
         'console_scripts': [
-        'my_node = semira_ros.my_node:main',
-        'simulation_node = semira_ros.simulation_node:main',
-        'ice_node = semira_ros.ice_node:main',
+        'my_node = ice_estimates.my_node:main',
+        'sim_archi_node = ice_estimates.sim_archi_node:main',
+        'ice_node = ice_estimates.ice_node:main',
+        'hybrid_valnode = ice_estimates.hybrid_valnode:main',
+        'sim_ultrasonic_node = ice_estimates.sim_ultrasonic_node:main',
+        'ultrasonic_node = ice_estimates.ultrasonic_node:main',
         ],
     },
 )
