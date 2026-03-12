@@ -19,8 +19,8 @@ class Temperature_sensor(Node):
             DiagnosticArray, "/diagnostics", 10
         )
 
-        self.warn_level = 100
-        self.error_level = 140
+        self.warn_level = 60
+        self.error_level = 80
 
         self.get_logger().info(
             "Temperature Sensor Node started. warn_level=%.1f°C, error_level=%.1f°C"
@@ -29,13 +29,13 @@ class Temperature_sensor(Node):
 
         self.serial = serial.Serial(
             port=Ports.ARDUINO_PORT,
-            baudrate=9600,
+            baudrate=115200,
             timeout=0,
         )
 
         self.get_logger().info(f"Successfully opened serial port {Ports.ARDUINO_PORT}")
 
-        self.timer = self.create_timer(0.01, self.timer_callback)
+        self.timer = self.create_timer(0.1, self.timer_callback)
         self.buffer = bytearray()
         self.max_buffer_size = 1024  # Maximum buffer size to prevent overflow
 
@@ -79,11 +79,19 @@ class Temperature_sensor(Node):
             #     "Temperatures [°C]: [%s]" % ", ".join(f"{v:.2f}" for v in values)
             # )
 
+            # Which sensor_i corresponds to which position in the Hardware
+            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
+
             for sensor_i in range(len(values)):
-                if values[sensor_i] > 26:  # TODO: Might need to be adapted
+                if values[sensor_i] > 50:
                     self.get_logger().warning(
-                        f"Sensor {sensor_i} is hot: {values[sensor_i]}°C"
-                    )  # TODO: Add which sensor_i corresponds to which position in the Hardware
+                        f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is hot and it will soon throttle down some ESCs: {values[sensor_i]}°C"
+                    )  
+
+                if values[sensor_i] >= 60:
+                    self.get_logger().error(
+                        f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is too hot and throttles down some ESCs: {values[sensor_i]}°C"
+                    )  
 
             diag_msg = DiagnosticArray()
             diag_msg.header.stamp = self.get_clock().now().to_msg()
