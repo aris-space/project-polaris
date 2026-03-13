@@ -1,3 +1,4 @@
+from geometry_msgs import msg
 import rclpy
 from rclpy.node import Node
 import logging, os
@@ -6,9 +7,13 @@ from config_pkg.constants import Logs, Comms
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
-from std_msgs.msg import String
-from std_msgs.msg import Bool, Int16MultiArray
+from std_msgs.msg import String, Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
+
+# For Autonomy
+# https://docs.ros.org/en/noetic/api/mavros_msgs/html/msg/PositionTarget.html
+from geometry_msgs.msg import Twist # Needs to be adapted for sending cmd_vel
+from geometry_msgs.msg import PoseStamped  # Kept if you still need it elsewhere
 
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
@@ -71,6 +76,13 @@ class MavlinkBridgeReceiver(Node):
             Int16MultiArray,
             "/pixhawk/manual_control",
             self.manual_control_cb,
+            Comms.SUB_QOS_DEPTH,
+        )
+
+        self.guided_setpoint_subscriber = self.create_subscription(
+            Twist, # Depending on the msg type from imports
+            "/pixhawk/cmd_vel",
+            self.cmd_vel_cb,
             Comms.SUB_QOS_DEPTH,
         )
 
@@ -137,6 +149,96 @@ class MavlinkBridgeReceiver(Node):
                 f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)"
             )
 
+    # Question: Is ROS really ussing ENU and ArduSub NED? - Yes
+    # TODO: Should we use: set_position_target_local_ned_send or SET_POSITION_TARGET_GLOBAL_INT? Unsure which one.
+    # TODO: See https://mavlink.io/en/messages/common.html#SET_POSITION_TARGET_LOCAL_NED
+    """If we send also set_positions:"""
+    """"
+    def guided_setpoint_cb(self, msg):
+        
+        Called when a message arrives in the pixhawk/guided_setpoint topic.
+        The message should contain the desired position, velocityand yaw-angle for the guided setpoint command.
+        
+
+        # 1. Convert ROS Lat/Lon to MAVLink Global Int (Standard WGS84)
+        lat_int = int(msg.latitude * 1e7)
+        lon_int = int(msg.longitude * 1e7)
+        alt_meters = float(msg.altitude)  # Ensure it's a float
+
+        # 2. Velocity stays in NED (m/s)
+        # ROS ENU (vx, vy, vz) -> NED (vy, vx, -vz)
+        vel_x_ned = msg.velocity.y
+        vel_y_ned = msg.velocity.x
+        vel_z_ned = -msg.velocity.z
+
+        # 3. Yaw Transformation: ROS (East 0, CCW) -> ArduPilot (North 0, CW)
+        # We also normalize to 0-2pi range to be safe
+        yaw_ned = (math.pi / 2.0) - msg.yaw
+        while yaw_ned < 0:
+            yaw_ned += 2 * math.pi
+        while yaw_ned > 2 * math.pi:
+            yaw_ned -= 2 * math.pi
+
+        # Bitmask: 2496 (Ignore Accel and Yaw-Rate)
+        type_mask = 2496
+
+        # Send MAVLink SET_POSITION_TARGET_GLOBAL_INT (86)
+        self.port.mav.set_position_target_global_int_send(
+            0,  # time_boot_ms
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,  # Alt is relative to home
+            type_mask,
+            lat_int,
+            lon_int,
+            alt_meters,
+            vel_x_ned,
+            vel_y_ned,
+            vel_z_ned,
+            0,
+            0,
+            0,  # Acceleration (ignored)
+            yaw_ned,  # Yaw in Radians
+            0,  # Yaw-Rate (ignored)
+        )
+    """
+    # For Autonomy if we send just x, z lin.velocity and yaw rate.
+    def cmd_vel_cb(self, msg):
+        # msg is geometry_msgs.msg.Twist        
+        # ArduSub needs GUIDED mode for velocity setpoints
+        if self.pixhawk_mode != "GUIDED":
+            return
+
+        # 1. Map ROS ENU (Body) to ArduSub NED (Body)
+        # ROS X (Forward) -> NED X (Surge)
+        # ROS Y (Left)    -> NED Y (Sway) - We set this to 0 if not used
+        # ROS Z (Up)      -> NED Z (Heave) - Flip sign because Z is down in NED
+        surge = float(msg.linear.x)
+        heave = -float(msg.linear.z) 
+        
+        # ROS Angular Z (CCW) -> NED Yaw Rate (CW) - Flip sign
+        yaw_rate = -float(msg.angular.z)
+
+        # 2. Define the Type Mask
+        # Bits: 1,2,3 (Pos), 5 (Vel Y), 7,8,9 (Acc), 11 (Yaw Angle) are IGNORED
+        # Bits: 4 (Vel X), 6 (Vel Z), 12 (Yaw Rate) are USED
+        type_mask = 3031 # 0b0000101111010111
+
+        # 3. Send to Pixhawk
+        # Using MAV_FRAME_BODY_OFFSET_NED so "Forward" is relative to the sub's nose
+        self.port.mav.set_position_target_local_ned_send(
+            0,                                              # time_boot_ms
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED,      # Frame: Body-Relative
+            type_mask,
+            0.0, 0.0, 0.0,                                  # Position (ignored)
+            surge, 0.0, heave,                              # Velocities (m/s)
+            0.0, 0.0, 0.0,                                  # Acceleration (ignored)
+            0.0,                                            # Yaw Angle (ignored)
+            yaw_rate                                        # Yaw Rate (rad/s)
+        )
+
     def arm_disarm_cb(self, msg):
         """
         Called when a message arrives in the pixhawk/arm_cmd topic. The message should contain a Bool (True to arm, False to disarm).
@@ -198,6 +300,16 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent STABILIZATION mode command")
             self._file_logger.info("Sent STABILIZATION mode command")
+        elif msg.data == "GUIDED":
+            mode_id = 4
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "GUIDED"
+            self.get_logger().info("Sent GUIDED mode command")
+            self._file_logger.info("Sent GUIDED mode command")
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
