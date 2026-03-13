@@ -9,6 +9,9 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 
 using namespace std::chrono_literals;
@@ -33,6 +36,8 @@ public:
     publish_frequency_hz_ = this->get_parameter("publish_frequency_hz").as_double();
 
     publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
+
+    diagnostics_publisher_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
 
     // Initial setup
     open_serial_port();
@@ -132,53 +137,90 @@ private:
         std::bind(&UltrasonicSensorNode::read_sensor, this));
   }
 
-void read_sensor()
-{
-  if (serial_port_ < 0) return;
+  void read_sensor()
+  {
+    float distance_m = -1.0f; // Declared ONCE
 
-  // 1. Send Trigger
-  uint8_t trigger_byte = 0x55;
-  if (write(serial_port_, &trigger_byte, 1) < 0) return;
+    if (serial_port_ >= 0) {
+      uint8_t trigger_byte = 0x55;
+      if (write(serial_port_, &trigger_byte, 1) >= 0) {
+        std::this_thread::sleep_for(70ms);
 
-  // 2. Wait for sensor response
-  std::this_thread::sleep_for(70ms);
+        uint8_t header = 0;
+        bool found_header = false;
+        for (int i = 0; i < 32; ++i) { 
+          if (read(serial_port_, &header, 1) > 0 && header == 0xFF) {
+            found_header = true;
+            break;
+          }
+        }
 
-  // 3. Sync to Header (0xFF)
-  uint8_t header = 0;
-  bool found_header = false;
-  for (int i = 0; i < 32; ++i) { // Try up to 32 bytes to find the start
-    if (read(serial_port_, &header, 1) > 0 && header == 0xFF) {
-      found_header = true;
-      break;
+        if (found_header) {
+          uint8_t data[3]; 
+          if (read(serial_port_, data, 3) == 3) {
+            uint8_t high = data[0];
+            uint8_t low  = data[1];
+            uint8_t sum  = data[2];
+
+            if (((0xFF + high + low) & 0xFF) == sum) {
+              // Update the outer variable (no 'float' keyword here)
+              distance_m = static_cast<float>((high << 8) | low) / 1000.0f;
+              
+              auto msg = std_msgs::msg::Float32();
+              msg.data = distance_m;
+              publisher_->publish(msg);
+              
+              RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
+            }
+          }
+        }
+      }
     }
-  }
-
-  if (!found_header) return;
-
-  // 4. Read Payload
-  uint8_t data[3]; // High, Low, Checksum
-  if (read(serial_port_, data, 3) == 3) {
-    uint8_t high = data[0];
-    uint8_t low  = data[1];
-    uint8_t sum  = data[2];
-
-    if (((0xFF + high + low) & 0xFF) == sum) {
-      float distance_m = static_cast<float>((high << 8) | low) / 1000.0f;
       
-      auto msg = std_msgs::msg::Float32();
-      msg.data = distance_m;
-      publisher_->publish(msg);
-      
-      RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
+    // --- DIAGNOSTICS ---
+    auto diag_msg = diagnostic_msgs::msg::DiagnosticArray();
+    rclcpp::Time now = this->get_clock()->now();
+    diag_msg.header.stamp.sec = static_cast<std::int32_t>(now.seconds());
+    diag_msg.header.stamp.nanosec = static_cast<std::uint32_t>(now.nanoseconds() % 1000000000);
+
+    auto status = diagnostic_msgs::msg::DiagnosticStatus();
+    status.name = this->get_name();
+    
+    auto kv = diagnostic_msgs::msg::KeyValue();
+    kv.key = "distance";
+
+    if (distance_m < 0.0f) { 
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      status.message = "Sensor not connected / no valid data";
+      kv.value = "N/A";
+    } else {
+      kv.value = std::to_string(distance_m);
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      status.message = "OK";
+
+      if (distance_m < 0.001f) {
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+        status.message = "Not publishing valid data";
+      } else if (distance_m < 1.0f) {
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+        status.message = "Obstacle very close, check collision avoidance";
+      } else if (distance_m < 1.5f) {
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+        status.message = "Approaching obstacle";
+      }
     }
+
+    status.values = {kv};
+    diag_msg.status.push_back(status);
+    diagnostics_publisher_->publish(diag_msg);
   }
-}
 
   int serial_port_;
   std::string serial_device_;
   double publish_frequency_hz_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
   OnSetParametersCallbackHandle::SharedPtr callback_handle_;
 };
 
