@@ -1,0 +1,34 @@
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    cmd_vel_topic: "/pixhawk/cmd_vel"
+    controller_plugins: ["PurePursuit3D"]
+    progress_checker_plugin: "ProgressChecker3D"
+    goal_checker_plugins: ["GoalChecker3D"]
+
+    PurePursuit3D:
+      plugin: "orca_nav2::PurePursuitController3D"
+      x_vel: 0.4
+      x_accel: 0.4
+      z_vel: 0.2
+      z_accel: 0.2
+      yaw_vel: 0.4
+      yaw_accel: 0.4
+      lookahead_dist: 1.0
+      transform_tolerance: 1.0
+      goal_tolerance: 0.1
+      tick_rate: 20.0
+      x_error: 0.0
+      yaw_error: 0.0
+
+    GoalChecker3D:
+      plugin: "orca_nav2::GoalChecker3D"
+
+    ProgressChecker3D:
+      plugin: "orca_nav2::ProgressChecker3D"
+
+planner_server:
+  ros__parameters:
+    planner_plugins: ["StraightLinePlanner3D"]
+    StraightLinePlanner3D:
+      plugin: "orca_nav2::StraightLinePlanner3D"
