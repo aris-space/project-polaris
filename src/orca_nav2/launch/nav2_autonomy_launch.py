@@ -63,13 +63,10 @@ def generate_launch_description():
             respawn=respawn,
             respawn_delay=respawn_delay,
             parameters=[params_file],
-            # THE MAGIC LINE: Remaps Nav2 output to your Pixhawk bridge input
             remappings=[('/cmd_vel', '/pixhawk/cmd_vel')]
         ),
 
         # Lifecycle Manager
-        # This node is required! Nav2 nodes start 'hibernating' until this manager
-        # transitions them to the 'Active' state.
         Node(
             package='nav2_lifecycle_manager',
             executable='lifecycle_manager',
