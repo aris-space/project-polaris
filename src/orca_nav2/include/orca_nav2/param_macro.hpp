@@ -27,7 +27,8 @@
 #define ORCA_NAV2__PARAM_MACRO_HPP_
 
 // #include "nav2_util/node_utils.hpp"
-// #include "rclcpp/rclcpp.hpp"
+#include "rclcpp/rclcpp.hpp"
+#include <string>
 
 // #define PARAMETER(node, prefix, param, default) \
 //   nav2_util::declare_parameter_if_not_declared( \
@@ -43,6 +44,7 @@
       node->declare_parameter(full_name, rclcpp::ParameterValue(default_value));   \
     }                                                                              \
     node->get_parameter(full_name, param##_);                                      \
-    std::cout << full_name << " = " << param##_ << std::endl;                      \
+    RCLCPP_INFO(node->get_logger(), "Parameter %s = %f", full_name.c_str(), (double)param##_); \
   } while (0)
+
 #endif  // ORCA_NAV2__PARAM_MACRO_HPP_

@@ -21,10 +21,11 @@
 // SOFTWARE.
 
 #include <string>
+#include <cmath>
 
 #include "nav2_core/progress_checker.hpp"
 #include "orca_nav2/param_macro.hpp"
-#include "orca_shared/util.hpp"
+//#include "orca_shared/util.hpp" // DONE: Delete this dependency!
 
 namespace orca_nav2
 {
@@ -42,6 +43,15 @@ class ProgressChecker3D : public nav2_core::ProgressChecker
   rclcpp::Time baseline_time_;
   bool baseline_set_{false};
 
+  double get_dist_L2_norm(const geometry_msgs::msg::Point & p1, const geometry_msgs::msg::Point & p2) const
+  {
+    double dx = p1.x - p2.x;
+    double dy = p1.y - p2.y;
+    double dz = p1.z - p2.z;
+    double dist_L2_norm = std::sqrt(dx * dx + dy * dy + dz * dz);
+    return dist_L2_norm;
+  }
+
   void set_baseline(const geometry_msgs::msg::Pose & pose)
   {
     baseline_ = pose;
@@ -58,17 +68,18 @@ public:
 
     clock_ = parent->get_clock();
 
-    PARAMETER(parent, plugin_name, radius, 0.5)
-    PARAMETER(parent, plugin_name, time_allowance, 10.0)
+    PARAMETER(parent, plugin_name, radius, 0.5) // TODO: Is this usefulwith this values?
+    PARAMETER(parent, plugin_name, time_allowance, 10.0) // yes v_r >= 0.05 m/s
 
     time_allowance_d_ = rclcpp::Duration::from_seconds(time_allowance_);
 
-    RCLCPP_INFO(parent->get_logger(), "ProgressChecker3D configured");
+    RCLCPP_INFO(parent->get_logger(), "Nav2: ProgressChecker3D configured");
   }
 
   bool check(geometry_msgs::msg::PoseStamped & pose) override
-  {
-    if (!baseline_set_ || orca::dist(pose.pose.position, baseline_.position) > radius_) {
+  {   
+
+    if (!baseline_set_ || get_dist_L2_norm(pose.pose.position, baseline_.position) > radius_) {
       set_baseline(pose.pose);
       return true;
     }
@@ -76,10 +87,7 @@ public:
     return (clock_->now() - baseline_time_) < time_allowance_d_;
   }
 
-  void reset() override
-  {
-    baseline_set_ = false;
-  }
+  void reset() override { baseline_set_ = false; }
 };
 
 }  // namespace orca_nav2

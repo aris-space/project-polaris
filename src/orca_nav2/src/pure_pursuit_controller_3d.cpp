@@ -23,18 +23,34 @@
 // Inspired by
 // https://navigation.ros.org/plugin_tutorials/docs/writing_new_nav2controller_plugin.html
 
+// for the node and launch file...
+// from launch_ros.actions import Node
+
+// nav2_controller_node = Node(
+//     package='nav2_controller',
+//     executable='controller_server',
+//     name='controller_server',
+//     output='screen',
+//     parameters=[your_nav2_params_file],
+//     # THIS IS THE MAGIC LINE:
+//     remappings=[('/cmd_vel', '/pixhawk/cmd_vel')]
+// )
+
+
 #include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>
 #include <vector>
+#include <cmath>
 
 #include "orca_nav2/param_macro.hpp"
-#include "orca_shared/util.hpp"
+// Deleted: #include "orca_shared/util.hpp"
 #include "nav2_core/controller.hpp"
 #include "nav2_core/exceptions.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "pluginlib/class_loader.hpp"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 namespace orca_nav2
 {
@@ -61,10 +77,10 @@ public:
   // Less important for linear.z, as drag is higher and buoyancy tends to dominate
   void decelerate(double & v, const double & goal_dist) const
   {
-    assert(sign(v) == sign(goal_dist));
+    assert(v * goal_dist >= 0);
     auto decel_v = std::sqrt(2 * std::abs(goal_dist) * max_a_);
     auto result_v = std::min(std::abs(v), decel_v);
-    v = (sign(v) ? result_v : -result_v);
+    v = std::copysign(result_v, v);
   }
 
   // Limit acceleration
@@ -78,6 +94,7 @@ public:
     }
   }
 };
+
 
 class PurePursuitController3D : public nav2_core::Controller
 {
@@ -122,41 +139,67 @@ class PurePursuitController3D : public nav2_core::Controller
   static constexpr double upper(double v, double e) {return (1.0 + e) * v;}
 
   constexpr double x_vel_upper() const {return upper(x_vel_, x_error_);}
-
   constexpr double yaw_vel_lower() const {return lower(yaw_vel_, yaw_error_);}
 
   // Return the first pose in the plan > lookahead distance away, or the last pose in the plan
+  // ADDED: Built-in safe TF2 Transform helper (Replaces orca_shared math)
+  bool transform_pose(const geometry_msgs::msg::PoseStamped & in_pose,
+                      geometry_msgs::msg::PoseStamped & out_pose,
+                      const std::string & target_frame) const
+  {
+    try {
+      auto transform = tf_->lookupTransform(
+        target_frame, in_pose.header.frame_id,
+        in_pose.header.stamp, tf2::durationFromSec(transform_tolerance_));
+      tf2::doTransform(in_pose, out_pose, transform);
+      return true;
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_DEBUG(logger_, "Transform failed: %s", ex.what());
+      return false;
+    }
+  }
+
+  double get_dist_L2_norm(const geometry_msgs::msg::Point & p1, const geometry_msgs::msg::Point & p2) const
+  {
+    double dx = p1.x - p2.x;
+    double dy = p1.y - p2.y;
+    double dz = p1.z - p2.z;
+    double dist_L2_norm = std::sqrt(dx * dx + dy * dy + dz * dz);
+    return dist_L2_norm;
+  }
+  
   geometry_msgs::msg::PoseStamped
   find_goal(const geometry_msgs::msg::PoseStamped & pose_f_map) const
   {
     // Walk the plan calculating distance. The plan may be stale, so distances may be
     // decreasing for a while. When they start to increase we've found the closest pose. Then look
     // for the first pose > lookahead_dist_. Return the last pose if we run out of poses.
+    if (plan_.poses.empty()) {
+      return geometry_msgs::msg::PoseStamped(); 
+    }
+
     auto min_dist = std::numeric_limits<double>::max();
     bool dist_decreasing = true;
 
     for (const auto & item : plan_.poses) {
-      auto item_dist = orca::dist(
-        item.pose.position.x - pose_f_map.pose.position.x,
-        item.pose.position.y - pose_f_map.pose.position.y,
-        item.pose.position.z - pose_f_map.pose.position.z);
+      auto item_dist_L2_norm = get_dist_L2_norm(item.pose.position, pose_f_map.pose.position);
 
       if (dist_decreasing) {
-        if (item_dist < min_dist) {
-          min_dist = item_dist;
+        if (item_dist_L2_norm < min_dist) {
+          min_dist = item_dist_L2_norm;
         } else {
           dist_decreasing = false;
         }
       }
 
       if (!dist_decreasing) {
-        if (item_dist > lookahead_dist_) {
+        if (item_dist_L2_norm > lookahead_dist_) {
           return item;
         }
       }
     }
 
-    return plan_.poses[plan_.poses.size() - 1];
+    return plan_.poses.back();
   }
 
   // Modified pure pursuit path tracking algorithm: works in 3D and supports deceleration
@@ -166,11 +209,7 @@ class PurePursuitController3D : public nav2_core::Controller
   {
     // Transform pose odom -> map
     geometry_msgs::msg::PoseStamped pose_f_map;
-    if (!orca::transform_with_tolerance(
-        logger_, tf_, plan_.header.frame_id,
-        pose_f_odom, pose_f_map,
-        transform_tolerance_d_))
-    {
+    if (!transform_pose(pose_f_odom, pose_f_map, plan_.header.frame_id)) {
       return geometry_msgs::msg::Twist{};
     }
 
@@ -182,21 +221,18 @@ class PurePursuitController3D : public nav2_core::Controller
 
     // Transform goal map -> base
     geometry_msgs::msg::PoseStamped goal_f_base;
-    if (!orca::transform_with_tolerance(
-        logger_, tf_, base_frame_id_,
-        goal_f_map, goal_f_base,
-        transform_tolerance_d_))
-    {
+    if (!transform_pose(goal_f_map, goal_f_base, base_frame_id_)) {
       return geometry_msgs::msg::Twist{};
     }
 
-    auto xy_dist_sq = orca::dist_sq(goal_f_base.pose.position.x, goal_f_base.pose.position.y);
-    auto xy_dist = std::sqrt(xy_dist_sq);
+    auto xy_dist_sq = goal_f_base.pose.position.x * goal_f_base.pose.position.x + 
+                      goal_f_base.pose.position.y * goal_f_base.pose.position.y;
+    auto xy_dist_L2_norm = std::sqrt(xy_dist_sq);
     auto z_dist = std::abs(goal_f_base.pose.position.z);
 
 #if 0
     // Useful for debugging, but happens frequently as the sub decelerates
-    if (z_dist < goal_tolerance_ && xy_dist < goal_tolerance_) {
+    if (z_dist < goal_tolerance_ && xy_dist_L2_norm < goal_tolerance_) {
       std::cout << "Decelerating / coasting" << std::endl;
       std::cout << "pose_f_odom: " << orca::to_str(pose_f_odom) << std::endl;
       std::cout << "pose_f_map: " << orca::to_str(pose_f_map) << std::endl;

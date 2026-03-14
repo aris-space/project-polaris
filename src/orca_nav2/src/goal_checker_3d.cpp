@@ -22,6 +22,7 @@
 
 #include <limits>
 #include <string>
+#include <cmath>
 
 #include "angles/angles.h"
 #include "nav2_core/goal_checker.hpp"
@@ -95,7 +96,7 @@ public:
     }
 
     // Check z position
-    return abs(dz) <= z_goal_tolerance_;
+    return std::abs(dz) <= z_goal_tolerance_;
   }
 
   // Return tolerances for use by the controller (added in Galactic)
