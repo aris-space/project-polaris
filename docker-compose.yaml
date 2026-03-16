@@ -7,7 +7,7 @@ services:
     # 1. Use the explicit NVIDIA runtime (crucial for Jetson)
     runtime: nvidia
     environment:
-      - ROS_DOMAIN_ID=0
+      - ROS_DOMAIN_ID=37
       - ROS_WS=/ros2_ws
       - NTRIP_HOST=${NTRIP_HOST:-www.swipos.ch}
       - NTRIP_PORT=${NTRIP_PORT:-2101}
