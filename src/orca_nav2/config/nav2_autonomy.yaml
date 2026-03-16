@@ -7,7 +7,7 @@ controller_server:
     goal_checker_plugins: ["GoalChecker3D"]
 
     PurePursuit3D:
-      plugin: "orca_nav2::PurePursuitController3D"
+      plugin: "orca_nav2/PurePursuitController3D"
       x_vel: 0.4
       x_accel: 0.4
       z_vel: 0.2
@@ -22,13 +22,13 @@ controller_server:
       yaw_error: 0.0
 
     GoalChecker3D:
-      plugin: "orca_nav2::GoalChecker3D"
+      plugin: "orca_nav2/GoalChecker3D"
 
     ProgressChecker3D:
-      plugin: "orca_nav2::ProgressChecker3D"
+      plugin: "orca_nav2/ProgressChecker3D"
 
 planner_server:
   ros__parameters:
     planner_plugins: ["StraightLinePlanner3D"]
     StraightLinePlanner3D:
-      plugin: "orca_nav2::StraightLinePlanner3D"
+      plugin: "orca_nav2/StraightLinePlanner3D"
