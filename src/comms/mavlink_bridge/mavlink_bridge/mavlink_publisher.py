@@ -16,7 +16,7 @@ from sensor_msgs.msg import (
     FluidPressure,  # SCALED_PRESSURE (depth)
 )
 from config_pkg.constants import Comms
-
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
 os.makedirs(log_dir, exist_ok=True)
@@ -100,6 +100,10 @@ class MavlinkBridgeSender(Node):
 
         self.manual_control_publisher = self.create_publisher(
             Int16MultiArray, "/pixhawk/out/manual_control", 10
+        )
+
+        self.diagnostic_publisher = self.create_publisher(
+            DiagnosticArray, "/diagnostics", 10
         )
 
         self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz to avoid serial buffer overflow
@@ -202,6 +206,50 @@ class MavlinkBridgeSender(Node):
             f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
         )
 
+
+        diag_msg = DiagnosticArray()
+        diag_msg.header.stamp = self.get_clock().now().to_msg()
+        
+        status_mode = DiagnosticStatus()
+        status_mode.name = "Mode"
+        status_mode.level = DiagnosticStatus.OK
+        status_mode.message = "OK"
+        status_mode.values = [KeyValue(key="mode", value=ros_msg.mode)]
+        diag_msg.status.append(status_mode)
+
+        status_armed = DiagnosticStatus()
+        status_armed.name = "Armed"
+        status_armed.level = DiagnosticStatus.OK
+        status_armed.message = "OK"
+        status_armed.values = [KeyValue(key="armed", value=str(ros_msg.armed))]
+        diag_msg.status.append(status_armed)
+
+        status_system_status = DiagnosticStatus()
+        status_system_status.name = "System Status"
+        status_system_status.level = DiagnosticStatus.OK
+        status_system_status.message = "OK"
+        status_system_status.values = [KeyValue(key="system_status", value=str(ros_msg.system_status))]
+
+        if ros_msg.system_status == 4:
+            status_system_status.level = DiagnosticStatus.OK
+            status_system_status.message = "ACTIVE"
+        elif ros_msg.system_status == 3:
+            status_system_status.level = DiagnosticStatus.OK
+            status_system_status.message = "STANDBY"
+        elif ros_msg.system_status in (0, 1, 2):
+            status_system_status.level = DiagnosticStatus.WARN
+            status_system_status.message = "Not ready (UNINIT/BOOT/CALIBRATING)"
+        elif ros_msg.system_status in (5, 6):
+            status_system_status.level = DiagnosticStatus.ERROR
+            status_system_status.message = "CRITICAL or EMERGENCY"
+        elif ros_msg.system_status in (7, 8):
+            status_system_status.level = DiagnosticStatus.ERROR
+            status_system_status.message = "POWEROFF or FLIGHT_TERMINATION"
+
+        diag_msg.status.append(status_system_status)
+        self.diagnostic_publisher.publish(diag_msg)
+
+
     # def handle_attitude(self, msg):
     #     """Process ATTITUDE message and publish to ROS2"""
     #     ros_msg = Imu()
@@ -250,10 +298,48 @@ class MavlinkBridgeSender(Node):
         # battery_remaining is percentage (0-100), ROS2 expects 0.0-1.0
         ros_msg.percentage = float(msg.battery_remaining) / 100.0
 
+        ros_msg.voltage = sum(msg.voltages[:4]) / 1000.0
+
         self.battery_publisher.publish(ros_msg)
         self.logger.info(
             f"Published Battery: Current={ros_msg.current:.2f}A, Remaining={ros_msg.percentage:.0%}"
         )
+    
+
+        diag_msg = DiagnosticArray()
+        diag_msg.header.stamp = self.get_clock().now().to_msg()
+
+        # Battery remaining 
+        status_remaining = DiagnosticStatus()
+        status_remaining.name = "Battery: Remaining"
+        status_remaining.level = DiagnosticStatus.OK
+        status_remaining.message = "OK"
+        status_remaining.values = [KeyValue(key="remaining", value=f"{ros_msg.percentage:.0%}")]
+        if ros_msg.percentage < 0.25:
+            status_remaining.level = DiagnosticStatus.ERROR
+            status_remaining.message = "Dangerously low battery"
+        elif ros_msg.percentage < 0.4:
+            status_remaining.level = DiagnosticStatus.WARN
+            status_remaining.message = "Battery getting low"
+        diag_msg.status.append(status_remaining)
+
+        # Battery current 
+        status_current = DiagnosticStatus()
+        status_current.name = "Battery: Current"
+        status_current.level = DiagnosticStatus.OK
+        status_current.message = "OK"
+        status_current.values = [KeyValue(key="current_A", value=f"{ros_msg.current:.2f}")]
+        diag_msg.status.append(status_current)
+        
+
+        status_voltage = DiagnosticStatus()
+        status_voltage.name = "Battery: Voltage"
+        status_voltage.level = DiagnosticStatus.OK
+        status_voltage.message = "OK"
+        status_voltage.values = [KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")]
+        diag_msg.status.append(status_voltage)
+
+        self.diagnostic_publisher.publish(diag_msg)
 
     def handle_scaled_pressure(self, msg):
         """Process SCALED_PRESSURE2(this is the bluerobotics pressure sensor) message and publish to ROS2"""
