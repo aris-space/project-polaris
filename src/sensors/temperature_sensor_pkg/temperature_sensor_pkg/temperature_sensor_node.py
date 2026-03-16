@@ -84,46 +84,37 @@ class Temperature_sensor(Node):
             )
 
             # Which sensor_i corresponds to which position in the Hardware
-            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
+            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"}
+
+            diag_msg = DiagnosticArray()
+            diag_msg.header.stamp = self.get_clock().now().to_msg()
             
             for sensor_i, temp in enumerate(values):
                 pos = sensors_with_position.get(sensor_i)
 
-                if temp >= 60:
-                    self.get_logger().error(
-                        f"Sensor {sensor_i} ({pos}) is CRITICAL: {temp}°C. Throttling ESCs now."
-                    )
-                
-                elif temp >= 54:
-                    self.get_logger().warning(
-                        f"Sensor {sensor_i} ({pos}) is HOT: {temp}°C."
-                    )                
-
-            diag_msg = DiagnosticArray()
-            diag_msg.header.stamp = self.get_clock().now().to_msg()
-
-            for i, v in enumerate(values):
-
                 status = DiagnosticStatus()
-                status.name = f"Sensor {i} (Internal)"  # Give it a unique name
-                status.hardware_id = f"ds18b20_{i}"  # Unique ID
+                status.name = f"Sensor {sensor_i} ({pos})"  # Give it a unique name
+                status.hardware_id = f"ds18b20_{sensor_i}"  # Unique ID
                 level = DiagnosticStatus.OK
                 message = "OK"
 
                 # Add the raw data as a KeyValue pair
-                status.values = [KeyValue(key="temp_c", value=f"{v:.2f}")]
+                status.values = [KeyValue(key="temp_c", value=f"{temp:.2f}")]              
 
-                if v <= DISCONNECTED_TEMP:
+                if temp <= DISCONNECTED_TEMP:
                     level = DiagnosticStatus.ERROR
-                    message = f"Sensor {i} disconnected (-127°C)"
+                    message = f"Sensor {sensor_i} ({pos}) disconnected (-127°C)."
+                    self.get_logger().error(message)
 
-                elif v >= self.error_level:
+                elif temp >= self.error_level:
                     level = DiagnosticStatus.ERROR
-                    message = f"Sensor {i} temperature >= {self.error_level}°C"
+                    message = f"Sensor {sensor_i} ({pos}) is CRITICAL: {temp}°C. Throttling ESCs now."
+                    self.get_logger().error(message)
 
-                elif v >= self.warn_level:
+                elif temp >= self.warn_level:
                     level = DiagnosticStatus.WARN
-                    message = f"Sensor {i} temperature >= {self.warn_level}°C"
+                    message = f"Sensor {sensor_i} ({pos}) is HOT: {temp}°C."
+                    self.get_logger().warning(message)
 
                 status.level = level
                 status.message = message
