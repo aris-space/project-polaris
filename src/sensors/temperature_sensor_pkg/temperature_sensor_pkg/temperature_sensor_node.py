@@ -19,8 +19,8 @@ class Temperature_sensor(Node):
             DiagnosticArray, "/diagnostics", 10
         )
 
-        self.warn_level = 60
-        self.error_level = 80
+        self.warn_level = 50
+        self.error_level = 60
 
         self.get_logger().info(
             "Temperature Sensor Node started. warn_level=%.1f°C, error_level=%.1f°C"
@@ -44,6 +44,10 @@ class Temperature_sensor(Node):
         n = self.serial.in_waiting
         if n > 0:
             self.buffer.extend(self.serial.read(n))
+        
+        if len(self.buffer) > self.max_buffer_size:
+            self.get_logger().warn("[TemperatureSensor] Serial buffer overflow. Clearing buffer.")
+            self.buffer.clear()
 
         while b"\n" in self.buffer:
             line, _, rest = self.buffer.partition(b"\n")
@@ -81,17 +85,19 @@ class Temperature_sensor(Node):
 
             # Which sensor_i corresponds to which position in the Hardware
             sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
+            
+            for sensor_i, temp in enumerate(values):
+                pos = sensors_with_position.get(sensor_i)
 
-            for sensor_i in range(len(values)):
-                if values[sensor_i] > 50:
-                    self.get_logger().warning(
-                        f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is hot and it will soon throttle down some ESCs: {values[sensor_i]}°C"
-                    )  
-
-                if values[sensor_i] >= 60:
+                if temp >= 60:
                     self.get_logger().error(
-                        f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is too hot and throttles down some ESCs: {values[sensor_i]}°C"
-                    )  
+                        f"Sensor {sensor_i} ({pos}) is CRITICAL: {temp}°C. Throttling ESCs now."
+                    )
+                
+                elif temp >= 54:
+                    self.get_logger().warning(
+                        f"Sensor {sensor_i} ({pos}) is HOT: {temp}°C."
+                    )                
 
             diag_msg = DiagnosticArray()
             diag_msg.header.stamp = self.get_clock().now().to_msg()
