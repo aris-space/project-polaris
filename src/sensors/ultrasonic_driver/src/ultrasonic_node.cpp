@@ -191,14 +191,14 @@ private:
 
     if (distance_m < 0.0f) { 
       status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-      status.message = "Sensor not connected / no valid data";
+      status.message = "Sensor not connected / no data";
       kv.value = "N/A";
     } else {
       kv.value = std::to_string(distance_m);
       status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
       status.message = "OK";
 
-      if (distance_m < 0.001f) {
+      if (distance_m < 0.03f) {
         status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
         status.message = "Not publishing valid data";
       } else if (distance_m < 1.0f) {
