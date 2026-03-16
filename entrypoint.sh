@@ -50,7 +50,7 @@ if [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
 fi
 
 # 2) Optional dependency install for mounted workspaces.
-if [ "${ROSDEP_INSTALL}" = "1" ]; then
+if [ "${ROSDEP_INSTALL}" = "0" ]; then
   if command -v rosdep-install-workspace >/dev/null 2>&1; then
     rosdep-install-workspace "${ROS_WS}"
   elif command -v rosdep >/dev/null 2>&1; then
