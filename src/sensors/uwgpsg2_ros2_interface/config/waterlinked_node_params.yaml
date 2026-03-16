@@ -7,7 +7,7 @@ korkyra/uwgps:
       # its relative position w.r.t. the topside and 
       # external topside GPS/IMU measurements 
       # If ROS is used for frame transform, "wl_api_use_external*" boolean params should all be False
-      use_ros_based_frame_transform: False   
+      use_ros_based_frame_transform: True   
 
       # Topic names if (use_ros_based_frame_transform OR wl_api_use_external_*_measurements 
       # external_gps_measurements_topic: '/korkyra/fix' # sensor_msgs/msg/NavSatFix
