@@ -19,8 +19,8 @@ class Temperature_sensor(Node):
             DiagnosticArray, "/diagnostics", 10
         )
 
-        self.warn_level = 60
-        self.error_level = 80
+        self.warn_level = 50
+        self.error_level = 60
 
         self.get_logger().info(
             "Temperature Sensor Node started. warn_level=%.1f°C, error_level=%.1f°C"
@@ -30,11 +30,13 @@ class Temperature_sensor(Node):
         self.serial = serial.Serial(
             port=Ports.ARDUINO_PORT,
             baudrate=115200,
+            baudrate=115200,
             timeout=0,
         )
 
         self.get_logger().info(f"Successfully opened serial port {Ports.ARDUINO_PORT}")
 
+        self.timer = self.create_timer(0.1, self.timer_callback)
         self.timer = self.create_timer(0.1, self.timer_callback)
         self.buffer = bytearray()
         self.max_buffer_size = 1024  # Maximum buffer size to prevent overflow
@@ -44,6 +46,10 @@ class Temperature_sensor(Node):
         n = self.serial.in_waiting
         if n > 0:
             self.buffer.extend(self.serial.read(n))
+        
+        if len(self.buffer) > self.max_buffer_size:
+            self.get_logger().warn("[TemperatureSensor] Serial buffer overflow. Clearing buffer.")
+            self.buffer.clear()
 
         while b"\n" in self.buffer:
             line, _, rest = self.buffer.partition(b"\n")
@@ -82,42 +88,38 @@ class Temperature_sensor(Node):
             # Which sensor_i corresponds to which position in the Hardware
             sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
 
-            for sensor_i in range(len(values)):
-                if values[sensor_i] > 50:
-                    self.get_logger().warning(
-                        f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is hot and it will soon throttle down some ESCs: {values[sensor_i]}°C"
-                    )  
-
-                if values[sensor_i] >= 60:
-                    self.get_logger().error(
-                        f"Sensor {sensor_i}; Position {sensors_with_position.get(sensor_i, "Unkown")} is too hot and throttles down some ESCs: {values[sensor_i]}°C"
-                    )  
+            # Which sensor_i corresponds to which position in the Hardware
+            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"}
 
             diag_msg = DiagnosticArray()
             diag_msg.header.stamp = self.get_clock().now().to_msg()
-
-            for i, v in enumerate(values):
+            
+            for sensor_i, temp in enumerate(values):
+                pos = sensors_with_position.get(sensor_i)
 
                 status = DiagnosticStatus()
-                status.name = f"Sensor {i} (Internal)"  # Give it a unique name
-                status.hardware_id = f"ds18b20_{i}"  # Unique ID
+                status.name = f"Sensor {sensor_i} ({pos})"  # Give it a unique name
+                status.hardware_id = f"ds18b20_{sensor_i}"  # Unique ID
                 level = DiagnosticStatus.OK
                 message = "OK"
 
                 # Add the raw data as a KeyValue pair
-                status.values = [KeyValue(key="temp_c", value=f"{v:.2f}")]
+                status.values = [KeyValue(key="temp_c", value=f"{temp:.2f}")]              
 
-                if v <= DISCONNECTED_TEMP:
+                if temp <= DISCONNECTED_TEMP:
                     level = DiagnosticStatus.ERROR
-                    message = f"Sensor {i} disconnected (-127°C)"
+                    message = f"Sensor {sensor_i} ({pos}) disconnected (-127°C)."
+                    self.get_logger().error(message)
 
-                elif v >= self.error_level:
+                elif temp >= self.error_level:
                     level = DiagnosticStatus.ERROR
-                    message = f"Sensor {i} temperature >= {self.error_level}°C"
+                    message = f"Sensor {sensor_i} ({pos}) is CRITICAL: {temp}°C. Throttling ESCs now."
+                    self.get_logger().error(message)
 
-                elif v >= self.warn_level:
+                elif temp >= self.warn_level:
                     level = DiagnosticStatus.WARN
-                    message = f"Sensor {i} temperature >= {self.warn_level}°C"
+                    message = f"Sensor {sensor_i} ({pos}) is HOT: {temp}°C."
+                    self.get_logger().warning(message)
 
                 status.level = level
                 status.message = message
