@@ -30,13 +30,11 @@ class Temperature_sensor(Node):
         self.serial = serial.Serial(
             port=Ports.ARDUINO_PORT,
             baudrate=115200,
-            baudrate=115200,
             timeout=0,
         )
 
         self.get_logger().info(f"Successfully opened serial port {Ports.ARDUINO_PORT}")
 
-        self.timer = self.create_timer(0.1, self.timer_callback)
         self.timer = self.create_timer(0.1, self.timer_callback)
         self.buffer = bytearray()
         self.max_buffer_size = 1024  # Maximum buffer size to prevent overflow
@@ -88,8 +86,6 @@ class Temperature_sensor(Node):
             # Which sensor_i corresponds to which position in the Hardware
             sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
 
-            # Which sensor_i corresponds to which position in the Hardware
-            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"}
 
             diag_msg = DiagnosticArray()
             diag_msg.header.stamp = self.get_clock().now().to_msg()
