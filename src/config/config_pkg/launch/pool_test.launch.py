@@ -162,6 +162,15 @@ def generate_launch_description():
         respawn_delay=respawn_delay,
     )
 
+    jetson_temperature_node = Node(
+        package="jetson_temperature",
+        executable="jetson_temp",
+        name="jetson_temperature_monitor_node",
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -220,5 +229,6 @@ def generate_launch_description():
             ping_sonar_node,
             foxglove_bridge_node,
             rosbag_record,
+            jetson_temperature_node,
         ]
     )
