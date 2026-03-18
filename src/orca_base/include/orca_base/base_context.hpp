@@ -36,7 +36,6 @@ namespace orca_base
   CXT_MACRO_MEMBER(down_frame_id, std::string, "down") \
   CXT_MACRO_MEMBER(odom_frame_id, std::string, "odom") \
   CXT_MACRO_MEMBER(base_frame_id, std::string, "base_link") \
-  CXT_MACRO_MEMBER(camera_frame_id, std::string, "left_camera_link") \
  \
   CXT_MACRO_MEMBER(slam_timeout_ms, int, 1000) \
   CXT_MACRO_MEMBER(transform_expiration_ms, int, 0) \

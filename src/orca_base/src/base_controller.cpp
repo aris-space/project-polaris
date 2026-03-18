@@ -25,7 +25,6 @@
 #include <utility>
 
 #include "geographic_msgs/msg/geo_pose_stamped.hpp"
-#include "mavros_msgs/msg/override_rc_in.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "orca_base/underwater_motion.hpp"
 #include "orca_shared/model.hpp"

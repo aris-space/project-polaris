@@ -122,20 +122,6 @@ thruster4_topic = "/model/orca4/joint/thruster4_joint/cmd_"
 thruster5_topic = "/model/orca4/joint/thruster5_joint/cmd_"
 thruster6_topic = "/model/orca4/joint/thruster6_joint/cmd_"
 
-# Stereo camera
-# TODO(clyde) adjust mass, add collision (buoyancy) volume, etc.
-stereo_baseline = 0.36  # Use same baseline as Orca3 for now
-camera_radius = 0.0275
-camera_height = 0.135
-camera_x = -0.18
-camera_y = stereo_baseline / 2
-camera_z = (camera_height - visual_z) / 2 - 0.01
-camera_sensor_z = -camera_height / 2 - 0.02
-camera_mass = 0.001
-camera_ixx = 0.001
-camera_iyy = 0.001
-camera_izz = 0.001
-camera_far_clip = 4  # Furthest distance the camera can "see"
 
 # Fossen equation, see "Guidance and Control of Ocean Vehicles" p. 246
 def thrust_to_ang_vel(thrust):
