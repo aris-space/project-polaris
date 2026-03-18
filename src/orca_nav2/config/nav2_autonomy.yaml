@@ -32,3 +32,45 @@ planner_server:
     planner_plugins: ["StraightLinePlanner3D"]
     StraightLinePlanner3D:
       plugin: "orca_nav2/StraightLinePlanner3D"
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: ""
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: True
+        inflation_radius: 0.5
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      track_unknown_space: true
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: ""
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: True
+        inflation_radius: 0.5
