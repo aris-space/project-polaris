@@ -164,7 +164,7 @@ def generate_launch_description():
 
     jetson_temperature_node = Node(
         package="jetson_temperature",
-        executable="jetson_temp",
+        executable="jetson_temperature",
         name="jetson_temperature_monitor_node",
         output="screen",
         respawn=respawn,
