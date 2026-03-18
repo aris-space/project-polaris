@@ -220,7 +220,7 @@
 
         # Enable or disable manual gyro bias estimation.
         # If enabled, specify the 'event_interval' and 'duration' in 'manual_gyro_bias_param'.
-        enable_manual_gyro_bias: true  # TODO: try true if IMU has frequent stationary periods (e.g. docked), monitor /status
+        enable_manual_gyro_bias: false  # TODO: try true if IMU has frequent stationary periods (e.g. docked), monitor /status
 
         # Parameters for manual gyro bias estimation:
         # - 'event_interval': Time in seconds between two consecutive invocations.
