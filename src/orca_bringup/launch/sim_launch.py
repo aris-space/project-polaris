@@ -157,10 +157,16 @@ def generate_launch_description():
             package='ros_gz_bridge',
             executable='parameter_bridge',
             arguments=[
-                '/model/orca4/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+                '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
             ],
             output='screen'
         ),
+
+        Node(
+            package='orca_base',
+            executable='odom_to_path_node',
+            output='screen'
+        ),      
 
         # Bring up Orca and Nav2 nodes
         IncludeLaunchDescription(
