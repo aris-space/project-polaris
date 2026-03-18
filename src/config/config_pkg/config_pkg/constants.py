@@ -28,8 +28,8 @@ class Ports:
     PING_SONAR_PORT = "/dev/uart_port_2"
     TOP_ULTRASONIC_PORT = "/dev/uart_port_3"
     ARDUINO_PORT = "/dev/arduino_nano"
-    USB_CAM_FRONT_PORT = "/dev/cam_front"
-    USB_CAM_TUBE_PORT = "/dev/cam_tube"
+    USB_CAM_FRONT_PORT = "/dev/video0"
+    USB_CAM_TUBE_PORT = "/dev/video1"
     SERIAL_PORT1 = "/dev/ttyTHS1"
 
 
