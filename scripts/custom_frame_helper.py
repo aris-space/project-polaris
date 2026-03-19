@@ -3,7 +3,7 @@ import numpy as np
 """
 plug in the positions of hte center of mass and the various thrusters in [x,y,z]. The x, y, z are according to the coordinate system in onshape. the roll axis is the negative y axis, the pitch axis is the positive x axis, and the yaw axis is the positive z axis.
 """
-com_position = np.array([-0.0153, 4.03e-4, -0.0305])
+com_position = np.array([-0.01852, 4.03e-4, -0.0305])
 thruster_1_pos = np.array(
     [-0.9153, 0, -5.12e-4]
 )  # thruster in negative y direction (forward thruster)
