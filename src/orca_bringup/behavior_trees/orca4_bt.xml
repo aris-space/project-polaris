@@ -6,7 +6,7 @@
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
-    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+    <RecoveryNode number_of_retries="10" name="NavigateRecovery">
       <PipelineSequence name="NavigateWithReplanning">
         <RateController hz="1.0">
           <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
@@ -15,7 +15,7 @@
       </PipelineSequence>
       <ReactiveFallback name="RecoveryFallback">
         <GoalUpdated/>
-        <Wait wait_duration="5"/>
+        <Wait wait_duration="2"/>
       </ReactiveFallback>
     </RecoveryNode>
   </BehaviorTree>

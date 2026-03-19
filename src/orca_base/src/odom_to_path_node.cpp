@@ -32,7 +32,7 @@ namespace orca_vision
 
 #define PARAMS \
   CXT_MACRO_MEMBER(subscribe_best_effort, bool, true) \
-  CXT_MACRO_MEMBER(max_poses, int, 500) \
+  CXT_MACRO_MEMBER(max_poses, int, 1000) \
 /* End of list */
 
 struct Parameters
@@ -94,6 +94,7 @@ public:
     }
 
     path_pub_ = create_publisher<nav_msgs::msg::Path>("path", 10);
+
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
       "odom", qos, [this](const nav_msgs::msg::Odometry::ConstSharedPtr msg)
       {
