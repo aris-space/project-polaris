@@ -5,11 +5,7 @@ from rclpy.node import Node
 from pymavlink import mavutil
 from datetime import datetime
 from std_msgs.msg import Int16MultiArray
-from mavros_msgs.msg import (
-    State,  # HEARTBEAT
-    RCIn,  # RC_CHANNELS
-    ManualControl
-)
+from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from sensor_msgs.msg import (
     Imu,  # ATTITUDE
     BatteryState,  # BATTERY_STATUS
@@ -76,13 +72,19 @@ class MavlinkBridgeSender(Node):
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
 
-        self.port = mavutil.mavlink_connection(f"{Comms.JETSON_IP_ADDRESS}:14600") # UDP connection to companion computer (BlueOS)
-        self.serial_port = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)  # Serial connection straight to Pixhawk
+        self.port = mavutil.mavlink_connection(
+            f"{Comms.JETSON_IP_ADDRESS}:14600"
+        )  # UDP connection to companion computer (BlueOS)
+        self.serial_port = mavutil.mavlink_connection(
+            "/dev/ttyTHS1", baud=57600
+        )  # Serial connection straight to Pixhawk
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
 
-        self.heartbeat_publisher = self.create_publisher(State, "/pixhawk/heartbeat", 10)
+        self.heartbeat_publisher = self.create_publisher(
+            State, "/pixhawk/heartbeat", 10
+        )
 
         # self.attitude_publisher = self.create_publisher(Imu, "/pixhawk/attitude", 10)
 
@@ -102,7 +104,9 @@ class MavlinkBridgeSender(Node):
             Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
-        self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz to avoid serial buffer overflow
+        self.timer = self.create_timer(
+            0.02, self.mavlink_callback
+        )  # 50 Hz to avoid serial buffer overflow
 
         # Request MANUAL_CONTROL messages at 10 Hz
         self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
@@ -113,7 +117,11 @@ class MavlinkBridgeSender(Node):
             0,  # confirmation
             mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID = 69
             100000,  # interval in microseconds (100ms = 10Hz)
-            0, 0, 0, 0, 0
+            0,
+            0,
+            0,
+            0,
+            0,
         )
         self.logger.info(
             f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
@@ -124,8 +132,8 @@ class MavlinkBridgeSender(Node):
             "ATTITUDE": 0,
             "RC_CHANNELS": 0,
             "BATTERY_STATUS": 0,
-            "SCALED_PRESSURE2": 0,
-            "MANUAL_CONTROL": 0
+            # "SCALED_PRESSURE2": 0,
+            "MANUAL_CONTROL": 0,
         }
         self.msg_type_counter_interval = 10
 
@@ -139,27 +147,25 @@ class MavlinkBridgeSender(Node):
                 break  # No more messages in either buffer
 
             if msg_serial is not None:
-                #i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
+                # i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
                 if msg_serial.get_type() == "MANUAL_CONTROL":
                     self.handle_manual_control(msg_serial)
                 # We can choose to process serial messages differently if needed
                 # For now, we will just log them and not publish to ROS2
 
             if msg is not None:
-                #self.logger.info(f"Received: {msg.get_type()}")
+                # self.logger.info(f"Received: {msg.get_type()}")
 
                 if msg.get_type() == "HEARTBEAT":
                     self.handle_heartbeat(msg)
-                #elif msg.get_type() == "ATTITUDE":
+                # elif msg.get_type() == "ATTITUDE":
                 #    self.handle_attitude(msg)
-                #elif msg.get_type() == "RC_CHANNELS":
+                # elif msg.get_type() == "RC_CHANNELS":
                 #    self.handle_rc_channels(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
-
-        
 
     def message_counter(self, msg_type: str) -> bool:
         """Only process every Nth message per message type."""
@@ -171,7 +177,6 @@ class MavlinkBridgeSender(Node):
             return True
         else:
             return False
-
 
     def handle_heartbeat(self, msg):
         """Process HEARTBEAT message and publish to ROS2"""
@@ -243,7 +248,7 @@ class MavlinkBridgeSender(Node):
 
         if not self.message_counter("BATTERY_STATUS"):
             return
-        
+
         ros_msg = BatteryState()
         # current_battery is in 10*mA (centiamperes), divide by 100 to get Amperes
         ros_msg.current = float(msg.current_battery) / 100.0
@@ -257,9 +262,9 @@ class MavlinkBridgeSender(Node):
 
     def handle_scaled_pressure(self, msg):
         """Process SCALED_PRESSURE2(this is the bluerobotics pressure sensor) message and publish to ROS2"""
-        if not self.message_counter("SCALED_PRESSURE2"):
-            return
-        
+        # if not self.message_counter("SCALED_PRESSURE2"):
+        #     return
+
         ros_msg = FluidPressure()
         # Differential pressure: MAVLink uses hPa, ROS2 expects Pa (multiply by 100)
         ros_msg.fluid_pressure = float(msg.press_abs) * 100.0
@@ -272,14 +277,14 @@ class MavlinkBridgeSender(Node):
         # This is a placeholder for handling manual control messages if needed
         if not self.message_counter("MANUAL_CONTROL"):
             return
-        
+
         self.logger.info("manual control callback triggered")
         ros_msg = Int16MultiArray()
         ros_msg.data = [msg.x, msg.y, msg.z, msg.r, msg.buttons, msg.s, msg.t]
         self.manual_control_publisher.publish(ros_msg)
         self.logger.info(
             f"Published Manual Control: x={msg.x}, y={msg.y}, z={msg.z}, r={msg.r}, s={msg.s}, t={msg.t}"
-        ) 
+        )
 
 
 def main(args=None):
