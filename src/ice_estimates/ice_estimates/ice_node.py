@@ -1,32 +1,85 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
-from std_msgs.msg import Float32
+from std_msgs.msg import Float64MultiArray 
+from std_msgs.msg import Float64
+from sensor_msgs.msg import FluidPressure
 import numpy as np
+from sensor_msgs.msg import NavSatFix
+from nav_msgs.msg import Odometry
 
 
 class IceEstimation(Node):
 
     def __init__(self):
         super().__init__('ice_estimation')
-        
-        # Subscriber to mission data
-        self.subscription = self.create_subscription(
-            Float32MultiArray,
-            '/mission_data',
-            self.listener_callback,
+
+        # --- Initialize stored values ---
+        self.x = None
+        self.y = None
+        self.depth = None
+        self.omega = None
+        self.pressure = None
+        self.timestamp = None
+
+        # --- Subscriptions ---
+        self.pressure_sub = self.create_subscription(
+            FluidPressure,
+            '/pixhawk/scaled_pressure',
+            self.pressure_callback,
             10
         )
 
-        # Publisher for ice thickness
+        self.gps_sub = self.create_subscription(
+            NavSatFix,
+            '/gps/filtered',
+            self.gps_callback,
+            10
+        )
+
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            '/odometry/filtered/local',
+            self.z_callback,
+            10
+        )
+
+        self.sonar_sub = self.create_subscription(
+            Float64,
+            '/ping_sonar/distance',
+            self.sonar_callback,
+            10
+        )
+
+        # --- Publisher ---
         self.publisher_ = self.create_publisher(
-            Float32,
+            Float64MultiArray,
             '/ice_thickness',
             10
         )
 
+        self.timer = self.create_timer(0.1, self.listener_callback)  # 10 Hz
         self.get_logger().info("Ice Thickness Node Started")
-    
+
+
+    # --- PRESSURE ---
+    def pressure_callback(self, msg):
+        self.pressure = msg.fluid_pressure  # in Pascal
+
+    # --- ODOMETRY (DEPTH) ---
+    def z_callback(self, msg):
+        z = msg.pose.pose.position.z
+        self.depth = -z  # ENU → depth positive down
+
+    # --- GPS ---
+    def gps_callback(self, msg):
+        self.x = msg.longitude
+        self.y = msg.latitude
+        self.timestamp = msg.header.stamp
+
+    # --- SONAR ---
+    def sonar_callback(self, msg):
+        self.omega = msg.data  # meters
+
     def  ice_thickness(self, omega, pressure,  pitch, roll):
         
         rho_s = 300.0
@@ -37,7 +90,7 @@ class IceEstimation(Node):
         P_ext = 0.0
 
         # Convert pressure from bar to Pa
-        P = (pressure - 1.0) * 100000.0
+        P = pressure 
 
         # Water column height
         v = P / (rho_water * g)
@@ -61,19 +114,18 @@ class IceEstimation(Node):
 
         return float(T)
 
+    def listener_callback(self):
 
+        pressure = self.pressure
+        omega = self.omega
+        pitch = getattr(self, "pitch", 0.0)
+        roll = getattr(self, "roll", 0.0)
 
-    def listener_callback(self, msg):
-
-        # Extract data in correct order
-        x = msg.data[0]
-        y = msg.data[1]
-        pressure = msg.data[2]
-        omega = msg.data[3]
-        roll = msg.data[4]
-        pitch = msg.data[5]
-
-        # Compute thickness
+        
+        if self.x is None or self.y is None or self.pressure is None or self.omega is None:
+            self.get_logger().warn("Waiting for all sensor data...")
+            return
+        
         thickness = self.ice_thickness(
             omega,
             pressure,
@@ -81,15 +133,24 @@ class IceEstimation(Node):
             roll
         )
 
-        # Publish result
-        out_msg = Float32()
-        out_msg.data = thickness
-        self.publisher_.publish(out_msg)
+        # --- Skip invalid ---
+        if np.isnan(thickness):
+            self.get_logger().warn("Invalid thickness (pitch/roll too large)")
+            return
 
+        # --- Publish ---
+        msg = Float64MultiArray()
+        msg.data = [
+            float(self.get_clock().now().nanoseconds * 1e-9),  # timestamp
+            float(self.x),
+            float(self.y),
+            float(thickness)
+        ]
 
+        self.publisher_.publish(msg)
         self.get_logger().info(
-            f"x={x:.1f}, y={y:.1f} -> Ice Thickness = {thickness:.3f} m"
-        )
+        f"[t, x, y, T] = [{msg.data[0]:.2f}, {msg.data[1]:.6f}, {msg.data[2]:.6f}, {msg.data[3]:.3f}]"
+    )
 
 def main(args=None):
     rclpy.init(args=args)
