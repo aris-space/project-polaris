@@ -124,15 +124,15 @@ def generate_launch_description():
         }.items(),
     )
 
-    usb_cam_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.py")
-        ),
-        launch_arguments={
-            "respawn": respawn_arg_value,
-            "respawn_delay": respawn_delay_arg_value,
-        }.items(),
-    )
+    # usb_cam_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.py")
+    #     ),
+    #     launch_arguments={
+    #         "respawn": respawn_arg_value,
+    #         "respawn_delay": respawn_delay_arg_value,
+    #     }.items(),
+    # )
 
     foxglove_bridge_node = Node(
         package="foxglove_bridge",
@@ -225,7 +225,7 @@ def generate_launch_description():
             temperature_launch,
             xsens_launch,
             dvl_launch,
-            usb_cam_launch,
+            #usb_cam_launch,
             ping_sonar_node,
             foxglove_bridge_node,
             rosbag_record,
