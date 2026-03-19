@@ -49,9 +49,7 @@ def generate_launch_description():
     rosbag2_record_qos_file = os.path.join(orca_bringup_dir, 'params', 'rosbag2_record_qos.yaml')
     rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
     world_file = os.path.join(orca_description_dir, 'worlds', 'sand.world')
-
-    sim_left_ini = os.path.join(orca_bringup_dir, 'cfg', 'sim_left.ini')
-    sim_right_ini = os.path.join(orca_bringup_dir, 'cfg', 'sim_right.ini')
+    
     return LaunchDescription([
         DeclareLaunchArgument(
             'ardusub',
