@@ -20,7 +20,7 @@
         // add --device=/dev/ttyUSB0 etc. here if needed
     ],
     // VS Code will run this once after the container is created
-    "postCreateCommand": "cd /ros2_ws && colcon build --symlink-install --executor sequential || true",
+    "postCreateCommand": "cd /ros2_ws && rosdep-install-workspace && colcon build --symlink-install",
     // You’re using root in the image
     "remoteUser": "root",
     "customizations": {

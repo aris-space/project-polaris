@@ -89,5 +89,8 @@ if [ -f "${ROS_WS}/install/setup.bash" ]; then
   source_with_relaxed_nounset "${ROS_WS}/install/setup.bash"
 fi
 
+# Enable Shared Memory for FastDDS to reduce CPU copy for camera streams overhead
+export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/shm_profile.xml
+
 # 5) Execute command passed by docker/compose.
 exec "$@"
