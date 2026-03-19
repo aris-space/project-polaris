@@ -43,6 +43,7 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
 
+    use_sim_time = LaunchConfiguration('use_sim_time', default='True')
     mavros_params_file = LaunchConfiguration('mavros_params_file')
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
@@ -97,7 +98,7 @@ def generate_launch_description():
             output='screen',
             # mavros_node is actually many nodes, so we can't override the name
             # name='mavros_node',
-            parameters=[mavros_params_file],
+            parameters=[mavros_params_file, {'use_sim_time': use_sim_time}],
             condition=IfCondition(LaunchConfiguration('mavros')),
         ),
 
@@ -123,7 +124,7 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(os.path.join(orca_bringup_dir, 'launch', 'navigation_launch.py')),
             launch_arguments={
                 'namespace': '',
-                'use_sim_time': 'False',
+                'use_sim_time': use_sim_time,
                 'autostart': 'False',
                 'params_file': configured_nav2_params,
                 'use_composition': 'False',
