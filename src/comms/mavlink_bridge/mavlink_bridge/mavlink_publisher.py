@@ -301,30 +301,16 @@ class MavlinkBridgeSender(Node):
         # battery_remaining is percentage (0-100), ROS2 expects 0.0-1.0
         ros_msg.percentage = float(msg.battery_remaining) / 100.0
 
-        ros_msg.voltage = sum(msg.voltages[:4]) / 1000.0
+        ros_msg.voltage = float(msg.voltages[0]) / 1000.0
 
         self.battery_publisher.publish(ros_msg)
         self.logger.info(
-            f"Published Battery: Current={ros_msg.current:.2f}A, Remaining={ros_msg.percentage:.0%}"
+            f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
         )
     
 
         diag_msg = DiagnosticArray()
         diag_msg.header.stamp = self.get_clock().now().to_msg()
-
-        # Battery remaining 
-        status_remaining = DiagnosticStatus()
-        status_remaining.name = "Battery: Remaining"
-        status_remaining.level = DiagnosticStatus.OK
-        status_remaining.message = "OK"
-        status_remaining.values = [KeyValue(key="remaining", value=f"{ros_msg.percentage:.0%}")]
-        if ros_msg.percentage < 0.25:
-            status_remaining.level = DiagnosticStatus.ERROR
-            status_remaining.message = "Dangerously low battery"
-        elif ros_msg.percentage < 0.4:
-            status_remaining.level = DiagnosticStatus.WARN
-            status_remaining.message = "Battery getting low"
-        diag_msg.status.append(status_remaining)
 
         # Battery current 
         status_current = DiagnosticStatus()
@@ -340,6 +326,17 @@ class MavlinkBridgeSender(Node):
         status_voltage.level = DiagnosticStatus.OK
         status_voltage.message = "OK"
         status_voltage.values = [KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")]
+        
+        if ros_msg.voltage < 12:
+            status_voltage.level = DiagnosticStatus.ERROR
+            status_voltage.message = "Voltage is critically low"
+        elif ros_msg.voltage < 13:
+            status_voltage.level = DiagnosticStatus.WARN
+            status_voltage.message = "Voltage is low"
+        else:
+            status_voltage.level = DiagnosticStatus.OK
+            status_voltage.message = "OK"
+        
         diag_msg.status.append(status_voltage)
 
         self.diagnostic_publisher.publish(diag_msg)
