@@ -95,7 +95,7 @@ class Temperature_sensor(Node):
 
                 status = DiagnosticStatus()
                 status.name = f"Sensor {sensor_i} ({pos})"  # Give it a unique name
-                status.hardware_id = f"ds18b20_{sensor_i}"  # Unique ID
+                status.hardware_id = f"temperature_sensor_{sensor_i}"  # Unique ID
                 level = DiagnosticStatus.OK
                 message = "OK"
 
