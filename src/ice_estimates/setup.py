@@ -30,6 +30,7 @@ setup(
         'hybrid_valnode = ice_estimates.hybrid_valnode:main',
         'sim_ultrasonic_node = ice_estimates.sim_ultrasonic_node:main',
         'ultrasonic_node = ice_estimates.ultrasonic_node:main',
+        'pool_testing_icethickness = ice_estimates.pool_testing_icethickness:main'
         ],
     },
 )

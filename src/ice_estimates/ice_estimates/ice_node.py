@@ -8,7 +8,6 @@ from sensor_msgs.msg import NavSatFix
 from nav_msgs.msg import Odometry
 from tf_transformations import euler_from_quaternion
 
-
 class IceEstimation(Node):
 
     def __init__(self):
@@ -77,7 +76,7 @@ class IceEstimation(Node):
     def sonar_callback(self, msg):
         self.omega = msg.data  # meters
 
-    def ice_thickness(self, omega, pitch, roll, pressure):
+    def ice_thickness(self, omega, depth, pitch, roll):
 
         rho_s = 300.0
         rho_water = 1000.0
@@ -87,13 +86,13 @@ class IceEstimation(Node):
         P_ext = 0.0
 
         # Convert pressure from bar to Pa
-        P = pressure
+        #P = pressure
 
         # Water column height
-        v = P / (rho_water * g)
+        #v = P / (rho_water * g)
 
         sensor_offset = 0.05
-        v_druck = v - sensor_offset
+        v_druck = depth - sensor_offset
 
         # Correct omega for pitch & roll
         omega_corr = omega * np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))
@@ -111,7 +110,6 @@ class IceEstimation(Node):
 
     def listener_callback(self):
 
-        pressure = self.pressure
         omega = self.omega
         depth = self.depth
         pitch = self.pitch
@@ -120,7 +118,6 @@ class IceEstimation(Node):
         data_points = [
             self.x,
             self.y,
-            self.pressure,
             self.omega,
             self.depth,
             self.roll,
@@ -133,7 +130,7 @@ class IceEstimation(Node):
             )
             return
 
-        thickness = self.ice_thickness(omega, depth, pitch, roll, pressure)
+        thickness = self.ice_thickness(omega, depth, pitch, roll)
 
         # --- Skip invalid ---
         if np.isnan(thickness):
