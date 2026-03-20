@@ -29,6 +29,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
     LogInfo,
+    OpaqueFunction,
     RegisterEventHandler,
 )
 from launch.event_handlers import OnProcessStart
@@ -38,30 +39,16 @@ from launch_ros.event_handlers import OnStateTransition
 from launch_ros.events.lifecycle import ChangeState
 
 
-def generate_launch_description():
-    # Launch Configurations
+def _parse_bool(raw_value: str) -> bool:
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _launch_setup(context, *args, **kwargs):
+    # Resolve substitutions to concrete Python types for ExecuteLocal internals.
     range_mode = LaunchConfiguration("range_mode")
-    respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
+    respawn = _parse_bool(LaunchConfiguration("respawn").perform(context))
+    respawn_delay = float(LaunchConfiguration("respawn_delay").perform(context))
 
-    # Arguments
-    range_mode_arg = DeclareLaunchArgument(
-        "range_mode",
-        default_value="auto",
-        description="DVL range mode: auto, '=a', or 'a<=b'",
-    )
-    respawn_arg = DeclareLaunchArgument(
-        "respawn",
-        default_value="true",
-        description="Automatically relaunch node if it exits/crashes.",
-    )
-    respawn_delay_arg = DeclareLaunchArgument(
-        "respawn_delay",
-        default_value="2.0",
-        description="Seconds to wait before restarting a crashed node.",
-    )
-
-    # Load project-specific config
     config = os.path.join(
         get_package_share_directory("dvl_a50_pkg"),
         "config",
@@ -152,14 +139,37 @@ def generate_launch_description():
         respawn_delay=respawn_delay,
     )
 
-    return LaunchDescription([
-        range_mode_arg,
-        respawn_arg,
-        respawn_delay_arg,
+    return [
         dvl_node,
         on_process_start,
         on_inactive,
         on_activated,
         static_tf_base_to_dvl,
         covariance_node,
+    ]
+
+
+def generate_launch_description():
+    # Arguments
+    range_mode_arg = DeclareLaunchArgument(
+        "range_mode",
+        default_value="auto",
+        description="DVL range mode: auto, '=a', or 'a<=b'",
+    )
+    respawn_arg = DeclareLaunchArgument(
+        "respawn",
+        default_value="true",
+        description="Automatically relaunch node if it exits/crashes.",
+    )
+    respawn_delay_arg = DeclareLaunchArgument(
+        "respawn_delay",
+        default_value="2.0",
+        description="Seconds to wait before restarting a crashed node.",
+    )
+
+    return LaunchDescription([
+        range_mode_arg,
+        respawn_arg,
+        respawn_delay_arg,
+        OpaqueFunction(function=_launch_setup),
     ])

@@ -168,8 +168,6 @@ void read_sensor()
       auto msg = std_msgs::msg::Float32();
       msg.data = distance_m;
       publisher_->publish(msg);
-      
-      RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
     }
   }
 }
