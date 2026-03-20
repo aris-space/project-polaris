@@ -8,9 +8,11 @@ from std_msgs.msg import String
 from config_pkg.constants import Logs, Comms, Ports
 from rcl_interfaces.msg import SetParametersResult
 import time
+from custom_msgs.msg import Distance, Profile #custom messages 
 
 try:
     from brping import Ping1D, definitions
+
     _BRPING_IMPORT_ERROR = None
 except Exception as exc:
     Ping1D = None
@@ -89,10 +91,10 @@ class Ice_Measurement(Node):
         self.timer = self.create_timer(self.ping_interval, self.logging_cb)
 
         self.distance_publisher = self.create_publisher(
-            String, "/ping_sonar/distance", 10
+            Distance, "/ping_sonar/distance", 10
         )
         self.profile_publisher = self.create_publisher(
-            String, "/ping_sonar/profile", 10
+            Profile, "/ping_sonar/profile", 10
         )
 
     def mode_callback(self, msg):
@@ -115,23 +117,32 @@ class Ice_Measurement(Node):
         if distance is None:
             return
 
-        msg_distance = String()
-        msg_distance.data = json.dumps(
-            {
-                "distance": distance["distance"],
-                "confidence": distance["confidence"],
-            }
-        )
+        # msg_distance = String()
+        # msg_distance.data = json.dumps(
+        #     {
+        #         "distance": distance["distance"],
+        #         "confidence": distance["confidence"],
+        #     }
+        # )
 
-        msg_profile = String()
-        msg_profile.data = json.dumps(
-            {
-                "scan_start": profile["scan_start"],
-                "scan_length": profile["scan_length"],
-                "ping_number": profile["ping_number"],
-                "profile_data": list(profile["profile_data"]),
-            }
-        )
+        msg_distance = Distance()
+        msg_distance.distance = distance["distance"]
+        msg_distance.confidence = distance["confidence"]
+
+        # msg_profile = String()
+        # msg_profile.data = json.dumps(
+        #     {
+        #         "scan_start": profile["scan_start"],
+        #         "scan_length": profile["scan_length"],
+        #         "ping_number": profile["ping_number"],
+        #         "profile_data": list(profile["profile_data"]),
+        #     }
+        # )
+        msg_profile = Profile()
+        msg_profile.scan_start = profile["scan_start"]
+        msg_profile.scan_length = profile["scan_length"]
+        msg_profile.ping_number = profile["ping_number"]
+        msg_profile.profile_data = list(profile["profile_data"])
 
         self.distance_publisher.publish(msg_distance)
         self.profile_publisher.publish(msg_profile)
