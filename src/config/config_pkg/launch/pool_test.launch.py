@@ -116,7 +116,7 @@ def generate_launch_description():
 
     dvl_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(dvl_a50_pkg_dir, "launch", "launch_dvl.py")
+            os.path.join(dvl_a50_pkg_dir, "launch", "launch_dvl.launch.py")
         ),
         launch_arguments={
             "respawn": respawn_arg_value,
