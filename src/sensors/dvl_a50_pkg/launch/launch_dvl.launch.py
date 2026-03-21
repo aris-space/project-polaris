@@ -20,8 +20,6 @@ for integration testing.
 """
 import os
 
-import launch
-import launch.events
 import lifecycle_msgs.msg
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -37,7 +35,11 @@ from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
+from launch_ros.events import matches_node_name
+from launch_ros.events.lifecycle import ChangeState, StateTransition
+
+# Fully qualified node name (must match namespace + name on LifecycleNode below).
+_DVL_LIFECYCLE_NODE_NAME = "/sensors/dvl_a50"
 
 
 def _parse_bool(raw_value: str) -> bool:
@@ -71,46 +73,56 @@ def _launch_setup(context, *args, **kwargs):
         respawn_delay=respawn_delay,
     )
 
-    # Lifecycle transition events
+    # Lifecycle transition events — use matches_node_name, not matches_action(dvl_node).
+    # With OpaqueFunction + IncludeLaunchDescription, action object identity can differ from
+    # the LifecycleNode instance that registers ChangeState handlers, so matches_action
+    # never matches and the node stays unconfigured.
+    _dvl_name_matcher = matches_node_name(_DVL_LIFECYCLE_NODE_NAME)
     configure_event = EmitEvent(
         event=ChangeState(
-            lifecycle_node_matcher=launch.events.matches_action(dvl_node),
+            lifecycle_node_matcher=_dvl_name_matcher,
             transition_id=lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE,
         )
     )
 
     activate_event = EmitEvent(
         event=ChangeState(
-            lifecycle_node_matcher=launch.events.matches_action(dvl_node),
+            lifecycle_node_matcher=_dvl_name_matcher,
             transition_id=lifecycle_msgs.msg.Transition.TRANSITION_ACTIVATE,
         )
     )
 
+    def _transition_to(goal: str):
+        def _matcher(event):
+            return (
+                isinstance(event, StateTransition)
+                and event.action.node_name == _DVL_LIFECYCLE_NODE_NAME
+                and event.goal_state == goal
+            )
+
+        return _matcher
+
     # Event Handlers for State Management
-    # Defer configure slightly: OnProcessStart can run before the lifecycle node's
-    # change_state service is ready, so an immediate ChangeState is sometimes dropped
-    # and the node stays unconfigured until a manual transition.
+    # Defer configure: give the subprocess time to advertise ~/change_state.
     on_process_start = RegisterEventHandler(
         OnProcessStart(
             target_action=dvl_node,
             on_start=[
-                TimerAction(period=1.0, actions=[configure_event]),
+                TimerAction(period=2.0, actions=[configure_event]),
             ],
         )
     )
 
     on_inactive = RegisterEventHandler(
         OnStateTransition(
-            target_lifecycle_node=dvl_node,
-            goal_state="inactive",
+            matcher=_transition_to("inactive"),
             entities=[activate_event],
         )
     )
 
     on_activated = RegisterEventHandler(
         OnStateTransition(
-            target_lifecycle_node=dvl_node,
-            goal_state="active",
+            matcher=_transition_to("active"),
             entities=[LogInfo(msg="DVL-A50 reached the 'ACTIVE' state")],
         )
     )
