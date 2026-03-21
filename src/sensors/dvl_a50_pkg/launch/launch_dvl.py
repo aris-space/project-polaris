@@ -153,6 +153,7 @@ def generate_launch_description():
     # Static base_link -> dvl_a50_link transform for testing.
     # Translation is a placeholder; replace with your measured mounting offsets.
     # RPY maps ENU base frame to NED-aligned DVL frame:
+    # ENU base frame with translations in meters.
     # roll = pi, pitch = 0, yaw = +pi/4.
     static_tf_base_to_dvl = Node(
         package="tf2_ros",
@@ -160,17 +161,17 @@ def generate_launch_description():
         name="static_tf_base_to_dvl",
         arguments=[
             "--x",
-            "0.0",
+            "0.736",
             "--y",
             "0.0",
             "--z",
-            "0.0",
+            "-0.068",
             "--roll",
             "3.141592653589793",
             "--pitch",
             "0.0",
             "--yaw",
-            "0.7853981633974483",
+            "-0.7853981633974483",
             "--frame-id",
             "base_link",
             "--child-frame-id",
