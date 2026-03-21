@@ -31,6 +31,7 @@ from launch.actions import (
     LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
+    TimerAction,
 )
 from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration
@@ -86,8 +87,16 @@ def _launch_setup(context, *args, **kwargs):
     )
 
     # Event Handlers for State Management
+    # Defer configure slightly: OnProcessStart can run before the lifecycle node's
+    # change_state service is ready, so an immediate ChangeState is sometimes dropped
+    # and the node stays unconfigured until a manual transition.
     on_process_start = RegisterEventHandler(
-        OnProcessStart(target_action=dvl_node, on_start=[configure_event])
+        OnProcessStart(
+            target_action=dvl_node,
+            on_start=[
+                TimerAction(period=1.0, actions=[configure_event]),
+            ],
+        )
     )
 
     on_inactive = RegisterEventHandler(
