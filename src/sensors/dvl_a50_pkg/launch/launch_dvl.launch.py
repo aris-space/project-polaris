@@ -25,7 +25,6 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
-    EmitEvent,
     LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
@@ -33,10 +32,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events import matches_node_name
-from launch_ros.events.lifecycle import ChangeState, StateTransition
+from launch_ros.actions import LifecycleNode, LifecycleTransition, Node
 
 # Fully qualified node name (must match namespace + name on LifecycleNode below).
 _DVL_LIFECYCLE_NODE_NAME = "/sensors/dvl_a50"
@@ -51,6 +47,7 @@ def _launch_setup(context, *args, **kwargs):
     range_mode = LaunchConfiguration("range_mode")
     respawn = _parse_bool(LaunchConfiguration("respawn").perform(context))
     respawn_delay = float(LaunchConfiguration("respawn_delay").perform(context))
+    configure_delay = float(LaunchConfiguration("configure_delay_sec").perform(context))
 
     config = os.path.join(
         get_package_share_directory("dvl_a50_pkg"),
@@ -73,57 +70,32 @@ def _launch_setup(context, *args, **kwargs):
         respawn_delay=respawn_delay,
     )
 
-    # Lifecycle transition events — use matches_node_name, not matches_action(dvl_node).
-    # With OpaqueFunction + IncludeLaunchDescription, action object identity can differ from
-    # the LifecycleNode instance that registers ChangeState handlers, so matches_action
-    # never matches and the node stays unconfigured.
-    _dvl_name_matcher = matches_node_name(_DVL_LIFECYCLE_NODE_NAME)
-    configure_event = EmitEvent(
-        event=ChangeState(
-            lifecycle_node_matcher=_dvl_name_matcher,
-            transition_id=lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE,
-        )
+    # Chain configure → activate using the same matchers as upstream launch_ros (start_state +
+    # goal_state per transition). Manual OnStateTransition on goal_state alone can miss events
+    # or misfire depending on rmw / TransitionEvent labeling.
+    auto_lifecycle = LifecycleTransition(
+        lifecycle_node_names=[_DVL_LIFECYCLE_NODE_NAME],
+        transition_ids=[
+            lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE,
+            lifecycle_msgs.msg.Transition.TRANSITION_ACTIVATE,
+        ],
     )
 
-    activate_event = EmitEvent(
-        event=ChangeState(
-            lifecycle_node_matcher=_dvl_name_matcher,
-            transition_id=lifecycle_msgs.msg.Transition.TRANSITION_ACTIVATE,
-        )
-    )
-
-    def _transition_to(goal: str):
-        def _matcher(event):
-            return (
-                isinstance(event, StateTransition)
-                and event.action.node_name == _DVL_LIFECYCLE_NODE_NAME
-                and event.goal_state == goal
-            )
-
-        return _matcher
-
-    # Event Handlers for State Management
-    # Defer configure: give the subprocess time to advertise ~/change_state.
+    # Defer: DDS + ~/change_state must exist before the first transition; Jetson/Docker often
+    # needs several seconds. "Node not found" from ros2 lifecycle on the host usually means
+    # wrong ROS_DOMAIN_ID vs docker-compose or querying before the node appears.
     on_process_start = RegisterEventHandler(
         OnProcessStart(
             target_action=dvl_node,
             on_start=[
-                TimerAction(period=2.0, actions=[configure_event]),
+                LogInfo(
+                    msg=(
+                        f"[launch_dvl] Auto lifecycle for {_DVL_LIFECYCLE_NODE_NAME} "
+                        f"starts in {configure_delay:g}s (configure then activate)."
+                    )
+                ),
+                TimerAction(period=configure_delay, actions=[auto_lifecycle]),
             ],
-        )
-    )
-
-    on_inactive = RegisterEventHandler(
-        OnStateTransition(
-            matcher=_transition_to("inactive"),
-            entities=[activate_event],
-        )
-    )
-
-    on_activated = RegisterEventHandler(
-        OnStateTransition(
-            matcher=_transition_to("active"),
-            entities=[LogInfo(msg="DVL-A50 reached the 'ACTIVE' state")],
         )
     )
 
@@ -163,8 +135,6 @@ def _launch_setup(context, *args, **kwargs):
     return [
         dvl_node,
         on_process_start,
-        on_inactive,
-        on_activated,
         static_tf_base_to_dvl,
         covariance_node,
     ]
@@ -187,10 +157,19 @@ def generate_launch_description():
         default_value="2.0",
         description="Seconds to wait before restarting a crashed node.",
     )
+    configure_delay_arg = DeclareLaunchArgument(
+        "configure_delay_sec",
+        default_value="8.0",
+        description=(
+            "Wait after DVL process starts before auto configure+activate "
+            "(increase on Jetson/Docker if ~/change_state is not ready yet)."
+        ),
+    )
 
     return LaunchDescription([
         range_mode_arg,
         respawn_arg,
         respawn_delay_arg,
+        configure_delay_arg,
         OpaqueFunction(function=_launch_setup),
     ])
