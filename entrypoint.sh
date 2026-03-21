@@ -81,6 +81,14 @@ if [ "${AUTO_BUILD}" = "1" ]; then
     exit 1
   fi
 
+  # Old layouts used src/sensors/dvl-a50 (hyphen). Submodule path is dvl_a50 (underscore).
+  # Stale CMakeCache keeps the old path and breaks colcon until build/ is removed.
+  if [ -f "${ROS_WS}/build/dvl_a50/CMakeCache.txt" ] \
+    && grep -q 'dvl-a50' "${ROS_WS}/build/dvl_a50/CMakeCache.txt" 2>/dev/null; then
+    echo "[entrypoint] Clearing dvl_a50 build/install (CMake cache referenced removed dvl-a50 path)."
+    rm -rf "${ROS_WS}/build/dvl_a50" "${ROS_WS}/install/dvl_a50"
+  fi
+
   colcon build --symlink-install
 fi
 
