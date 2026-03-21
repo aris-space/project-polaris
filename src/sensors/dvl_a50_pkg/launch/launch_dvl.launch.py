@@ -59,7 +59,7 @@ def _launch_setup(context, *args, **kwargs):
     dvl_node = LifecycleNode(
         namespace="sensors",
         package="dvl_a50",
-        executable="dvl_a50_node",
+        executable="dvl_a50_sensor",
         name="dvl_a50",
         parameters=[
             config,
