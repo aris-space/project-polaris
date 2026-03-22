@@ -15,8 +15,11 @@ Published topics (under /sensors/dvl/):
   - dvl/odometry             (nav_msgs/Odometry)          — raw from driver
   - dvl/odometry_cov         (nav_msgs/Odometry)          — with twist covariance filled
 
-This launch file also publishes a static base_link -> dvl_a50_link transform
-for integration testing.
+Frame convention (must stay consistent for TF + robot_localization):
+  - Driver param ``frame`` sets ``Odometry.header.frame_id`` and
+    ``Odometry.child_frame_id`` (twist is in the sensor frame).
+  - ``static_tf_base_to_dvl`` publishes base_link -> <frame> using the same
+    ``sensor_frame`` launch argument (default dvl_a50_link).
 """
 import os
 
@@ -45,6 +48,7 @@ def _parse_bool(raw_value: str) -> bool:
 def _launch_setup(context, *args, **kwargs):
     # Resolve substitutions to concrete Python types for ExecuteLocal internals.
     range_mode = LaunchConfiguration("range_mode")
+    sensor_frame = LaunchConfiguration("sensor_frame").perform(context).strip()
     respawn = _parse_bool(LaunchConfiguration("respawn").perform(context))
     respawn_delay = float(LaunchConfiguration("respawn_delay").perform(context))
     configure_delay = float(LaunchConfiguration("configure_delay_sec").perform(context))
@@ -63,7 +67,11 @@ def _launch_setup(context, *args, **kwargs):
         name="dvl_a50",
         parameters=[
             config,
-            {"range_mode": range_mode},
+            {
+                "range_mode": range_mode,
+                # Overrides dvl_a50.yaml ``frame`` so TF child and odometry frames match.
+                "frame": sensor_frame,
+            },
         ],
         output="screen",
         respawn=respawn,
@@ -99,7 +107,8 @@ def _launch_setup(context, *args, **kwargs):
         )
     )
 
-    # Static Transform
+    # Static Transform: parent must match your robot base; child must match driver ``frame`` /
+    # odometry.child_frame_id (see sensor_frame launch argument).
     static_tf_base_to_dvl = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -108,7 +117,7 @@ def _launch_setup(context, *args, **kwargs):
             "--x", "0.0", "--y", "0.0", "--z", "0.0",
             "--roll", "3.141592653589793", "--pitch", "0.0", "--yaw", "0.7853981633974483",
             "--frame-id", "base_link",
-            "--child-frame-id", "dvl_a50_link",
+            "--child-frame-id", sensor_frame,
         ],
         output="screen",
         respawn=respawn,
@@ -142,6 +151,14 @@ def _launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     # Arguments
+    sensor_frame_arg = DeclareLaunchArgument(
+        "sensor_frame",
+        default_value="dvl_a50_link",
+        description=(
+            "TF child frame and DVL driver ``frame`` / odometry.child_frame_id "
+            "(must match dvl_a50.yaml if you change the default)."
+        ),
+    )
     range_mode_arg = DeclareLaunchArgument(
         "range_mode",
         default_value="auto",
@@ -167,6 +184,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        sensor_frame_arg,
         range_mode_arg,
         respawn_arg,
         respawn_delay_arg,
