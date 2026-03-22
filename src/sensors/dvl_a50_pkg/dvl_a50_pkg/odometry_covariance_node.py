@@ -14,7 +14,7 @@ Covariance model:
 
 Quality-based inflation:
   - Subscribes to /sensors/dvl/velocity for the beam_velocities_valid flag
-  - When bottom lock is lost: covariance inflated to no_lock_variance (1.0 m²/s²)
+  - When bottom lock is lost: covariance inflated to no_lock_variance (large m²/s²)
     so the EKF effectively ignores the measurement
   - When bottom lock is held: normal speed-dependent covariance
   - If velocity messages are stale for longer than velocity_stale_timeout_sec,
@@ -22,7 +22,7 @@ Quality-based inflation:
 
 Parameters:
     dvl_variant        (string): "standard" or "performance"        (default: "performance")
-    no_lock_variance   (double): Variance when bottom lock lost     (default: 1.0)
+    no_lock_variance   (double): Variance when bottom lock lost [m²/s²] (default: 1e6)
     angular_covariance (double): Angular rate variance              (default: 1000000.0)
     velocity_stale_timeout_sec (double): lock flag timeout [s]      (default: 0.5)
 """
@@ -53,7 +53,7 @@ class OdometryCovarianceNode(Node):
         super().__init__("dvl_odometry_covariance")
 
         self.declare_parameter("dvl_variant", "performance")
-        self.declare_parameter("no_lock_variance", 1.0)
+        self.declare_parameter("no_lock_variance", 1000000.0)
         self.declare_parameter("angular_covariance", 1000000.0)
         self.declare_parameter("velocity_stale_timeout_sec", 0.5)
 
