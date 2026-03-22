@@ -192,7 +192,7 @@ def generate_launch_description():
         namespace="sensors",
         parameters=[{
             "dvl_variant": "performance",  # "standard" (±1.01%) or "performance" (±0.1%)
-            "no_lock_variance": 1.0,       # variance when bottom lock lost [m²/s²]
+            "no_lock_variance": 1_000_000.0,  # ~same scale as angular_covariance; EKF ignores DVL vel without lock
             "angular_covariance": 1000000.0,  # very uncertain angular rates (not provided by DVL)
             "velocity_stale_timeout_sec": 0.5,  # stale lock flag timeout
         }],
