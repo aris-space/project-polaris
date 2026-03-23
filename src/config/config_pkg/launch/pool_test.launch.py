@@ -4,6 +4,7 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
+    GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
 )
@@ -179,8 +180,14 @@ def generate_launch_description():
     )
 
 
-    rosbag_record = OpaqueFunction(
-        function=lambda context: create_rosbag_record(context, "bag_pool_test")
+    # Optional: same recorder as record_bag.launch.py; off by default so you record only via that file.
+    rosbag_record = GroupAction(
+        condition=IfCondition(LaunchConfiguration("auto_record_bag")),
+        actions=[
+            OpaqueFunction(
+                function=lambda context: create_rosbag_record(context, "bag_pool_test")
+            )
+        ],
     )
 
     # ping_sonar_node = Node(
@@ -218,6 +225,14 @@ def generate_launch_description():
                 default_value="",
                 description=(
                     "Optional rosbag base name. The launch system appends _YYYY_MM_DD-HH_MM_SS."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "auto_record_bag",
+                default_value="false",
+                description=(
+                    "If true, start ros2 bag record with pool_test. Default false; "
+                    "use record_bag.launch.py for recording."
                 ),
             ),
             DeclareLaunchArgument(
