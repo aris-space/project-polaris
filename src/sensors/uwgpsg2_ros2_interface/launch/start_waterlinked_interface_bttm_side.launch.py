@@ -8,31 +8,15 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
+def _build_nodes(context):
     respawn = LaunchConfiguration("respawn")
-    respawn_delay = LaunchConfiguration("respawn_delay")
-
-    ld = LaunchDescription()
-
-    ld.add_action(
-        DeclareLaunchArgument(
-            "respawn",
-            default_value="true",
-            description="Automatically relaunch nodes if they exit/crashes.",
-        )
-    )
-    ld.add_action(
-        DeclareLaunchArgument(
-            "respawn_delay",
-            default_value="2.0",
-            description="Seconds to wait before restarting a crashed node.",
-        )
-    )
+    # ExecuteProcess expects a numeric delay, so resolve LaunchConfiguration here.
+    respawn_delay = float(LaunchConfiguration("respawn_delay").perform(context))
 
     waterlinked_node_params = os.path.join(
         get_package_share_directory("uwgpsg2_ros2_interface"),
@@ -98,6 +82,26 @@ def generate_launch_description():
         respawn_delay=respawn_delay,
     )
 
-    ld.add_action(waterlinked_localization_node)
-    ld.add_action(static_tf_base_to_sbl)
+    return [waterlinked_localization_node, static_tf_base_to_sbl]
+
+
+def generate_launch_description():
+    ld = LaunchDescription()
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "respawn",
+            default_value="true",
+            description="Automatically relaunch nodes if they exit/crashes.",
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
+            "respawn_delay",
+            default_value="2.0",
+            description="Seconds to wait before restarting a crashed node.",
+        )
+    )
+
+    ld.add_action(OpaqueFunction(function=_build_nodes))
     return ld
