@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from scipy import rand
 import rclpy
 from rclpy.node import Node
 
@@ -32,7 +31,6 @@ import requests
 from requests.structures import CaseInsensitiveDict
 from termcolor import colored
 #import random
-from scipy.spatial.transform import Rotation as rotation
 import pymap3d
 import numpy as np
 
@@ -202,15 +200,26 @@ class WaterLinkedUWGPSG2Interface(Node):
                                             self.topside_external_pos_east,
                                             self.topside_external_pos_down])
 
-                #quat = [x, y, z, w]
-                #R = rotation.from_quat(quat)
                 euler = np.array([self.topside_external_heading_rad,  # CHECK !
                                 self.topside_external_pitch_rad, self.topside_external_roll_rad])
-                R = rotation.from_euler('zyx', euler, degrees=False)
+                # Equivalent to scipy Rotation.from_euler('zyx', [yaw, pitch, roll]).apply(v)
+                yaw, pitch, roll = euler
+                cy = math.cos(yaw)
+                sy = math.sin(yaw)
+                cp = math.cos(pitch)
+                sp = math.sin(pitch)
+                cr = math.cos(roll)
+                sr = math.sin(roll)
+
+                R = np.array([
+                    [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+                    [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+                    [-sp, cp * sr, cp * cr],
+                ])
                 pos_relative = np.array([self.locator_wrt_base_relative_x,
                                         self.locator_wrt_base_relative_y,
                                         self.locator_wrt_base_relative_z])
-                self.locator_pos_ned = R.apply(pos_relative) + topside_pos_ned
+                self.locator_pos_ned = R.dot(pos_relative) + topside_pos_ned
 
             else:
                 print(
