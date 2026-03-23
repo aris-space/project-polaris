@@ -243,6 +243,8 @@ class WaterLinkedUWGPSG2Interface(Node):
             time_nanosec = int(1e9*time_nanosec)
             msg.header.stamp.sec = time_sec
             msg.header.stamp.nanosec = time_nanosec
+            # Matches static TF base_link -> sbl_link in start_waterlinked_interface_bttm_side.launch.py
+            msg.header.frame_id = "sbl_link"
             msg.vector.x = float(self.locator_wrt_base_relative_x)
             msg.vector.y = float(self.locator_wrt_base_relative_y)
             msg.vector.z = float(self.locator_wrt_base_relative_z)

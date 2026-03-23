@@ -1,23 +1,38 @@
+"""WaterLinked UGPS G2 (SBL) bottom-side interface.
+
+Static TF ``base_link`` -> ``sbl_link`` matches CAD (CENTER_OF_MASS_LINK -> SBL_LINK);
+assumes ``base_link`` coincides with center of mass (same as IMU/DVL/GNSS).
+"""
 import os
 
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch_ros.actions import Node
-
-from launch.substitutions import TextSubstitution
-from launch.substitutions import LaunchConfiguration
-
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import UnlessCondition
-from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    respawn = LaunchConfiguration("respawn")
+    respawn_delay = LaunchConfiguration("respawn_delay")
+
     ld = LaunchDescription()
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "respawn",
+            default_value="true",
+            description="Automatically relaunch nodes if they exit/crashes.",
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
+            "respawn_delay",
+            default_value="2.0",
+            description="Seconds to wait before restarting a crashed node.",
+        )
+    )
 
     waterlinked_node_params = os.path.join(
         get_package_share_directory("uwgpsg2_ros2_interface"),
@@ -51,9 +66,38 @@ def generate_launch_description():
             ),
         ],
         arguments=[],
+        respawn=respawn,
+        respawn_delay=respawn_delay,
     )
 
-    ###################################################################
+    # CAD: translation CENTER_OF_MASS_LINK -> SBL_LINK (Waterlinked), no rotation (m).
+    static_tf_base_to_sbl = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_base_to_sbl",
+        arguments=[
+            "--x",
+            "-0.728225",
+            "--y",
+            "-0.000153",
+            "--z",
+            "0.223593",
+            "--roll",
+            "0.0",
+            "--pitch",
+            "0.0",
+            "--yaw",
+            "0.0",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            "sbl_link",
+        ],
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
 
     ld.add_action(waterlinked_localization_node)
+    ld.add_action(static_tf_base_to_sbl)
     return ld
