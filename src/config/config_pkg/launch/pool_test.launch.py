@@ -5,12 +5,31 @@ from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
     IncludeLaunchDescription,
+    OpaqueFunction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from datetime import datetime
 from config_pkg.constants import Logs
+
+
+def create_rosbag_record(context, default_bag_prefix):
+    bag_name = LaunchConfiguration("bag_name").perform(context).strip()
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    bag_base_name = f"{bag_name}_{timestamp}" if bag_name else f"{default_bag_prefix}_{timestamp}"
+    bag_path = os.path.join(Logs.ROSBAG_DIR, bag_base_name)
+
+    return [
+        ExecuteProcess(
+            cmd=["ros2", "bag", "record", "-a", "-s", "mcap", "-o", bag_path],
+            output="screen",
+            # Avoid restarting recorder during shutdown and allow flush/finalization.
+            respawn=False,
+            sigterm_timeout=30.0,
+            sigkill_timeout=30.0,
+        )
+    ]
 
 
 def generate_launch_description():
@@ -145,14 +164,8 @@ def generate_launch_description():
     )
 
 
-    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
-    bag_path = os.path.join(Logs.ROSBAG_DIR, f"bag_pool_test_{timestamp}")
-
-    rosbag_record = ExecuteProcess(
-        cmd=["ros2", "bag", "record", "-a", "-s", "mcap", "-o", bag_path],
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
+    rosbag_record = OpaqueFunction(
+        function=lambda context: create_rosbag_record(context, "bag_pool_test")
     )
 
     ping_sonar_node = Node(
@@ -184,6 +197,13 @@ def generate_launch_description():
                 "respawn_delay",
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed process.",
+            ),
+            DeclareLaunchArgument(
+                "bag_name",
+                default_value="",
+                description=(
+                    "Optional rosbag base name. The launch system appends _YYYY_MM_DD-HH_MM_SS."
+                ),
             ),
             # DeclareLaunchArgument(
             #     "use_ntrip",
