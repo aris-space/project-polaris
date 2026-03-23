@@ -4,7 +4,7 @@ korkyra/uwgps:
       # Vehicle SBL pose: static TF base_link -> sbl_link is in
       # uwgpsg2_ros2_interface/launch/start_waterlinked_interface_bttm_side.launch.py
       ros_rate: 2.0 # as max defined 2-4Hz in http://store.waterlinked.com/wp-content/uploads/2020/09/W-MK-20010-1_Underwater_GPS_G2_Datasheet.pdf
-      waterlinked_url: '192.168.194.94'
+      waterlinked_url: 'http://demo.waterlinked.com' #'192.168.194.94'
       # Params for purely ROS-based UW Locator global position projection as a function of 
       # its relative position w.r.t. the topside and 
       # external topside GPS/IMU measurements 
