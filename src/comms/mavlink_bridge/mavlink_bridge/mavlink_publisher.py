@@ -4,7 +4,7 @@ import logging, os
 from rclpy.node import Node
 from pymavlink import mavutil
 from datetime import datetime
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Int16MultiArray, Float32
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import (
@@ -94,6 +94,10 @@ class MavlinkBridgeSender(Node):
         # self.rc_channel_publisher = self.create_publisher(
         #     RCIn, "/pixhawk/rc_channels", 10
         # )
+
+        self.battery_consumed_publisher = self.create_publisher(
+            Float32, "/pixhawk/battery_consumed", 10
+        )
 
         self.battery_publisher = self.create_publisher(
             BatteryState, "/pixhawk/battery", 10
@@ -373,6 +377,11 @@ class MavlinkBridgeSender(Node):
         ros_msg.percentage = float(msg.battery_remaining) / 100.0
 
         ros_msg.voltage = float(msg.voltages[0]) / 1000.0
+
+        
+        consumed_msg = Float32()
+        consumed_msg.data = float(msg.current_consumed)  # raw mAh from Pixhawk
+        self.battery_consumed_publisher.publish(consumed_msg)
 
         self.battery_publisher.publish(ros_msg)
         self.logger.info(
