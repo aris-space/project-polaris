@@ -26,8 +26,8 @@ def create_rosbag_record(context, default_bag_prefix):
             output="screen",
             # Avoid restarting recorder during shutdown and allow flush/finalization.
             respawn=False,
-            sigterm_timeout=30.0,
-            sigkill_timeout=30.0,
+            sigterm_timeout="10",
+            sigkill_timeout="10",
         )
     ]
 
