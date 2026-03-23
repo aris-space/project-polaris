@@ -2,6 +2,7 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 import rclpy
 from sensor_msgs.msg import FluidPressure
 from rclpy.node import Node
+from std_msgs.msg import Float64
 
 
 class PressureZNedToPoseNode(Node):
@@ -30,6 +31,9 @@ class PressureZNedToPoseNode(Node):
 
         self.sub = self.create_subscription(FluidPressure, input_topic, self.callback, 30)
         self.pub = self.create_publisher(PoseWithCovarianceStamped, output_topic, 30)
+        self.p_surface_pub = self.create_publisher(
+            Float64, "/sensors/pressure/p_surface_pa", 10
+        )
 
         self._calibration_done = False
         self._calibration_start_sec = self.get_clock().now().nanoseconds * 1e-9
@@ -67,6 +71,10 @@ class PressureZNedToPoseNode(Node):
 
         if self._p_surface_pa is None:
             return
+
+        p_surface_msg = Float64()
+        p_surface_msg.data = self._p_surface_pa
+        self.p_surface_pub.publish(p_surface_msg)
 
         rho = float(self.get_parameter("water_density_kg_m3").value)
         g = float(self.get_parameter("gravity_m_s2").value)

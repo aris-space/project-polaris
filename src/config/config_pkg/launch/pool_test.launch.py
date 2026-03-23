@@ -7,6 +7,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
@@ -57,6 +58,7 @@ def generate_launch_description():
     temperature_sensor_pkg_dir = get_package_share_directory("temperature_sensor_pkg")
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
+    ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
     foxglove_bridge_pkg_dir = get_package_share_directory("foxglove_bridge_pkg")
 
@@ -144,6 +146,19 @@ def generate_launch_description():
         }.items(),
     )
 
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                ekf_localization_pkg_dir, "launch", "ekf_localization.launch.py"
+            )
+        ),
+        launch_arguments={
+            "use_navsat_transform": "false",
+            "use_global_ekf": "true",
+        }.items(),
+        condition=IfCondition(LaunchConfiguration("use_ekf_localization")),
+    )
+
     # usb_cam_launch = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(
     #         os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.py")
@@ -205,6 +220,11 @@ def generate_launch_description():
                     "Optional rosbag base name. The launch system appends _YYYY_MM_DD-HH_MM_SS."
                 ),
             ),
+            DeclareLaunchArgument(
+                "use_ekf_localization",
+                default_value="true",
+                description="If true, include ekf_localization_pkg launch.",
+            ),
             # DeclareLaunchArgument(
             #     "use_ntrip",
             #     default_value=EnvironmentVariable("USE_NTRIP", default_value="true"),
@@ -247,6 +267,7 @@ def generate_launch_description():
             temperature_launch,
             xsens_launch,
             dvl_launch,
+            localization_launch,
             #usb_cam_launch,
             # ping_sonar_node,
             foxglove_launch,
