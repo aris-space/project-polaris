@@ -168,14 +168,14 @@ def generate_launch_description():
         function=lambda context: create_rosbag_record(context, "bag_pool_test")
     )
 
-    ping_sonar_node = Node(
-        package="ping_sonar",
-        executable="ice_measurement",
-        name="ice_measurement_publisher",
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
-    )
+    # ping_sonar_node = Node(
+    #     package="ping_sonar",
+    #     executable="ice_measurement",
+    #     name="ice_measurement_publisher",
+    #     output="screen",
+    #     respawn=respawn,
+    #     respawn_delay=respawn_delay,
+    # )
 
     jetson_temperature_node = Node(
         package="jetson_temperature",
@@ -248,7 +248,7 @@ def generate_launch_description():
             xsens_launch,
             dvl_launch,
             #usb_cam_launch,
-            ping_sonar_node,
+            # ping_sonar_node,
             foxglove_launch,
             rosbag_record,
             jetson_temperature_node,
