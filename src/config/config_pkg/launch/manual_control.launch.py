@@ -36,7 +36,6 @@ def generate_launch_description():
     # IncludeLaunchDescription arguments must remain launch substitutions/strings.
     respawn_arg_value = LaunchConfiguration("respawn")
     respawn_delay_arg_value = LaunchConfiguration("respawn_delay")
-    bag_name_arg_value = LaunchConfiguration("bag_name")
     use_ntrip_arg_value = LaunchConfiguration("use_ntrip")
     ntrip_use_https_arg_value = LaunchConfiguration("ntrip_use_https")
     ntrip_host_arg_value = LaunchConfiguration("ntrip_host")
