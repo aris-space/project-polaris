@@ -39,6 +39,7 @@ def generate_launch_description():
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
+    foxglove_bridge_pkg_dir = get_package_share_directory("foxglove_bridge_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -133,15 +134,16 @@ def generate_launch_description():
     #         "respawn_delay": respawn_delay_arg_value,
     #     }.items(),
     # )
-
-    foxglove_bridge_node = Node(
-        package="foxglove_bridge",
-        executable="foxglove_bridge",
-        name="foxglove_bridge_node",
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
+    foxglove_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(foxglove_bridge_pkg_dir, "launch", "launch_foxglove.launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
     )
+
 
     timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
     bag_path = os.path.join(Logs.ROSBAG_DIR, f"bag_pool_test_{timestamp}")
@@ -227,7 +229,7 @@ def generate_launch_description():
             dvl_launch,
             #usb_cam_launch,
             ping_sonar_node,
-            foxglove_bridge_node,
+            foxglove_launch,
             rosbag_record,
             jetson_temperature_node,
         ]
