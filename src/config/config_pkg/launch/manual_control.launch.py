@@ -26,8 +26,8 @@ def create_rosbag_record(context, default_bag_prefix):
             output="screen",
             # Avoid restarting recorder during shutdown and allow flush/finalization.
             respawn=False,
-            sigterm_timeout=30.0,
-            sigkill_timeout=30.0,
+            sigterm_timeout="10",
+            sigkill_timeout="10",
         )
     ]
 
@@ -164,7 +164,7 @@ def generate_launch_description():
 
 
     rosbag_record = OpaqueFunction(
-        function=lambda context: create_rosbag_record(context, "bag_manual_control")
+        function=lambda context: create_rosbag_record(context, "bag")
     )
 
     ping_sonar_node = Node(
