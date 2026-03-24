@@ -14,7 +14,7 @@ source_with_relaxed_nounset() {
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
 AUTO_BUILD="${AUTO_BUILD:-1}"
-ROSDEP_INSTALL="${ROSDEP_INSTALL:0}"
+ROSDEP_INSTALL="${ROSDEP_INSTALL:-1}"
 REFRESH_PY_PACKAGES="${REFRESH_PY_PACKAGES:-1}"
 ROSDEP_SKIP_KEYS="${ROSDEP_SKIP_KEYS:-pymavlink dvl_a50 python3-jetson-gpio}"
 
