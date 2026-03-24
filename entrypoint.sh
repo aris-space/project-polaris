@@ -44,7 +44,8 @@ if [ "${ROSDEP_INSTALL}" = "1" ]; then
     echo "[entrypoint] Updating package lists..."
     apt-get update
     
-    echo "[entrypoint] Updating rosdep..."
+    echo "[entrypoint] Fixing rosdep permissions and updating..."
+    rosdep fix-permissions
     rosdep update || true
     
     if command -v rosdep-install-workspace >/dev/null 2>&1; then
