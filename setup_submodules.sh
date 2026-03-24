@@ -10,38 +10,42 @@ if [ ! -d .git ] && [ ! -f .git ]; then
   exit 1
 fi
 
-# Bind-mounted workspaces often have host ownership that differs from the
-# container user. Mark workspace and key submodules as safe for git.
+echo "[setup_submodules] Marking directories as safe for git..."
+# Mark the current directory as safe
 git config --global --add safe.directory "$(pwd)" || true
+
+# Proactively mark all submodules as safe to avoid "dubious ownership" errors
+# We extract paths from .gitmodules if it exists
+if [ -f .gitmodules ]; then
+    grep path .gitmodules | sed 's/.*= //' | while read -r sub_path; do
+        full_path="$(pwd)/$sub_path"
+        echo "[setup_submodules] Marking $full_path as safe..."
+        git config --global --add safe.directory "$full_path" || true
+    done
+fi
+
+# Specifically for nested submodules like dvl_a50/include/dvl_a50/json
+# These might not be directly in the top-level .gitmodules
+if [ -d "src/sensors/dvl_a50/include/dvl_a50/json" ]; then
+    git config --global --add safe.directory "$(pwd)/src/sensors/dvl_a50/include/dvl_a50/json" || true
+fi
 
 echo "[setup_submodules] Syncing submodules..."
 git submodule sync --recursive
 
 echo "[setup_submodules] Updating submodules..."
-# Try a standard update first. If it fails, we'll try a more aggressive approach.
+# Try a standard update first.
 if ! git submodule update --init --recursive; then
   echo "[setup_submodules] Submodule update failed. Attempting to fix by cleaning submodules..."
-  # Clean and reset submodules to a known good state
+  # If update fails, we try to clean. foreach might also hit ownership issues, 
+  # but we've tried to mark them safe above.
   git submodule foreach --recursive 'git clean -ffdx && git reset --hard'
   git submodule update --init --recursive
 fi
 
-# Specific repair logic for dvl_a50 and its nested json submodule
-if [ -d "src/sensors/dvl_a50" ]; then
-    git config --global --add safe.directory "$(pwd)/src/sensors/dvl_a50" || true
-    git config --global --add safe.directory "$(pwd)/src/sensors/dvl_a50/include/dvl_a50/json" || true
-    
-    if ! git submodule update --init --recursive -- "src/sensors/dvl_a50"; then
-        echo "[setup_submodules] Repairing nested dvl_a50 json submodule checkout..."
-        rm -rf "src/sensors/dvl_a50/include/dvl_a50/json"
-        git submodule update --init --recursive --force -- "src/sensors/dvl_a50"
-    fi
-fi
-
-# Apply sparse-checkout logic for Foxglove Bridge to minimize disk usage/build time
+# Apply sparse-checkout logic for Foxglove Bridge
 if [ -d "src/comms/foxglove_bridge" ]; then
     echo "[setup_submodules] Configuring Foxglove Bridge sparse-checkout (ros only)..."
-    # We use a subshell to avoid changing the main script's working directory permanently
     (
         cd src/comms/foxglove_bridge
         git sparse-checkout init --cone
