@@ -39,11 +39,20 @@ if command -v git >/dev/null 2>&1 && [ -f "${ROS_WS}/setup_submodules.sh" ]; the
 fi
 
 # 2) Optional dependency install for mounted workspaces.
-if [ "${ROSDEP_INSTALL}" = "0" ]; then
-  if command -v rosdep-install-workspace >/dev/null 2>&1; then
-    rosdep-install-workspace "${ROS_WS}"
-  elif command -v rosdep >/dev/null 2>&1; then
-    rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+if [ "${ROSDEP_INSTALL}" = "1" ]; then
+  if command -v rosdep >/dev/null 2>&1; then
+    echo "[entrypoint] Updating package lists..."
+    apt-get update
+    
+    echo "[entrypoint] Updating rosdep..."
+    rosdep update || true
+    
+    if command -v rosdep-install-workspace >/dev/null 2>&1; then
+      rosdep-install-workspace "${ROS_WS}"
+    else
+      echo "[entrypoint] Installing dependencies with rosdep..."
+      rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+    fi
   else
     echo "ROSDEP_INSTALL=1 but neither 'rosdep-install-workspace' nor 'rosdep' was found."
     exit 1
