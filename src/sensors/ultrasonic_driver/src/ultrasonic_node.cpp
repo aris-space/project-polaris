@@ -203,10 +203,10 @@ private:
         status.message = "Not publishing valid data";
       } else if (distance_m < 1.0f) {
         status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-        status.message = "Obstacle very close, check collision avoidance";
+        status.message = "f{distance_m:.2f}m: Obstacle very close, check collision avoidance";
       } else if (distance_m < 1.5f) {
         status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-        status.message = "Approaching obstacle";
+        status.message = "f{distance_m:.2f}m: Approaching obstacle";
       }
     }
 

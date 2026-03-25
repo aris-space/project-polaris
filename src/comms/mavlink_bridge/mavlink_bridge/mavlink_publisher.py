@@ -396,7 +396,7 @@ class MavlinkBridgeSender(Node):
         status_current = DiagnosticStatus()
         status_current.name = "Battery: Current"
         status_current.level = DiagnosticStatus.OK
-        status_current.message = "OK"
+        status_current.message = f"{ros_msg.current:.2f}A"
         status_current.values = [KeyValue(key="current_A", value=f"{ros_msg.current:.2f}")]
         diag_msg.status.append(status_current)
         
@@ -404,7 +404,7 @@ class MavlinkBridgeSender(Node):
         status_voltage = DiagnosticStatus()
         status_voltage.name = "Battery: Voltage"
         status_voltage.level = DiagnosticStatus.OK
-        status_voltage.message = "OK"
+        status_voltage.message = f"{ros_msg.voltage:.2f}V"
         status_voltage.values = [KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")]
         
         if ros_msg.voltage < self.battery_min_voltage:
@@ -415,7 +415,7 @@ class MavlinkBridgeSender(Node):
             status_voltage.message = "Voltage is close to minimum"
         else:
             status_voltage.level = DiagnosticStatus.OK
-            status_voltage.message = "OK"
+            status_voltage.message = f"{ros_msg.voltage:.2f}V"
         
         diag_msg.status.append(status_voltage)
 
