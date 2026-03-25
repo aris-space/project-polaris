@@ -235,11 +235,7 @@ def generate_launch_description():
                     "use record_bag.launch.py for recording."
                 ),
             ),
-            DeclareLaunchArgument(
-                "use_ekf_localization",
-                default_value="true",
-                description="If true, include ekf_localization_pkg launch.",
-            ),
+
             # DeclareLaunchArgument(
             #     "use_ntrip",
             #     default_value=EnvironmentVariable("USE_NTRIP", default_value="true"),
@@ -278,12 +274,11 @@ def generate_launch_description():
             mode_control_launch,
             mavlink_launch,
             # gnss_launch,
-            ultrasonic_launch,
+            # ultrasonic_launch,
             temperature_launch,
             xsens_launch,
             dvl_launch,
-            localization_launch,
-            #usb_cam_launch,
+            # usb_cam_launch,
             # ping_sonar_node,
             foxglove_launch,
             rosbag_record,
