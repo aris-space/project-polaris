@@ -81,7 +81,7 @@ class BatteryTracker(Node):
         status = DiagnosticStatus()
         status.name = "Battery"
         status.level = DiagnosticStatus.OK
-        status.message = "OK"
+        status.message = f"{(self.remaining * 100):.2f}%"
         status.values = [
             KeyValue(key="battery_remaining", value=f"{(self.remaining * 100):.2f} %"),
             KeyValue(key="battery_consumed_mah", value=f"{self.battery_consumed:.0f} mAh"),

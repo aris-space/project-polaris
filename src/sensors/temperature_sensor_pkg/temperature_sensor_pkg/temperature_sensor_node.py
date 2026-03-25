@@ -97,7 +97,7 @@ class Temperature_sensor(Node):
                 status.name = f"Sensor {sensor_i} ({pos})"  # Give it a unique name
                 status.hardware_id = f"temperature_sensor_{sensor_i}"  # Unique ID
                 level = DiagnosticStatus.OK
-                message = "OK"
+                message = f"{temp:.2f}°C"
 
                 # Add the raw data as a KeyValue pair
                 status.values = [KeyValue(key="temp_c", value=f"{temp:.2f}")]              
