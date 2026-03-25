@@ -26,40 +26,32 @@ class JetsonTemperature(Node):
         gpu_temp = self.read_thermal_zone(1)
         tj_temp = self.read_thermal_zone(8)
         
-        temperatures_dict = {
-            'CPU temperature': cpu_temp,
-            'Junction temperature': tj_temp,
-            'GPU temperature': gpu_temp,
+        temperatures = {
+            'cpu': cpu_temp,
+            'gpu': gpu_temp,
+            'junction': tj_temp,
         }
 
         diag_msg = DiagnosticArray()
         diag_msg.header.stamp = self.get_clock().now().to_msg()
 
-        
+        status = DiagnosticStatus()
+        status.name = "Jetson: Temperatures"
+        status.level = DiagnosticStatus.OK
+        status.message = "OK"
 
-        for i, temp in temperatures_dict.items():
-
+        for name, temp in temperatures.items():
             if temp is None:
                 continue
-
-            level = DiagnosticStatus.OK
-            message = "OK"
+            status.values.append(KeyValue(key=f"{name}_C", value=f"{temp:.2f}"))
             if temp > 90:
-                level = DiagnosticStatus.ERROR
-                message = f"{i}: {temp:.2f}°C is dangerously high"
-                
-            elif temp > 80:
-                level = DiagnosticStatus.WARN
-                message = f"{i}: {temp:.2f}°C is too high"
-                
-            
-            status = DiagnosticStatus()
-            status.name = i
-            status.level = level
-            status.values = [KeyValue(key=i, value=f"{temp:.2f}")]    
-            status.message = message
-            diag_msg.status.append(status)
+                status.level = DiagnosticStatus.ERROR
+                status.message = f"{name}: {temp:.1f}°C is dangerously high"
+            elif temp > 80 and status.level != DiagnosticStatus.ERROR:
+                status.level = DiagnosticStatus.WARN
+                status.message = f"{name}: {temp:.1f}°C is too high"
 
+        diag_msg.status.append(status)
         self.publisher.publish(diag_msg)
 
 
