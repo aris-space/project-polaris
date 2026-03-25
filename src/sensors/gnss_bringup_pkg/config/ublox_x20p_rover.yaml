@@ -3,6 +3,7 @@
     # Device selection
     DEVICE_FAMILY: "X20P"
     DEVICE_SERIAL_STRING: ""
+    # Antenna frame; static TF base_link -> gnss_link is in launch_gnss_x20p.launch.py
     FRAME_ID: "gnss_link"
 
     # Keep NMEA off for ROS-only UBX workflow.

@@ -24,7 +24,8 @@
 Go to directory where you want to store your repo and clone:
 ```bash
 cd Documents/here-i-want-my-repo
-git clone https://github.com/aris-space/project-polaris.git
+git clone --recurse-submodules https://github.com/aris-space/project-polaris.git
+git -C src/comms/foxglove_bridge sparse-checkout set ros
 ```
 
 

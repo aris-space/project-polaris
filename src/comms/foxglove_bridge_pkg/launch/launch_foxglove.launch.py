@@ -16,6 +16,7 @@ def generate_launch_description():
                         "address": "0.0.0.0",
                         "capabilities": ["clientPublish", "connectionGraph", "assets"],
                         "send_buffer_limit": 10000000,
+                        "use_compression": False,
                     }
                 ],
             )
