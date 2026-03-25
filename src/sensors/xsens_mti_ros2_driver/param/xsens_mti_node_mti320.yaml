@@ -144,7 +144,8 @@
         pub_pressure: false
         pub_accelerationhr: true #High Rate Data Acceleration, when this is true, set enable_high_rate to true as well
         pub_angular_velocity_hr: true #High Rate Data Angular Velocity,  when this is true, set enable_high_rate to true as well
-        pub_transform: true
+        # false: see xsens_mti_node.yaml — avoids world->imu_link vs static base_link->imu_link conflict.
+        pub_transform: false
         pub_status: true
         pub_twist: true          # For GNSS/INS Version of MTI only
         pub_gnss: false          # For GNSS/INS Version of MTI only
