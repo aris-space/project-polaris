@@ -1,3 +1,3 @@
 [submodule "src/sensors/dvl_a50"]
 	path = src/sensors/dvl_a50
-	url = https://github.com/ndahn/dvl_a50.git
+	url = https://github.com/glebplatonov04/dvl_a50.git
