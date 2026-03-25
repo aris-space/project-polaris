@@ -30,31 +30,30 @@ fi
 
 cd "${ROS_WS}"
 
-# Bind-mounted workspaces often have host ownership that differs from the
-# container user. Mark workspace as safe for git before submodule operations.
-if command -v git >/dev/null 2>&1; then
-  git config --global --add safe.directory "${ROS_WS}" || true
-  git config --global --add safe.directory "${ROS_WS}/src/sensors/dvl_a50" || true
-  git config --global --add safe.directory "${ROS_WS}/src/sensors/dvl_a50/include/dvl_a50/json" || true
-fi
-
-# Ensure the DVL source package (and its nested json submodule) is initialized.
-# dvl_a50 is provided as a git submodule, not as a public rosdep key.
-if [ -f "${ROS_WS}/.gitmodules" ] && command -v git >/dev/null 2>&1; then
-  git -C "${ROS_WS}" submodule sync --recursive || true
-  if ! git -C "${ROS_WS}" submodule update --init --recursive -- "src/sensors/dvl_a50"; then
-    echo "[entrypoint] repairing nested dvl_a50 json submodule checkout..."
-    rm -rf "${ROS_WS}/src/sensors/dvl_a50/include/dvl_a50/json"
-    git -C "${ROS_WS}" submodule update --init --recursive --force -- "src/sensors/dvl_a50"
-  fi
+# 1.5) Initialize and repair submodules if git is available.
+if command -v git >/dev/null 2>&1 && [ -f "${ROS_WS}/setup_submodules.sh" ]; then
+  # Ensure the script is executable.
+  chmod +x "${ROS_WS}/setup_submodules.sh"
+  # Run the standalone submodule setup script.
+  "${ROS_WS}/setup_submodules.sh"
 fi
 
 # 2) Optional dependency install for mounted workspaces.
-if [ "${ROSDEP_INSTALL}" = "0" ]; then
-  if command -v rosdep-install-workspace >/dev/null 2>&1; then
-    rosdep-install-workspace "${ROS_WS}"
-  elif command -v rosdep >/dev/null 2>&1; then
-    rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+if [ "${ROSDEP_INSTALL}" = "1" ]; then
+  if command -v rosdep >/dev/null 2>&1; then
+    echo "[entrypoint] Updating package lists..."
+    apt-get update
+    
+    echo "[entrypoint] Fixing rosdep permissions and updating..."
+    rosdep fix-permissions
+    rosdep update || true
+    
+    if command -v rosdep-install-workspace >/dev/null 2>&1; then
+      rosdep-install-workspace "${ROS_WS}"
+    else
+      echo "[entrypoint] Installing dependencies with rosdep..."
+      rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+    fi
   else
     echo "ROSDEP_INSTALL=1 but neither 'rosdep-install-workspace' nor 'rosdep' was found."
     exit 1
