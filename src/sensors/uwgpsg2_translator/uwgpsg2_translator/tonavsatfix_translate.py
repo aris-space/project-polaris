@@ -23,6 +23,7 @@ class ToNavSatFixTranslator(Node):
     def on_geopointstamped(self, msg: GeoPointStamped):
         out = NavSatFix()
         out.header = msg.header
+        out.header.frame_id = "sbl_link" #Verify this is the correct frame_id
         out.latitude = msg.position.latitude
         out.longitude = msg.position.longitude
         out.altitude = msg.position.altitude

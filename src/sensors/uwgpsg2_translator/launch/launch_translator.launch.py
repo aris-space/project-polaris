@@ -26,6 +26,14 @@ def generate_launch_description():
                 output="screen",
                 respawn=respawn,
                 respawn_delay=respawn_delay,
+            ), 
+            Node(
+                package="uwgpsg2_translator",
+                executable="selector",
+                name="selector",
+                output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
             )
         ]
     )
