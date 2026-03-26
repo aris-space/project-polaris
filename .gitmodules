@@ -10,3 +10,4 @@
 [submodule "src/sensors/auv_msgs"]
 	path = src/sensors/auv_msgs
 	url = https://github.com/oceansystemslab/auv_msgs.git
+	branch = ros2-master
