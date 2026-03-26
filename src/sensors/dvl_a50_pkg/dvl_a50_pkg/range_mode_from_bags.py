@@ -213,7 +213,7 @@ def main() -> None:
         f"{cover_lo:.3f} .. {cover_hi:.3f} m"
     )
     print(f"\nRECOMMENDED range_mode: {suggested_mode}")
-    print(f'use in launch: ros2 launch dvl_a50_pkg launch_dvl.py range_mode:="{suggested_mode}"')
+    print(f'use in launch: ros2 launch dvl_a50_pkg launch_dvl.launch.py range_mode:="{suggested_mode}"')
 
 
 if __name__ == "__main__":

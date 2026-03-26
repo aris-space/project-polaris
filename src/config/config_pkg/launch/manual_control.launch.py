@@ -1,12 +1,35 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from datetime import datetime
 from config_pkg.constants import Logs
+
+
+def create_rosbag_record(context, default_bag_prefix):
+    bag_name = LaunchConfiguration("bag_name").perform(context).strip()
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    bag_base_name = f"{bag_name}_{timestamp}" if bag_name else f"{default_bag_prefix}_{timestamp}"
+    bag_path = os.path.join(Logs.ROSBAG_DIR, bag_base_name)
+
+    return [
+        ExecuteProcess(
+            cmd=["ros2", "bag", "record", "-a", "-s", "mcap", "-o", bag_path],
+            output="screen",
+            # Avoid restarting recorder during shutdown and allow flush/finalization.
+            respawn=False,
+            sigterm_timeout="10",
+            sigkill_timeout="10",
+        )
+    ]
 
 
 def generate_launch_description():
@@ -35,6 +58,7 @@ def generate_launch_description():
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
+    foxglove_bridge_pkg_dir = get_package_share_directory("foxglove_bridge_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -110,7 +134,7 @@ def generate_launch_description():
 
     dvl_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(dvl_a50_pkg_dir, "launch", "launch_dvl.py")
+            os.path.join(dvl_a50_pkg_dir, "launch", "launch_dvl.launch.py")
         ),
         launch_arguments={
             "respawn": respawn_arg_value,
@@ -128,30 +152,34 @@ def generate_launch_description():
         }.items(),
     )
 
-    foxglove_bridge_node = Node(
-        package="foxglove_bridge",
-        executable="foxglove_bridge",
-        name="foxglove_bridge_node",
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
+    foxglove_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(foxglove_bridge_pkg_dir, "launch", "launch_foxglove.launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
     )
 
 
-    timestamp = datetime.now().strftime('%Y_%m_%d-%H_%M_%S')
-    bag_path = os.path.join(Logs.ROSBAG_DIR, f"bag_{timestamp}")
-    
-    rosbag_record = ExecuteProcess(
-        cmd=["ros2", "bag", "record", "-a", "-s", "mcap", "-o", bag_path],
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
+    rosbag_record = OpaqueFunction(
+        function=lambda context: create_rosbag_record(context, "bag")
     )
 
     ping_sonar_node = Node(
         package="ping_sonar",
         executable="ice_measurement",
         name="ice_measurement_publisher",
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+
+    jetson_temperature_node = Node(
+        package="jetson_temperature",
+        executable="jetson_temperature",
+        name="jetson_temperature_monitor_node",
         output="screen",
         respawn=respawn,
         respawn_delay=respawn_delay,
@@ -168,6 +196,13 @@ def generate_launch_description():
                 "respawn_delay",
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed process.",
+            ),
+            DeclareLaunchArgument(
+                "bag_name",
+                default_value="",
+                description=(
+                    "Optional rosbag base name. The launch system appends _YYYY_MM_DD-HH_MM_SS."
+                ),
             ),
             DeclareLaunchArgument(
                 "use_ntrip",
@@ -213,7 +248,8 @@ def generate_launch_description():
             dvl_launch,
             usb_cam_launch,
             ping_sonar_node,
-            foxglove_bridge_node,
+            foxglove_launch,
             rosbag_record,
+            jetson_temperature_node,
         ]
     )
