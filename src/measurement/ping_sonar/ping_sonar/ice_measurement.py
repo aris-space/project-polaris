@@ -126,8 +126,8 @@ class Ice_Measurement(Node):
         # )
 
         msg_distance = Distance()
-        msg_distance.distance = distance["distance"]
-        msg_distance.confidence = distance["confidence"]
+        msg_distance.distance = float(distance["distance"])
+        msg_distance.confidence = float(distance["confidence"])
 
         # msg_profile = String()
         # msg_profile.data = json.dumps(
@@ -139,10 +139,10 @@ class Ice_Measurement(Node):
         #     }
         # )
         msg_profile = Profile()
-        msg_profile.scan_start = profile["scan_start"]
-        msg_profile.scan_length = profile["scan_length"]
-        msg_profile.ping_number = profile["ping_number"]
-        msg_profile.profile_data = list(profile["profile_data"])
+        msg_profile.scan_start = float(profile["scan_start"])
+        msg_profile.scan_length = float(profile["scan_length"])
+        msg_profile.ping_number = int(profile["ping_number"])
+        msg_profile.profile_data = list(float(x) for x in profile["profile_data"])
 
         self.distance_publisher.publish(msg_distance)
         self.profile_publisher.publish(msg_profile)
