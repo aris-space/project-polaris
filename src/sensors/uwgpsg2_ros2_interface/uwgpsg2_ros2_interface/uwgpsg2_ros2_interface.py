@@ -15,8 +15,7 @@ from sensor_msgs.msg import NavSatFix
 from sensor_msgs.msg import Imu
 from geographic_msgs.msg import GeoPointStamped
 from auv_msgs.msg import NavigationStatus
-# from ublox_msgs.msg import NavRELPOSNED9
-from ublox_dgnss.ublox_ubx_msgs.msg import UBXNavRelPosNED as NavRELPOSNED9
+from ublox_ubx_msgs.msg import UBXNavRelPosNED as NavRELPOSNED9
 
 import math
 import sys

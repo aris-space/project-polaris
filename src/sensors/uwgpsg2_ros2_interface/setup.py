@@ -17,7 +17,13 @@ setup(
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         #(os.path.join('share', package_name, 'config'), glob('config/*.perspective'))
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'requests',
+        'numpy',
+        'termcolor',
+        'pymap3d',
+    ],
     zip_safe=True,
     maintainer='nadir',
     maintainer_email='nadir.kapetanovic@fer.hr',

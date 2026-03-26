@@ -1,4 +1,4 @@
-korkyra/uwgps:
+waterlinked/ugps:
   waterlinked_localization_node:
     ros__parameters:
       # Vehicle SBL pose: static TF base_link -> sbl_link is in
@@ -9,7 +9,7 @@ korkyra/uwgps:
       # its relative position w.r.t. the topside and 
       # external topside GPS/IMU measurements 
       # If ROS is used for frame transform, "wl_api_use_external*" boolean params should all be False
-      use_ros_based_frame_transform: True   
+      use_ros_based_frame_transform: False
 
       # Topic names if (use_ros_based_frame_transform OR wl_api_use_external_*_measurements 
       # external_gps_measurements_topic: '/korkyra/fix' # sensor_msgs/msg/NavSatFix
@@ -35,5 +35,5 @@ korkyra/uwgps:
       external_gps_fixed_lon: 0.0 # degrees             
       external_heading_fixed_value: 0.0 # degrees
       # API external params
-      wl_api_use_external_gps_measurements: True #False
-      wl_api_use_external_heading_measurements: True #False
+      wl_api_use_external_gps_measurements: True
+      wl_api_use_external_heading_measurements: True
