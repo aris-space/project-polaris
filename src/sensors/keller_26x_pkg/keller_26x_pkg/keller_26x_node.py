@@ -4,21 +4,23 @@ TODO: Add dependencies!!!!!!
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import FluidPressure, Temperature
 
 from keller_protocol import keller_protocol as kp
 # use pip install keller-protocol
 # https://github.com/KELLERAGfuerDruckmesstechnik/keller_protocol_python
 
 
-
+# TODO: Make the udev rule if not done just use: /dev/ttyUSB0 and to check ls /dev/ttyUSB*
+# On Windows it is like "COM3" e.g.
 class Keller26xNode(Node):
 
     def __init__(self):
         super().__init__('keller_26x_pressure')
 
-        self.bus = kp.KellerProtocol(port="COM17", baud_rate=9600, timeout=0.3, echo=True)
+        self.bus = kp.KellerProtocol(port="/dev/keller_sensor", baud_rate=9600, timeout=0.3, echo=True)
         self.address = 1
+        self.p1_Pa = 0.0
         self.serial_number = None
         self.f73_channels = {
             "CH0": 0,
@@ -30,46 +32,23 @@ class Keller26xNode(Node):
             "ConTc": 10,
             "ConRaw": 11,
         }
-        self.init_f48()
 
-        self.publisher_ = self.create_publisher(String, 'topic', 10)
-        timer_period = 0.5  # seconds
+        firmware = self.bus.f48(self.address)
+
+        self.pub = self.create_publisher(
+            FluidPressure, 
+            'sensors/keller26x/pressure', 
+            10,
+        )
+
+        timer_period = 0.5  # TODO: How high needed?
         self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.i = 0
 
-        
-    def init_f48(self) -> str:
-        """Initialise and release"""
-        answer = self.bus.f48(self.address)
-        print(f" Init of Device Address: {self.address} with Firmware: {answer}")
-
-    def get_serial(self) -> int:
-        """Get Serial Number from X-Line
-
-        :returns Serial Number
+    def init_f48(self):
         """
-        self.serial_number = self.bus.f69(self.address)
-        return self.serial_number
-
-    def get_address(self) -> int:
-        return self.address
-
-    def set_address(self, new_address: int) -> int:
-        """Change the Device address. -> Has to be unique on the RS485 bus
-
-        :param new_address: New address of the Device
-        :return: If successful return new_address otherwise old address and throw exception
+        To be able to communicate with the transmitter you will have to use F48 first to initialize.
         """
-        self.address = self.bus.f66(self.address, new_address)
-        return self.address
-
-    def measure_tob1(self) -> float:
-        """Get temperature TOB1
-
-        :return: temperature
-        """
-        temperature = self.bus.f73(self.address, self.f73_channels["TOB1"])
-        return temperature
+        firmware = self.bus.f48(self.address)
 
     def measure_p1(self) -> float:
         """Get pressure P1
@@ -81,11 +60,15 @@ class Keller26xNode(Node):
     
     
     def timer_callback(self):
-        msg = String()
-        msg.data = 'Hello World: %d' % self.i
-        self.publisher_.publish(msg)
-        self.get_logger().info('Publishing: "%s"' % msg.data)
-        self.i += 1
+        msg_P = FluidPressure()
+        p1_bar = measure_p1()
+        self.p1_Pa = p1_bar * 100000
+        msg_P.data = self.p1_Pa
+
+        self.pub.publish(msg_P)
+        self.get_logger().info(
+            f"keller_pressure={self.p1_Pa}"
+        )
 
 
 def main(args=None):
