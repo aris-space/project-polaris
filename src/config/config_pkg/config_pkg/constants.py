@@ -24,13 +24,18 @@ class SubConfig:
 
 
 class Ports:
-    FRONT_ULTRASONIC_PORT = "/dev/ttyUSB0"
-    TOP_ULTRASONIC_PORT = "PLACEHOLDER"
+    FRONT_ULTRASONIC_PORT = "/dev/uart_port_1"
+    PING_SONAR_PORT = "/dev/uart_port_2"
+    TOP_ULTRASONIC_PORT = "/dev/uart_port_3"
     ARDUINO_PORT = "/dev/arduino_nano"
+    USB_CAM_FRONT_PORT = "/dev/video0"
+    USB_CAM_TUBE_PORT = "/dev/video1"
+    SERIAL_PORT1 = "/dev/ttyTHS1"
 
 
 class Logs:
     LOG_DIR = "~/polaris_logs"  # Directory to save logs
+    ROSBAG_DIR = "/ros2_ws/recordings/"  # Directory to save rosbag recordings
 
 
 class JoyPS4:
@@ -45,8 +50,8 @@ class JoyPS4:
         SHARE_BUTTON = 8
         OPTIONS_BUTTON = 9
         PS_BUTTON = 10
-        L3_BUTTON = 11  # Left stick click
-        R3_BUTTON = 12  # Right stick click
+        L3 = 11  # Left stick click
+        R3 = 12  # Right stick click
 
         # General Axis Mapping (0-indexed)
         LEFT_STICK_X_AXIS = 1  # Up = 1.0, Down = -1.0
@@ -67,8 +72,8 @@ class JoyPS4:
         SHARE_BUTTON = 4
         PS_BUTTON = 5
         OPTIONS_BUTTON = 6
-        L3_BUTTON = 7  # Left stick click
-        R3_BUTTON = 8  # Right stick click
+        L3 = 7  # Left stick click
+        R3 = 8  # Right stick click
         L1 = 9
         R1 = 10
         DPAD_UP = 11
@@ -119,8 +124,7 @@ class JoyControlMapping:
 
     # Control Specific Button Mapping
     SETTING_SAFETY_BUTTON_IDX = JoyPS4.SQUARE  # Square Button
-    MODE_SAFETY_BUTTON_IDX = JoyPS4.X  # X Button
-    SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.SHARE_BUTTON  # Share Button
+    MODE_SAFETY_BUTTON_IDX = JoyPS4.TRIANGLE  # Triangle Button
     EMERGENCY_STOP_BUTTON_IDX_LEFT = JoyPS4.L3
     EMERGENCY_STOP_BUTTON_IDX_RIGHT = JoyPS4.R3  # R3 Button
     ROLL_RATE_NEGATIVE_AXIS_IDX = JoyPS4.L1  # L1 Button
@@ -134,6 +138,7 @@ class JoyControlMapping:
         MODE_SPARE_2_DPAD_AXES_IDX = JoyPS4.DPAD_VERTICAL_AXIS
         SETTING_ARM_DISARM_AXIS_IDX = JoyPS4.DPAD_VERTICAL_AXIS
         SETTING_STABILIZATION_AXIS_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS
+        SETTING_COLLISION_AVOIDANCE_AXIS_IDX = JoyPS4.DPAD_HORIZONTAL_AXIS
 
     else:
         # JETSON & FOXGLOVE Mode Button Mapping (Requires Safety Button Pressed)
@@ -144,7 +149,7 @@ class JoyControlMapping:
         SETTING_ARM_BUTTON_IDX = JoyPS4.DPAD_UP  # D-pad Up
         SETTING_DISARM_BUTTON_IDX = JoyPS4.DPAD_DOWN  # D-pad Down
         SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Left
-
+        SETTING_COLLISION_AVOIDANCE_BUTTON_IDX = JoyPS4.DPAD_RIGHT  # D-pad Right
     LINEAR_SPEED_X_AXIS_IDX = JoyPS4.LEFT_STICK_X_AXIS  # Left Stick X-Axis
     LINEAR_SPEED_Y_AXIS_IDX = JoyPS4.LEFT_STICK_Y_AXIS  # Left Stick Y-Axis
     LINEAR_SPEED_Z_FORWARD_AXIS_IDX = JoyPS4.L2_TRIGGER_AXIS  # L2 Trigger Axis
@@ -155,6 +160,8 @@ class JoyControlMapping:
 
 class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
-    SERIAL_PORT1 = "/dev/ttyTHS1"
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 57600
+    JETSON_IP_ADDRESS = "192.168.194.20"
+    # PING_SONAR_BAUD_RATE = 115200
+    USB0_BAUD_RATE = 115200

@@ -1,171 +1,227 @@
 #include <chrono>
-#include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
 #include <memory>
-#include <stdexcept>
 #include <string>
+#include <vector>
+#include <cstring>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float32.hpp"
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
+#include "rcl_interfaces/msg/set_parameters_result.hpp"
 
 using namespace std::chrono_literals;
 
 class UltrasonicSensorNode : public rclcpp::Node
 {
 public:
-  UltrasonicSensorNode() : Node("ultrasonic_sensor_node")
+  UltrasonicSensorNode() : Node("ultrasonic_sensor_node"), serial_port_(-1), timer_(nullptr)
   {
-    this->declare_parameter<std::string>("serial_device");
-    if (!this->get_parameter("serial_device", serial_device_) || serial_device_.empty()) {
-      RCLCPP_FATAL(
-        this->get_logger(),
-        "Missing required parameter 'serial_device'. Run with: --ros-args -p serial_device:=/dev/ttyUSB0");
-      throw std::runtime_error("required parameter 'serial_device' not set");
-    }
+    // --- 1. DECLARE PARAMETERS ---
+    // Using basic descriptors without ranges for simple text/numeric inputs
+    auto device_desc = rcl_interfaces::msg::ParameterDescriptor{};
+    device_desc.description = "The serial port device path (e.g., /dev/ttyUSB0)";
+    this->declare_parameter<std::string>("serial_device", "/dev/ttyUSB0", device_desc);
 
-    // Open in Read/Write mode. O_NDELAY prevents the open call from blocking.
-    serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
-    
-    if (serial_port_ < 0) {
-      RCLCPP_ERROR(this->get_logger(), "Could not open %s. Error: %s", serial_device_.c_str(), std::strerror(errno));
-      RCLCPP_ERROR(this->get_logger(), "TIP: Try 'sudo chmod 666 %s'", serial_device_.c_str());
-      return;
-    }
+    auto freq_desc = rcl_interfaces::msg::ParameterDescriptor{};
+    freq_desc.description = "Frequency to poll the sensor in Hz";
+    this->declare_parameter<double>("publish_frequency_hz", 10.0, freq_desc);
 
-    setup_serial();
-    
+    // --- 2. INITIALIZE STATE ---
+    serial_device_ = this->get_parameter("serial_device").as_string();
+    publish_frequency_hz_ = this->get_parameter("publish_frequency_hz").as_double();
+
     publisher_ = this->create_publisher<std_msgs::msg::Float32>("ultrasonic/distance", 10);
 
-    const double publish_frequency_hz = this->declare_parameter<double>("publish_frequency_hz", 10.0);
-    if (publish_frequency_hz <= 0.0) {
-      RCLCPP_FATAL(
-        this->get_logger(),
-        "Invalid 'publish_frequency_hz' (%.3f). It must be > 0.",
-        publish_frequency_hz);
-      throw std::runtime_error("invalid parameter 'publish_frequency_hz'");
-    }
+    diagnostics_publisher_ = this->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
 
-    const auto timer_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::duration<double>(1.0 / publish_frequency_hz));
-    
-    timer_ = this->create_wall_timer(timer_period, std::bind(&UltrasonicSensorNode::read_sensor, this));
-    
-    RCLCPP_INFO(
-      this->get_logger(),
-      "Ultrasonic Node initialized on %s at %.2f Hz",
-      serial_device_.c_str(),
-      publish_frequency_hz);
+    // Initial setup
+    open_serial_port();
+    update_timer();
+
+    // --- 3. REGISTER DYNAMIC CALLBACK ---
+    callback_handle_ = this->add_on_set_parameters_callback(
+        std::bind(&UltrasonicSensorNode::on_set_parameters, this, std::placeholders::_1));
+
+    RCLCPP_INFO(this->get_logger(), "Node started. Parameters are now dynamic.");
   }
 
-  ~UltrasonicSensorNode() {
-    if (serial_port_ >= 0) close(serial_port_);
+  ~UltrasonicSensorNode()
+  {
+    close_serial_port();
   }
 
 private:
-  void setup_serial()
+  rcl_interfaces::msg::SetParametersResult on_set_parameters(const std::vector<rclcpp::Parameter> &parameters)
   {
-    struct termios tty;
-    if (tcgetattr(serial_port_, &tty) != 0) {
-      RCLCPP_ERROR(this->get_logger(), "Error from tcgetattr: %s", std::strerror(errno));
+    auto result = rcl_interfaces::msg::SetParametersResult();
+    result.successful = true;
+
+    for (const auto &param : parameters)
+    {
+      if (param.get_name() == "serial_device")
+      {
+        serial_device_ = param.as_string();
+        RCLCPP_INFO(this->get_logger(), "Updating serial_device to: %s", serial_device_.c_str());
+        open_serial_port();
+      }
+      else if (param.get_name() == "publish_frequency_hz")
+      {
+        double val = param.as_double();
+        if (val <= 0.0)
+        {
+          result.successful = false;
+          result.reason = "Frequency must be > 0";
+        }
+        else
+        {
+          publish_frequency_hz_ = val;
+          update_timer();
+          RCLCPP_INFO(this->get_logger(), "Frequency updated to %.2f Hz", val);
+        }
+      }
+    }
+    return result;
+  }
+
+  void open_serial_port()
+  {
+    close_serial_port();
+    serial_port_ = open(serial_device_.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
+    if (serial_port_ < 0)
+    {
+      RCLCPP_ERROR(this->get_logger(), "Could not open %s: %s", serial_device_.c_str(), std::strerror(errno));
       return;
     }
 
-    // Set Baud Rate to 115200 (Matches your Arduino code)
-    cfsetospeed(&tty, B115200);
-    cfsetispeed(&tty, B115200);
-
-    // Set hardware parameters: 8N1
-    tty.c_cflag &= ~PARENB;        // No parity bit
-    tty.c_cflag &= ~CSTOPB;        // Only one stop bit
-    tty.c_cflag &= ~CSIZE;         // Clear size mask
-    tty.c_cflag |= CS8;            // 8 data bits
-    tty.c_cflag |= (CLOCAL | CREAD); // Ignore modem lines, enable receiver
-
-    // Disable canonical mode (we want raw bytes, not lines)
-    tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-    tty.c_iflag &= ~(IXON | IXOFF | IXANY | ICRNL);
-    tty.c_oflag &= ~OPOST;
-
-    // VMIN = 0, VTIME = 1: Read will return as soon as any data is received, 
-    // or timeout after 100ms if nothing arrives.
-    tty.c_cc[VMIN] = 0;
-    tty.c_cc[VTIME] = 1; 
-
-    if (tcsetattr(serial_port_, TCSANOW, &tty) != 0) {
-      RCLCPP_ERROR(this->get_logger(), "Error from tcsetattr: %s", std::strerror(errno));
+    struct termios tty;
+    if (tcgetattr(serial_port_, &tty) == 0)
+    {
+      cfsetospeed(&tty, B115200);
+      cfsetispeed(&tty, B115200);
+      tty.c_cflag |= (CLOCAL | CREAD);
+      tty.c_cflag &= ~PARENB;
+      tty.c_cflag &= ~CSTOPB;
+      tty.c_cflag &= ~CSIZE;
+      tty.c_cflag |= CS8;
+      tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+      tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+      tty.c_oflag &= ~OPOST;
+      tty.c_cc[VMIN] = 0;
+      tty.c_cc[VTIME] = 1;
+      tcsetattr(serial_port_, TCSANOW, &tty);
     }
-    
-    // Clear buffers
     tcflush(serial_port_, TCIOFLUSH);
+  }
+
+  void close_serial_port()
+  {
+    if (serial_port_ >= 0)
+    {
+      close(serial_port_);
+      serial_port_ = -1;
+    }
+  }
+
+  void update_timer()
+  {
+    if (timer_)
+      timer_->cancel();
+    auto period = std::chrono::duration<double>(1.0 / publish_frequency_hz_);
+    timer_ = this->create_wall_timer(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(period),
+        std::bind(&UltrasonicSensorNode::read_sensor, this));
   }
 
   void read_sensor()
   {
-    // 1. Send Trigger Pulse (0x55)
-    uint8_t trigger_byte = 0x55;
-    if (write(serial_port_, &trigger_byte, 1) < 0) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to write to serial port");
-      return;
-    }
+    float distance_m = -1.0f; // Declared ONCE
 
-    // 2. Wait for the sensor to process the ping and reply
-    // On USB-to-TTL, 50-70ms is the "sweet spot" to ensure the buffer is filled
-    std::this_thread::sleep_for(70ms);
+    if (serial_port_ >= 0) {
+      uint8_t trigger_byte = 0x55;
+      if (write(serial_port_, &trigger_byte, 1) >= 0) {
+        std::this_thread::sleep_for(70ms);
 
-    // 3. Search for the Header (0xFF)
-    // We read one byte at a time until we find 0xFF to stay in sync
-    uint8_t header = 0;
-    int attempts = 0;
-    bool found_header = false;
+        uint8_t header = 0;
+        bool found_header = false;
+        for (int i = 0; i < 32; ++i) { 
+          if (read(serial_port_, &header, 1) > 0 && header == 0xFF) {
+            found_header = true;
+            break;
+          }
+        }
 
-    while (attempts < 32) {
-      if (read(serial_port_, &header, 1) > 0) {
-        if (header == 0xFF) {
-          found_header = true;
-          break;
+        if (found_header) {
+          uint8_t data[3]; 
+          if (read(serial_port_, data, 3) == 3) {
+            uint8_t high = data[0];
+            uint8_t low  = data[1];
+            uint8_t sum  = data[2];
+
+            if (((0xFF + high + low) & 0xFF) == sum) {
+              // Update the outer variable (no 'float' keyword here)
+              distance_m = static_cast<float>((high << 8) | low) / 1000.0f;
+              
+              auto msg = std_msgs::msg::Float32();
+              msg.data = distance_m;
+              publisher_->publish(msg);
+              
+              RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
+            }
+          }
         }
       }
-      attempts++;
     }
-
-    if (!found_header) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Waiting for sensor data (Header 0xFF not found)...");
-      return;
-    }
-
-    // 4. Read the payload (3 bytes: High, Low, Checksum)
-    uint8_t data[3];
-    ssize_t n = read(serial_port_, data, 3);
-    
-    if (n == 3) {
-      uint8_t high = data[0];
-      uint8_t low  = data[1];
-      uint8_t received_sum = data[2];
       
-      // Arduino Logic: Checksum = Header + High + Low
-      uint8_t calculated_sum = (0xFF + high + low) & 0xFF;
+    // --- DIAGNOSTICS ---
+    auto diag_msg = diagnostic_msgs::msg::DiagnosticArray();
+    rclcpp::Time now = this->get_clock()->now();
+    diag_msg.header.stamp.sec = static_cast<std::int32_t>(now.seconds());
+    diag_msg.header.stamp.nanosec = static_cast<std::uint32_t>(now.nanoseconds() % 1000000000);
 
-      if (received_sum == calculated_sum) {
-        int distance_mm = (high << 8) | low;
-        float distance_m = static_cast<float>(distance_mm) / 1000.0f;
-        auto msg = std_msgs::msg::Float32();
-        msg.data = distance_m;
+    auto status = diagnostic_msgs::msg::DiagnosticStatus();
+    status.name = this->get_name();
+    
+    auto kv = diagnostic_msgs::msg::KeyValue();
+    kv.key = "distance";
 
-        publisher_->publish(msg);
-        RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
-      } else {
-        RCLCPP_WARN(this->get_logger(), "Checksum Failed!");
+    if (distance_m < 0.0f) { 
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      status.message = "Sensor not connected / no data";
+      kv.value = "N/A";
+    } else {
+      kv.value = std::to_string(distance_m);
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      status.message = "OK";
+
+      if (distance_m < 0.03f) {
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+        status.message = "Not publishing valid data";
+      } else if (distance_m < 1.0f) {
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+        status.message = std::string("Obstacle very close: ") + std::to_string(distance_m) + "m, check collision avoidance";
+      } else if (distance_m < 1.5f) {
+        status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+        status.message = std::string("Approaching obstacle: ") + std::to_string(distance_m) + "m";
       }
     }
+
+    status.values = {kv};
+    diag_msg.status.push_back(status);
+    diagnostics_publisher_->publish(diag_msg);
   }
 
   int serial_port_;
   std::string serial_device_;
+  double publish_frequency_hz_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_publisher_;
+  OnSetParametersCallbackHandle::SharedPtr callback_handle_;
 };
 
 int main(int argc, char *argv[])

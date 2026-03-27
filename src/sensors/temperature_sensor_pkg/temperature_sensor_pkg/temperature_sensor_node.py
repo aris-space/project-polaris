@@ -83,12 +83,13 @@ class Temperature_sensor(Node):
             msg = Float32MultiArray()
             msg.data = values
             self.publisher_.publish(msg)
-            self.get_logger().info(
-                "Temperatures [°C]: [%s]" % ", ".join(f"{v:.2f}" for v in values)
-            )
+            # self.get_logger().info(
+            #     "Temperatures [°C]: [%s]" % ", ".join(f"{v:.2f}" for v in values)
+            # )
 
             # Which sensor_i corresponds to which position in the Hardware
-            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"}
+            sensors_with_position = {0: "Front", 1: "Middle", 2: "Back"} 
+
 
             diag_msg = DiagnosticArray()
             diag_msg.header.stamp = self.get_clock().now().to_msg()
