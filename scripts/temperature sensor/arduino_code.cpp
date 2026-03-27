@@ -38,7 +38,7 @@ void loop() {
     maxTemp = 1;
   }
 
-  long rawDelay = (1.0 - 16.0 / (int)maxTemp) * 7000L;
+  long rawDelay = (1.0 - (int)maxTemp / 70.0) * 7000L;
   long dynamicDelay = constrain((long)(rawDelay), 1000, 4800);
 
   Serial.print("DATA,");
