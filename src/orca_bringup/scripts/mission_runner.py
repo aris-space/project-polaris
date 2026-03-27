@@ -29,18 +29,28 @@ Code inspired by https://github.com/ros2/ros2cli/blob/rolling/ros2action/ros2act
 
 Usage:
 -- ros2 run orca_bringup mission_runner.py
+
+With the mavlink_bridge stack, ArduSub only receives velocity setpoints from ``ros2_receiver``
+when the vehicle is in GUIDED **and** ``ros2_receiver`` has applied that mode (it gates
+``/pixhawk/cmd_vel`` on its internal mode). The sub must also be **armed** for motors to run.
+Upstream Orca4 often had other nodes (e.g. base_controller / mavros path) that masked this;
+this script arms explicitly for the bridge + Nav2 path.
 """
 
 from enum import Enum
+import time
 
 import rclpy
 import rclpy.logging
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point, Pose, PoseStamped
 from nav2_msgs.action import FollowWaypoints
-from orca_msgs.action import TargetMode
 from rclpy.action import ActionClient
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.parameter import Parameter
+from std_msgs.msg import Bool
 from std_msgs.msg import Header
+from std_msgs.msg import String
 
 
 class SendGoalResult(Enum):
@@ -52,14 +62,6 @@ class SendGoalResult(Enum):
 def make_pose(x: float, y: float, z: float):
     return PoseStamped(header=Header(frame_id='map'), pose=Pose(position=Point(x=x, y=y, z=z)))
 
-
-# Go to AUV mode
-go_auv = TargetMode.Goal()
-go_auv.target_mode = TargetMode.Goal.ORCA_MODE_AUV
-
-# Go to ROV mode
-go_rov = TargetMode.Goal()
-go_rov.target_mode = TargetMode.Goal.ORCA_MODE_ROV
 
 # Go home (1m deep)
 go_home = FollowWaypoints.Goal()
@@ -79,17 +81,47 @@ for _ in range(2):
     delay_loop.poses.append(make_pose(x=0.0, y=0.0, z=-7.0))
 
 
+def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.0) -> bool:
+    """
+    rclpy's ActionClient.wait_for_server() only sleeps; it never spins the node, so discovery
+    for /follow_waypoints can stall. Spin while waiting (see ros2/rclpy#58).
+
+    Use the same MultiThreadedExecutor that holds the node for the whole process: calling
+    rclpy.spin_once(node) adds/removes the node from the *global* executor each time, which
+    breaks ActionClient waitable/graph handling so server_is_ready() may never become true.
+    """
+    start = time.time()
+    print('Waiting for Nav2 /follow_waypoints action server...')
+    while rclpy.ok():
+        if action_client.server_is_ready():
+            print('Nav2 /follow_waypoints is available.')
+            return True
+        if time.time() - start >= timeout_sec:
+            print(
+                f'Timed out after {timeout_sec:.0f}s waiting for /follow_waypoints. '
+                'Is sim_launch running with nav:=true? Did you source install/setup.bash? '
+                'Check: ros2 action list | grep follow ; ros2 lifecycle get /waypoint_follower'
+            )
+            return False
+        executor.spin_once(timeout_sec=0.1)
+    return False
+
+
 # Send a goal to an action server and wait for the result.
 # Cancel the goal if the user hits ^C (KeyboardInterrupt).
-def send_goal(node, action_client, send_goal_msg) -> SendGoalResult:
+def send_goal(executor, action_client, send_goal_msg) -> SendGoalResult:
     goal_handle = None
 
     try:
-        action_client.wait_for_server()
+        if not wait_for_follow_waypoints(executor, action_client):
+            return SendGoalResult.FAILURE
 
         print('Sending goal...')
         goal_future = action_client.send_goal_async(send_goal_msg)
-        rclpy.spin_until_future_complete(node, goal_future)
+        executor.spin_until_future_complete(goal_future, timeout_sec=120.0)
+        if not goal_future.done():
+            print('Timeout waiting for goal acceptance from Nav2.')
+            return SendGoalResult.FAILURE
         goal_handle = goal_future.result()
 
         if goal_handle is None:
@@ -101,7 +133,7 @@ def send_goal(node, action_client, send_goal_msg) -> SendGoalResult:
 
         print('Goal accepted with ID: {}'.format(bytes(goal_handle.goal_id.uuid).hex()))
         result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(node, result_future)
+        executor.spin_until_future_complete(result_future)
 
         result = result_future.result()
 
@@ -114,16 +146,22 @@ def send_goal(node, action_client, send_goal_msg) -> SendGoalResult:
     except KeyboardInterrupt:
         # Cancel the goal if it's still active
         # TODO(clyde): this seems to work, but a second exception is generated -- why?
-        if (goal_handle is not None and
-                (GoalStatus.STATUS_ACCEPTED == goal_handle.status or
-                 GoalStatus.STATUS_EXECUTING == goal_handle.status)):
+        if goal_handle is None:
+            raise
+        if (GoalStatus.STATUS_ACCEPTED == goal_handle.status or
+                GoalStatus.STATUS_EXECUTING == goal_handle.status):
             print('Canceling goal...')
             cancel_future = goal_handle.cancel_goal_async()
-            rclpy.spin_until_future_complete(node, cancel_future)
+            executor.spin_until_future_complete(cancel_future)
             cancel_response = cancel_future.result()
 
             if cancel_response is None:
-                raise RuntimeError('Exception while canceling goal: {!r}'.format(cancel_future.exception()))
+                exc = cancel_future.exception()
+                if exc is not None:
+                    raise RuntimeError('Exception while canceling goal: {!r}'.format(exc)) from exc
+                # Context shutting down (e.g. Ctrl+C) can complete the future with no response.
+                print('Cancel finished without response (shutdown?)')
+                return SendGoalResult.CANCELED
 
             if len(cancel_response.goals_canceling) == 0:
                 raise RuntimeError('Failed to cancel goal')
@@ -134,38 +172,81 @@ def send_goal(node, action_client, send_goal_msg) -> SendGoalResult:
 
             print('Goal canceled')
             return SendGoalResult.CANCELED
+        raise
 
 
 def main():
     node = None
-    set_target_mode = None
     follow_waypoints = None
+    mode_pub = None
+    arm_pub = None
+    executor = None
 
     rclpy.init()
 
     try:
-        node = rclpy.create_node("mission_runner")
+        node = rclpy.create_node(
+            'mission_runner',
+            automatically_declare_parameters_from_overrides=True,
+            parameter_overrides=[
+                Parameter('use_sim_time', Parameter.Type.BOOL, True),
+            ],
+        )
+        executor = MultiThreadedExecutor()
+        executor.add_node(node)
 
-        set_target_mode = ActionClient(node, TargetMode, '/set_target_mode')
         follow_waypoints = ActionClient(node, FollowWaypoints, '/follow_waypoints')
+        mode_pub = node.create_publisher(String, '/pixhawk/mode_cmd', 10)
+        arm_pub = node.create_publisher(Bool, '/pixhawk/arm_cmd', 10)
 
-        print('>>> Setting mode to AUV <<<')
-        if send_goal(node, set_target_mode, go_auv) == SendGoalResult.SUCCESS:
-            print('>>> Executing mission <<<')
-            send_goal(node, follow_waypoints, delay_loop)
+        # Allow discovery; flush a few spins so /pixhawk/* reaches mavlink_bridge reliably.
+        for _ in range(10):
+            executor.spin_once(timeout_sec=0.05)
 
-            print('>>> Setting mode to ROV <<<')
-            send_goal(node, set_target_mode, go_rov)
+        print('>>> Setting Pixhawk mode to GUIDED <<<')
+        mode_pub.publish(String(data='GUIDED'))
+        for _ in range(40):
+            executor.spin_once(timeout_sec=0.05)
 
-            print('>>> Mission complete <<<')
-        else:
-            print('>>> Failed to set mode to AUV, quit <<<')
+        print('>>> Arming <<<')
+        arm_pub.publish(Bool(data=True))
+        for _ in range(20):
+            executor.spin_once(timeout_sec=0.05)
+
+        print('>>> Executing mission <<<')
+        send_goal(executor, follow_waypoints, delay_loop)
+
+        
+        if rclpy.ok():
+            print('>>> Disarming <<<')
+            arm_pub.publish(Bool(data=False))
+            time.sleep(0.5)
+            print('>>> Setting Pixhawk mode to MANUAL <<<')
+            mode_pub.publish(String(data='MANUAL'))
+            rclpy.spin_once(node, timeout_sec=0.2)
+        
+
+        print('>>> Mission complete <<<')
+
+    except KeyboardInterrupt:
+        if arm_pub is not None and rclpy.ok():
+            print('>>> Interrupted, disarming <<<')
+            arm_pub.publish(Bool(data=False))
+            time.sleep(0.3)
+        if mode_pub is not None and executor is not None and node is not None and rclpy.ok():
+            print('>>> Interrupted, setting Pixhawk mode to MANUAL <<<')
+            mode_pub.publish(String(data='MANUAL'))
+            executor.spin_once(timeout_sec=0.2)
 
     finally:
-        if set_target_mode is not None:
-            set_target_mode.destroy()
         if follow_waypoints is not None:
             follow_waypoints.destroy()
+        if executor is not None and node is not None:
+            try:
+                executor.remove_node(node)
+            except Exception:
+                pass
+            executor.shutdown()
         if node is not None:
             node.destroy_node()
 

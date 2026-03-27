@@ -1,2 +1,2 @@
-# Set orca4 to ROV mode; abort active mission
-ros2 action send_goal /set_target_mode orca_msgs/action/TargetMode "{target_mode: 2}"
+# Set Pixhawk mode for manual/ROV control via custom MAVLink bridge.
+ros2 topic pub --once /pixhawk/mode_cmd std_msgs/msg/String "{data: MANUAL}"

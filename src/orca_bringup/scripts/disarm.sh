@@ -1,2 +1,2 @@
-# Disarm orca4; abort active mission
-ros2 action send_goal /set_target_mode orca_msgs/action/TargetMode "{target_mode: 1}"
+# Disarm Pixhawk via custom MAVLink bridge.
+ros2 topic pub --once /pixhawk/arm_cmd std_msgs/msg/Bool "{data: false}"

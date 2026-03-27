@@ -346,7 +346,7 @@
       <fdm_addr>127.0.0.1</fdm_addr>
       <fdm_port_in>9002</fdm_port_in>
       <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
-      <lock_step>1</lock_step>
+      <lock_step>0</lock_step>
 
       <!-- Transform from the Gazebo body frame (x-forward, y-left, z-up)
            to the ArduPilot body frame (x-forward, y-right, z-down) -->
@@ -414,108 +414,7 @@
         <offset>-0.5</offset>
         <multiplier>100</multiplier>
       </control>
-
     </plugin>
-
-    <!-- Left camera link -->
-    <link name="left_camera_link">
-      <pose>-0.18 0.18 -0.06749999999999999 0 0 0</pose>
-      <visual name="left_camera_tube">
-        <transparency>0.5</transparency>
-        <geometry>
-          <cylinder>
-            <length>0.135</length>
-            <radius>0.0275</radius>
-          </cylinder>
-        </geometry>
-      </visual>
-      <sensor name="left_camera" type="camera">
-        <pose>0 0 -0.08750000000000001 0 1.5707963267948966 0</pose>
-        <camera>
-          <horizontal_fov>1.4</horizontal_fov>
-          <image>
-            <width>800</width>
-            <height>600</height>
-          </image>
-          <clip>
-            <near>0.2</near>
-            <far>4</far>
-          </clip>
-        </camera>
-        <always_on>1</always_on>
-        <update_rate>5</update_rate>
-        <visualize>true</visualize>
-        <topic>stereo_left</topic>
-      </sensor>
-      <inertial>
-        <mass>0.001</mass>
-        <inertia>
-          <ixx>0.001</ixx>
-          <ixy>0</ixy>
-          <ixz>0</ixz>
-          <iyy>0.001</iyy>
-          <iyz>0</iyz>
-          <izz>0.001</izz>
-        </inertia>
-      </inertial>
-    </link>
-
-    <!-- Attach left_camera_link to base_link -->
-    <joint name="left_camera_joint" type="fixed">
-      <!-- <pose>-0.15 0.18 -0.0675 0 1.5707963267948966 0</pose> -->
-      <parent>base_link</parent>
-      <child>left_camera_link</child>
-    </joint>
-
-    <!-- Right camera link -->
-    <link name="right_camera_link">
-      <pose>-0.18 -0.18 -0.06749999999999999 0 0 0</pose>
-      <visual name="right_camera_tube">
-        <transparency>0.5</transparency>
-        <geometry>
-          <cylinder>
-            <length>0.135</length>
-            <radius>0.0275</radius>
-          </cylinder>
-        </geometry>
-      </visual>
-      <sensor name="right_camera" type="camera">
-        <pose>0 0 -0.08750000000000001 0 1.5707963267948966 0</pose>
-        <camera>
-          <horizontal_fov>1.4</horizontal_fov>
-          <image>
-            <width>800</width>
-            <height>600</height>
-          </image>
-          <clip>
-            <near>0.2</near>
-            <far>4</far>
-          </clip>
-        </camera>
-        <always_on>1</always_on>
-        <update_rate>5</update_rate>
-        <visualize>true</visualize>
-        <topic>stereo_right</topic>
-      </sensor>
-      <inertial>
-        <mass>0.001</mass>
-        <inertia>
-          <ixx>0.001</ixx>
-          <ixy>0</ixy>
-          <ixz>0</ixz>
-          <iyy>0.001</iyy>
-          <iyz>0</iyz>
-          <izz>0.001</izz>
-        </inertia>
-      </inertial>
-    </link>
-
-    <!-- Attach right_camera_link to base_link -->
-    <joint name="right_camera_joint" type="fixed">
-      <!-- <pose>-0.15 -0.18 -0.0675 0 1.5707963267948966 0</pose> -->
-      <parent>base_link</parent>
-      <child>right_camera_link</child>
-    </joint>
 
     <!-- Publish the ground-truth pose for rviz -->
     <plugin

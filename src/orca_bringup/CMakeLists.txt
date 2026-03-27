@@ -15,6 +15,7 @@ install(
   PROGRAMS
   scripts/dump_rosout.py
   scripts/mission_runner.py
+  scripts/odom_to_tf.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -25,14 +25,14 @@
 """
 Launch a simulation.
 
-Includes Gazebo, ArduSub, RViz, mavros, all ROS nodes.
+Includes Gazebo, ArduSub, RViz, custom MAVLink bridge, and Nav2 nodes.
 """
 
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -43,13 +43,16 @@ def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
     orca_description_dir = get_package_share_directory('orca_description')
 
+    use_sim_time = LaunchConfiguration('use_sim_time', default='True')
+
     ardusub_params_file = os.path.join(orca_bringup_dir, 'cfg', 'sub.parm')
-    mavros_params_file = os.path.join(orca_bringup_dir, 'params', 'sim_mavros_params.yaml')
     orca_params_file = os.path.join(orca_bringup_dir, 'params', 'sim_orca_params.yaml')
     rosbag2_record_qos_file = os.path.join(orca_bringup_dir, 'params', 'rosbag2_record_qos.yaml')
     rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
     world_file = os.path.join(orca_description_dir, 'worlds', 'sand.world')
     
+    # e.g. ros2 launch orca_bringup sim_launch.py gzclient:=False ardusub:=False
+
     return LaunchDescription([
         DeclareLaunchArgument(
             'ardusub',
@@ -65,7 +68,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'base',
-            default_value='True',
+            default_value='False',
             description='Launch base controller?',
         ),
 
@@ -76,9 +79,9 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
-            'mavros',
+            'comms',
             default_value='True',
-            description='Launch mavros?',
+            description='Launch custom MAVLink bridge?',
         ),
 
         DeclareLaunchArgument(
@@ -100,11 +103,9 @@ def generate_launch_description():
                 '--qos-profile-overrides-path', rosbag2_record_qos_file,
                 '--include-hidden-topics',
                 '/cmd_vel',
-                '/mavros/local_position/pose',
-                '/mavros/rc/override',
-                '/mavros/setpoint_position/global',
-                '/mavros/state',
-                '/mavros/vision_pose/pose',
+                '/pixhawk/arm_cmd',
+                '/pixhawk/cmd_vel',
+                '/pixhawk/mode_cmd',
                 '/model/orca4/odometry',
                 '/pid_z',
                 '/rosout',
@@ -126,9 +127,10 @@ def generate_launch_description():
         # -w: wipe eeprom
         # --home: start location (lat,lon,alt,yaw). Yaw is provided by Gazebo, so the start yaw value is ignored.
         # ardusub must be on the $PATH, see src/orca4/setup.bash
+        # St. Moritz!
         ExecuteProcess(
             cmd=['ardusub', '-S', '-w', '-M', 'JSON', '--defaults', ardusub_params_file,
-                 '-I0', '--home', '33.810313,-118.39386700000001,0.0,0'],
+                 '-I0', '--home', '46.494536,9.856195,1822.0,0'],
             output='screen',
             condition=IfCondition(LaunchConfiguration('ardusub')),
         ),
@@ -150,12 +152,18 @@ def generate_launch_description():
         ),
 
 
-        # Publish ground truth pose from Ignition Gazebo
+        # Gazebo sim time -> ROS /clock (required when use_sim_time is true).
+        # Without this, Nav2 lifecycle often stops after planner_server: behavior_server never
+        # configures and /follow_waypoints has no server. Use GZ_TO_ROS only; see ros_gz_bridge README.
         Node(
             package='ros_gz_bridge',
             executable='parameter_bridge',
             arguments=[
-                '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+                '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+                '/model/orca4/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            ],
+            remappings=[
+                ('/model/orca4/odometry', '/odom'),
             ],
             output='screen'
         ),
@@ -164,18 +172,39 @@ def generate_launch_description():
             package='orca_base',
             executable='odom_to_path_node',
             output='screen'
-        ),      
+        ),
 
-        # Bring up Orca and Nav2 nodes
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(orca_bringup_dir, 'launch', 'bringup.py')),
-            launch_arguments={
-                'base': LaunchConfiguration('base'),
-                'mavros': LaunchConfiguration('mavros'),
-                'mavros_params_file': mavros_params_file,
-                'nav': LaunchConfiguration('nav'),
-                'orca_params_file': orca_params_file,
-            }.items(),
+        # In sim-only mode, publish odom -> base_link from Gazebo odometry.
+        Node(
+            package='orca_bringup',
+            executable='odom_to_tf.py',
+            parameters=[{
+                'odom_topic': '/odom',
+                'parent_frame_id': 'odom',
+                'child_frame_id': 'base_link',
+                'use_sim_time': use_sim_time,
+            }],
+            output='screen',
+            condition=UnlessCondition(LaunchConfiguration('base')),
+        ),
+
+        # Delay bringup so /clock and /tf exist before lifecycle_manager autostart. Otherwise
+        # behavior_server can fail configure while controller/planner already sit in inactive.
+        TimerAction(
+            period=3.0,
+            actions=[
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(
+                        os.path.join(orca_bringup_dir, 'launch', 'bringup.py')),
+                    launch_arguments={
+                        'base': LaunchConfiguration('base'),
+                        'comms': LaunchConfiguration('comms'),
+                        'nav': LaunchConfiguration('nav'),
+                        'use_sim_time': use_sim_time,
+                        'orca_params_file': orca_params_file,
+                    }.items(),
+                ),
+            ],
         ),
     ])
 

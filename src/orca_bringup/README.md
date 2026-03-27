@@ -38,7 +38,7 @@ It is possible to launch Gazebo and ArduSub and control the sub using MAVProxy.
 
 Launch a minimal system:
 ~~~
-ros2 launch orca_bringup sim_launch.py base:=false mavros:=false nav:=false rviz:=false slam:=false
+ros2 launch orca_bringup sim_launch.py base:=false comms:=false nav:=false rviz:=false
 ~~~
 
 Launch MAVProxy in a 2nd terminal:
@@ -65,7 +65,7 @@ RC channels:
 
 This will bring up a minimal system with SLAM and RViz:
 ~~~
-ros2 launch orca_bringup sim_launch.py base:=false mavros:=false nav:=false
+ros2 launch orca_bringup sim_launch.py base:=false comms:=false nav:=false
 ~~~
 
 You can use MAVProxy to drive the sub around the seafloor and build a map.

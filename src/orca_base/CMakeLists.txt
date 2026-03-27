@@ -12,6 +12,10 @@ endif()
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
+# Nodes used by the simulation-only bringup path.
+ament_auto_add_executable(odom_to_path_node src/odom_to_path_node.cpp)
+ament_auto_add_executable(pose_to_path_node src/pose_to_path_node.cpp)
+
 # Load & run linters listed in package.xml
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

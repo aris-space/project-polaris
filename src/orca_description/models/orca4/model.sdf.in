@@ -414,7 +414,6 @@
         <offset>@control_offset</offset>
         <multiplier>@cw_control_multiplier</multiplier>
       </control>
-
     </plugin>
 
     <!-- Publish the ground-truth pose for rviz -->

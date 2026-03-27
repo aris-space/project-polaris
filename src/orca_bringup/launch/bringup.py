@@ -36,26 +36,26 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchD
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
+    mavlink_bridge_dir = get_package_share_directory('mavlink_bridge')
 
     use_sim_time = LaunchConfiguration('use_sim_time', default='True')
-    mavros_params_file = LaunchConfiguration('mavros_params_file')
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
-    orca_params_file = LaunchConfiguration('orca_params_file')
 
     # Rewrite to add the full path
     # The rewriter will only rewrite existing keys
+    param_sub = {
+        'use_sim_time': use_sim_time,
+        'default_nav_to_pose_bt_xml': nav2_bt_file
+    }
     configured_nav2_params = RewrittenYaml(
         source_file=nav2_params_file,
-        param_rewrites={
-            'default_nav_to_pose_bt_xml': nav2_bt_file,
-        },
+        param_rewrites=param_sub,
         convert_types=True)
 
     return LaunchDescription([
@@ -68,15 +68,21 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
-            'mavros',
+            'comms',
             default_value='True',
-            description='Launch mavros?',
+            description='Launch custom MAVLink bridge?',
         ),
 
         DeclareLaunchArgument(
-            'mavros_params_file',
-            default_value=os.path.join(orca_bringup_dir, 'params', 'sim_mavros_params.yaml'),
-            description='Full path to the ROS2 parameters file to use for mavros nodes',
+            'comms_respawn',
+            default_value='True',
+            description='Respawn mavlink bridge nodes?',
+        ),
+
+        DeclareLaunchArgument(
+            'enable_external_odom',
+            default_value='True',
+            description='Forward /odom to ArduPilot as MAVLink ODOMETRY (ros2_receiver).',
         ),
 
         DeclareLaunchArgument(
@@ -91,30 +97,23 @@ def generate_launch_description():
             description='Full path to the ROS2 parameters file to use for Orca nodes',
         ),
 
-        # Translate messages MAV <-> ROS
-        Node(
-            package='mavros',
-            executable='mavros_node',
-            output='screen',
-            # mavros_node is actually many nodes, so we can't override the name
-            # name='mavros_node',
-            parameters=[mavros_params_file, {'use_sim_time': use_sim_time}],
-            condition=IfCondition(LaunchConfiguration('mavros')),
+        # Launch custom MAVLink bridge for Pixhawk communications.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(mavlink_bridge_dir, 'launch', 'mavlink_bridge.launch.py')),
+            launch_arguments={
+                'respawn': LaunchConfiguration('comms_respawn'),
+                'respawn_delay': '2.0',
+                'use_sim_time': use_sim_time,
+                'enable_external_odom': LaunchConfiguration('enable_external_odom'),
+            }.items(),
+            condition=IfCondition(LaunchConfiguration('comms')),
         ),
 
-        # Publish static transforms for the tf tree
+        # If base controller is disabled, keep map and odom aligned.
         ExecuteProcess(
             cmd=['/opt/ros/humble/lib/tf2_ros/static_transform_publisher',
                  '--frame-id', 'map',
                  '--child-frame-id', 'odom'],
-            output='screen',
-            condition=UnlessCondition(LaunchConfiguration('base')),
-        ),
-
-        ExecuteProcess(
-            cmd=['/opt/ros/humble/lib/tf2_ros/static_transform_publisher',
-                 '--frame-id', 'odom',
-                 '--child-frame-id', 'base_link'],
             output='screen',
             condition=UnlessCondition(LaunchConfiguration('base')),
         ),
@@ -125,7 +124,7 @@ def generate_launch_description():
             launch_arguments={
                 'namespace': '',
                 'use_sim_time': use_sim_time,
-                'autostart': 'False',
+                'autostart': 'True',
                 'params_file': configured_nav2_params,
                 'use_composition': 'False',
                 'use_respawn': 'False',
