@@ -9,6 +9,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -23,7 +24,7 @@ if(BUILD_TESTING)
 endif()
 
 add_executable(ultrasonic_node src/ultrasonic_node.cpp)
-ament_target_dependencies(ultrasonic_node rclcpp std_msgs)
+ament_target_dependencies(ultrasonic_node rclcpp std_msgs diagnostic_msgs)
 
 install(TARGETS
   ultrasonic_node

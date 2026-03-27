@@ -34,14 +34,12 @@ void loop() {
 
   float maxTemp = max(t2, max(t4, t5));
 
-  //Feedback loop for adjusting delay.
-  //if steadystate normal temperature
-  // TODO: Check if it makes sense in lake application.
-  long rawDelay = (85.0 - 1.3 * (int)maxTemp) * 1000L; // Adjust delay based on max temperature
-  //long rawDelay = (30.0 - 1.0 * (int)maxTemp) * 1000L;
-  // Constrain it so it never goes below 1 second (1000ms) 
-  // and never above 65 seconds (65000ms)
-  long dynamicDelay = constrain((long)(rawDelay), 5000, 65000);
+  if (maxTemp == 0.0 || maxTemp == -127) {
+    maxTemp = 1;
+  }
+
+  long rawDelay = (1.0 - (int)maxTemp / 70.0) * 7000L;
+  long dynamicDelay = constrain((long)(rawDelay), 1000, 4800);
 
   Serial.print("DATA,");
   Serial.print(t4); Serial.print(","); //Front
