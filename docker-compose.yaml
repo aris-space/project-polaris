@@ -1,19 +1,83 @@
+# Default: `docker compose up` starts jetson-container only (intended for Jetson / vehicle runtime).
+# polaris-sim is for workstation PCs only — do not run the sim profile on the Jetson (heavy Gazebo + desktop GPU/X11 stack).
+# On a dev PC: `docker compose --profile sim up polaris-sim`
 services:
   jetson-container:
     image: ghcr.io/aris-space/project-polaris-docker:runtime
     container_name: jetson-container
     privileged: true
     network_mode: host
+    # 1. Use the explicit NVIDIA runtime (crucial for Jetson)
+    runtime: nvidia
     environment:
-      - ROS_DOMAIN_ID=0
+      - ROS_DOMAIN_ID=37
       - ROS_WS=/ros2_ws
+      - NTRIP_HOST=${NTRIP_HOST:-www.swipos.ch}
+      - NTRIP_PORT=${NTRIP_PORT:-2101}
+      - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT:-MSM_GISGEO_LV95LHN95}
+      - NTRIP_USE_HTTPS=${NTRIP_USE_HTTPS:-false}
+      - NTRIP_USERNAME=${NTRIP_USERNAME:-}
+      - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
+      - AUTO_BUILD=1
+      - REFRESH_PY_PACKAGES=1
+      - CLEAN_BUILD=0
+      - ROSDEP_INSTALL=1
+      # 2. These belong in Environment, not Devices
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
       - /dev:/dev
+      - ./mavlink_logs:/root/polaris_logs/
+      - /home/polaris5:/home/polaris5
     working_dir: /ros2_ws
-    entrypoint: /bin/bash /ros2_ws/entrypoint.sh
-    stdin_open: true # Equivalent to -i
-    tty: true # Equivalent to -t
-    command: bash -lc "sleep infinity"
+    entrypoint: [ "/bin/bash", "/ros2_ws/entrypoint.sh" ]
+    stdin_open: true
+    tty: true
+    command: [ "bash", "-lc", "sleep infinity" ]
     restart: unless-stopped
+
+  polaris-sim:
+    # Workstation / dev PC only (not Jetson).
+    profiles: [ "sim" ]
+    image: ghcr.io/aris-space/project-polaris-docker:sim
+    container_name: polaris-sim
+    privileged: true
+    network_mode: host
+    gpus: all
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_WS=/ros2_ws
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - AUTO_BUILD=${AUTO_BUILD:-1}
+      - REFRESH_PY_PACKAGES=${REFRESH_PY_PACKAGES:-1}
+      - CLEAN_BUILD=${CLEAN_BUILD:-1}
+      - ROSDEP_INSTALL=${ROSDEP_INSTALL:-1}
+      - NTRIP_HOST=${NTRIP_HOST:-www.swipos.ch}
+      - NTRIP_PORT=${NTRIP_PORT:-2101}
+      - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT:-MSM_GISGEO_LV95LHN95}
+      - NTRIP_USE_HTTPS=${NTRIP_USE_HTTPS:-false}
+      - NTRIP_USERNAME=${NTRIP_USERNAME:-}
+      - NTRIP_PASSWORD=${NTRIP_PASSWORD:-}
+    volumes:
+      - .:/ros2_ws
+      - ./recordings:/ros2_ws/recordings
+      - ./mavlink_logs:/root/polaris_logs/
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /etc/localtime:/etc/localtime:ro
+      - /dev/input:/dev/input
+    devices:
+      - /dev/dri
+    group_add:
+      - video
+    security_opt:
+      - seccomp:unconfined
+    working_dir: /ros2_ws
+    entrypoint: [ "/bin/bash", "/ros2_ws/entrypoint.sh" ]
+    stdin_open: true
+    tty: true
+    command: [ "bash", "-lc", "sleep infinity" ]

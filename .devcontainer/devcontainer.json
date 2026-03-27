@@ -1,4 +1,10 @@
 // .devcontainer/devcontainer.json
+// :sim is workstation-only (not Jetson). Two ways to use it:
+// (1) VS Code Dev Container: change "image" below to ...:sim and extend "runArgs" with GPU/X11 flags
+//     ("--gpus=all", "--device=/dev/dri", "--group-add=video", "--security-opt=seccomp=unconfined",
+//      "-e", "QT_X11_NO_MITSHM=1", "-e", "NVIDIA_VISIBLE_DEVICES=all", "-e", "NVIDIA_DRIVER_CAPABILITIES=all").
+// (2) Docker Compose (from this repo root, no devcontainer): docker compose --profile sim up polaris-sim
+//     That starts the :sim container with compose; use docker exec -it polaris-sim bash (or attach) to work inside it.
 {
     "name": "Polaris ROS2",
     // Use your full-dev image with Gazebo
@@ -8,16 +14,19 @@
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
     // Extra docker run args you normally pass
     "runArgs": [
+        "--pull=always",
         "--network=host",
         "--privileged",
         "-e",
         "ROS_DOMAIN_ID=0",
         "--env=DISPLAY",
-        "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw"
+        "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "-e",
+        "CLEAN_BUILD=1",
         // add --device=/dev/ttyUSB0 etc. here if needed
     ],
     // VS Code will run this once after the container is created
-    "postCreateCommand": "cd /ros2_ws && colcon build --symlink-install --executor sequential || true",
+    "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
     // You’re using root in the image
     "remoteUser": "root",
     "customizations": {
