@@ -56,8 +56,6 @@ Work in progress...
 **.github**
  Here your git-specific files are stored that are needed for example to automate workflows.
 
-**config**
- Contains configuration files to collect essential shared variables that can be adjusted here.
 
 **docs**
  Documents that have nothing to do with code, for example pdf's, pictures,...
