@@ -1,3 +1,6 @@
 [submodule "src/sensors/dvl_a50"]
 	path = src/sensors/dvl_a50
-	url = https://github.com/ndahn/dvl_a50.git
+	url = https://github.com/glebplatonov04/dvl_a50.git
+[submodule "src/comms/foxglove_bridge"]
+	path = src/comms/foxglove_bridge
+	url = https://github.com/foxglove/foxglove-sdk.git

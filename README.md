@@ -24,7 +24,8 @@
 Go to directory where you want to store your repo and clone:
 ```bash
 cd Documents/here-i-want-my-repo
-git clone https://github.com/aris-space/project-polaris.git
+git clone --recurse-submodules https://github.com/aris-space/project-polaris.git
+git -C src/comms/foxglove_bridge sparse-checkout set ros
 ```
 
 
@@ -55,8 +56,6 @@ Work in progress...
 **.github**
  Here your git-specific files are stored that are needed for example to automate workflows.
 
-**config**
- Contains configuration files to collect essential shared variables that can be adjusted here.
 
 **docs**
  Documents that have nothing to do with code, for example pdf's, pictures,...

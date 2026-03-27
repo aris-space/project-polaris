@@ -14,8 +14,9 @@ def generate_launch_description():
                     {
                         "port": 8765,
                         "address": "0.0.0.0",
-                        "capabilities": ["clientPublish", "connectionGraph", "assets"],
+                        "capabilities": ["clientPublish", "connectionGraph", "assets", "services", "parameters"],
                         "send_buffer_limit": 10000000,
+                        "use_compression": False,
                     }
                 ],
             )

@@ -82,6 +82,36 @@ def generate_launch_description():
         ],
     )
 
+    # Static base_link -> gnss_link (must match FRAME_ID in gnss_config, e.g. ublox_x20p_rover.yaml).
+    # CAD: translation CENTER_OF_MASS_LINK -> GNSS_LINK, no rotation (meters, vehicle frame).
+    # Assumes base_link coincides with center-of-mass (same convention as IMU/DVL static TFs).
+    static_tf_base_to_gnss = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_base_to_gnss",
+        arguments=[
+            "--x",
+            "-0.048",
+            "--y",
+            "-0.002",
+            "--z",
+            "0.224",
+            "--roll",
+            "0.0",
+            "--pitch",
+            "0.0",
+            "--yaw",
+            "0.0",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            "gnss_link",
+        ],
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+
     # Use LORD ntrip_client here because it can consume /fix and generate/sent GGA
     # upstream to VRS casters such as SWIPOS.
     ntrip_node = GroupAction(
@@ -172,6 +202,7 @@ def generate_launch_description():
                 ),
             ),
             gnss_container,
+            static_tf_base_to_gnss,
             ntrip_node,
         ]
     )
