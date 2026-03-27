@@ -35,6 +35,10 @@ class Ice_Measurement(Node):
             )
             raise RuntimeError("brping import failed")
 
+        # self.recording = False
+        # --- Parameter-controlled recording ---
+        self.declare_parameter("recording", False)
+        self.recording = bool(self.get_parameter("recording").value)
         self.ping = Ping1D()  # initializes object
         self.ping.connect_serial(
             Ports.PING_SONAR_PORT, 115200
@@ -66,11 +70,7 @@ class Ice_Measurement(Node):
         self.ping.set_range(self.scan_start, self.scan_length, verify=False)
         self.get_logger().info("Range set")
 
-        # self.recording = False
-        # --- Parameter-controlled recording ---
-        self.declare_parameter("recording", False)
-        self.recording = bool(self.get_parameter("recording").value)
-
+        
         self.add_on_set_parameters_callback(self.params_cb)
 
         self.mode_sub = self.create_subscription(
