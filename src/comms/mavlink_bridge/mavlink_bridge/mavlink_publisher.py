@@ -4,7 +4,7 @@ import logging, os
 from rclpy.node import Node
 from pymavlink import mavutil
 from datetime import datetime
-from std_msgs.msg import Int16MultiArray, Float32
+from std_msgs.msg import Int16MultiArray, Float32, String
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import (
@@ -14,11 +14,25 @@ from sensor_msgs.msg import (
 )
 from config_pkg.constants import Comms
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+
+from rclpy.qos import qos_profile_sensor_data
+from typing import Optional
+from nav_msgs.msg import Odometry
+
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"mavlink_{datetime.now():%Y%m%d_%H%M%S}.log")
 
+#simulation:
+# MAVLink press_abs is hectopascals (hPa). ArduPilot uses SCALED_PRESSURE for baro 1,
+# SCALED_PRESSURE2/3 for extra instances — unused instances often send garbage (e.g. large negative).
+_PRESS_ABS_HPA_MIN = 200.0
+_PRESS_ABS_HPA_MAX = 4000.0
+_GRAVITY = 9.80665
+# High variance marks FluidPressure as an estimate, not FCU baro.
+_HYDROSTATIC_VARIANCE_PA2 = 1.0e12
+#
 
 class DualLogger:
     def __init__(self, ros_logger, file_logger):
@@ -72,13 +86,19 @@ class MavlinkBridgeSender(Node):
         self.ros_logger = self.get_logger()  # get_logger is the ros logger object
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
-
+        """
         self.port = mavutil.mavlink_connection(
             f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection(
             "/dev/ttyTHS1", baud=57600
         )  # Serial connection straight to Pixhawk
+        """
+        #simulation:
+        self.mavlink_url = os.getenv("MAVLINK_PUBLISHER_URL", "tcp:127.0.0.1:5760")
+        self.mavlink_baud = int(os.getenv("MAVLINK_PUBLISHER_BAUD", "57600"))
+        self.port = mavutil.mavlink_connection(self.mavlink_url, baud=self.mavlink_baud)
+        #
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
@@ -114,6 +134,32 @@ class MavlinkBridgeSender(Node):
         self.diagnostic_publisher = self.create_publisher(
             DiagnosticArray, "/diagnostics", 10
         )
+
+        odom_topic = (
+            self.get_parameter("hydrostatic_odom_topic")
+            .get_parameter_value()
+            .string_value
+        )
+        self.create_subscription(
+            Odometry,
+            odom_topic,
+            self._odom_pose_cb,
+            qos_profile_sensor_data,
+        )
+
+        #simulation:
+        self._invalid_pressure_warn_ns = 0
+        self._last_hydro_fallback_pub_ns = 0
+        self._hydro_fallback_info_logged = False
+        self._odom_pose_z_enu: Optional[float] = None
+
+        self.declare_parameter("hydrostatic_pressure_fallback", True)
+        self.declare_parameter("hydrostatic_odom_topic", "/odom")
+        self.declare_parameter("hydrostatic_surface_z_enu", 0.0)
+        self.declare_parameter("hydrostatic_water_density", 1000.0)
+        self.declare_parameter("hydrostatic_air_pressure_pa", 101325.0)
+        #
+
 
         # Dynamic battery diagnostic thresholds (can be changed at runtime via ros2 param set)
         self.declare_parameter("battery_min_voltage", 12.0)
@@ -208,6 +254,12 @@ class MavlinkBridgeSender(Node):
                 #    self.handle_attitude(msg)
                 # elif msg.get_type() == "RC_CHANNELS":
                 #    self.handle_rc_channels(msg)
+                elif msg.get_type() in (
+                    "SCALED_PRESSURE",
+                    "SCALED_PRESSURE2",
+                    "SCALED_PRESSURE3",
+                ):
+                    self.handle_scaled_pressure(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
@@ -236,23 +288,17 @@ class MavlinkBridgeSender(Node):
         if not self.message_counter("HEARTBEAT"):
             return
 
-        ros_msg = State()
-        # MAVLink system status (uint8)
-        ros_msg.system_status = msg.system_status
-
-        # Map custom_mode integer to human-readable flight mode name
-        # Using ArduSub mapping (change to mode_mapping_acm for ArduCopter, etc.)
         mode_mapping = mavutil.mode_mapping_sub
-        ros_msg.mode = mode_mapping.get(
+        mode = mode_mapping.get(
             msg.custom_mode, f"UNKNOWN({msg.custom_mode})"
-        )  # gets the name equivalent of the msg.custom_mode int using mode_mapping.get(). second entry is if its unknown
+        )
+        armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
-        # Based on the bitmask definition in mavutil
-        ros_msg.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-
+        ros_msg = String()
+        ros_msg.data = f"mode={mode};armed={int(armed)};system_status={msg.system_status}"
         self.heartbeat_publisher.publish(ros_msg)
-        self.logger.info(
-            f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
+        self.logger.debug(
+            f"Published Heartbeat: Status={msg.system_status}, Mode={mode}, Armed={armed}"
         )
 
         self.flight_mode = mavutil.mode_string_v10(msg)
@@ -421,6 +467,58 @@ class MavlinkBridgeSender(Node):
 
         self.diagnostic_publisher.publish(diag_msg)
 
+    def _odom_pose_cb(self, msg: Odometry) -> None:
+        """Track vertical position for optional hydrostatic monitor pressure (ENU z up)."""
+        self._odom_pose_z_enu = float(msg.pose.pose.position.z)
+
+    def _hydrostatic_absolute_pa(self) -> Optional[float]:
+        if self._odom_pose_z_enu is None:
+            return None
+        if not self.get_parameter(
+            "hydrostatic_pressure_fallback"
+        ).get_parameter_value().bool_value:
+            return None
+        z = self._odom_pose_z_enu
+        surface_z = float(
+            self.get_parameter("hydrostatic_surface_z_enu")
+            .get_parameter_value()
+            .double_value
+        )
+        rho = float(
+            self.get_parameter("hydrostatic_water_density")
+            .get_parameter_value()
+            .double_value
+        )
+        p0 = float(
+            self.get_parameter("hydrostatic_air_pressure_pa")
+            .get_parameter_value()
+            .double_value
+        )
+        # Depth below free surface: positive when pose.z is below surface (typical ENU sub).
+        depth_m = max(0.0, surface_z - z)
+        return p0 + rho * _GRAVITY * depth_m
+
+    def _publish_hydrostatic_fallback_throttled(self) -> None:
+        """Publish approximate absolute pressure for RViz/monitor when FCU baro is nonsense."""
+        now_ns = self.get_clock().now().nanoseconds
+        if now_ns - self._last_hydro_fallback_pub_ns < 250_000_000:
+            return
+        pa = self._hydrostatic_absolute_pa()
+        if pa is None:
+            return
+        self._last_hydro_fallback_pub_ns = now_ns
+        ros_msg = FluidPressure()
+        ros_msg.fluid_pressure = float(pa)
+        ros_msg.variance = _HYDROSTATIC_VARIANCE_PA2
+        self.scaled_pressure_publisher.publish(ros_msg)
+        if not self._hydro_fallback_info_logged:
+            self._hydro_fallback_info_logged = True
+            self.logger.info(
+                "Publishing hydrostatic pressure estimate on /pixhawk/scaled_pressure "
+                "(MAVLink baro invalid). Tune hydrostatic_surface_z_enu to match your world. "
+                "ArduPilot/EKF may still be unhealthy until JSON/SITL altitude is fixed upstream."
+            )
+
     def handle_scaled_pressure(self, msg):
         """Process SCALED_PRESSURE2(this is the bluerobotics pressure sensor) message and publish to ROS2"""
         # if not self.message_counter("SCALED_PRESSURE2"):
@@ -451,8 +549,19 @@ class MavlinkBridgeSender(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeSender()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("KeyboardInterrupt received, shutting down mavlink_bridge_publisher")
+    finally:
+        try:
+            if hasattr(node, "port") and node.port is not None:
+                node.port.close()
+        except Exception as exc:
+            node.get_logger().warning(f"Failed to close MAVLink port cleanly: {exc}")
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

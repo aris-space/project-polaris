@@ -60,8 +60,17 @@ def generate_launch_description():
                 name="ros2_receiver",
                 output="screen",
                 respawn=respawn,
-                respawn_delay=2.0,
+                respawn_delay=respawn_delay,
                 #
+                parameters=[common_params],
+            ),
+            Node(
+                package="mavlink_bridge",
+                executable="output_monitor",
+                name="output_monitor",
+                output="screen",
+                respawn=respawn,
+                respawn_delay=2.0,
                 parameters=[common_params],
             ),
             Node(
@@ -70,7 +79,7 @@ def generate_launch_description():
                 name="battery_tracker",
                 output="screen",
                 respawn=respawn,
-                respawn_delay=2.0,
+                respawn_delay=respawn_delay,
                 #
                 parameters=[
                     common_params,

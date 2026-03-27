@@ -19,6 +19,8 @@
   <depend>std_srvs</depend>
   <depend>diagnostic_msgs</depend>
   <depend>rcl_interfaces</depend>
+  <depend>nav_msgs</depend>
+
   
 
   <export>
