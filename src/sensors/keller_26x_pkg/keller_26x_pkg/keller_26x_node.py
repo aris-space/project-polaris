@@ -4,7 +4,7 @@ TODO: Add dependencies!!!!!!
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import FluidPressure, Temperature
+from sensor_msgs.msg import FluidPressure
 
 from keller_protocol import keller_protocol as kp
 # use pip install keller-protocol
@@ -33,7 +33,7 @@ class Keller26xNode(Node):
             "ConRaw": 11,
         }
 
-        firmware = self.bus.f48(self.address)
+        self.init_f48()
 
         self.pub = self.create_publisher(
             FluidPressure, 
@@ -48,7 +48,7 @@ class Keller26xNode(Node):
         """
         To be able to communicate with the transmitter you will have to use F48 first to initialize.
         """
-        firmware = self.bus.f48(self.address)
+        self.bus.f48(self.address)
 
     def measure_p1(self) -> float:
         """Get pressure P1
@@ -61,9 +61,9 @@ class Keller26xNode(Node):
     
     def timer_callback(self):
         msg_P = FluidPressure()
-        p1_bar = measure_p1()
-        self.p1_Pa = p1_bar * 100000
-        msg_P.data = self.p1_Pa
+        p1_bar = self.measure_p1()
+        self.p1_Pa = p1_bar * 100000.0
+        msg_P.fluid_pressure = self.p1_Pa
 
         self.pub.publish(msg_P)
         self.get_logger().info(
