@@ -95,7 +95,7 @@ class Temperature_sensor(Node):
             diag_msg.header.stamp = self.get_clock().now().to_msg()
 
             summary_level = DiagnosticStatus.OK
-            summary_message = "All sensors oke."
+            summary_message = "All sensors OK."
             status_values = []
             
             for sensor_i, temp_i in enumerate(values):
@@ -123,7 +123,6 @@ class Temperature_sensor(Node):
 
             summary_status = DiagnosticStatus()
             summary_status.name = "Tube Temperature Summary"
-            summary_status.hardware_id = "Tube Temperature Array"
             summary_status.level = summary_level
             summary_status.message = summary_message
             summary_status.values = status_values
