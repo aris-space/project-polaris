@@ -1,0 +1,89 @@
+ekf_global_node:
+  ros__parameters:
+    frequency: 10.0
+    sensor_timeout: 0.2
+    two_d_mode: false
+    print_diagnostics: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: map
+
+    # IMU (orientation + angular velocity)
+    imu0: /imu/data
+    imu0_config: [
+      false, false, false,
+      true,  true,  true,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    imu0_queue_size: 20
+    imu0_nodelay: false
+    imu0_differential: false
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: false
+
+    # Absolute position from navsat_transform_node
+    # navsat_transform_node default output: /odometry/gps
+    odom0: /odometry/gps
+    odom0_config: [
+      true,  true,  false,
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    odom0_queue_size: 10
+    odom0_nodelay: false
+    odom0_differential: false
+    odom0_relative: false
+
+    # DVL velocity update
+    odom1: /sensors/dvl/odometry_cov
+    odom1_config: [
+      false, false, false,
+      false, false, false,
+      true,  true,  true,
+      false, false, false,
+      false, false, false
+    ]
+    odom1_queue_size: 10
+    odom1_nodelay: false
+    odom1_differential: false
+    odom1_relative: false
+
+    # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
+    pose0: /sensors/pressure/pose_enu
+    pose0_config: [
+      false, false, true,
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    pose0_queue_size: 20
+    pose0_nodelay: false
+    pose0_differential: false
+    pose0_relative: false
+
+    process_noise_covariance: [
+      0.12, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.12, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.09, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.06, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005
+    ]
