@@ -162,7 +162,7 @@ class Ice_Measurement(Node):
             self.csv_writer.writerow([f"{timestamp:.6f}", ping_num, i, intensity])
 
         self.csv_file.flush()
-        self.get_logger().info(f"Ping {ping_num}")
+        #self.get_logger().info(f"Ping {ping_num}")
 
     def params_cb(self, params):
         for param in params:
