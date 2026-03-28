@@ -162,7 +162,7 @@ def generate_launch_description():
 
     # usb_cam_launch = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(
-    #         os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.py")
+    #         os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.launch.py")
     #     ),
     #     launch_arguments={
     #         "respawn": respawn_arg_value,
