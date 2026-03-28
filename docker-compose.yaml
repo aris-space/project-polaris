@@ -1,6 +1,11 @@
-# Default: `docker compose up` starts jetson-container only (intended for Jetson / vehicle runtime).
-# polaris-sim is for workstation PCs only — do not run the sim profile on the Jetson (heavy Gazebo + desktop GPU/X11 stack).
-# On a dev PC: `docker compose --profile sim up polaris-sim`
+# Default: `docker compose up` → jetson-container only (Jetson / vehicle runtime: :runtime image, `runtime: nvidia`).
+#
+# polaris-sim (profile `sim`): NVIDIA workstation PC only — :sim image, NOT for Jetson.
+# Prerequisites on the PC: NVIDIA driver + NVIDIA Container Toolkit (`docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi`).
+# For Gazebo/GUI: host DISPLAY must be set (e.g. `export DISPLAY=:0` or `:1`) before `compose up`; X11 socket is mounted below.
+#
+# Start sim:  docker compose --profile sim up -d polaris-sim
+# Shell in:  docker exec -it polaris-sim bash
 services:
   jetson-container:
     image: ghcr.io/aris-space/project-polaris-docker:runtime
