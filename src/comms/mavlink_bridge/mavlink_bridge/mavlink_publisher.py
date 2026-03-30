@@ -459,7 +459,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.fluid_pressure = float(msg.press_abs) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
-        self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+        #self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
 
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
