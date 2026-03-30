@@ -77,5 +77,5 @@ ekf_local_node:
     ]
 
     # Pressure source notes:
-    # pressure_z_ned_to_pose_node calibrates p_surface at startup and computes
-    # depth = (p_abs - p_surface)/(rho*g), then z_enu = -depth, and publishes pose0.
+    # pressure_z_ned_to_pose_node uses p_surface_pa (default ~101325 Pa) or gauge mode; see
+    # pressure_pose_pkg. depth = (p_abs - p_surface)/(rho*g), z_enu = -depth, publishes pose0.

@@ -60,6 +60,7 @@ def generate_launch_description():
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
     ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
+    pressure_pose_pkg_dir = get_package_share_directory("pressure_pose_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
     foxglove_bridge_pkg_dir = get_package_share_directory("foxglove_bridge_pkg")
 
@@ -160,6 +161,18 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_ekf_localization")),
     )
 
+    # pressure_pose_pkg only; EKF consumes /sensors/pressure/pose_enu from ekf_local.yaml.
+    pressure_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                pressure_pose_pkg_dir, "launch", "pressure_z_ned_to_pose.launch.py"
+            )
+        ),
+        launch_arguments={
+            "p_surface_pa": LaunchConfiguration("p_surface_pa"),
+        }.items(),
+    )
+
     # usb_cam_launch = IncludeLaunchDescription(
     #     PythonLaunchDescriptionSource(
     #         os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.launch.py")
@@ -235,6 +248,22 @@ def generate_launch_description():
                     "use record_bag.launch.py for recording."
                 ),
             ),
+            DeclareLaunchArgument(
+                "use_ekf_localization",
+                default_value="true",
+                description=(
+                    "If true, launch robot_localization EKF stack. Pressure depth is always started "
+                    "via pressure_pose_pkg (see p_surface_pa)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "p_surface_pa",
+                default_value="101325.0",
+                description=(
+                    "Surface reference pressure (Pa) for depth from absolute pressure. "
+                    "Override with the value read in BlueOS/QGC at the surface (1 hPa = 100 Pa)."
+                ),
+            ),
 
             # DeclareLaunchArgument(
             #     "use_ntrip",
@@ -278,6 +307,8 @@ def generate_launch_description():
             temperature_launch,
             xsens_launch,
             dvl_launch,
+            localization_launch,
+            pressure_launch,
             # usb_cam_launch,
             ping_sonar_node,
             foxglove_launch,
