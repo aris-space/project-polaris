@@ -26,20 +26,13 @@ class ImuToRpyNode(Node):
         self.declare_parameter("publish_yaw_deg_topic", "/sensors/imu/yaw_deg")
         self.declare_parameter("publish_yaw_deg", True)
         self.declare_parameter("skip_invalid_orientation", True)
-        self.declare_parameter(
-            "max_dt_sec",
-            0.25,
-            "Clamp integration: if dt between IMU stamps exceeds this, skip delta (seconds).",
-        )
+        # If dt between IMU header stamps exceeds this (s), skip that integration step.
+        self.declare_parameter("max_dt_sec", 0.25)
         self.declare_parameter(
             "publish_quaternion_yaw_topic",
             "/sensors/imu/yaw_quaternion_rad",
         )
-        self.declare_parameter(
-            "publish_quaternion_yaw",
-            False,
-            "If true, publish quaternion-derived yaw (rad) for comparison with integrated yaw.",
-        )
+        self.declare_parameter("publish_quaternion_yaw", False)
 
         in_topic = str(self.get_parameter("input_topic").value)
         out_topic = str(self.get_parameter("output_topic").value)
