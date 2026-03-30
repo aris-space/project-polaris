@@ -16,7 +16,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "output_topic",
                 default_value="/sensors/imu/orientation_rpy",
-                description="geometry_msgs/Vector3Stamped: x=roll, y=pitch, z=yaw (rad).",
+                description=(
+                    "geometry_msgs/Vector3Stamped: x=roll, y=pitch, z=yaw from gyro integration (rad)."
+                ),
             ),
             Node(
                 package="imu_orientation_pkg",

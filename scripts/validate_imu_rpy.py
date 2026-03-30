@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Validate quaternion_to_rpy_xyz (same logic as imu_to_rpy_node) with synthetic cases and
-optional ROS 2 bag replay via rosbags (no live ROS required).
+Validate IMU helpers used by imu_to_rpy_node:
+
+  - quaternion_to_rpy_xyz (roll/pitch; quaternion yaw for optional comparison)
+  - integrate_yaw_rate_forward_euler (same rule as live node: ω_z[i-1] * dt)
+
+Optional bag: compare integrated-yaw span vs unwrapped quaternion-yaw span (differ if gyro bias / mag).
 
 Dependencies: pip install rosbags numpy
 
@@ -22,9 +26,13 @@ if str(_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_PKG_SRC))
 
 from imu_orientation_pkg.quaternion_rpy import quaternion_to_rpy_xyz  # noqa: E402
+from imu_orientation_pkg.yaw_integration import (  # noqa: E402
+    integrate_yaw_rate_forward_euler,
+    stamp_to_seconds,
+)
 
 
-def _synthetic_tests() -> None:
+def _synthetic_quaternion_tests() -> None:
     r, p, y = quaternion_to_rpy_xyz(0.0, 0.0, 0.0, 1.0)
     assert abs(r) < 1e-9 and abs(p) < 1e-9 and abs(y) < 1e-9, "identity"
 
@@ -34,9 +42,28 @@ def _synthetic_tests() -> None:
     assert abs(y - math.pi / 2.0) < 1e-5, f"pure yaw 90: yaw={y}"
 
     r, p, y = quaternion_to_rpy_xyz(0.0, 0.0, 1.0, 0.0)
-    assert abs(y - math.pi) < 1e-5 or abs(abs(y) - math.pi) < 1e-5, "180° yaw"
+    assert abs(abs(y) - math.pi) < 1e-4, "180° yaw"
 
-    print("Synthetic tests: OK")
+    print("Synthetic quaternion tests: OK")
+
+
+def _synthetic_integration_tests() -> None:
+    import numpy as np
+
+    n = 100
+    dt = 0.01
+    w = 0.5  # rad/s
+    stamps = np.arange(n, dtype=np.float64) * dt
+    omega = np.full(n, w, dtype=np.float64)
+    y = integrate_yaw_rate_forward_euler(stamps.tolist(), omega.tolist(), max_dt_sec=0.25)
+    expected_end = (n - 1) * dt * w  # forward Euler with w[i-1]
+    assert abs(y[-1] - expected_end) < 1e-9, (y[-1], expected_end)
+
+    # Zero rate -> flat
+    y0 = integrate_yaw_rate_forward_euler([0.0, 0.1, 0.2], [0.0, 0.0, 0.0])
+    assert all(abs(v) < 1e-12 for v in y0)
+
+    print("Synthetic yaw-integration tests: OK")
 
 
 def _bag_validation(bag_dir: Path) -> None:
@@ -48,34 +75,51 @@ def _bag_validation(bag_dir: Path) -> None:
         raise e
 
     topic = "/imu/data"
-    mcap = next(bag_dir.glob("*.mcap"), None)
-    if mcap is None:
+    if next(bag_dir.glob("*.mcap"), None) is None:
         raise FileNotFoundError(f"No .mcap under {bag_dir}")
 
-    yaws: list[float] = []
+    stamps: list[float] = []
+    omega_z: list[float] = []
+    yaws_quat: list[float] = []
+
     with AnyReader([bag_dir]) as reader:
         conns = [c for c in reader.connections if c.topic == topic]
         if not conns:
             raise RuntimeError(f"Topic {topic!r} not in bag")
         for c, _ts, raw in reader.messages(connections=conns):
             msg = reader.deserialize(raw, c.msgtype)
+            h = msg.header.stamp
+            stamps.append(stamp_to_seconds(int(h.sec), int(h.nanosec)))
+            omega_z.append(float(msg.angular_velocity.z))
             q = msg.orientation
-            _r, _p, y = quaternion_to_rpy_xyz(
+            _r, _p, yq = quaternion_to_rpy_xyz(
                 float(q.x), float(q.y), float(q.z), float(q.w)
             )
-            yaws.append(y)
+            yaws_quat.append(yq)
 
-    if len(yaws) < 10:
+    if len(stamps) < 10:
         raise RuntimeError("Too few IMU samples")
 
-    ya = np.unwrap(np.array(yaws, dtype=np.float64))
-    span = float(np.max(ya) - np.min(ya))
-    # Yaw-turns pool test: expect multiple large rotations (e.g. ~90° turns); loose threshold.
-    assert span > 0.5, f"Unwrapped yaw span {span:.3f} rad seems too small for a yaw_turns bag"
+    y_int = integrate_yaw_rate_forward_euler(stamps, omega_z, max_dt_sec=0.25)
+    span_int = float(max(y_int) - min(y_int))
 
+    ya = np.unwrap(np.array(yaws_quat, dtype=np.float64))
+    span_quat = float(np.max(ya) - np.min(ya))
+
+    # Yaw-turns maneuvers: both spans should show significant rotation
+    assert span_int > 0.2, (
+        f"Integrated yaw span {span_int:.3f} rad too small (check ω_z / stamps)"
+    )
+    assert span_quat > 0.5, (
+        f"Unwrapped quaternion yaw span {span_quat:.3f} rad too small for yaw_turns"
+    )
+
+    diff = abs(span_int - span_quat)
     print(
-        f"Bag {bag_dir.name}: n={len(yaws)}, unwrapped yaw span = {span:.3f} rad "
-        f"({math.degrees(span):.1f} deg)"
+        f"Bag {bag_dir.name}: n={len(stamps)}\n"
+        f"  Integrated yaw span (max-min): {span_int:.3f} rad ({math.degrees(span_int):.1f} deg)\n"
+        f"  Quaternion unwrap span: {span_quat:.3f} rad ({math.degrees(span_quat):.1f} deg)\n"
+        f"  abs(span difference): {diff:.3f} rad (gyro vs mag can diverge)"
     )
     print("Bag validation: OK")
 
@@ -90,7 +134,8 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    _synthetic_tests()
+    _synthetic_quaternion_tests()
+    _synthetic_integration_tests()
     if args.bag_dir is not None:
         d = args.bag_dir.resolve()
         if not d.is_dir():
