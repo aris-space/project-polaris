@@ -7,6 +7,7 @@ from datetime import datetime
 from std_msgs.msg import Int16MultiArray, Float32
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from rcl_interfaces.msg import SetParametersResult
+from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import (
     Imu,  # ATTITUDE
     BatteryState,  # BATTERY_STATUS
@@ -89,7 +90,9 @@ class MavlinkBridgeSender(Node):
             State, "/pixhawk/heartbeat", 10
         )
 
-        # self.attitude_publisher = self.create_publisher(Imu, "/pixhawk/attitude", 10)
+        self.attitude_publisher = self.create_publisher(
+            Vector3, "/pixhawk/attitude", 10
+        )
 
         # self.rc_channel_publisher = self.create_publisher(
         #     RCIn, "/pixhawk/rc_channels", 10
@@ -148,6 +151,33 @@ class MavlinkBridgeSender(Node):
             f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
         )
 
+        # ADDED: Request SCALED_PRESSURE2 messages at 50 Hz
+        self.logger.info("Requesting SCALED_PRESSURE2 message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2,  # message ID = 137
+            20000,  # interval in microseconds (20ms = 50Hz)
+            0, 0, 0, 0, 0,
+        )
+        self.logger.info("SCALED_PRESSURE2 request sent (interval=20ms)")
+
+        # ADDED: Request ATTITUDE messages at 50 Hz
+        self.logger.info("Requesting ATTITUDE message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,  # message ID = 30
+            20000,  # interval in microseconds (20ms = 50Hz)
+            0, 0, 0, 0, 0,
+        )
+        self.logger.info("ATTITUDE request sent (interval=20ms)")
+
+
         self.msg_type_counter = {
             "HEARTBEAT": 0,
             "ATTITUDE": 0,
@@ -204,8 +234,8 @@ class MavlinkBridgeSender(Node):
 
                 if msg.get_type() == "HEARTBEAT":
                     self.handle_heartbeat(msg)
-                # elif msg.get_type() == "ATTITUDE":
-                #    self.handle_attitude(msg)
+                elif msg.get_type() == "ATTITUDE":
+                   self.handle_attitude(msg)
                 # elif msg.get_type() == "RC_CHANNELS":
                 #    self.handle_rc_channels(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
@@ -328,32 +358,30 @@ class MavlinkBridgeSender(Node):
         self.diagnostic_publisher.publish(diag_msg)
 
 
-    # def handle_attitude(self, msg):
-    #     """Process ATTITUDE message and publish to ROS2"""
-    #     ros_msg = Imu()
+    def handle_attitude(self, msg):
+        """Process ATTITUDE message and publish to ROS2"""
+        ros_msg = Vector3()
 
-    #     # Convert Euler angles (radians) to Quaternion
-    #     roll = msg.roll
-    #     pitch = msg.pitch
-    #     yaw = msg.yaw
+        #Convert Euler angles (radians) to Quaternion
+        ros_msg.x = msg.roll
+        ros_msg.y = msg.pitch
+        ros_msg.z = msg.yaw
 
-    #     # Euler to Quaternion conversion
-    #     cy = math.cos(yaw * 0.5)
-    #     sy = math.sin(yaw * 0.5)
-    #     cp = math.cos(pitch * 0.5)
-    #     sp = math.sin(pitch * 0.5)
-    #     cr = math.cos(roll * 0.5)
-    #     sr = math.sin(roll * 0.5)
+        # # Euler to Quaternion conversion
+        # cy = math.cos(yaw * 0.5)
+        # sy = math.sin(yaw * 0.5)
+        # cp = math.cos(pitch * 0.5)
+        # sp = math.sin(pitch * 0.5)
+        # cr = math.cos(roll * 0.5)
+        # sr = math.sin(roll * 0.5)
 
-    #     ros_msg.orientation.w = cr * cp * cy + sr * sp * sy
-    #     ros_msg.orientation.x = sr * cp * cy - cr * sp * sy
-    #     ros_msg.orientation.y = cr * sp * cy + sr * cp * sy
-    #     ros_msg.orientation.z = cr * cp * sy - sr * sp * cy
+        # ros_msg.orientation.w = cr * cp * cy + sr * sp * sy
+        # ros_msg.orientation.x = sr * cp * cy - cr * sp * sy
+        # ros_msg.orientation.y = cr * sp * cy + sr * cp * sy
+        # ros_msg.orientation.z = cr * cp * sy - sr * sp * cy
 
-    #     self.attitude_publisher.publish(ros_msg)
-    #     self.logger.info(
-    #         f"Published Attitude: Roll={roll:.2f}, Pitch={pitch:.2f}, Yaw={yaw:.2f}"
-    #     )
+        self.attitude_publisher.publish(ros_msg)
+        
 
     # def handle_rc_channels(self, msg):
     #     """Process RC_CHANNELS message and publish to ROS2"""
@@ -431,7 +459,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.fluid_pressure = float(msg.press_abs) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
-        self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+        #self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
 
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
