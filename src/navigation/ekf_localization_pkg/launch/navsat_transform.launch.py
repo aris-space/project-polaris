@@ -21,8 +21,8 @@ def generate_launch_description():
     )
     gps_fix_topic_arg = DeclareLaunchArgument(
         "gps_fix_topic",
-        default_value="/fix",
-        description="GNSS NavSatFix topic.",
+        default_value="/gps/selected",
+        description="Selected GNSS NavSatFix topic.",
     )
     imu_topic_arg = DeclareLaunchArgument(
         "imu_topic",
