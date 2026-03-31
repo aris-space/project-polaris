@@ -1,17 +1,19 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>config_pkg</name>
+  <name>pressure_pose_pkg</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="buehlern@student.ethz.ch">root</maintainer>
+  <description>Fluid pressure to z-only PoseWithCovarianceStamped (ENU) for depth aiding, usable without robot_localization.</description>
+  <maintainer email="todo@example.com">root</maintainer>
   <license>TODO: License declaration</license>
 
-  <exec_depend>ament_index_python</exec_depend>
-  <exec_depend>ekf_localization_pkg</exec_depend>
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
-  <exec_depend>pressure_pose_pkg</exec_depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
