@@ -1,9 +1,11 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float64MultiArray, Float64, String # String hinzufügen
+from std_msgs.msg import Float64MultiArray, Float64, String  # String hinzufügen
 from sensor_msgs.msg import FluidPressure, Imu
 import numpy as np
 from tf_transformations import euler_from_quaternion
+import json
+
 
 class PoolTesting(Node):
 
@@ -25,9 +27,7 @@ class PoolTesting(Node):
             String, "/ping_sonar/distance", self.sonar_callback, 10
         )
 
-        self.imu_sub = self.create_subscription(
-            Imu, "/imu/data", self.imu_callback, 10
-        )
+        self.imu_sub = self.create_subscription(Imu, "/imu/data", self.imu_callback, 10)
 
         # --- Publisher ---
         self.publisher_ = self.create_publisher(Float64MultiArray, "/ice_thickness", 10)
@@ -47,17 +47,31 @@ class PoolTesting(Node):
         self.pressure = msg.fluid_pressure  # Pascal
 
     def sonar_callback(self, msg):
-        self.omega = float(msg.data) 
+        try:
+            # Wir laden den String als JSON-Objekt
+            data = json.loads(msg.data)
+
+            # Wir holen uns den Wert 'distance' (der in mm ist)
+            # und wandeln ihn in Meter um
+            self.omega = float(data["distance"]) / 1000.0
+
+            # Optional: Logge den Wert einmal, um sicher zu sein
+            # self.get_logger().info(f"Sonar Distanz: {self.omega} m")
+
+        except Exception as e:
+            self.get_logger().error(f"Fehler beim Parsen der Sonar-JSON: {e}")
 
     def ice_thickness(self, omega, pressure, pitch, roll):
-        rho_s = 300.0
+        rho_s = 0.0
         rho_water = 1000.0
         rho_ice = 917.0
         g = 9.81
-        h_s = 0.2
-        
+        h_s = 0.0
+
+        p_surface = 95903.0
+
         # Tiefe aus Druck berechnen
-        v_druck = (pressure / (rho_water * g)) - 0.05
+        v_druck = ((pressure - p_surface) / (rho_water * g)) - 0.05
 
         # Sonar-Korrektur durch Neigung
         omega_corr = omega * np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))
@@ -67,13 +81,18 @@ class PoolTesting(Node):
             return float("nan")
 
         # Formel für Eisdicke T
-        T = (1.0 / rho_ice) * ( (v_druck - omega_corr) * rho_water - h_s * rho_s )
+        T = (1.0 / rho_ice) * ((v_druck - omega_corr) * rho_water - h_s * rho_s)
         return float(T)
 
     def listener_callback(self):
         # Prüfen ob alle benötigten Daten da sind (ohne GPS x,y)
-        if any(val is None for val in [self.pressure, self.omega, self.roll, self.pitch]):
-            self.get_logger().warn("Warte auf Sensordaten (Druck, Sonar, IMU)...", throttle_duration_sec=2.0)
+        if any(
+            val is None for val in [self.pressure, self.omega, self.roll, self.pitch]
+        ):
+            self.get_logger().warn(
+                "Warte auf Sensordaten (Druck, Sonar, IMU)...",
+                throttle_duration_sec=2.0,
+            )
             return
 
         thickness = self.ice_thickness(self.omega, self.pressure, self.pitch, self.roll)
@@ -97,11 +116,10 @@ class PoolTesting(Node):
             f"Sonar: {self.omega:.3f}m"
         )
 
-# ... (dein Code von oben bleibt gleich bis zur main) ...
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PoolTesting() # Hier die richtige Klasse aufrufen
+    node = PoolTesting()  # Hier die richtige Klasse aufrufen
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
