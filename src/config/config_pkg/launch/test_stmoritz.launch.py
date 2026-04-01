@@ -63,6 +63,7 @@ def generate_launch_description():
     pressure_pose_pkg_dir = get_package_share_directory("pressure_pose_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
     foxglove_bridge_pkg_dir = get_package_share_directory("foxglove_bridge_pkg")
+    uwgpsg2_translator_pkg_dir = get_package_share_directory("uwgpsg2_translator")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -118,7 +119,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(
                 temperature_sensor_pkg_dir,
-                "launch",
+                "launch",pressure_launch
                 "launch_temperature_sensors.launch.py",
             )
         ),
@@ -154,18 +155,7 @@ def generate_launch_description():
                 ekf_localization_pkg_dir, "launch", "ekf_localization.launch.py"
             )
         ),
-        launch_arguments={
-            "use_navsat_transform": "false",
-            "use_global_ekf": "true",
-        }.items(),
-        condition=IfCondition(LaunchConfiguration("use_ekf_localization")),
-    )
-
-    # pressure_pose_pkg only; EKF consumes /sensors/pressure/pose_enu from ekf_local.yaml.
-    pressure_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                pressure_pose_pkg_dir, "launch", "pressure_z_ned_to_pose.launch.py"
+        launch_arguments={pressure_launchpressure_z_ned_to_pose.launch.py"
             )
         ),
         launch_arguments={
@@ -186,8 +176,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(foxglove_bridge_pkg_dir, "launch", "launch_foxglove.launch.py")
         ),
-        launch_arguments={
-            "respawn": respawn_arg_value,
+        launch_arguments=/ice_measurement_publisherspawn_arg_value,
             "respawn_delay": respawn_delay_arg_value,
         }.items(),
     )
@@ -216,9 +205,19 @@ def generate_launch_description():
         package="jetson_temperature",
         executable="jetson_temperature",
         name="jetson_temperature_monitor_node",
-        output="screen",
+        output="screen",pressure_launch
         respawn=respawn,
         respawn_delay=respawn_delay,
+    )
+
+    uwgpsg2_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(uwgpsg2_translator_pkg_dir, "launch", "launch_uwgpsg2.launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
     )
 
     return LaunchDescription(
@@ -296,17 +295,7 @@ def generate_launch_description():
                 "ntrip_username",
                 default_value=EnvironmentVariable("NTRIP_USERNAME", default_value=""),
             ),
-            DeclareLaunchArgument(
-                "ntrip_password",
-                default_value=EnvironmentVariable("NTRIP_PASSWORD", default_value=""),
-            ),
-            mode_control_launch,
-            mavlink_launch,
-            gnss_launch,
-            ultrasonic_launch,
-            temperature_launch,
-            xsens_launch,
-            dvl_launch,
+            DeclareLaunchArgument(pressure_launch
             localization_launch,
             pressure_launch,
             usb_cam_launch,
@@ -314,5 +303,6 @@ def generate_launch_description():
             foxglove_launch,
             # rosbag_record,
             jetson_temperature_node,
+            uwgpsg2_launch,
         ]
     )
