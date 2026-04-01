@@ -107,7 +107,13 @@ class ManualAltitudeHoldControlNode(Node):
             10,
         )
 
-    
+        # Timer to publish at a steady 20Hz rate
+        self.timer = self.create_timer(0.05, self.timer_callback)
+
+        self.get_logger().info(
+            "ManualAltitudeHoldControlNode: Node has been initialized"
+        )
+
     def mode_callback(self, msg):
         """Called when a new mode is published by mode_control_node."""
         self.current_mode = msg.data
@@ -159,7 +165,8 @@ class ManualAltitudeHoldControlNode(Node):
         gain_prefix = "keyboard" if self._is_keyboard_source(joy_msg) else "controller"
         if gain_prefix == "controller":
             deadzone = (
-                self.get_parameter("controller_axis_deadzone")but no, i dont want the controller to do aynthing, i want manual control to be used for yaw. the controller was killing me
+                self.get_parameter("controller_axis_deadzone")
+                .get_parameter_value()
                 .double_value
             )
             surge = self._apply_deadzone(surge, deadzone)
@@ -182,10 +189,6 @@ class ManualAltitudeHoldControlNode(Node):
         self.get_logger().debug(
             f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}"
         )
-
-
-
-
         mc_msg.data = [
             x,
             y,
