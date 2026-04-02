@@ -12,8 +12,8 @@ with open(input_file, "rb") as f:
     with open(output_file, "wb") as out:
         writer = Writer(out)
         # KORREKTUR HIER:
-        writer.start(profile="ros2") 
-        
+        writer.start(profile="ros2")
+
         channels = {}
         for schema, channel, message in reader.iter_messages():
             if channel.id not in channels:
@@ -21,16 +21,14 @@ with open(input_file, "rb") as f:
                     topic=channel.topic,
                     message_encoding=channel.message_encoding,
                     schema_id=writer.register_schema(
-                        name=schema.name,
-                        encoding=schema.encoding,
-                        data=schema.data
-                    ).id
+                        name=schema.name, encoding=schema.encoding, data=schema.data
+                    ).id,
                 )
             writer.add_message(
                 channel_id=channels[channel.id],
                 log_time=message.log_time,
                 data=message.data,
-                publish_time=message.publish_time
+                publish_time=message.publish_time,
             )
         writer.finish()
 print(f"Fertig! Datei erstellt: {output_file}")
