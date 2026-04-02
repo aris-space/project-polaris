@@ -24,3 +24,5 @@ coverage.xml
 /log/
 
 /semira
+
+*.mcap
