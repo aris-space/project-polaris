@@ -26,7 +26,6 @@ def generate_launch_description():
     # 1. Find the path to the child package
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
     mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
-    foxglove_bridge_pkg_dir = get_package_share_directory("foxglove_bridge_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -50,16 +49,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    foxglove_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(foxglove_bridge_pkg_dir, "launch", "launch_foxglove.launch.py")
-        ),
-        launch_arguments={
-            "respawn": respawn_arg_value,
-            "respawn_delay": respawn_delay_arg_value,
-        }.items(),
-    )
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -74,6 +63,5 @@ def generate_launch_description():
             ),
             mode_control_launch,
             mavlink_launch,
-            foxglove_launch,
         ]
     )
