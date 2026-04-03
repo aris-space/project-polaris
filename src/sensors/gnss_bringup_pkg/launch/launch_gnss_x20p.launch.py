@@ -3,7 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer, Node, PushRosNamespace
 from launch_ros.descriptions import ComposableNode
@@ -28,58 +28,71 @@ def generate_launch_description():
     respawn = LaunchConfiguration("respawn")
     respawn_delay = LaunchConfiguration("respawn_delay")
 
-    gnss_container = ComposableNodeContainer(
-        name="ublox_dgnss_container",
-        namespace="",
-        package="rclcpp_components",
-        executable="component_container_mt",
-        output="screen",
-        respawn=respawn,
-        respawn_delay=respawn_delay,
-        arguments=["--ros-args", "--log-level", log_level],
-        composable_node_descriptions=[
-            ComposableNode(
-                package="ublox_dgnss_node",
-                plugin="ublox_dgnss::UbloxDGNSSNode",
-                name="ublox_dgnss",
-                namespace=namespace,
-                parameters=[gnss_config],
-                remappings=[
-                    # Keep only required UBX topics visible; move others to hidden topics.
-                    ("ubx_nav_clock", "/_ublox_hidden/ubx_nav_clock"),
-                    ("ubx_nav_dop", "/_ublox_hidden/ubx_nav_dop"),
-                    ("ubx_nav_eoe", "/_ublox_hidden/ubx_nav_eoe"),
-                    ("ubx_nav_hp_pos_ecef", "/_ublox_hidden/ubx_nav_hp_pos_ecef"),
-                    ("ubx_nav_odo", "/_ublox_hidden/ubx_nav_odo"),
-                    ("ubx_nav_orb", "/_ublox_hidden/ubx_nav_orb"),
-                    ("ubx_nav_sig", "/_ublox_hidden/ubx_nav_sig"),
-                    ("ubx_nav_pos_ecef", "/_ublox_hidden/ubx_nav_pos_ecef"),
-                    ("ubx_nav_pos_llh", "/_ublox_hidden/ubx_nav_pos_llh"),
-                    ("ubx_nav_rel_pos_ned", "/_ublox_hidden/ubx_nav_rel_pos_ned"),
-                    ("ubx_nav_svin", "/_ublox_hidden/ubx_nav_svin"),
-                    ("ubx_nav_time_utc", "/_ublox_hidden/ubx_nav_time_utc"),
-                    ("ubx_nav_vel_ecef", "/_ublox_hidden/ubx_nav_vel_ecef"),
-                    ("ubx_nav_vel_ned", "/_ublox_hidden/ubx_nav_vel_ned"),
-                    ("ubx_rxm_cor", "/_ublox_hidden/ubx_rxm_cor"),
-                    ("ubx_rxm_measx", "/_ublox_hidden/ubx_rxm_measx"),
-                    ("ubx_rxm_rawx", "/_ublox_hidden/ubx_rxm_rawx"),
-                    ("ubx_rxm_spartn", "/_ublox_hidden/ubx_rxm_spartn"),
-                    ("ubx_rxm_spartnkey", "/_ublox_hidden/ubx_rxm_spartnkey"),
-                    ("ubx_esf_status", "/_ublox_hidden/ubx_esf_status"),
-                    ("ubx_esf_meas", "/_ublox_hidden/ubx_esf_meas"),
-                    ("ubx_esf_meas_to_device", "/_ublox_hidden/ubx_esf_meas_to_device"),
-                    ("ubx_mon_comms", "/_ublox_hidden/ubx_mon_comms"),
-                    ("ubx_sec_sig", "/_ublox_hidden/ubx_sec_sig"),
-                    ("ubx_sec_sig_log", "/_ublox_hidden/ubx_sec_sig_log"),
-                ],
-            ),
-            ComposableNode(
-                package="ublox_nav_sat_fix_hp_node",
-                plugin="ublox_nav_sat_fix_hp::UbloxNavSatHpFixNode",
-                name="ublox_nav_sat_fix_hp",
-                namespace=namespace,
-            ),
-        ],
+    gnss_components = [
+        ComposableNode(
+            package="ublox_dgnss_node",
+            plugin="ublox_dgnss::UbloxDGNSSNode",
+            name="ublox_dgnss",
+            namespace=namespace,
+            parameters=[gnss_config],
+            remappings=[
+                # Keep only required UBX topics visible; move others to hidden topics.
+                ("ubx_nav_clock", "/_ublox_hidden/ubx_nav_clock"),
+                ("ubx_nav_dop", "/_ublox_hidden/ubx_nav_dop"),
+                ("ubx_nav_eoe", "/_ublox_hidden/ubx_nav_eoe"),
+                ("ubx_nav_hp_pos_ecef", "/_ublox_hidden/ubx_nav_hp_pos_ecef"),
+                ("ubx_nav_odo", "/_ublox_hidden/ubx_nav_odo"),
+                ("ubx_nav_orb", "/_ublox_hidden/ubx_nav_orb"),
+                ("ubx_nav_sig", "/_ublox_hidden/ubx_nav_sig"),
+                ("ubx_nav_pos_ecef", "/_ublox_hidden/ubx_nav_pos_ecef"),
+                ("ubx_nav_pos_llh", "/_ublox_hidden/ubx_nav_pos_llh"),
+                ("ubx_nav_rel_pos_ned", "/_ublox_hidden/ubx_nav_rel_pos_ned"),
+                ("ubx_nav_svin", "/_ublox_hidden/ubx_nav_svin"),
+                ("ubx_nav_time_utc", "/_ublox_hidden/ubx_nav_time_utc"),
+                ("ubx_nav_vel_ecef", "/_ublox_hidden/ubx_nav_vel_ecef"),
+                ("ubx_nav_vel_ned", "/_ublox_hidden/ubx_nav_vel_ned"),
+                ("ubx_rxm_cor", "/_ublox_hidden/ubx_rxm_cor"),
+                ("ubx_rxm_measx", "/_ublox_hidden/ubx_rxm_measx"),
+                ("ubx_rxm_rawx", "/_ublox_hidden/ubx_rxm_rawx"),
+                ("ubx_rxm_spartn", "/_ublox_hidden/ubx_rxm_spartn"),
+                ("ubx_rxm_spartnkey", "/_ublox_hidden/ubx_rxm_spartnkey"),
+                ("ubx_esf_status", "/_ublox_hidden/ubx_esf_status"),
+                ("ubx_esf_meas", "/_ublox_hidden/ubx_esf_meas"),
+                ("ubx_esf_meas_to_device", "/_ublox_hidden/ubx_esf_meas_to_device"),
+                ("ubx_mon_comms", "/_ublox_hidden/ubx_mon_comms"),
+                ("ubx_sec_sig", "/_ublox_hidden/ubx_sec_sig"),
+                ("ubx_sec_sig_log", "/_ublox_hidden/ubx_sec_sig_log"),
+            ],
+        ),
+        ComposableNode(
+            package="ublox_nav_sat_fix_hp_node",
+            plugin="ublox_nav_sat_fix_hp::UbloxNavSatHpFixNode",
+            name="ublox_nav_sat_fix_hp",
+            namespace=namespace,
+        ),
+    ]
+
+    gnss_container_common = {
+        "name": "ublox_dgnss_container",
+        "namespace": "",
+        "package": "rclcpp_components",
+        "executable": "component_container_mt",
+        "output": "screen",
+        "respawn_delay": respawn_delay,
+        "arguments": ["--ros-args", "--log-level", log_level],
+        "composable_node_descriptions": gnss_components,
+    }
+
+    gnss_container_respawn = ComposableNodeContainer(
+        condition=IfCondition(respawn),
+        respawn=True,
+        **gnss_container_common,
+    )
+
+    gnss_container_no_respawn = ComposableNodeContainer(
+        condition=UnlessCondition(respawn),
+        respawn=False,
+        **gnss_container_common,
     )
 
     # Static base_link -> gnss_link (must match FRAME_ID in gnss_config, e.g. ublox_x20p_rover.yaml).
@@ -201,7 +214,8 @@ def generate_launch_description():
                     "NTRIP_PASSWORD", default_value=""
                 ),
             ),
-            gnss_container,
+            gnss_container_respawn,
+            gnss_container_no_respawn,
             static_tf_base_to_gnss,
             ntrip_node,
         ]
