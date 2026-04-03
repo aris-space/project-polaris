@@ -400,6 +400,19 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
+
+            self.get_logger().info("Requesting SCALED_PRESSURE2 message stream from Pixhawk...")
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+                0,  # confirmation
+                mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2,  # message ID = 137
+                20000,  # interval in microseconds (20ms = 50Hz)
+                0, 0, 0, 0, 0,
+            )
+            self.get_logger().info("SCALED_PRESSURE2 request sent (interval=20ms)")
+        
             self.pixhawk_mode = "ALT_HOLD"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent ALT_HOLD mode command")
             self._file_logger.info("Sent ALT_HOLD mode command")
