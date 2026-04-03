@@ -23,11 +23,13 @@
 # SOFTWARE.
 
 """
-Launch a simulation.
+Launch a simulation (Gazebo, ArduSub, RViz, MAVLink bridge, Nav2).
 
-Includes Gazebo, ArduSub, RViz, custom MAVLink bridge, and Nav2 nodes.
+ArduSub ``--home`` comes from ``missions/default_mission_origin.json`` (same numbers
+``WSG84_mission_starter.py`` uses when you omit ``--origin``). Edit that JSON to move both.
 """
 
+import json
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -39,6 +41,19 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _default_ardusub_home(orca_bringup_dir: str) -> str:
+    """lat,lon,alt_m,yaw_deg for ``ardusub --home`` (must match mission origin alt datum)."""
+    path = os.path.join(orca_bringup_dir, 'missions', 'default_mission_origin.json')
+    try:
+        with open(path, encoding='utf-8') as f:
+            o = json.load(f)
+        lat, lon, alt = float(o['lat']), float(o['lon']), float(o['alt'])
+        yaw = float(o.get('yaw', 0.0))
+        return f'{lat},{lon},{alt},{yaw}'
+    except (OSError, KeyError, TypeError, ValueError):
+        return '46.494536,9.856195,1822.0,0'
+
+
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
     orca_description_dir = get_package_share_directory('orca_description')
@@ -47,10 +62,10 @@ def generate_launch_description():
 
     ardusub_params_file = os.path.join(orca_bringup_dir, 'cfg', 'sub.parm')
     orca_params_file = os.path.join(orca_bringup_dir, 'params', 'sim_orca_params.yaml')
-    rosbag2_record_qos_file = os.path.join(orca_bringup_dir, 'params', 'rosbag2_record_qos.yaml')
     rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
     world_file = os.path.join(orca_description_dir, 'worlds', 'sand.world')
-    
+    ardusub_home = _default_ardusub_home(orca_bringup_dir)
+
     # e.g. ros2 launch orca_bringup sim_launch.py gzclient:=False ardusub:=False
 
     return LaunchDescription([
@@ -74,7 +89,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'gzclient',
-            default_value='True',
+            default_value='False',
             description='Launch Gazebo UI?'
         ),
 
@@ -96,21 +111,16 @@ def generate_launch_description():
             description='Launch rviz?',
         ),
 
-        # Bag useful topics
+        # Bag PurePursuitController3D tracking: errors + pose/closest/twist (same publish_tracking_error gate).
         ExecuteProcess(
             cmd=[
                 'ros2', 'bag', 'record',
-                '--qos-profile-overrides-path', rosbag2_record_qos_file,
-                '--include-hidden-topics',
-                '/cmd_vel',
-                '/pixhawk/arm_cmd',
-                '/pixhawk/cmd_vel',
-                '/pixhawk/mode_cmd',
-                '/model/orca4/odometry',
-                '/pid_z',
-                '/rosout',
-                '/tf',
-                '/tf_static',
+                '/pure_pursuit_cross_track_xy',
+                '/pure_pursuit_vertical_error',
+                '/pure_pursuit_yaw_error',
+                '/pure_pursuit_closest_point_map',
+                '/pure_pursuit_robot_pose_map',
+                '/pure_pursuit_robot_twist',
             ],
             output='screen',
             condition=IfCondition(LaunchConfiguration('bag')),
@@ -127,10 +137,11 @@ def generate_launch_description():
         # -w: wipe eeprom
         # --home: start location (lat,lon,alt,yaw). Yaw is provided by Gazebo, so the start yaw value is ignored.
         # ardusub must be on the $PATH, see src/orca4/setup.bash
-        # St. Moritz!
         ExecuteProcess(
-            cmd=['ardusub', '-S', '-w', '-M', 'JSON', '--defaults', ardusub_params_file,
-                 '-I0', '--home', '46.494536,9.856195,1822.0,0'],
+            cmd=[
+                'ardusub', '-S', '-w', '-M', 'JSON', '--defaults', ardusub_params_file,
+                '-I0', '--home', ardusub_home,
+            ],
             output='screen',
             condition=IfCondition(LaunchConfiguration('ardusub')),
         ),
