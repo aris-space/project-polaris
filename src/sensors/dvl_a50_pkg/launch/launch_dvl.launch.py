@@ -19,8 +19,8 @@ Frame convention (must stay consistent for TF + robot_localization):
   - Driver param ``frame`` sets ``Odometry.header.frame_id`` and
     ``Odometry.child_frame_id`` (twist is in the sensor frame).
   - ``static_tf_base_to_dvl`` publishes base_link -> <frame> using the same
-    ``sensor_frame`` launch argument (default dvl_a50_link). Translation and
-    RPY are from CAD (center of mass / base_link to DVL frame); extrinsic XYZ.
+    ``sensor_frame`` launch argument (default dvl_a50_link). Translation from
+    CAD Aris DVL_LINK -> CENTER_OF_MASS_LINK (m); RPY extrinsic vs base_link.
 """
 import os
 
@@ -110,15 +110,17 @@ def _launch_setup(context, *args, **kwargs):
 
     # Static Transform: parent must match your robot base; child must match driver ``frame`` /
     # odometry.child_frame_id (see sensor_frame launch argument).
-    # CAD: CENTER_OF_MASS_LINK -> DVL_LINK [m]; extrinsic RPY (rad): pi, 0, -pi/4.
+    # CAD (Aris): DVL_LINK -> CENTER_OF_MASS_LINK [mm] converted to m; same signs as measure.
+    # Used as base_link -> DVL translation so DVL sits forward of base_link (+x nose convention).
+    # extrinsic RPY (rad): pi, 0, -pi/4 (sensor mount vs base_link).
     static_tf_base_to_dvl = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="static_tf_base_to_dvl",
         arguments=[
-            "--x", "-0.736",
-            "--y", "0.000403",
-            "--z", "0.068",
+            "--x", "0.735818",
+            "--y", "-0.000483",
+            "--z", "-0.067591",
             "--roll", "3.141592653589793",
             "--pitch", "0.0",
             "--yaw", "-0.7853981633974483",
