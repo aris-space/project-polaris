@@ -113,19 +113,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    # localization_launch = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join(
-    #             ekf_localization_pkg_dir, "launch", "ekf_localization.launch.py"
-    #         )
-    #     ),
-    #     launch_arguments={
-    #         "use_navsat_transform": "false",
-    #         "use_global_ekf": "true",
-    #     }.items(),
-    #     condition=IfCondition(LaunchConfiguration("use_ekf_localization")),
-    # )
-
     usb_cam_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.launch.py")
