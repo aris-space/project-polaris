@@ -25,8 +25,8 @@ def generate_launch_description():
     ntrip_username = LaunchConfiguration("ntrip_username")
     ntrip_password = LaunchConfiguration("ntrip_password")
     ntrip_version = LaunchConfiguration("ntrip_version")
-    respawn = True
-    respawn_delay = 2.0
+    respawn = LaunchConfiguration("respawn")
+    respawn_delay = LaunchConfiguration("respawn_delay")
 
     gnss_container = ComposableNodeContainer(
         name="ublox_dgnss_container",
