@@ -6,45 +6,122 @@ import {
   SettingsTreeNodes,
   Topic,
 } from "@foxglove/extension";
-import { ReactElement, useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { ReactElement, useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 interface TopicConfig {
   id: string;
-  topicName: string;
+  topicPath: string;
+  customLabel: string;
 }
 
 interface PanelSettings {
   trackedTopics: TopicConfig[];
   updateFrequency: number; // Hz (0 = every frame)
-  showHeader: boolean;
-  staleAfterMissedUpdates: number; // Number of missed updates before marking stale (0 = disabled)
-  showFullTopicPath: boolean;
   leftColumnWidth: number; // Percentage width of left column (0-100)
-  showRawMessage: boolean; // Show original JSON format vs formatted
-  compactMode: boolean; // Use compact row spacing
+}
+
+function splitTopicPath(
+  topicPath: string,
+  availableTopicNames: readonly string[],
+): { topicName: string; fieldPath: string | undefined } {
+  const trimmed = topicPath.trim();
+  if (!trimmed) {
+    return { topicName: "", fieldPath: undefined };
+  }
+
+  const bestTopicMatch = [...availableTopicNames]
+    .sort((a, b) => b.length - a.length)
+    .find((candidate) => trimmed === candidate || trimmed.startsWith(`${candidate}.`));
+
+  if (bestTopicMatch != undefined) {
+    if (trimmed === bestTopicMatch) {
+      return { topicName: bestTopicMatch, fieldPath: undefined };
+    }
+    return {
+      topicName: bestTopicMatch,
+      fieldPath: trimmed.slice(bestTopicMatch.length + 1),
+    };
+  }
+
+  const fallbackDotIndex = trimmed.indexOf(".");
+  if (fallbackDotIndex > 0) {
+    return {
+      topicName: trimmed.slice(0, fallbackDotIndex),
+      fieldPath: trimmed.slice(fallbackDotIndex + 1),
+    };
+  }
+
+  return { topicName: trimmed, fieldPath: undefined };
+}
+
+function getNestedValue(message: unknown, fieldPath: string | undefined): unknown {
+  if (!fieldPath) {
+    return message;
+  }
+
+  const tokens: Array<string | number> = [];
+  const tokenRegex = /([^.[\]]+)|\[(\d+)\]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(fieldPath)) != undefined) {
+    if (match[1] != undefined) {
+      tokens.push(match[1]);
+    } else if (match[2] != undefined) {
+      tokens.push(Number(match[2]));
+    }
+  }
+
+  if (tokens.length === 0) {
+    return undefined;
+  }
+
+  let current: unknown = message;
+  for (const token of tokens) {
+    if (typeof token === "number") {
+      if (!Array.isArray(current) || token < 0 || token >= current.length) {
+        return undefined;
+      }
+      current = current[token];
+      continue;
+    }
+
+    if (typeof current !== "object" || current == undefined || !(token in current)) {
+      return undefined;
+    }
+
+    current = (current as Record<string, unknown>)[token];
+  }
+
+  return current;
 }
 
 function TopicsTablePanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<Map<string, unknown>>(new Map());
-  const [lastUpdateTimes, setLastUpdateTimes] = useState<Map<string, number>>(new Map());
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
   const [config, setConfig] = useState<PanelSettings>({
     trackedTopics: [],
     updateFrequency: 5, // 5 Hz
-    showHeader: true,
-    staleAfterMissedUpdates: 5, // stale after 5 missed updates by default
-    showFullTopicPath: false,
     leftColumnWidth: 40, // Default to 40%
-    showRawMessage: false, // Default to formatted view
-    compactMode: false, // Default to normal spacing
   });
   const [isDragging, setIsDragging] = useState(false);
   const [isDividerHovered, setIsDividerHovered] = useState(false);
   const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
   const [lastUpdateTime, setLastUpdateTime] = useState<number>(0);
-  const [, setForceUpdate] = useState(0); // For forcing re-renders to update staleness
+  const availableTopicNames = useMemo(() => (topics ?? []).map((topic) => topic.name), [topics]);
+  const resolvedTrackedTopics = useMemo(
+    () =>
+      config.trackedTopics.map((trackedTopic) => {
+        const resolved = splitTopicPath(trackedTopic.topicPath, availableTopicNames);
+        return {
+          ...trackedTopic,
+          resolvedTopicName: resolved.topicName,
+          resolvedFieldPath: resolved.fieldPath,
+        };
+      }),
+    [availableTopicNames, config.trackedTopics],
+  );
 
   // Setup render handling and subscriptions
   useLayoutEffect(() => {
@@ -62,12 +139,9 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       // Build a map of the latest messages for subscribed topics
       if (renderState.currentFrame && shouldUpdate) {
         const messageMap = new Map<string, unknown>();
-        const timestampMap = new Map<string, number>();
-        const currentTime = Date.now();
 
         for (const message of renderState.currentFrame) {
           messageMap.set(message.topic, message.message);
-          timestampMap.set(message.topic, currentTime);
         }
 
         setMessages((prevMessages) => {
@@ -76,14 +150,6 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             newMessages.set(topic, msg);
           });
           return newMessages;
-        });
-
-        setLastUpdateTimes((prevTimes) => {
-          const newTimes = new Map(prevTimes);
-          timestampMap.forEach((time, topic) => {
-            newTimes.set(topic, time);
-          });
-          return newTimes;
         });
 
         setLastUpdateTime(now);
@@ -99,62 +165,69 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     const savedSettings = context.initialState as Partial<PanelSettings> | undefined;
     if (savedSettings?.trackedTopics) {
       const settingsWithFrequency: PanelSettings = {
-        trackedTopics: savedSettings.trackedTopics,
+        trackedTopics: savedSettings.trackedTopics.map((topic) => ({
+          id: topic.id,
+          topicPath: topic.topicPath,
+          customLabel:
+            "customLabel" in topic && typeof topic.customLabel === "string"
+              ? topic.customLabel
+              : "",
+        })),
         updateFrequency: savedSettings.updateFrequency ?? 5,
-        showHeader: savedSettings.showHeader ?? true,
-        staleAfterMissedUpdates: savedSettings.staleAfterMissedUpdates ?? 5,
-        showFullTopicPath: savedSettings.showFullTopicPath ?? false,
         leftColumnWidth: savedSettings.leftColumnWidth ?? 40,
-        showRawMessage: savedSettings.showRawMessage ?? false,
-        compactMode: savedSettings.compactMode ?? false,
       };
       setConfig(settingsWithFrequency);
     }
   }, [context]);
 
-  // Force re-render periodically to update staleness indicators
-  useEffect(() => {
-    if (config.staleAfterMissedUpdates === 0) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setForceUpdate((prev) => prev + 1);
-    }, 500); // Update every 500ms to refresh staleness
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [config.staleAfterMissedUpdates]);
-
   // Handle settings changes
   useEffect(() => {
-    context.subscribe(config.trackedTopics.map((t) => ({ topic: t.topicName })));
+    const subscriptionTopics = [
+      ...new Set(resolvedTrackedTopics.map((t) => t.resolvedTopicName)),
+    ].filter((topicName) => topicName.length > 0);
+
+    context.subscribe(subscriptionTopics.map((topic) => ({ topic })));
     context.saveState(config);
-  }, [config, context]);
+  }, [config, context, resolvedTrackedTopics]);
 
   // Invoke the done callback
   useEffect(() => {
     renderDone?.();
   }, [renderDone]);
 
-  const handleAddTopic = useCallback((topicName: string) => {
-    if (!topicName) {
-      return;
-    }
+  const handleAddTopic = useCallback((topicPath: string) => {
+    const normalizedPath = topicPath.trim();
 
     setConfig((prevConfig) => {
-      if (prevConfig.trackedTopics.some((t) => t.topicName === topicName)) {
+      if (
+        normalizedPath &&
+        prevConfig.trackedTopics.some((t) => t.topicPath.trim() === normalizedPath)
+      ) {
         return prevConfig;
       }
 
       const newId = `topic-${Date.now()}`;
       return {
         ...prevConfig,
-        trackedTopics: [...prevConfig.trackedTopics, { id: newId, topicName }],
+        trackedTopics: [
+          ...prevConfig.trackedTopics,
+          { id: newId, topicPath: normalizedPath, customLabel: "" },
+        ],
       };
     });
   }, []);
+
+  const handleUpdateTrackedTopic = useCallback(
+    (id: string, field: "topicPath" | "customLabel", value: string) => {
+      setConfig((prevConfig) => ({
+        ...prevConfig,
+        trackedTopics: prevConfig.trackedTopics.map((topic) =>
+          topic.id === id ? { ...topic, [field]: value } : topic,
+        ),
+      }));
+    },
+    [],
+  );
 
   const handleRemoveTopic = useCallback((id: string) => {
     setConfig((prevConfig) => ({
@@ -210,32 +283,40 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       if (action.action === "update") {
         const { path, value } = action.payload;
         if (path[0] === "updateFrequency" && typeof value === "number") {
-          const fieldKey = path[path.length - 1];
-          if (fieldKey === "staleAfterMissedUpdates") {
-            setConfig((prevConfig) => ({ ...prevConfig, staleAfterMissedUpdates: value }));
-          } else {
-            setConfig((prevConfig) => ({ ...prevConfig, updateFrequency: value }));
-          }
-        } else if (path[0] === "showHeader" && typeof value === "boolean") {
-          const fieldKey = path[path.length - 1];
-          if (fieldKey === "showFullTopicPath") {
-            setConfig((prevConfig) => ({ ...prevConfig, showFullTopicPath: value }));
-          } else if (fieldKey === "showRawMessage") {
-            setConfig((prevConfig) => ({ ...prevConfig, showRawMessage: value }));
-          } else if (fieldKey === "compactMode") {
-            setConfig((prevConfig) => ({ ...prevConfig, compactMode: value }));
-          } else {
-            setConfig((prevConfig) => ({ ...prevConfig, showHeader: value }));
-          }
-        } else if (path[0] === "addTopic" && typeof value === "string" && value) {
-          handleAddTopic(value);
+          setConfig((prevConfig) => ({ ...prevConfig, updateFrequency: value }));
+        } else if (
+          path[0] === "series" &&
+          typeof path[1] === "string" &&
+          (path[2] === "topicPath" || path[2] === "customLabel") &&
+          typeof value === "string"
+        ) {
+          handleUpdateTrackedTopic(path[1], path[2], value);
         }
         return;
       }
 
       const { path, id } = action.payload;
-      if (typeof path[0] === "string") {
+      if (path[0] === "series" && id === "add") {
+        handleAddTopic("");
+        return;
+      }
+
+      if (path[0] === "series" && typeof path[1] === "string") {
+        const topicId = path[1];
         if (id === "remove") {
+          handleRemoveTopic(topicId);
+        } else if (id === "moveUp") {
+          handleMoveUp(topicId);
+        } else if (id === "moveDown") {
+          handleMoveDown(topicId);
+        }
+        return;
+      }
+
+      if (typeof path[0] === "string") {
+        if (path[0] === "addTopic" && id === "add") {
+          handleAddTopic("");
+        } else if (id === "remove") {
           handleRemoveTopic(path[0]);
         } else if (id === "moveUp") {
           handleMoveUp(path[0]);
@@ -244,7 +325,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
         }
       }
     },
-    [handleAddTopic, handleMoveDown, handleMoveUp, handleRemoveTopic],
+    [handleAddTopic, handleMoveDown, handleMoveUp, handleRemoveTopic, handleUpdateTrackedTopic],
   );
 
   const updateSettingsTree = useCallback(() => {
@@ -268,71 +349,28 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
           ],
           value: config.updateFrequency,
         },
-        staleAfterMissedUpdates: {
-          label: "Stale threshold",
-          input: "select",
-          options: [
-            { label: "Disabled", value: 0 },
-            { label: "1 missed update", value: 1 },
-            { label: "2 missed updates", value: 2 },
-            { label: "3 missed updates", value: 3 },
-            { label: "5 missed updates", value: 5 },
-            { label: "10 missed updates", value: 10 },
-            { label: "15 missed updates", value: 15 },
-            { label: "20 missed updates", value: 20 },
-            { label: "25 missed updates", value: 25 },
-            { label: "30 missed updates", value: 30 },
-            { label: "50 missed updates", value: 50 },
-          ],
-          value: config.staleAfterMissedUpdates,
-        },
       },
     };
 
-    nodes.showHeader = {
-      label: "Display",
-      fields: {
-        showHeader: {
-          label: "Header row",
-          input: "boolean",
-          value: config.showHeader,
+    nodes.series = {
+      label: "Series",
+      actions: [
+        {
+          id: "add",
+          type: "action",
+          label: "Add series",
+          icon: "Addchart",
+          display: "inline",
         },
-        showFullTopicPath: {
-          label: "Full topic path",
-          input: "boolean",
-          value: config.showFullTopicPath,
-        },
-        showRawMessage: {
-          label: "Raw format",
-          input: "boolean",
-          value: config.showRawMessage,
-        },
-        compactMode: {
-          label: "Compact spacing",
-          input: "boolean",
-          value: config.compactMode,
-        },
-      },
+      ],
+      children: {},
     };
 
-    const availableTopicNames = (topics ?? [])
-      .filter((t) => !config.trackedTopics.some((ct) => ct.topicName === t.name))
-      .map((topic) => topic.name);
+    const seriesChildren = nodes.series.children;
 
-    nodes.addTopic = {
-      label: "Add Topic",
-      fields: {
-        value: {
-          label: "Select Topic",
-          input: "select",
-          options: availableTopicNames.map((topicName) => ({
-            label: topicName,
-            value: topicName,
-          })),
-          value: "",
-        },
-      },
-    };
+    if (!seriesChildren) {
+      return;
+    }
 
     config.trackedTopics.forEach((trackedTopic, index) => {
       const actions: SettingsTreeNodeAction[] = [];
@@ -359,8 +397,23 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
         label: "Remove",
       });
 
-      nodes[trackedTopic.id] = {
-        label: trackedTopic.topicName,
+      seriesChildren[trackedTopic.id] = {
+        label:
+          trackedTopic.customLabel.trim() || trackedTopic.topicPath.trim() || `Series ${index + 1}`,
+        fields: {
+          topicPath: {
+            label: "Y-value path",
+            input: "messagepath",
+            validTopics: availableTopicNames,
+            value: trackedTopic.topicPath,
+          },
+          customLabel: {
+            label: "Label",
+            input: "string",
+            placeholder: "Optional custom label",
+            value: trackedTopic.customLabel,
+          },
+        },
         actions,
       };
     });
@@ -369,160 +422,51 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
       actionHandler: handleSettingsAction,
       nodes,
     });
-  }, [config, context, handleSettingsAction, topics]);
+  }, [availableTopicNames, config, context, handleSettingsAction]);
 
   // Handle settings tree updates
   useLayoutEffect(() => {
     updateSettingsTree();
   }, [updateSettingsTree]);
 
-  const formatRawValue = (value: unknown): string => {
-    if (typeof value === "undefined") {
-      return "No data";
-    }
-
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  };
-
-  const isComplexObject = (value: unknown): boolean => {
-    if (typeof value !== "object" || value == null) {
-      return false;
-    }
-    
-    if (Array.isArray(value)) {
-      return value.length > 3 || value.some((v) => typeof v === "object" && v != null);
-    }
-    
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj);
-    
-    // Complex if more than 3 keys or has nested objects/arrays
-    return keys.length > 3 || keys.some((key) => {
-      const val = obj[key];
-      return typeof val === "object" && val != null;
-    });
-  };
-
-  const formatValue = (value: unknown, indent = ""): string => {
-    if (typeof value === "undefined") {
-      return "No data";
-    }
-
-    if (value == null) {
-      return "null";
-    }
-
-    if (typeof value === "object") {
-      if (Array.isArray(value)) {
-        // Show array contents if small and simple
-        if (value.length === 0) {
-          return "[]";
-        }
-        
-        const hasComplexItems = value.some((v) => typeof v === "object" && v != null);
-        
-        if (value.length <= 3 && !hasComplexItems) {
-          return `[${value.map((v) => formatValue(v, indent)).join(", ")}]`;
-        }
-        
-        // For larger or complex arrays, show with line breaks
-        const items = value.map((v, i) => {
-          const formatted = formatValue(v, indent + "  ");
-          return `${indent}  [${i}]: ${formatted}`;
-        });
-        return `\n${items.join("\n")}`;
-      }
-
-      // Handle common ROS message patterns
-      const obj = value as Record<string, unknown>;
-
-      // Check for std_msgs pattern (single 'data' field)
-      if (Object.keys(obj).length === 1 && "data" in obj) {
-        return formatValue(obj.data, indent);
-      }
-
-      try {
-        const keys = Object.keys(obj);
-        if (keys.length === 0) {
-          return "{}";
-        }
-        
-        // Check if this is a complex object
-        if (isComplexObject(obj)) {
-          // Format with line breaks
-          const lines = keys.map((key) => {
-            const val = obj[key];
-            const formattedValue = formatValue(val, indent + "  ");
-            // If the formatted value starts with a newline, it's a nested structure
-            if (formattedValue.startsWith("\n")) {
-              return `${indent}  ${key}:${formattedValue}`;
-            }
-            return `${indent}  ${key}: ${formattedValue}`;
-          });
-          return `\n${lines.join("\n")}`;
-        }
-        
-        // Simple object - show inline
-        if (keys.length <= 3) {
-          return keys.map((key) => `${key}: ${formatValue(obj[key], indent)}`).join(", ");
-        }
-        return `${keys.slice(0, 3).join(", ")}...`;
-      } catch {
-        return "Object";
-      }
-    }
-
-    // Handle primitives
+  const normalizeForRawDisplay = (value: unknown): unknown => {
     if (typeof value === "number") {
-      // Format numbers with reasonable precision
-      return Number.isInteger(value) ? String(value) : value.toFixed(3);
+      return Number(value.toFixed(3));
     }
 
-    if (typeof value === "string") {
-      return value;
+    if (typeof value === "bigint") {
+      return value.toString();
     }
 
-    if (typeof value === "boolean" || typeof value === "bigint") {
-      return String(value);
+    if (Array.isArray(value)) {
+      return value.map((item) => normalizeForRawDisplay(item));
+    }
+
+    if (value != undefined && typeof value === "object") {
+      const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        normalizeForRawDisplay(item),
+      ]);
+      return Object.fromEntries(entries);
     }
 
     if (typeof value === "symbol") {
       return value.description != undefined ? `Symbol(${value.description})` : "Symbol";
     }
 
-    return "Unsupported";
+    return value;
   };
 
-  const isStale = (topicName: string): boolean => {
-    if (config.staleAfterMissedUpdates === 0) {
-      return false;
+  const formatDisplayValue = (value: unknown): string => {
+    if (typeof value === "undefined") {
+      return "No data";
     }
 
-    const lastUpdate = lastUpdateTimes.get(topicName);
-    if (lastUpdate == undefined) {
-      return false; // No data yet, not considered stale
+    try {
+      return JSON.stringify(normalizeForRawDisplay(value), null, 2) ?? "No data";
+    } catch {
+      return String(normalizeForRawDisplay(value));
     }
-
-    const expectedUpdateIntervalMs =
-      config.updateFrequency > 0 ? 1000 / config.updateFrequency : 1000;
-    const staleAfterMs = expectedUpdateIntervalMs * config.staleAfterMissedUpdates;
-
-    const now = Date.now();
-    const ageMs = now - lastUpdate;
-    return ageMs > staleAfterMs;
-  };
-
-  const formatTopicName = (topicName: string): string => {
-    if (config.showFullTopicPath) {
-      return topicName;
-    }
-
-    const parts = topicName.split("/").filter((part) => part.length > 0);
-    return parts.length > 0 ? parts[parts.length - 1]! : topicName;
   };
 
   const handleMouseDown = useCallback(() => {
@@ -537,10 +481,10 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
 
       const rect = containerRef.getBoundingClientRect();
       const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
-      
+
       // Clamp between 20% and 80% for usability
       const clampedWidth = Math.max(20, Math.min(80, newWidth));
-      
+
       setConfig((prevConfig) => ({
         ...prevConfig,
         leftColumnWidth: clampedWidth,
@@ -572,10 +516,7 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "1rem" }}>
-      <div 
-        ref={setContainerRef} 
-        style={{ flex: 1, overflowY: "auto", position: "relative" }}
-      >
+      <div ref={setContainerRef} style={{ flex: 1, overflowY: "auto", position: "relative" }}>
         <table
           style={{
             width: "100%",
@@ -588,44 +529,6 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
             <col style={{ width: `${config.leftColumnWidth}%` }} />
             <col style={{ width: `${100 - config.leftColumnWidth}%` }} />
           </colgroup>
-          {config.showHeader && (
-            <thead>
-              <tr
-                style={{
-                  backgroundColor: "#333333",
-                  borderBottom: "2px solid #555",
-                }}
-              >
-                <th
-                  style={{
-                    textAlign: "left",
-                    padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
-                    borderRight: "1px solid #555",
-                    fontWeight: "bold",
-                    color: "white",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    maxWidth: 0,
-                  }}
-                >
-                  Topic Name
-                </th>
-                <th
-                  style={{
-                    textAlign: "left",
-                    padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
-                    fontWeight: "bold",
-                    color: "white",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  Current Value
-                </th>
-              </tr>
-            </thead>
-          )}
           <tbody>
             {config.trackedTopics.length === 0 ? (
               <tr>
@@ -635,41 +538,45 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
               </tr>
             ) : (
               config.trackedTopics.map((t) => {
-                const stale = isStale(t.topicName);
+                const selectionPath = t.topicPath;
+                const { topicName: resolvedTopicName, fieldPath: resolvedFieldPath } =
+                  splitTopicPath(selectionPath, availableTopicNames);
+                const selectedValue = getNestedValue(
+                  messages.get(resolvedTopicName),
+                  resolvedFieldPath,
+                );
+                const displayName = t.customLabel.trim() || selectionPath.trim() || resolvedTopicName;
 
                 return (
                   <tr
                     key={t.id}
                     style={{
                       borderBottom: "1px solid #444",
-                      backgroundColor: stale ? "rgba(255, 100, 0, 0.1)" : "transparent",
+                      backgroundColor: "transparent",
                     }}
                   >
                     <td
                       style={{
-                        padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
+                        padding: "0.25rem 0.35rem",
                         borderRight: "1px solid #444",
                         fontWeight: 500,
-                        color: stale ? "#ff8800" : "white",
+                        color: "white",
                         wordBreak: "break-word",
                       }}
                     >
-                      {stale && "⚠️ "}
-                      {formatTopicName(t.topicName)}
+                      {displayName}
                     </td>
                     <td
                       style={{
-                        padding: config.compactMode ? "0.25rem 0.35rem" : "0.5rem",
-                        color: stale ? "#ff8800" : "white",
-                        opacity: stale ? 0.6 : 1,
+                        padding: "0.25rem 0.35rem",
+                        color: "white",
+                        opacity: 1,
                         wordBreak: "break-word",
                         whiteSpace: "pre-wrap",
-                        fontFamily: config.showRawMessage ? "monospace" : "inherit",
+                        fontFamily: "monospace",
                       }}
                     >
-                      {config.showRawMessage
-                        ? formatRawValue(messages.get(t.topicName))
-                        : formatValue(messages.get(t.topicName)).replace(/^\n/, "")}
+                      {formatDisplayValue(selectedValue)}
                     </td>
                   </tr>
                 );

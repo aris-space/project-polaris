@@ -176,6 +176,7 @@ export type Config = {
   keyboardMapping: string;
   uiScale: number;
   buttonContent: ButtonContent[];
+  inputEnabled: boolean;
 };
 
 export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAction): Config {
@@ -332,6 +333,12 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
         }
         return;
       }
+    }
+
+    // Handle inputEnabled toggle
+    if (pathStr.includes("inputEnabled")) {
+      draft.inputEnabled = typeof value === "boolean" ? value : Boolean(value);
+      return;
     }
 
     // Fallback for other updates

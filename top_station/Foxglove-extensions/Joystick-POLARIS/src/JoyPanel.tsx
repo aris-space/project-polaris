@@ -98,6 +98,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     partialConfig.keyboardMapping ??= "keyboard_movement";
     partialConfig.gamepadId ??= 0;
     partialConfig.uiScale ??= 1;
+    partialConfig.inputEnabled ??= true;
     partialConfig.buttonsPreset ??=
       (partialConfig.buttonContent?.length ?? 0) === 0 ? "empty" : "uuv-settings";
     if (partialConfig.buttonContent == undefined) {
@@ -272,6 +273,10 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           return;
         }
 
+        if (!config.inputEnabled) {
+          return;
+        }
+
         // Convert Gamepad API to ROS /joy format using the mapping
         const { buttons, axes } = gamepadToRosJoy(gp);
 
@@ -286,7 +291,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
         setJoy(tmpJoy);
       },
-      [config.dataSource, config.gamepadId, config.publishFrameId],
+      [config.dataSource, config.gamepadId, config.publishFrameId, config.inputEnabled],
     ),
   });
 
@@ -316,7 +321,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
-      if (!kbEnabled) {
+      if (!kbEnabled || !config.inputEnabled) {
         return;
       }
 
@@ -345,12 +350,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         return oldTrackedKeys;
       });
     },
-    [normalizeKey, kbEnabled],
+    [normalizeKey, kbEnabled, config.inputEnabled],
   );
 
   const handleKeyUp = useCallback(
     (event: KeyboardEvent) => {
-      if (!kbEnabled) {
+      if (!kbEnabled || !config.inputEnabled) {
         return;
       }
 
@@ -376,7 +381,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         return oldTrackedKeys;
       });
     },
-    [normalizeKey, kbEnabled],
+    [normalizeKey, kbEnabled, config.inputEnabled],
   );
 
   // Key down Listener - only active when keyboard mode is enabled
@@ -410,7 +415,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
   // Generate Joy from visual button presses
   useEffect(() => {
-    if (config.dataSource !== "buttons") {
+    if (config.dataSource !== "buttons" || !config.inputEnabled) {
       return;
     }
 
@@ -442,7 +447,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       axes,
       buttons,
     });
-  }, [activeVisualButtonIndices, config.dataSource, config.publishFrameId, config.buttonContent]);
+  }, [activeVisualButtonIndices, config.dataSource, config.publishFrameId, config.buttonContent, config.inputEnabled]);
 
   // Generate Joy from Keys
   useEffect(() => {
@@ -452,6 +457,9 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     if (!kbEnabled) {
       return;
     }
+      if (!config.inputEnabled) {
+        return;
+      }
 
     // Initialize with fixed array sizes so the raw display is always complete
     const axes = Array<number>(6).fill(0);
@@ -516,7 +524,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       }
       return prevJoy;
     });
-  }, [config.dataSource, trackedKeys, config.publishFrameId, kbEnabled]);
+  }, [config.dataSource, trackedKeys, config.publishFrameId, kbEnabled, config.inputEnabled]);
 
   // Advertise the topic to publish
   useEffect(() => {
@@ -577,6 +585,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
       return;
     }
 
+    // Don't publish if input is disabled
+    if (!config.inputEnabled) {
+      return;
+    }
+
     // Safety check: don't publish if we're in subscribe mode
     if (config.dataSource === "sub-joy-topic") {
       return;
@@ -595,7 +608,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
         console.error(`[POLARIS Joystick] Failed to publish to topic ${pubTopic}:`, error);
       }
     }
-  }, [context, config.pubJoyTopic, config.publishMode, config.dataSource, joy, pubTopic]);
+  }, [context, config.pubJoyTopic, config.publishMode, config.dataSource, joy, pubTopic, config.inputEnabled]);
 
   // Invoke the done callback once the render is complete
   useEffect(() => {
@@ -622,9 +635,33 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
     }
   };
 
+  const handleInputEnabledSwitch = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const enabled = event.target.checked;
+    if (!enabled) {
+      // Clear any latched keyboard state and pressed visual buttons immediately.
+      setTrackedKeys((oldTrackedKeys) => {
+        if (!oldTrackedKeys) {
+          return oldTrackedKeys;
+        }
+        const newKeys = new Map(oldTrackedKeys);
+        newKeys.forEach((value) => {
+          value.value = 0;
+          value.toggled = false;
+        });
+        return newKeys;
+      });
+      setActiveVisualButtonIndices(new Set<number>());
+      setJoy(undefined);
+    }
+    setConfig((prevConfig) => ({ ...prevConfig, inputEnabled: enabled }));
+  };
+
   const interactiveCb = useCallback(
     (interactiveJoy: Joy) => {
       if (config.dataSource !== "interactive") {
+        return;
+      }
+      if (!config.inputEnabled) {
         return;
       }
 
@@ -648,12 +685,19 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
 
       setJoy(tmpJoy);
     },
-    [config.publishFrameId, config.dataSource, setJoy],
+    [config.publishFrameId, config.dataSource, config.inputEnabled, setJoy],
   );
 
   useEffect(() => {
     context.saveState(config);
   }, [context, config]);
+
+  // Buttons mode has no input toggle in UI, so keep it always enabled.
+  useEffect(() => {
+    if (config.dataSource === "buttons" && !config.inputEnabled) {
+      setConfig((prevConfig) => ({ ...prevConfig, inputEnabled: true }));
+    }
+  }, [config.dataSource, config.inputEnabled]);
 
   const handleVisualButtonPress = useCallback((index: number) => {
     setActiveVisualButtonIndices((prev) => {
@@ -707,17 +751,11 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           gap: `${8 * config.uiScale}px`,
         }}
       >
-        {config.dataSource === "keyboard" ? (
+        {config.dataSource !== "buttons" ? (
           <FormGroup sx={{ margin: 0 }}>
             <FormControlLabel
-              control={<Switch checked={kbEnabled} onChange={handleKbSwitch} />}
-              label={`Enable ${
-                config.keyboardMapping === "keyboard_movement"
-                  ? "Keyboard Movement"
-                  : config.keyboardMapping === "keyboard_buttons"
-                    ? "Keyboard Buttons"
-                    : config.keyboardMapping
-              }`}
+              control={<Switch checked={config.inputEnabled} onChange={handleInputEnabledSwitch} />}
+              label="Enable Input"
             />
           </FormGroup>
         ) : null}
@@ -728,6 +766,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             activeIndices={activeVisualButtonIndices}
             onPress={handleVisualButtonPress}
             onRelease={handleVisualButtonRelease}
+            inputEnabled={config.inputEnabled}
           />
         ) : null}
         {config.layoutName !== "rawjoy" && config.layoutName !== "empty" ? (
