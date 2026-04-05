@@ -28,6 +28,19 @@ This script
     Δt logic; duplicate stamps still produce ``zero_dt``.
 - Embeds a **compact** ``dvl_data_health`` block from ``analyze_mcap_dvl_health`` per bag.
 
+``/tf``: duplicate ``header.stamp`` values are **downgraded** in the report when
+``n_negative_dt == 0`` — multiple TF edges often share one filter stamp (see
+``_relax_tf_header_stamp_report``).
+
+``/imu/data``: on **stamp_sorted** sequences, IMU is usually ~fixed rate with no
+``micro_bursts``; if ``analyze_mcap_timing_health`` (MCAP **log_time**) flags IMU bursts,
+that is often **recorder batching**, not ``header.stamp`` pathology.
+
+``/sensors/pressure/pose_enu``: low-rate pose updates can show rare **positive** dt values
+much smaller than the median (fusion / paired publishes). When stamps stay monotonic and
+bursts are a small fraction of intervals, ``micro_bursts`` is stripped (see
+``_relax_pressure_pose_enu_header_stamp_report``).
+
 Dependencies: ``pip install rosbags``
 """
 from __future__ import annotations
@@ -120,6 +133,63 @@ def collect_header_stamps(
     return stamps, raw_n, skipped
 
 
+def _relax_tf_header_stamp_report(out: dict[str, Any]) -> None:
+    """
+    /tf is a stream of tf2_msgs/TFMessage; robot_localization often emits one message
+    per edge (map→odom, odom→base_link) with the **same** header.stamp. Scalar stamp
+    sequences then show many consecutive zeros — unlike a single-sensor topic (DVL, IMU).
+    Do not treat that as pathological duplicate-clock or burst pathology when stamps
+    never go backward.
+    """
+    explain = (
+        "tf2 /tf: equal header.stamp across consecutive messages usually means multiple "
+        "edges published for one filter tick — not duplicate sensor time (contrast DVL odometry)."
+    )
+    for view in ("stamp_sorted", "message_order"):
+        d = out.get(view)
+        if not isinstance(d, dict):
+            continue
+        prev = (d.get("note") or "").strip()
+        d["note"] = (prev + "; " if prev else "") + explain
+        if int(d.get("n_negative_dt", 0) or 0) != 0:
+            continue
+        d["suggestion"] = "OK"
+        strip = {
+            "duplicate_log_time",
+            "duplicate_timestamps_after_startup",
+            "micro_bursts",
+        }
+        d["flags"] = [f for f in d.get("flags", []) if f not in strip]
+
+
+def _relax_pressure_pose_enu_header_stamp_report(out: dict[str, Any]) -> None:
+    """
+    pose_enu is ~10–20 Hz with median dt ~50–100 ms. A few consecutive stamps can sit
+    only milliseconds apart (e.g. multi-step pipeline) while the stream stays strictly
+    increasing — unlike DVL duplicate-stamp bugs.     Strip ``micro_bursts`` when that
+    pattern is rare (burst interval count well below 5% of all intervals) and stamps
+    never regress.
+    """
+    explain = (
+        "/sensors/pressure/pose_enu: rare sub-median positive dt values are common when "
+        "stamps remain monotonic — not duplicate-clock pathology (contrast DVL odometry)."
+    )
+    for view in ("stamp_sorted", "message_order"):
+        d = out.get(view)
+        if not isinstance(d, dict):
+            continue
+        n = int(d.get("n") or 0)
+        n_burst = int(d.get("n_burst") or 0)
+        if int(d.get("n_negative_dt", 0) or 0) != 0 or n < 3:
+            continue
+        denom = max(n - 1, 1)
+        if (n_burst / denom) >= 0.05:
+            continue
+        prev = (d.get("note") or "").strip()
+        d["note"] = (prev + "; " if prev else "") + explain
+        d["flags"] = [f for f in d.get("flags", []) if f != "micro_bursts"]
+
+
 def _enrich_report(
     topic: str,
     seq: list[int],
@@ -150,6 +220,10 @@ def _enrich_report(
             out[key]["flags"] = list(
                 dict.fromkeys(out[key].get("flags", []) + ["no_valid_stamp"])
             )
+    if topic == "/tf":
+        _relax_tf_header_stamp_report(out)
+    elif topic == "/sensors/pressure/pose_enu":
+        _relax_pressure_pose_enu_header_stamp_report(out)
     return out
 
 
