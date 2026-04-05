@@ -64,7 +64,7 @@ class Selector(Node):
     def __init__(self):
         super().__init__("selector")
 
-        self.declare_parameter("max_horizontal_accuracy_m", 4.0)
+        self.declare_parameter("max_horizontal_accuracy_m", 2.0)
         self.declare_parameter("gps_stale_seconds", 2.0)
         self.declare_parameter("use_horizontal_accuracy_gate", True)
         # If set, prefer h_acc from ublox UBXNavHPPosLLH when stamp matches /fix (see ubx_stamp_match_max_ns).
