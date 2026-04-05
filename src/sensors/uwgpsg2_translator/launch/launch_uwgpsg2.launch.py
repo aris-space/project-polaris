@@ -35,7 +35,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "max_horizontal_accuracy_m",
-                default_value="2.0",
+                default_value="4.0",
                 description="Publish /fix to /gps/selected only if horizontal accuracy (m) is at most this.",
             ),
             DeclareLaunchArgument(

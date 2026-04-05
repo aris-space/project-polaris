@@ -182,6 +182,19 @@ class WaterLinkedUWGPSG2Interface(Node):
             self.locator_wrt_base_relative_x = data["x"]
             self.locator_wrt_base_relative_y = data["y"]
             self.locator_wrt_base_relative_z = data["z"]
+            # API GET /api/v1/position/acoustic/filtered (WaterlinkedAccousticPosition):
+            # std = horizontal acoustic accuracy (m), position_valid = solution valid.
+            try:
+                self.locator_acoustic_std_m = float(data["std"])
+            except (KeyError, TypeError, ValueError):
+                self.locator_acoustic_std_m = -1.0
+            pv = data.get("position_valid")
+            if isinstance(pv, bool):
+                self.locator_acoustic_position_valid = pv
+            elif isinstance(pv, (int, float)):
+                self.locator_acoustic_position_valid = bool(int(pv))
+            else:
+                self.locator_acoustic_position_valid = False
 
     def get_waterlinked_measuremets_global(self):
         pos = self.get_global_position(self.WATERLINKED_URL)
@@ -272,7 +285,19 @@ class WaterLinkedUWGPSG2Interface(Node):
             msg.position.longitude = float(self.locator_global_lon)
             # or -self.locator_wrt_base_relative_z
             msg.position.altitude = -float(self.locator_wrt_base_relative_z)
+            # Publish quality before global so downstream translator usually receives it first.
+            self._pub_locator_acoustic_quality(msg.header)
             self.gps_pub.publish(msg)
+
+    def _pub_locator_acoustic_quality(self, header_template):
+        """Same stamp as locator_position_global for translator pairing (API std + valid)."""
+        q = Vector3Stamped()
+        q.header.stamp = header_template.stamp
+        q.header.frame_id = "sbl_link"
+        q.vector.x = float(getattr(self, "locator_acoustic_std_m", -1.0))
+        q.vector.y = 1.0 if getattr(self, "locator_acoustic_position_valid", False) else 0.0
+        q.vector.z = 0.0
+        self.acoustic_quality_pub.publish(q)
 
     def pub_locator_pos_ned(self):
         if hasattr(self, 'locator_pos_ned'):
@@ -471,6 +496,9 @@ class WaterLinkedUWGPSG2Interface(Node):
                 Vector3Stamped, "locator_position_relative_wrt_topside", 10)
         self.gps_pub = self.create_publisher(
             GeoPointStamped, "locator_position_global", 10)
+        # vector.x = acoustic std (m) from API, -1 if unknown; vector.y = 1 if position_valid else 0
+        self.acoustic_quality_pub = self.create_publisher(
+            Vector3Stamped, "locator_acoustic_quality", 10)
         self.ned_pub = self.create_publisher(
             Vector3Stamped, "locator_position_topside_ned", 10)
 

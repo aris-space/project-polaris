@@ -9,6 +9,7 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>geographic_msgs</exec_depend>
   <!-- Optional at runtime: selector imports only if ubx_nav_hp_pos_llh_topic is set -->
   <exec_depend>ublox_ubx_msgs</exec_depend>

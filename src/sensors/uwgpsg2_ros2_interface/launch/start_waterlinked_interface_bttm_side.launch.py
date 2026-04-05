@@ -45,6 +45,10 @@ def _build_nodes(context):
             ),
             ("locator_position_global", "/waterlinked_ugps/locator_position_global"),
             (
+                "locator_acoustic_quality",
+                "/waterlinked_ugps/locator_acoustic_quality",
+            ),
+            (
                 "locator_position_topside_ned",
                 "/waterlinked_ugps/locator_position_topside_ned",
             ),
