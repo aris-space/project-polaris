@@ -146,6 +146,9 @@ def _launch_setup(context, *args, **kwargs):
             "lock_linear_variance_bias_drift_inflation_factor": 1.15,
             "angular_covariance": 1000000.0,
             "velocity_stale_timeout_sec": 0.5,
+            # Drop redundant second /odometry publish (same stamp + twist as prior sample).
+            "dedupe_same_stamp_twist": True,
+            "dedupe_twist_epsilon": 1.0e-9,
         }],
         output="screen",
         respawn=respawn,

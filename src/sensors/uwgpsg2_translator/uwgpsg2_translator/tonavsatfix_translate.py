@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from geographic_msgs.msg import GeoPointStamped
 
@@ -7,16 +8,18 @@ from geographic_msgs.msg import GeoPointStamped
 class ToNavSatFixTranslator(Node):
     def __init__(self):
         super().__init__("to_navsatfix_translator")
+        # Water Linked node publishes GeoPointStamped with default depth-10 (RELIABLE).
         self.sub = self.create_subscription(
             GeoPointStamped,
             "/waterlinked_ugps/locator_position_global",
             self.on_geopointstamped,
             10,
         )
+        # BEST_EFFORT so selector (and navsat_transform gps/fix) SensorDataQoS subscribers match.
         self.pub = self.create_publisher(
             NavSatFix,
             "/waterlinked_ugps/navsatfix",
-            10,
+            qos_profile_sensor_data,
         )
         self.get_logger().info("ToNavSatFixTranslator started")
 
