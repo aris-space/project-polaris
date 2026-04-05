@@ -29,12 +29,6 @@ Parameters:
         and constants file stay the pure stationary sample values.
     angular_covariance (double): Angular rate variance (unused by DVL)
     velocity_stale_timeout_sec (double): lock flag timeout [s] (default: 0.5)
-    dedupe_same_stamp_twist (bool): If true, do not publish when this message has
-        the same header.stamp and (within epsilon) the same linear twist as the
-        previous /sensors/dvl/odometry sample. Suppresses the redundant second
-        odometry publish from the DVL driver (dead reckoning) that reuses the
-        velocity twist at an identical stamp — avoids double EKF injections.
-    dedupe_twist_epsilon (double): max abs delta per linear velocity component [m/s]
 """
 
 
@@ -85,8 +79,6 @@ class OdometryCovarianceNode(Node):
         )
         self.declare_parameter("angular_covariance", 1000000.0)
         self.declare_parameter("velocity_stale_timeout_sec", 0.5)
-        self.declare_parameter("dedupe_same_stamp_twist", True)
-        self.declare_parameter("dedupe_twist_epsilon", 1.0e-9)
 
         self._cov_model = (
             self.get_parameter("twist_linear_covariance_model").value or "stationary_tep"
@@ -130,20 +122,9 @@ class OdometryCovarianceNode(Node):
         self.velocity_stale_timeout_sec = (
             self.get_parameter("velocity_stale_timeout_sec").value
         )
-        self._dedupe_same_stamp = bool(
-            self.get_parameter("dedupe_same_stamp_twist").value
-        )
-        self._dedupe_eps = float(self.get_parameter("dedupe_twist_epsilon").value)
-        if self._dedupe_eps < 0.0:
-            self.get_logger().warning("dedupe_twist_epsilon < 0; using 0.0")
-            self._dedupe_eps = 0.0
 
         self.bottom_lock = False
         self.last_velocity_stamp = None
-        self._prev_odom_stamp_ns: int | None = None
-        self._prev_odom_lx: float | None = None
-        self._prev_odom_ly: float | None = None
-        self._prev_odom_lz: float | None = None
 
         self.vel_sub = self.create_subscription(
             Dvl,
@@ -181,12 +162,6 @@ class OdometryCovarianceNode(Node):
                 if self._cov_model == "speed_dependent"
                 else ""
             )
-            + (
-                f", dedupe_same_stamp_twist={self._dedupe_same_stamp}, "
-                f"dedupe_twist_epsilon={self._dedupe_eps:g}"
-                if self._dedupe_same_stamp
-                else ", dedupe_same_stamp_twist=false"
-            )
         )
 
     def _effective_lock_vz_variance(self) -> float:
@@ -218,43 +193,7 @@ class OdometryCovarianceNode(Node):
         age = (self.get_clock().now() - self.last_velocity_stamp).nanoseconds / 1e9
         return age > self.velocity_stale_timeout_sec
 
-    def _twist_linear_near(
-        self,
-        ax: float,
-        ay: float,
-        az: float,
-        bx: float,
-        by: float,
-        bz: float,
-    ) -> bool:
-        e = self._dedupe_eps
-        return (
-            abs(ax - bx) <= e
-            and abs(ay - by) <= e
-            and abs(az - bz) <= e
-        )
-
     def odometry_callback(self, msg: Odometry):
-        stamp_ns = int(msg.header.stamp.sec) * 10**9 + int(msg.header.stamp.nanosec)
-        lin = msg.twist.twist.linear
-        lx, ly, lz = float(lin.x), float(lin.y), float(lin.z)
-
-        if self._dedupe_same_stamp and self._prev_odom_stamp_ns is not None:
-            if stamp_ns == self._prev_odom_stamp_ns and self._twist_linear_near(
-                lx,
-                ly,
-                lz,
-                self._prev_odom_lx,
-                self._prev_odom_ly,
-                self._prev_odom_lz,
-            ):
-                return
-
-        self._prev_odom_stamp_ns = stamp_ns
-        self._prev_odom_lx = lx
-        self._prev_odom_ly = ly
-        self._prev_odom_lz = lz
-
         cov = list(msg.twist.covariance)
 
         if self._lock_is_stale() or not self.bottom_lock:
