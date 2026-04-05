@@ -11,7 +11,7 @@ automatically on startup.
 
 Published topics (under /sensors/dvl/):
   - dvl/velocity             (marine_acoustic_msgs/Dvl)
-  - dvl/dead_reckoning       (geometry_msgs/PoseWithCovarianceStamped)
+  - dvl/dead_reckoning       (geometry_msgs/PoseWithCovarianceStamped, optional — param ``publish_dead_reckoning_topic``)
   - dvl/odometry             (nav_msgs/Odometry)          — raw from driver
   - dvl/odometry_cov         (nav_msgs/Odometry)          — twist covariance (stationary TEP / lock inflation)
 

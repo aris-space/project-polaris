@@ -7,7 +7,9 @@ nav_msgs/Odometry twice per TCP cycle type:
   - after each velocity JSON (stamp from time_of_validity),
   - after each dead-reckoning JSON (stamp from ts).
 
-So message_count(odometry) == message_count(velocity) + message_count(dead_reckoning).
+So message_count(odometry) == message_count(velocity) + message_count(dead_reckoning)
+when dead_reckoning is published. If ``publish_dead_reckoning_topic`` is false,
+expect n_odometry ≈ n_velocity (second odom publish per DR cycle is absent).
 
 /sensors/dvl/velocity uses one stamp per report (typically unique in the bag).
 /sensors/dvl/dead_reckoning often reuses the same ts for several consecutive
@@ -86,6 +88,17 @@ def analyze_bag(bag_dir: Path) -> dict:
             "stamp_multiplicity_histogram": _multiplicity_hist(stamps),
         }
 
+    note = (
+        "If identity holds, duplicate odometry stamps follow from "
+        "velocity (unique TOV) + dead_reckoning (reused ts) publishing "
+        "two odometry messages per upstream message each."
+    )
+    if n_d == 0:
+        note += (
+            " This bag has no /sensors/dvl/dead_reckoning messages "
+            "(e.g. publish_dead_reckoning_topic=false); compare n_odometry to n_velocity only."
+        )
+
     return {
         "bag": str(bag_dir.resolve()),
         "identity_n_odometry_eq_n_velocity_plus_n_dead_reckoning": sum_ok,
@@ -97,11 +110,7 @@ def analyze_bag(bag_dir: Path) -> dict:
         "dead_reckoning": block(dr),
         "odometry": block(odo),
         "odometry_cov": block(cov),
-        "note": (
-            "If identity holds, duplicate odometry stamps follow from "
-            "velocity (unique TOV) + dead_reckoning (reused ts) publishing "
-            "two odometry messages per upstream message each."
-        ),
+        "note": note,
     }
 
 

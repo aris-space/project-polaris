@@ -6,6 +6,8 @@
     rate: 30.0
     # After lifecycle ACTIVATE: turn on continuous acoustic pings (API acoustic_enabled).
     enable_on_activate: true
+    # Internal DVL dead reckoning (not used with external IMU / robot_localization twist-only DVL).
+    publish_dead_reckoning_topic: false
     #speed_of_sound: 1500
     #led_enabled: true
     #mounting_rotation_offset: 0
