@@ -69,7 +69,7 @@ class Keller26xNode(Node):
 
         self.pub.publish(msg_P)
         self.get_logger().info(
-            f"keller_pressure={self.p1_Pa}"
+            f"keller_pressure={self.p1_Pa}", throttle_duration_sec=5.0
         )
 
 
