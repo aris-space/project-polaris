@@ -31,6 +31,7 @@ class Ports:
     USB_CAM_FRONT_PORT = "/dev/video0"
     USB_CAM_TUBE_PORT = "/dev/video1"
     SERIAL_PORT1 = "/dev/ttyTHS1"
+    KELLER_SENSOR = "/dev/ttyUSB0"
 
 
 class Logs:

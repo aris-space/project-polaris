@@ -6,6 +6,8 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import FluidPressure
 
+from config_pkg.constants import Ports
+
 from keller_protocol import keller_protocol as kp
 # use pip install keller-protocol
 # https://github.com/KELLERAGfuerDruckmesstechnik/keller_protocol_python
@@ -18,7 +20,7 @@ class Keller26xNode(Node):
     def __init__(self):
         super().__init__('keller_26x_pressure')
 
-        self.bus = kp.KellerProtocol(port="/dev/keller_sensor", baud_rate=9600, timeout=0.3, echo=True)
+        self.bus = kp.KellerProtocol(port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=True)
         self.address = 1
         self.p1_Pa = 0.0
         self.serial_number = None
