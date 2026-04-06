@@ -7,14 +7,6 @@ import { defaultSettings, updateSettingsEditor } from "./settings.js";
 
 type PanelState = typeof defaultSettings;
 
-function formatNumberWithApostrophes(value: number, precision: number): string {
-  const fixedValue = value.toFixed(Math.max(0, precision));
-  const [integerPart = "", fractionalPart] = fixedValue.split(".");
-  const formattedIntegerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, "'");
-
-  return fractionalPart != undefined ? `${formattedIntegerPart}.${fractionalPart}` : formattedIntegerPart;
-}
-
 function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [state, setState] = useState<PanelState>(() =>
     merge({}, defaultSettings, context.initialState || {}),
@@ -29,7 +21,7 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
     parsedValue === undefined ? "N/A" : applyFunction(parsedValue, state.numerical.function);
   const displayValue =
     typeof transformedValue === "number"
-      ? formatNumberWithApostrophes(transformedValue, state.numerical.precision)
+      ? transformedValue.toFixed(Math.max(0, state.numerical.precision))
       : transformedValue;
   const fontSize =
     state.display.fontSize === "auto" ? `${(height / 50) * 1.5}rem` : state.display.fontSize;
@@ -115,7 +107,7 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
     >
       <span>
         {displayValue}
-        {state.display.unit ? ` ${state.display.unit}` : ""}
+        {state.display.unit}
       </span>
     </div>
   );
