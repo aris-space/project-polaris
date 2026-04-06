@@ -20,6 +20,25 @@ def _launch_setup(context, *args, **kwargs):
             respawn=respawn,
             respawn_delay=respawn_delay,
         ),
+        # Static base_link -> keller_pressure_link. Replace with measured mounting values.
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="static_tf_base_to_keller_pressure",
+            arguments=[
+                "--x", "0.0",
+                "--y", "0.0",
+                "--z", "0.0",
+                "--roll", "0.0",
+                "--pitch", "0.0",
+                "--yaw", "0.0",
+                "--frame-id", "base_link",
+                "--child-frame-id", "keller_pressure_link",
+            ],
+            output="screen",
+            respawn=respawn,
+            respawn_delay=respawn_delay,
+        ),
     ]
 
 
