@@ -3,7 +3,7 @@ import { defineComponent, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { produce } from "immer";
 import { set, merge } from "lodash";
 import { defaultSettings, updateSettingsEditor } from "./settings.js";
-import * as common from "common";
+import * as common from "./common/index.js";
 
 export default defineComponent({
   props: {

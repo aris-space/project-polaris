@@ -1,4 +1,4 @@
-import { fontSizes, functions } from "common";
+import { fontSizes, functions } from "./common/index.js";
 
 const defaultSettings = {
   data: {

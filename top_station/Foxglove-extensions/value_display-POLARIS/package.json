@@ -1,7 +1,7 @@
 {
-  "name": "vue-example-panel",
-  "displayName": "vue-example-panel",
-  "description": "A Vue.js example panel for Foxglove Studio.",
+  "name": "value-display",
+  "displayName": "Value Display",
+  "description": "A better way to display values.",
   "publisher": "Zalán Demeter",
   "homepage": "https://github.com/zalandemeter12/foxglove-extension-pack",
   "version": "1.2.0",
@@ -18,7 +18,6 @@
     "pretest": "foxglove-extension pretest"
   },
   "devDependencies": {
-    "common": "file:../common",
     "@foxglove/eslint-plugin": "2.1.0",
     "@foxglove/extension": "2.41.1",
     "@foxglove/schemas": "1.8.0",
