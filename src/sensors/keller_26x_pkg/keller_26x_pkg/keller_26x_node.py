@@ -5,6 +5,7 @@ TODO: Add dependencies!!!!!!
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import FluidPressure
+from std_msgs.msg import Float64
 
 from config_pkg.constants import Ports
 
@@ -20,10 +21,18 @@ class Keller26xNode(Node):
     def __init__(self):
         super().__init__('keller_26x_pressure')
 
+        self.declare_parameter('surface_pressure_topic', '/sensors/pressure/p_surface_pa')
+        self.declare_parameter('gauge_pressure_topic', 'sensors/keller26x/gauge_pressure')
+        self.declare_parameter('abs_pressure_topic', 'sensors/keller26x/abs_pressure')
+        self.declare_parameter('default_atmospheric_pressure_pa', 101325.0)
+
         self.bus = kp.KellerProtocol(port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=False)
         self.address = 1
         self.p1_Pa = 0.0
+        self.p1_gauge_pa = 0.0
         self.serial_number = None
+        self._surface_pressure_pa = float(self.get_parameter('default_atmospheric_pressure_pa').value)
+        self._surface_pressure_source = 'default'
         self.f73_channels = {
             "CH0": 0,
             "P1": 1,
@@ -37,14 +46,35 @@ class Keller26xNode(Node):
 
         self.init_f48()
 
-        self.pub = self.create_publisher(
+        surface_pressure_topic = str(self.get_parameter('surface_pressure_topic').value)
+        gauge_pressure_topic = str(self.get_parameter('gauge_pressure_topic').value)
+        abs_pressure_topic = str(self.get_parameter('abs_pressure_topic').value)
+
+        self.gauge_pub = self.create_publisher(
             FluidPressure, 
-            'sensors/keller26x/pressure', 
+            gauge_pressure_topic,
+            10,
+        )
+        self.abs_pub = self.create_publisher(
+            FluidPressure,
+            abs_pressure_topic,
+            10,
+        )
+        self.surface_pressure_sub = self.create_subscription(
+            Float64,
+            surface_pressure_topic,
+            self.surface_pressure_callback,
             10,
         )
 
         timer_period = 0.5  # TODO: How high needed?
         self.timer = self.create_timer(timer_period, self.timer_callback)
+
+        self.get_logger().info(
+            f"Started Keller26x pressure node. Gauge topic: {gauge_pressure_topic}. "
+            f"Absolute topic: {abs_pressure_topic}. Using default atmospheric pressure "
+            f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}."
+        )
 
     def init_f48(self):
         """
@@ -59,17 +89,42 @@ class Keller26xNode(Node):
         """
         pressure = self.bus.f73(self.address, self.f73_channels["P1"])
         return pressure
+
+    def surface_pressure_callback(self, msg: Float64) -> None:
+        new_surface_pressure_pa = float(msg.data)
+        if abs(new_surface_pressure_pa - self._surface_pressure_pa) > 1e-6:
+            self._surface_pressure_pa = new_surface_pressure_pa
+            previous_source = self._surface_pressure_source
+            self._surface_pressure_source = 'topic'
+            if previous_source == 'default':
+                self.get_logger().info(
+                    f"Surface pressure override received: {self._surface_pressure_pa:.2f} Pa "
+                    "(replacing default literature value)."
+                )
+            else:
+                self.get_logger().info(
+                    f"Surface pressure calibration updated to {self._surface_pressure_pa:.2f} Pa."
+                )
     
     
     def timer_callback(self):
-        msg_P = FluidPressure()
         p1_bar = self.measure_p1()
-        self.p1_Pa = p1_bar * 100000.0
-        msg_P.fluid_pressure = self.p1_Pa
+        self.p1_gauge_pa = p1_bar * 100000.0
 
-        self.pub.publish(msg_P)
+        gauge_msg = FluidPressure()
+        gauge_msg.fluid_pressure = self.p1_gauge_pa
+        self.gauge_pub.publish(gauge_msg)
+
+        self.p1_Pa = self.p1_gauge_pa + self._surface_pressure_pa
+        abs_msg = FluidPressure()
+        abs_msg.fluid_pressure = self.p1_Pa
+        self.abs_pub.publish(abs_msg)
+
         self.get_logger().info(
-            f"keller_pressure={self.p1_Pa}", throttle_duration_sec=5.0
+            f"keller_gauge_pressure={self.p1_gauge_pa:.2f} Pa, "
+            f"keller_abs_pressure={self.p1_Pa:.2f} Pa, "
+            f"atm_source={self._surface_pressure_source}",
+            throttle_duration_sec=5.0,
         )
 
 
