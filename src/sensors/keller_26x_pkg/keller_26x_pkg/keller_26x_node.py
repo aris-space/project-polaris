@@ -30,6 +30,7 @@ class Keller26xNode(Node):
         )
         self.declare_parameter("abs_pressure_topic", "sensors/keller26x/abs_pressure")
         self.declare_parameter("default_atmospheric_pressure_pa", 101325.0)
+        self.declare_parameter("pressure_frame_id", "keller_pressure_link")
 
         self.bus = kp.KellerProtocol(
             port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=False
@@ -62,6 +63,7 @@ class Keller26xNode(Node):
         surface_pressure_topic = str(self.get_parameter("surface_pressure_topic").value)
         gauge_pressure_topic = str(self.get_parameter("gauge_pressure_topic").value)
         abs_pressure_topic = str(self.get_parameter("abs_pressure_topic").value)
+        self.pressure_frame_id = str(self.get_parameter("pressure_frame_id").value)
 
         self.gauge_pub = self.create_publisher(
             FluidPressure,
@@ -86,7 +88,8 @@ class Keller26xNode(Node):
         self.get_logger().info(
             f"Started Keller26x pressure node. Gauge topic: {gauge_pressure_topic}. "
             f"Absolute topic: {abs_pressure_topic}. Using default atmospheric pressure "
-            f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}."
+            f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}. "
+            f"Message frame_id={self.pressure_frame_id}."
         )
 
     def init_f48(self):
@@ -143,11 +146,15 @@ class Keller26xNode(Node):
         self.p1_gauge_pa = self.p1_gauge_raw_pa - self._gauge_offset_pa
 
         gauge_msg = FluidPressure()
+        gauge_msg.header.stamp = self.get_clock().now().to_msg()
+        gauge_msg.header.frame_id = self.pressure_frame_id
         gauge_msg.fluid_pressure = self.p1_gauge_pa
         self.gauge_pub.publish(gauge_msg)
 
         self.p1_Pa = self.p1_gauge_pa + self._surface_pressure_pa
         abs_msg = FluidPressure()
+        abs_msg.header.stamp = self.get_clock().now().to_msg()
+        abs_msg.header.frame_id = self.pressure_frame_id
         abs_msg.fluid_pressure = self.p1_Pa
         self.abs_pub.publish(abs_msg)
 
