@@ -106,6 +106,12 @@ class Keller26xNode(Node):
         pressure = self.bus.f73(self.address, self.f73_channels["P1"])
         return pressure
 
+    '''
+    calibration callback flow (surface_pressure_callback):
+    - on startup, use default surface pressure and add the measured gauge raw pressure to that to get absolute pressure. Log that we are using the default surface pressure.
+    - when a surface pressure message is received (via surface_pressure_sub), we update the surface pressure and capture the gauge offset.
+    - that gauge offset is then applied to all subsequent gauge pressure measurements and absolute pressure is recalculated accordingly.
+    '''
     def surface_pressure_callback(self, msg: Float64) -> None:
         new_surface_pressure_pa = float(msg.data)
         if abs(new_surface_pressure_pa - self._surface_pressure_pa) > 1e-6:
