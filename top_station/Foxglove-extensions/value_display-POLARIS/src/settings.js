@@ -27,7 +27,7 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
     actionHandler: settingsActionHandler,
     nodes: {
       data: {
-        label: state.value.data.label,
+        label: state.data.label,
         // renamable: true,
         // visible: state.value.data.visible,
         icon: "Settings",
@@ -35,12 +35,12 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
           topic: {
             label: "Topic",
             input: "messagepath",
-            value: state.value.data.topic,
+            value: state.data.topic,
           },
         },
       },
       display: {
-        label: state.value.display.label,
+        label: state.display.label,
         // renamable: true,
         // visible: state.value.display.visible,
         icon: "Cells",
@@ -48,13 +48,13 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
           unit: {
             label: "Unit",
             input: "string",
-            value: state.value.display.unit,
+            value: state.display.unit,
           },
           fontSize: {
             label: "Font Size",
             input: "select",
             options: fontSizes,
-            value: state.value.display.fontSize,
+            value: state.display.fontSize,
           },
           align: {
             label: "Align",
@@ -64,32 +64,32 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
               { value: "center", label: "Center" },
               { value: "right", label: "Right" },
             ],
-            value: state.value.display.align,
+            value: state.display.align,
           },
           bold: {
             label: "Bold",
             input: "boolean",
-            value: state.value.display.bold,
+            value: state.display.bold,
           },
           italic: {
             label: "Italic",
             input: "boolean",
-            value: state.value.display.italic,
+            value: state.display.italic,
           },
           fontColor: {
             label: "Font Color",
             input: "rgb",
-            value: state.value.display.fontColor,
+            value: state.display.fontColor,
           },
           backgroundColor: {
             label: "Background Color",
             input: "rgb",
-            value: state.value.display.backgroundColor,
+            value: state.display.backgroundColor,
           },
         },
       },
       numerical: {
-        label: state.value.numerical.label,
+        label: state.numerical.label,
         // renamable: true,
         // visible: state.value.numerical.visible,
         icon: "PrecisionManufacturing",
@@ -97,13 +97,13 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
           precision: {
             label: "Precision",
             input: "number",
-            value: state.value.numerical.precision,
+            value: state.numerical.precision,
           },
           function: {
             label: "Function",
             input: "select",
             options: functions,
-            value: state.value.numerical.function,
+            value: state.numerical.function,
           },
         },
       },

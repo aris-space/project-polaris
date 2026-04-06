@@ -1,5 +1,4 @@
 import { get_cmap } from './js-colormaps.js';
-import seedrandom from 'seedrandom';
 
 const fontSizes = [
   'auto',
@@ -163,7 +162,6 @@ const subscribeToTopic = (context, value) => {
 };
 
 const generateRandomDivClass = (divType) => {
-  seedrandom(new Date().getTime(), { global: true });
   return (
     Math.random().toString(36).substring(2, 15) +
     Math.random().toString(36).substring(2, 15) +

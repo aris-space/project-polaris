@@ -443,15 +443,17 @@ function TopicsTablePanel({ context }: { context: PanelExtensionContext }): Reac
     }
 
     if (value != undefined && typeof value === "object") {
-      const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        key,
-        normalizeForRawDisplay(item),
-      ]);
-      return Object.fromEntries(entries);
+      const normalized: Record<string, unknown> = {};
+      const record = value as Record<string, unknown>;
+      for (const key of Object.keys(record)) {
+        normalized[key] = normalizeForRawDisplay(record[key]);
+      }
+      return normalized;
     }
 
     if (typeof value === "symbol") {
-      return value.description != undefined ? `Symbol(${value.description})` : "Symbol";
+      const description = (value as symbol & { description?: string }).description;
+      return description != undefined ? `Symbol(${description})` : "Symbol";
     }
 
     return value;
