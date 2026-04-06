@@ -20,7 +20,7 @@ class Keller26xNode(Node):
     def __init__(self):
         super().__init__('keller_26x_pressure')
 
-        self.bus = kp.KellerProtocol(port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=True)
+        self.bus = kp.KellerProtocol(port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=False)
         self.address = 1
         self.p1_Pa = 0.0
         self.serial_number = None
