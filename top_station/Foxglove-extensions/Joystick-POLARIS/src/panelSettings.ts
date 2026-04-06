@@ -103,19 +103,15 @@ export function defaultButtonContent(): ButtonContent[] {
     {
       title: "Mode",
       buttons: [
-        { label: "Emergency Stop", primaryButton: 11, secondaryButton: -1 },
-        { label: "Active Stop", primaryButton: 0, secondaryButton: -1 },
-        { label: "Manual: 6_DOF", primaryButton: 3, secondaryButton: 14 },
-        { label: "Manual: altitude_hold", primaryButton: 3, secondaryButton: 12 },
+        { label: "6 DOF", primaryButton: 3, secondaryButton: 14 },
+        { label: "Depth hold", primaryButton: 3, secondaryButton: 12 },
       ],
     },
     {
       title: "Settings",
       buttons: [
-        { label: "Arm pixhawk", primaryButton: 2, secondaryButton: 12 },
-        { label: "Disarm pixhawk", primaryButton: 2, secondaryButton: 13 },
-        { label: "Toggle Stabilisation", primaryButton: 2, secondaryButton: 14 },
-        { label: "Toggle Collision", primaryButton: 2, secondaryButton: 15 },
+        { label: "Arm PX", primaryButton: 2, secondaryButton: 12 },
+        { label: "Disarm PX", primaryButton: 2, secondaryButton: 13 },
 
       ],
     },
@@ -363,12 +359,12 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       help: "Select where joystick data comes from",
       options: [
         {
-          label: "Subscribed Joy Topic",
-          value: "sub-joy-topic",
-        },
-        {
           label: "Gamepad",
           value: "gamepad",
+        },
+        {
+          label: "Subscribed Joy Topic",
+          value: "sub-joy-topic",
         },
         {
           label: "Interactive",
