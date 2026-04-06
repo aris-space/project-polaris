@@ -2,7 +2,7 @@ import { PanelExtensionContext, SettingsTreeAction } from "@foxglove/extension";
 import { merge, set } from "lodash";
 import { ReactElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { applyFunction, parseValue, splitTopic } from "./common/index.js";
+import { applyFunction, evaluateMessagePath, getTopicFromMessagePath } from "./common/index.js";
 import { defaultSettings, updateSettingsEditor } from "./settings.js";
 
 type PanelState = typeof defaultSettings;
@@ -40,21 +40,24 @@ function getAutoFontSizePx({
   height,
   bold,
   italic,
+  hasTitle,
 }: {
   text: string;
   width: number;
   height: number;
   bold: boolean;
   italic: boolean;
+  hasTitle: boolean;
 }): number {
   if (width <= 0 || height <= 0) {
     return 16;
   }
 
   const horizontalPaddingPx = 16;
-  const widthSafetyMarginPx = 6;
+  const widthSafetyMarginPx = 10;
   const availableWidth = Math.max(1, width - horizontalPaddingPx - widthSafetyMarginPx);
-  const maxByHeight = Math.max(1, height * 0.78);
+  // Reserve some vertical space when a title is shown above the value.
+  const maxByHeight = Math.max(1, height * (hasTitle ? 0.5 : 0.68));
   const minFontSizePx = 1;
   const maxFontSizePx = Math.max(minFontSizePx, maxByHeight);
 
@@ -89,6 +92,20 @@ function getAutoFontSizePx({
   return Math.max(minFontSizePx, Math.min(low, maxFontSizePx));
 }
 
+function normalizeFontSizeValue(fontSize: string): string {
+  const trimmed = (fontSize || "").trim();
+  if (trimmed.length === 0 || trimmed === "auto") {
+    return "auto";
+  }
+
+  // CSS accepts unitless 0, but other numeric values need a unit.
+  if (/^[-+]?\d*\.?\d+$/.test(trimmed)) {
+    return trimmed === "0" ? "0" : `${trimmed}px`;
+  }
+
+  return trimmed;
+}
+
 function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [state, setState] = useState<PanelState>(() =>
     merge({}, defaultSettings, context.initialState || {}),
@@ -97,9 +114,10 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
   const [panelSize, setPanelSize] = useState({ width: 0, height: 0 });
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const { lastPart } = splitTopic(state.data.topic || "") || { lastPart: "" };
   const latestMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
-  const parsedValue = latestMessage ? parseValue(latestMessage.message, lastPart || "") : undefined;
+  const parsedValue = latestMessage
+    ? evaluateMessagePath(latestMessage.message, state.data.topic || "")
+    : undefined;
   const transformedValue =
     parsedValue === undefined ? "N/A" : applyFunction(parsedValue, state.numerical.function);
   const displayValue =
@@ -109,6 +127,8 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
   const normalizedUnit = state.display.unit.trim();
   const unitSuffix = normalizedUnit ? ` ${normalizedUnit}` : "";
   const displayText = `${displayValue}${unitSuffix}`;
+  const titleText = (state.display.title || "").trim();
+  const hasTitle = titleText.length > 0;
   const autoFontSizePx = useMemo(
     () =>
       getAutoFontSizePx({
@@ -117,10 +137,12 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
         height: panelSize.height,
         bold: state.display.bold,
         italic: state.display.italic,
+        hasTitle,
       }),
-    [displayText, panelSize.width, panelSize.height, state.display.bold, state.display.italic],
+    [displayText, panelSize.width, panelSize.height, state.display.bold, state.display.italic, hasTitle],
   );
-  const fontSize = state.display.fontSize === "auto" ? `${autoFontSizePx}px` : state.display.fontSize;
+  const normalizedFontSize = normalizeFontSizeValue(state.display.fontSize);
+  const fontSize = normalizedFontSize === "auto" ? `${autoFontSizePx}px` : normalizedFontSize;
   const manualFontColor = transformedValue === "N/A" ? "#303030" : state.display.fontColor;
   const useThresholdColors =
     state.background?.useThresholdColors ?? state.display.useThresholdBackground ?? false;
@@ -153,6 +175,7 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
     useThresholdColors && typeof transformedValue === "number" && autoTextColorOnThresholds
       ? getReadableTextColor(backgroundColor)
       : manualFontColor;
+  const textAlign = state.display.align === "left" ? "left" : state.display.align === "right" ? "right" : "center";
 
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
@@ -167,12 +190,12 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
   }, [context]);
 
   useEffect(() => {
-    const { firstPart } = splitTopic(state.data.topic || "") || { firstPart: "" };
+    const topicName = getTopicFromMessagePath(state.data.topic || "");
     context.unsubscribeAll();
     setMessages([]);
 
-    if (firstPart) {
-      context.subscribe([{ topic: firstPart }]);
+    if (topicName) {
+      context.subscribe([{ topic: topicName }]);
     }
 
     return () => {
@@ -234,12 +257,41 @@ function ValueDisplayPanel({ context }: { context: PanelExtensionContext }): Rea
         fontSize,
         fontWeight: state.display.bold ? "bold" : "normal",
         fontStyle: state.display.italic ? "italic" : "normal",
+        lineHeight: 1,
         color: fontColor,
         backgroundColor,
         overflow: "hidden",
       }}
     >
-      <span style={{ whiteSpace: "nowrap", maxWidth: "100%" }}>{displayText}</span>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: textAlign === "left" ? "flex-start" : textAlign === "right" ? "flex-end" : "center",
+          justifyContent: "center",
+          width: "100%",
+          maxWidth: "100%",
+          textAlign,
+          overflow: "hidden",
+        }}
+      >
+        {hasTitle ? (
+          <span
+            style={{
+              whiteSpace: "nowrap",
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              fontSize: "0.65em",
+              lineHeight: 1.1,
+              marginBottom: "0.2em",
+            }}
+          >
+            {titleText}
+          </span>
+        ) : null}
+        <span style={{ whiteSpace: "nowrap", maxWidth: "100%" }}>{displayText}</span>
+      </div>
     </div>
   );
 }

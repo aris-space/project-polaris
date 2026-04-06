@@ -5,6 +5,7 @@ A Foxglove extension for displaying scalar values with customizable formatting, 
 ## Features
 
 - **Display scalar values** from ROS 2 topics
+- **Foxglove message path functions**: supports modifier chains like `.@abs`, `.@mul(3.6)`, `.@rpy.yaw`, `.@degrees`
 - **Customizable styling**: font size, color, background, alignment, bold, and italic
 - **Mathematical transformations**: abs, ceil, floor, round, sqrt, pow2, exp, log, sin, cos, tan, 1/x
 - **Precision control**: Set decimal precision for numerical display
@@ -36,6 +37,7 @@ This extension automatically handles any scalar value (number) from your ROS 2 t
 ## Settings
 
 - **Data**: Select the topic and message field to display
+	- Message path functions are supported in topic paths (for example `/imu.linear_acceleration.x.@abs`)
 - **Display**: Configure visual appearance (colors, fonts, alignment, units)
 - **Numerical**: Set precision and mathematical transformations
 

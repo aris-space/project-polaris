@@ -7,6 +7,7 @@ const defaultSettings = {
   },
   display: {
     label: "Display",
+    title: "",
     unit: "",
     fontSize: "auto",
     align: "center",
@@ -54,6 +55,7 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
             label: "Topic",
             input: "messagepath",
             value: state.data.topic,
+            supportsMathModifiers: true,
           },
         },
       },
@@ -63,6 +65,11 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
         // visible: state.value.display.visible,
         icon: "Cells",
         fields: {
+          title: {
+            label: "Title",
+            input: "string",
+            value: state.display.title,
+          },
           unit: {
             label: "Unit",
             input: "string",
