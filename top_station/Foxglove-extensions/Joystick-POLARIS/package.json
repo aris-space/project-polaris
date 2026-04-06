@@ -1,11 +1,11 @@
 {
-  "name": "joystick-POLARIS",
-  "displayName": "Joystick (POLARIS)",
-  "description": "POLARIS Joystick panel extension for joystick/gamepad control.",
-  "publisher": "polaris",
+  "name": "ros-joystick-polaris",
+  "displayName": "ROS joystick POLARIS",
+  "description": "",
+  "publisher": "Polaris",
   "homepage": "",
 
-  "version": "3.0.0",
+  "version": "4.0.0",
 
   "license": "MIT",
   "main": "./dist/extension.js",

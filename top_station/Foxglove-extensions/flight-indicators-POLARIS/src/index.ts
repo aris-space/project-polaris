@@ -1,7 +1,7 @@
 import { ExtensionContext } from "@foxglove/extension";
 
 import { initAirspeedPanel } from "./panels/AirspeedPanel";
-import { initAltimeterPanel } from "./panels/AltimeterPanel";
+import { initAltimeterPanel } from "./panels/AltimeterPanelImpl";
 import { initAttitudeIndicatorPanel } from "./panels/AttitudeIndicatorPanel";
 import { initDualFuelGaugePanel } from "./panels/DualFuelGaugePanel";
 import { initDualOilGaugePanel } from "./panels/DualOilGaugePanel";
@@ -13,15 +13,15 @@ import { initTurnCoordinatorPanel } from "./panels/TurnCoordinatorPanel";
 import { initVariometerPanel } from "./panels/VariometerPanel";
 
 export function activate(extensionContext: ExtensionContext): void {
-  extensionContext.registerPanel({ name: "Airspeed", initPanel: initAirspeedPanel });
-  extensionContext.registerPanel({ name: "Altimeter", initPanel: initAltimeterPanel });
-  extensionContext.registerPanel({ name: "Attitude Indicator", initPanel: initAttitudeIndicatorPanel });
-  extensionContext.registerPanel({ name: "Dual Fuel Gauge", initPanel: initDualFuelGaugePanel });
-  extensionContext.registerPanel({ name: "Dual Oil Gauge", initPanel: initDualOilGaugePanel });
-  extensionContext.registerPanel({ name: "Dual Gauge", initPanel: initDualGaugePanel });
-  extensionContext.registerPanel({ name: "Dual Tachometer", initPanel: initDualTachometerPanel });
-  extensionContext.registerPanel({ name: "Heading Indicator", initPanel: initHeadingIndicatorPanel });
-  extensionContext.registerPanel({ name: "Tachometer", initPanel: initTachometerPanel });
-  extensionContext.registerPanel({ name: "Turn Coordinator", initPanel: initTurnCoordinatorPanel });
-  extensionContext.registerPanel({ name: "Variometer", initPanel: initVariometerPanel });
+  extensionContext.registerPanel({ name: "ROS airspeed POLARIS", initPanel: initAirspeedPanel });
+  extensionContext.registerPanel({ name: "ROS altimeter POLARIS", initPanel: initAltimeterPanel });
+  extensionContext.registerPanel({ name: "ROS attitude indicator POLARIS", initPanel: initAttitudeIndicatorPanel });
+  extensionContext.registerPanel({ name: "ROS dual fuel gauge POLARIS", initPanel: initDualFuelGaugePanel });
+  extensionContext.registerPanel({ name: "ROS dual oil gauge POLARIS", initPanel: initDualOilGaugePanel });
+  extensionContext.registerPanel({ name: "ROS dual gauge POLARIS", initPanel: initDualGaugePanel });
+  extensionContext.registerPanel({ name: "ROS dual tachometer POLARIS", initPanel: initDualTachometerPanel });
+  extensionContext.registerPanel({ name: "ROS heading indicator POLARIS", initPanel: initHeadingIndicatorPanel });
+  extensionContext.registerPanel({ name: "ROS tachometer POLARIS", initPanel: initTachometerPanel });
+  extensionContext.registerPanel({ name: "ROS turn coordinator POLARIS", initPanel: initTurnCoordinatorPanel });
+  extensionContext.registerPanel({ name: "ROS variometer POLARIS", initPanel: initVariometerPanel });
 }

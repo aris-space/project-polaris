@@ -1,15 +1,15 @@
 {
-  "name": "@polaris/value-display",
-  "displayName": "Value Display",
-  "description": "Display scalar sensor values with customizable formatting, styling, and real-time transformations",
-  "publisher": "POLARIS",
+  "name": "ros-value-display-polaris",
+  "displayName": "ROS value display POLARIS",
+  "description": "",
+  "publisher": "Polaris",
   "homepage": "https://github.com/BitCurious/project-polaris",
   "repository": {
     "type": "git",
     "url": "https://github.com/BitCurious/project-polaris.git",
     "directory": "top_station/Foxglove-extensions/value_display-POLARIS"
   },
-  "version": "1.0.1",
+  "version": "4.0.0",
   "license": "MIT",
   "main": "./dist/extension.js",
   "keywords": [

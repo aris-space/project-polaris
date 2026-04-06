@@ -13,10 +13,10 @@
 </filter>
 	<g filter="url(#AI_Shadow_1)">
 		<linearGradient id="SVGID_1_" gradientUnits="userSpaceOnUse" x1="200.333" y1="276.3325" x2="200.333" y2="124.3325">
-			<stop  offset="0" style="stop-color:#3D2618"/>
-			<stop  offset="0.4999" style="stop-color:#503723"/>
-			<stop  offset="0.5001" style="stop-color:#9CCBE5"/>
-			<stop  offset="1" style="stop-color:#558EBB"/>
+			<stop  offset="0" style="stop-color:#06233B"/>
+			<stop  offset="0.4999" style="stop-color:#0A3F66"/>
+			<stop  offset="0.5001" style="stop-color:#6CBEDF"/>
+			<stop  offset="1" style="stop-color:#0D5A86"/>
 		</linearGradient>
 		<path fill="url(#SVGID_1_)" d="M301.333,200.333c0,41.936-33.963,75.938-75.885,76c-0.038,0-50.076,0-50.114,0
 			c-41.974,0-76-34.026-76-76s34.026-76,76-76c0.027,0,50.056,0,50.083,0C267.352,124.377,301.333,158.387,301.333,200.333z"/>

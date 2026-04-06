@@ -94,8 +94,8 @@
         </feMerge>
     </filter>
     <linearGradient id="donut-gradient" gradientUnits="userSpaceOnUse" x1="50%" y1="350" x2="50%" y2="50">
-        <stop offset="0.5" style="stop-color:#503723" />
-        <stop offset="0.5" style="stop-color:#558EBB" />
+        <stop offset="0.5" style="stop-color:#062947" />
+        <stop offset="0.5" style="stop-color:#0D5A86" />
     </linearGradient>
     <g id="donut">
         <path fill="url(#donut-gradient)" filter="url(#filter-shadow)"
