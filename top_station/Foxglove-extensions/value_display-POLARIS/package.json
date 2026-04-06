@@ -9,7 +9,7 @@
     "url": "https://github.com/BitCurious/project-polaris.git",
     "directory": "top_station/Foxglove-extensions/value_display-POLARIS"
   },
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "main": "./dist/extension.js",
   "keywords": [

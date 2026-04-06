@@ -13,12 +13,30 @@ const defaultSettings = {
     bold: true,
     italic: false,
     fontColor: "#ffffff",
-    backgroundColor: "#121212",
+    useThresholdBackground: false,
+    lowerThreshold: 0,
+    upperThreshold: 100,
+    belowThresholdColor: "#2e7d32",
+    betweenThresholdColor: "#f9a825",
+    aboveThresholdColor: "#c62828",
   },
   numerical: {
     label: "Numerical",
     precision: 0,
     function: "none",
+  },
+  background: {
+    label: "Background Status",
+    useThresholdColors: false,
+    autoTextColorOnThresholds: true,
+    normalColor: "#121212",
+    naColor: "#121212",
+    lowerThreshold: 0,
+    upperThreshold: 100,
+    belowColor: "#2e7d32",
+    betweenColor: "#f9a825",
+    aboveColor: "#c62828",
+    fallbackColor: "#121212",
   },
 };
 
@@ -81,11 +99,6 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
             input: "rgb",
             value: state.display.fontColor,
           },
-          backgroundColor: {
-            label: "Background Color",
-            input: "rgb",
-            value: state.display.backgroundColor,
-          },
         },
       },
       numerical: {
@@ -104,6 +117,57 @@ const updateSettingsEditor = (context, state, settingsActionHandler) => {
             input: "select",
             options: functions,
             value: state.numerical.function,
+          },
+        },
+      },
+      background: {
+        label: state.background.label,
+        icon: "Palette",
+        fields: {
+          normalColor: {
+            label: "Background (Threshold Mode Off)",
+            input: "rgb",
+            value: state.background.normalColor,
+          },
+          useThresholdColors: {
+            label: "Enable Threshold Mode",
+            input: "boolean",
+            value: state.background.useThresholdColors,
+          },
+          lowerThreshold: {
+            label: "Low Limit",
+            input: "number",
+            value: state.background.lowerThreshold,
+          },
+          upperThreshold: {
+            label: "High Limit",
+            input: "number",
+            value: state.background.upperThreshold,
+          },
+          belowColor: {
+            label: "Color: Below Low",
+            input: "rgb",
+            value: state.background.belowColor,
+          },
+          betweenColor: {
+            label: "Color: In Range",
+            input: "rgb",
+            value: state.background.betweenColor,
+          },
+          aboveColor: {
+            label: "Color: Above High",
+            input: "rgb",
+            value: state.background.aboveColor,
+          },
+          naColor: {
+            label: "No Data (N/A)",
+            input: "rgb",
+            value: state.background.naColor,
+          },
+          autoTextColorOnThresholds: {
+            label: "Auto Text Contrast",
+            input: "boolean",
+            value: state.background.autoTextColorOnThresholds,
           },
         },
       },
