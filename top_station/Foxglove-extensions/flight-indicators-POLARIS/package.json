@@ -1,21 +1,31 @@
 {
-  "name": "flight-indicators",
-  "displayName": "Flight Indicators",
+  "name": "@polaris/flight-indicators",
+  "displayName": "Flight Indicators POLARIS",
   "description": "Six classic aviation instrument panels for Foxglove Studio — airspeed, altimeter, attitude, heading, turn coordinator, and variometer.",
-  "publisher": "Zalan Demeter",
-  "homepage": "https://github.com/zalandemeter/foxglove-flight-indicators",
+  "publisher": "POLARIS",
+  "homepage": "https://github.com/BitCurious/project-polaris",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BitCurious/project-polaris.git",
+    "directory": "top_station/Foxglove-extensions/flight-indicators-POLARIS"
+  },
   "version": "1.0.0",
   "license": "MIT",
   "main": "./dist/extension.js",
-  "keywords": [],
+  "keywords": [
+    "foxglove-extension",
+    "panel",
+    "aviation",
+    "flight-indicators",
+    "instruments",
+    "ros2"
+  ],
   "scripts": {
     "build": "foxglove-extension build",
     "foxglove:prepublish": "foxglove-extension build --mode production",
-    "lint": "eslint .",
-    "lint:ci": "eslint .",
-    "lint:fix": "eslint --fix .",
+    "lint:ci": "eslint --report-unused-disable-directives .",
+    "lint": "eslint --report-unused-disable-directives --fix .",
     "local-install": "foxglove-extension install",
-    "win-install": "bash scripts/win-install.sh",
     "package": "foxglove-extension package",
     "pretest": "foxglove-extension pretest"
   },

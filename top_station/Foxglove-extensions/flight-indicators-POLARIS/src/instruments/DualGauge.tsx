@@ -206,7 +206,7 @@ export function DualGauge({
   // Build DOM once
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) return undefined;
 
     ensureCss();
 

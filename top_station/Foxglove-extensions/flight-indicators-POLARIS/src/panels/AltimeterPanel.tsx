@@ -27,7 +27,7 @@ function AltimeterPanel({ context }: { context: PanelExtensionContext }): ReactE
   ]);
   const altitude = getValue(config.altitudePath);
   const rawPressure = getValue(config.pressurePath);
-  // Component has no internal clamping — clamp to full atmospheric range (hPa)
+  // Component has no internal clamping - clamp to full atmospheric range (hPa)
   const pressure = rawPressure != null ? Math.max(870, Math.min(1084, rawPressure)) : undefined;
 
   useEffect(() => {
@@ -67,5 +67,7 @@ function AltimeterPanel({ context }: { context: PanelExtensionContext }): ReactE
 export function initAltimeterPanel(context: PanelExtensionContext): () => void {
   const root = createRoot(context.panelElement);
   root.render(<AltimeterPanel context={context} />);
-  return () => { root.unmount(); };
+  return () => {
+    root.unmount();
+  };
 }

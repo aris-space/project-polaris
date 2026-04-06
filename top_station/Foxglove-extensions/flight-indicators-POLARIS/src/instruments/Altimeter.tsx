@@ -11,7 +11,7 @@ export function Altimeter({ altitude, pressure, size }: Props): ReactElement {
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) return undefined;
     fi.current = new BundledFlightIndicators(el, FlightIndicators.TYPE_ALTIMETER);
     return () => {
       el.innerHTML = "";

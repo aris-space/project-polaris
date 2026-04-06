@@ -15,7 +15,7 @@ export function Variometer({ vario, size }: Props): ReactElement {
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) return undefined;
     fi.current = new BundledFlightIndicators(el, FlightIndicators.TYPE_VERTICAL_SPEED);
     return () => {
       el.innerHTML = "";

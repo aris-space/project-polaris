@@ -11,7 +11,7 @@ export function Airspeed({ speed, size }: Props): ReactElement {
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) return undefined;
     fi.current = new BundledFlightIndicators(el, FlightIndicators.TYPE_AIRSPEED);
     return () => {
       el.innerHTML = "";

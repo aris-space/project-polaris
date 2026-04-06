@@ -80,3 +80,83 @@ function tokenizePath(path: string): (string | number)[] {
 
   return tokens;
 }
+
+/**
+ * Type for a quaternion with x, y, z, w components
+ */
+export type Quaternion = {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+};
+
+/**
+ * Extract a quaternion object from a message using a base path.
+ * Assumes x, y, z, w are sub-fields of the base path.
+ * Example: if basePath is "orientation", expects fields like:
+ *   "orientation.x", "orientation.y", "orientation.z", "orientation.w"
+ */
+export function getQuaternionAtPath(obj: unknown, basePath: string): Quaternion | undefined {
+  const x = getValueAtPath(obj, basePath ? `${basePath}.x` : "x");
+  const y = getValueAtPath(obj, basePath ? `${basePath}.y` : "y");
+  const z = getValueAtPath(obj, basePath ? `${basePath}.z` : "z");
+  const w = getValueAtPath(obj, basePath ? `${basePath}.w` : "w");
+
+  if (x === undefined || y === undefined || z === undefined || w === undefined) {
+    return undefined;
+  }
+
+  return { x, y, z, w };
+}
+
+/**
+ * Convert a quaternion to Euler angles (in radians).
+ * Uses the conversion formulas for quaternion to Euler angles.
+ * Returns { roll, pitch, yaw } in radians.
+ */
+export function quaternionToEuler(q: Quaternion): {
+  roll: number;
+  pitch: number;
+  yaw: number;
+} {
+  const { x, y, z, w } = q;
+
+  // Roll (x-axis rotation)
+  const sinr_cosp = 2 * (w * x + y * z);
+  const cosr_cosp = 1 - 2 * (x * x + y * y);
+  const roll = Math.atan2(sinr_cosp, cosr_cosp);
+
+  // Pitch (y-axis rotation)
+  const sinp = 2 * (w * y - z * x);
+  const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+
+  // Yaw (z-axis rotation) - this is heading
+  const siny_cosp = 2 * (w * z + x * y);
+  const cosy_cosp = 1 - 2 * (y * y + z * z);
+  const yaw = Math.atan2(siny_cosp, cosy_cosp);
+
+  return { roll, pitch, yaw };
+}
+
+/**
+ * Convert quaternion yaw (heading) to degrees.
+ * Returns a heading in [0, 360) range.
+ */
+export function quaternionToHeadingDegrees(q: Quaternion): number {
+  const euler = quaternionToEuler(q);
+  let headingDeg = (euler.yaw * 180) / Math.PI;
+  // Normalize to [0, 360)
+  headingDeg = ((headingDeg % 360) + 360) % 360;
+  return headingDeg;
+}
+
+/**
+ * Convert quaternion roll to degrees.
+ * Returns a roll in [-180, 180] range (but normalized values typically in [-90, 90] for validity).
+ */
+export function quaternionToRollDegrees(q: Quaternion): number {
+  const euler = quaternionToEuler(q);
+  const rollDeg = (euler.roll * 180) / Math.PI;
+  return rollDeg;
+}

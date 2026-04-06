@@ -83,6 +83,9 @@ export class BundledFlightIndicators extends FlightIndicators {
   override createImgBox(_imgDirectory: string, imgSrc: string): HTMLImageElement {
     const img = document.createElement("img");
     img.setAttribute("class", "box");
+    if (imgSrc === "heading_mechanics.svg") {
+      img.classList.add("heading-airplane");
+    }
     if (imgSrc === "fi_box.svg") {
       img.style.display = "none";
     } else {

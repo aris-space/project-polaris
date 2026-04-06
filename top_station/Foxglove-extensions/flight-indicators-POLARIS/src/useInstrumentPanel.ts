@@ -1,13 +1,14 @@
 import { PanelExtensionContext } from "@foxglove/extension";
 import { RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { parseMessagePath, getValueAtPath } from "./utils";
+import { Quaternion, getQuaternionAtPath, getValueAtPath, parseMessagePath } from "./utils";
 
 export function useInstrumentPanel(
   context: PanelExtensionContext,
   messagePaths: string[],
 ): {
   getValue: (messagePath: string) => number | undefined;
+  getQuaternion: (messagePath: string) => Quaternion | undefined;
   containerRef: RefObject<HTMLDivElement>;
   size: string;
 } {
@@ -51,7 +52,7 @@ export function useInstrumentPanel(
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) return undefined;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry) {
@@ -60,7 +61,9 @@ export function useInstrumentPanel(
       }
     });
     observer.observe(el);
-    return () => { observer.disconnect(); };
+    return () => {
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -73,6 +76,12 @@ export function useInstrumentPanel(
       if (!parsed) return undefined;
       const msg = latestMessages.get(parsed.topic);
       return getValueAtPath(msg, parsed.fieldPath);
+    },
+    getQuaternion: (messagePath: string) => {
+      const parsed = parseMessagePath(messagePath);
+      if (!parsed) return undefined;
+      const msg = latestMessages.get(parsed.topic);
+      return getQuaternionAtPath(msg, parsed.fieldPath);
     },
     containerRef,
     size,
