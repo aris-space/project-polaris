@@ -87,18 +87,18 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   const [config, setConfig] = useState<Config>(() => {
     const partialConfig = context.initialState as Partial<Config>;
     partialConfig.subJoyTopic ??= "/joy";
-    partialConfig.publishMode ??= false;
+    partialConfig.publishMode ??= true;
     partialConfig.publishFrameId ??= "joystick_frame";
     if (partialConfig.publishFrameId.trim() === "") {
       partialConfig.publishFrameId = "joystick_frame";
     }
-    partialConfig.dataSource ??= "sub-joy-topic";
+    partialConfig.dataSource ??= "gamepad";
     partialConfig.layoutName ??= "ps4";
     partialConfig.mapping_name ??= "TODO";
     partialConfig.keyboardMapping ??= "keyboard_movement";
     partialConfig.gamepadId ??= 0;
     partialConfig.uiScale ??= 1;
-    partialConfig.inputEnabled ??= true;
+    partialConfig.inputEnabled ??= false;
     partialConfig.buttonsPreset ??=
       (partialConfig.buttonContent?.length ?? 0) === 0 ? "empty" : "uuv-settings";
     if (partialConfig.buttonContent == undefined) {
