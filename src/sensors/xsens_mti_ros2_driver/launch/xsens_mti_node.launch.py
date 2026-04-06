@@ -43,9 +43,9 @@ def generate_launch_description():
             )
     ld.add_action(xsens_mti_node)
 
-    # Static base_link -> imu_link transform for integration/testing.
-    # DONE: Replace translation/rotation with measured IMU mounting values.
-    # Extrinisc method, see vl for more info on how to do it. From base_link TO imu_link
+    # Static base_link -> imu_link (mounting only). Keep xsens pub_transform: false so the driver
+    # does not also publish world -> imu_link.
+    # DONE: Replace translation/rotation with measured IMU mounting values. From base_link TO imu_link
     static_tf_base_to_imu = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
