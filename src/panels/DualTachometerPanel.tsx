@@ -1,0 +1,56 @@
+import { PanelExtensionContext } from "@foxglove/extension";
+
+import { Config, createDualGaugePanel } from "./DualGaugePanel";
+
+const tachometerDefaults: Config = {
+  leftPath: "",
+  rightPath: "",
+  leftNormalize: true,
+  leftMin: 0,
+  leftMax: 5800,
+  leftNormalizeOutputMin: 0,
+  leftNormalizeOutputMax: 100,
+  leftExpr: "",
+  rightNormalize: true,
+  rightMin: 0,
+  rightMax: 600,
+  rightNormalizeOutputMin: 0,
+  rightNormalizeOutputMax: 100,
+  rightExpr: "",
+  leftClampMin: 50,
+  leftClampMax: 110,
+  leftTickCount: 7,
+  leftTickPrecision: 0,
+  leftSubTicks: true,
+  rightClampMin: 50,
+  rightClampMax: 110,
+  rightTickCount: 7,
+  rightTickPrecision: 0,
+  rightSubTicks: true,
+  topLabel: "TACH",
+  bottomLabel: "% RPM",
+  leftLabel: "ENG",
+  leftLabelVertical: true,
+  leftTickLabelsStr: "",
+  leftTickPositionsStr: "",
+  rightLabel: "ROT",
+  rightLabelVertical: true,
+  rightTickLabelsStr: "",
+  rightTickPositionsStr: "",
+  leftZoneCount: 3,
+  leftZone1Start: 96.67,  leftZone1End: 103.33, leftZone1Color: "#008000",
+  leftZone2Start: 90,     leftZone2End: 96.67,  leftZone2Color: "#ffff00",
+  leftZone3Start: 103.33, leftZone3End: 110,    leftZone3Color: "#ff0000",
+  leftZone4Start: 0,      leftZone4End: 0,      leftZone4Color: "#ffffff",
+  leftZone5Start: 0,      leftZone5End: 0,      leftZone5Color: "#ffffff",
+  rightZoneCount: 3,
+  rightZone1Start: 96.67,  rightZone1End: 103.33, rightZone1Color: "#008000",
+  rightZone2Start: 90,     rightZone2End: 96.67,  rightZone2Color: "#ffff00",
+  rightZone3Start: 103.33, rightZone3End: 110,    rightZone3Color: "#ff0000",
+  rightZone4Start: 0,      rightZone4End: 0,      rightZone4Color: "#ffffff",
+  rightZone5Start: 0,      rightZone5End: 0,      rightZone5Color: "#ffffff",
+};
+
+export function initDualTachometerPanel(context: PanelExtensionContext): () => void {
+  return createDualGaugePanel(tachometerDefaults)(context);
+}

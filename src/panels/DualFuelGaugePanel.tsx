@@ -1,0 +1,56 @@
+import { PanelExtensionContext } from "@foxglove/extension";
+
+import { Config, createDualGaugePanel } from "./DualGaugePanel";
+
+const fuelDefaults: Config = {
+  leftPath: "",
+  rightPath: "",
+  leftNormalize: true,
+  leftMin: 0,
+  leftMax: 50,
+  leftNormalizeOutputMin: 0,
+  leftNormalizeOutputMax: 1,
+  leftExpr: "",
+  rightNormalize: true,
+  rightMin: 0,
+  rightMax: 50,
+  rightNormalizeOutputMin: 0,
+  rightNormalizeOutputMax: 1,
+  rightExpr: "",
+  leftClampMin: 0,
+  leftClampMax: 1,
+  leftTickCount: 3,
+  leftTickPrecision: 1,
+  leftSubTicks: true,
+  rightClampMin: 0,
+  rightClampMax: 1,
+  rightTickCount: 3,
+  rightTickPrecision: 1,
+  rightSubTicks: true,
+  topLabel: "FUEL",
+  bottomLabel: "QTY",
+  leftLabel: "LEFT",
+  leftLabelVertical: true,
+  leftTickLabelsStr: "E,1/2,F",
+  leftTickPositionsStr: "",
+  rightLabel: "RIGHT",
+  rightLabelVertical: true,
+  rightTickLabelsStr: "E,1/2,F",
+  rightTickPositionsStr: "",
+  leftZoneCount: 3,
+  leftZone1Start: 0,   leftZone1End: 0.25,  leftZone1Color: "#ff0000",
+  leftZone2Start: 0.25,  leftZone2End: 0.50,  leftZone2Color: "#ffff00",
+  leftZone3Start: 0.50,  leftZone3End: 1.00, leftZone3Color: "#008000",
+  leftZone4Start: 0,   leftZone4End: 0,   leftZone4Color: "#ffffff",
+  leftZone5Start: 0,   leftZone5End: 0,   leftZone5Color: "#ffffff",
+  rightZoneCount: 3,
+  rightZone1Start: 0,  rightZone1End: 0.25,  rightZone1Color: "#ff0000",
+  rightZone2Start: 0.25, rightZone2End: 0.50,  rightZone2Color: "#ffff00",
+  rightZone3Start: 0.50, rightZone3End: 1.00, rightZone3Color: "#008000",
+  rightZone4Start: 0,  rightZone4End: 0,   rightZone4Color: "#ffffff",
+  rightZone5Start: 0,  rightZone5End: 0,   rightZone5Color: "#ffffff",
+};
+
+export function initDualFuelGaugePanel(context: PanelExtensionContext): () => void {
+  return createDualGaugePanel(fuelDefaults)(context);
+}
