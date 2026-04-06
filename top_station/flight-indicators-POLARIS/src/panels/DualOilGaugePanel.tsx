@@ -1,0 +1,56 @@
+import { PanelExtensionContext } from "@foxglove/extension";
+
+import { Config, createDualGaugePanel } from "./DualGaugePanel";
+
+const oilDefaults: Config = {
+  leftPath: "",
+  rightPath: "",
+  leftNormalize: false,
+  leftMin: 0,
+  leftMax: 100,
+  leftNormalizeOutputMin: 0,
+  leftNormalizeOutputMax: 100,
+  leftExpr: "",
+  rightNormalize: false,
+  rightMin: 0,
+  rightMax: 100,
+  rightNormalizeOutputMin: 0,
+  rightNormalizeOutputMax: 100,
+  rightExpr: "",
+  leftClampMin: 50,
+  leftClampMax: 150,
+  leftTickCount: 6,
+  leftTickPrecision: 0,
+  leftSubTicks: false,
+  rightClampMin: 0,
+  rightClampMax: 120,
+  rightTickCount: 6,
+  rightTickPrecision: 0,
+  rightSubTicks: false,
+  topLabel: "OIL",
+  bottomLabel: "°C, PSI",
+  leftLabel: "TEMP",
+  leftLabelVertical: true,
+  leftTickLabelsStr: "",
+  leftTickPositionsStr: "50,70,90,110,130,150",
+  rightLabel: "PRES",
+  rightLabelVertical: true,
+  rightTickLabelsStr: "",
+  rightTickPositionsStr: "0,30,45,75,100,120",
+  leftZoneCount: 4,
+  leftZone1Start: 50,  leftZone1End: 70,  leftZone1Color: "#ffff00",
+  leftZone2Start: 70,  leftZone2End: 110, leftZone2Color: "#008000",
+  leftZone3Start: 110, leftZone3End: 130, leftZone3Color: "#ffff00",
+  leftZone4Start: 130, leftZone4End: 150, leftZone4Color: "#ff0000",
+  leftZone5Start: 0,   leftZone5End: 0,   leftZone5Color: "#ffffff",
+  rightZoneCount: 5,
+  rightZone1Start: 0,   rightZone1End: 30,  rightZone1Color: "#ff0000",
+  rightZone2Start: 30,  rightZone2End: 45,  rightZone2Color: "#ffff00",
+  rightZone3Start: 45,  rightZone3End: 75,  rightZone3Color: "#008000",
+  rightZone4Start: 75,  rightZone4End: 100, rightZone4Color: "#ffff00",
+  rightZone5Start: 100, rightZone5End: 120, rightZone5Color: "#ff0000",
+};
+
+export function initDualOilGaugePanel(context: PanelExtensionContext): () => void {
+  return createDualGaugePanel(oilDefaults)(context);
+}

@@ -1,0 +1,38 @@
+{
+  "name": "flight-indicators",
+  "displayName": "Flight Indicators",
+  "description": "Six classic aviation instrument panels for Foxglove Studio — airspeed, altimeter, attitude, heading, turn coordinator, and variometer.",
+  "publisher": "Zalan Demeter",
+  "homepage": "https://github.com/zalandemeter/foxglove-flight-indicators",
+  "version": "1.0.0",
+  "license": "MIT",
+  "main": "./dist/extension.js",
+  "keywords": [],
+  "scripts": {
+    "build": "foxglove-extension build",
+    "foxglove:prepublish": "foxglove-extension build --mode production",
+    "lint": "eslint .",
+    "lint:ci": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "local-install": "foxglove-extension install",
+    "win-install": "bash scripts/win-install.sh",
+    "package": "foxglove-extension package",
+    "pretest": "foxglove-extension pretest"
+  },
+  "devDependencies": {
+    "@foxglove/eslint-plugin": "2.1.2",
+    "@foxglove/extension": "2.49.0",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "create-foxglove-extension": "1.3.1",
+    "eslint": "9.39.4",
+    "prettier": "3.8.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "expr-eval": "^2.0.2",
+    "flight-indicators-js": "^1.0.5"
+  }
+}
