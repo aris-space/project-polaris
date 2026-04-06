@@ -31,6 +31,7 @@ class Keller26xNode(Node):
         self.declare_parameter("abs_pressure_topic", "sensors/keller26x/abs_pressure")
         self.declare_parameter("default_atmospheric_pressure_pa", 101325.0)
         self.declare_parameter("pressure_frame_id", "keller_pressure_link")
+        self.declare_parameter("publish_frequency_hz", 30.0)
 
         self.bus = kp.KellerProtocol(
             port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=False
@@ -64,6 +65,7 @@ class Keller26xNode(Node):
         gauge_pressure_topic = str(self.get_parameter("gauge_pressure_topic").value)
         abs_pressure_topic = str(self.get_parameter("abs_pressure_topic").value)
         self.pressure_frame_id = str(self.get_parameter("pressure_frame_id").value)
+        publish_frequency_hz = float(self.get_parameter("publish_frequency_hz").value)
 
         self.gauge_pub = self.create_publisher(
             FluidPressure,
@@ -82,14 +84,14 @@ class Keller26xNode(Node):
             10,
         )
 
-        timer_period = 0.5  # TODO: How high needed?
+        timer_period = 1.0 / publish_frequency_hz
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
         self.get_logger().info(
             f"Started Keller26x pressure node. Gauge topic: {gauge_pressure_topic}. "
             f"Absolute topic: {abs_pressure_topic}. Using default atmospheric pressure "
             f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}. "
-            f"Message frame_id={self.pressure_frame_id}."
+            f"Message frame_id={self.pressure_frame_id}. Publish frequency: {publish_frequency_hz} Hz."
         )
 
     def init_f48(self):
