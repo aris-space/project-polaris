@@ -12,7 +12,7 @@
         "--network=host",
         "--privileged",
         "-e",
-        "ROS_DOMAIN_ID=0",
+        "ROS_DOMAIN_ID=37",
         "--env=DISPLAY",
         "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
         "-e",
