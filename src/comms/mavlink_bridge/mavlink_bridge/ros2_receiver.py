@@ -1,5 +1,5 @@
 import rclpy
-from rclpy.node import Node
+from rclpy.node import Node, SetParametersResult
 import logging, os
 from datetime import datetime
 from config_pkg.constants import Logs, Comms, Ports
@@ -9,6 +9,7 @@ from pymavlink import mavutil
 from std_msgs.msg import String
 from std_msgs.msg import Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
+from rcl_interfaces.msg import ParameterDescriptor, FloatingPointRange
 
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
@@ -86,6 +87,35 @@ class MavlinkBridgeReceiver(Node):
         self.pixhawk_reboot_subscriber = self.create_subscription(
             Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
         )
+
+        ## PID tuning
+
+        self.param_map = {
+            "tuning/roll_rate_p": "ATC_RAT_RLL_P",
+            "tuning/roll_rate_i": "ATC_RAT_RLL_I",
+            "tuning/roll_rate_d": "ATC_RAT_RLL_D",
+            "tuning/pitch_rate_p": "ATC_RAT_PIT_P",
+            "tuning/pitch_rate_i": "ATC_RAT_PIT_I",
+            "tuning/pitch_rate_d": "ATC_RAT_PIT_D",
+            "tuning/yaw_rate_p": "ATC_RAT_YAW_P",
+            "tuning/yaw_rate_i": "ATC_RAT_YAW_I",
+            "tuning/yaw_rate_d": "ATC_RAT_YAW_D",
+            "tuning/roll_angle_p": "ATC_ANG_RLL_P",
+            "tuning/pitch_angle_p": "ATC_ANG_PIT_P",
+            "tuning/yaw_angle_p": "ATC_ANG_YAW_P",
+            "tuning/depth_pos_p": "PSC_POSZ_P",
+            "tuning/depth_vel_p": "PSC_VELZ_P",
+            "tuning/depth_vel_i": "PSC_VELZ_I",
+            "tuning/depth_vel_d": "PSC_VELZ_D",
+            "tuning/pos_xy_p": "PSC_POSXY_P",
+            "tuning/vel_xy_p": "PSC_VELXY_P",
+            "tuning/vel_xy_i": "PSC_VELXY_I"
+        }
+
+        self.setup_pid_parameters()
+        self.add_on_set_parameters_callback(self.on_params_changed)
+
+
     
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
@@ -216,6 +246,27 @@ class MavlinkBridgeReceiver(Node):
             self.get_logger().info("Sent STABILIZATION mode command")
             self._file_logger.info("Sent STABILIZATION mode command")
 
+    def reboot_cb(self, msg):
+        """
+        Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
+        """
+        if msg.data:
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                0,
+                1, #1 to reboot, 2 for shutdown
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            self.get_logger().info("Sent reboot command to Pixhawk")
+            self._file_logger.info("Sent reboot command to Pixhawk")
+
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     def send_4dof_command(self, control_input):
@@ -277,26 +328,65 @@ class MavlinkBridgeReceiver(Node):
             int(roll),  # t (Extension 2)
         )
     
-    def reboot_cb(self, msg):
-        """
-        Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
-        """
-        if msg.data:
-            self.port.mav.command_long_send(
-                self.port.target_system,
-                self.port.target_component,
-                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
-                0,
-                1, #1 to reboot, 2 for shutdown
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
+
+    def setup_pid_parameters(self):
+        """Fetches current values from Pixhawk and declares ROS2 parameters."""
+        self.get_logger().info("Syncing PID parameters from Pixhawk...")
+        fetched_values = {}
+
+        slider_desc = ParameterDescriptor(
+            floating_point_range=[FloatingPointRange(from_value=0.0, to_value=5.0, step=0.01)]
+        )
+
+        for ros_name, mav_name in self.param_map.items():
+            # 1. Request the parameter
+            self.port.mav.param_request_read_send(
+                self.port.target_system, self.port.target_component,
+                mav_name.encode('utf-8'), -1
             )
-            self.get_logger().info("Sent reboot command to Pixhawk")
-            self._file_logger.info("Sent reboot command to Pixhawk")
+            
+            # 2. Loop briefly to find the SPECIFIC message we want
+            # This ignores heartbeats/other traffic that might arrive first
+            found = False
+            start_time = self.get_clock().now()
+            
+            while (self.get_clock().now() - start_time).nanoseconds < 1e9: # 1 second timeout
+                message = self.port.recv_match(type='PARAM_VALUE', blocking=True, timeout=0.1)
+                if message and message.param_id == mav_name:
+                    fetched_values[ros_name] = message.param_value
+                    self.get_logger().info(f"Fetched {mav_name}: {message.param_value}")
+                    found = True
+                    break
+            
+            if not found:
+                self.get_logger().warn(f"Failed to fetch {mav_name}, using default 0.1")
+                fetched_values[ros_name] = 0.1
+
+        # 3. Declare parameters
+        for ros_name, val in fetched_values.items():
+            self.declare_parameter(ros_name, val, slider_desc)
+        
+        self.get_logger().info("PID Sync Complete.")
+
+    def on_params_changed(self, params):
+        """Triggered when you move a slider in Foxglove."""
+        for p in params:
+            if p.name in self.param_map:
+                mav_param_id = self.param_map[p.name]
+                new_val = float(p.value)
+                
+                self.get_logger().info(f"Setting ArduSub {mav_param_id} to {new_val}")
+                
+                # Send the MAVLink command
+                self.port.mav.param_set_send(
+                    self.port.target_system,
+                    self.port.target_component,
+                    mav_param_id.encode('utf-8'),
+                    new_val,
+                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+                )
+        return SetParametersResult(successful=True)
+
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
