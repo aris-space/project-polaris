@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import FluidPressure
 from std_msgs.msg import Float64
 
@@ -28,11 +29,16 @@ class Keller26xNode(Node):
         self.declare_parameter("default_atmospheric_pressure_pa", 101325.0)
         self.declare_parameter("pressure_frame_id", "keller_pressure_link")
         self.declare_parameter("publish_frequency_hz", 30.0)
+        self.declare_parameter("dev_port", Ports.KELLER_SENSOR)
 
-        self.bus = kp.KellerProtocol(
-            port=Ports.KELLER_SENSOR, baud_rate=9600, timeout=0.3, echo=False
+        self.dev_port = str(self.get_parameter("dev_port").value)
+        self.publish_frequency_hz = float(
+            self.get_parameter("publish_frequency_hz").value
         )
+
         self.address = 1
+        self.bus = None
+        self._connect_bus(self.dev_port)
         self.p1_Pa = 0.0
         self.p1_gauge_pa = 0.0
         self.p1_gauge_raw_pa = 0.0
@@ -55,13 +61,10 @@ class Keller26xNode(Node):
             "ConRaw": 11,
         }
 
-        self.init_f48()
-
         surface_pressure_topic = str(self.get_parameter("surface_pressure_topic").value)
         gauge_pressure_topic = str(self.get_parameter("gauge_pressure_topic").value)
         abs_pressure_topic = str(self.get_parameter("abs_pressure_topic").value)
         self.pressure_frame_id = str(self.get_parameter("pressure_frame_id").value)
-        publish_frequency_hz = float(self.get_parameter("publish_frequency_hz").value)
 
         self.gauge_pub = self.create_publisher(
             FluidPressure,
@@ -80,15 +83,80 @@ class Keller26xNode(Node):
             10,
         )
 
-        timer_period = 1.0 / publish_frequency_hz
+        timer_period = 1.0 / self.publish_frequency_hz
         self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.add_on_set_parameters_callback(self.on_parameter_change)
 
         self.get_logger().info(
             f"Started Keller26x pressure node. Gauge topic: {gauge_pressure_topic}. "
             f"Absolute topic: {abs_pressure_topic}. Using default atmospheric pressure "
             f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}. "
-            f"Message frame_id={self.pressure_frame_id}. Publish frequency: {publish_frequency_hz} Hz."
+            f"Message frame_id={self.pressure_frame_id}. Publish frequency: {self.publish_frequency_hz} Hz. "
+            f"Device port: {self.dev_port}."
         )
+
+    def _connect_bus(self, port: str) -> None:
+        if self.bus is not None:
+            # Gracefully release the previous serial handle when switching ports.
+            close_fn = getattr(self.bus, "close", None)
+            if callable(close_fn):
+                close_fn()
+
+        self.bus = kp.KellerProtocol(
+            port=port,
+            baud_rate=9600,
+            timeout=0.3,
+            echo=False,
+        )
+        self.init_f48()
+
+    def _update_timer_frequency(self, frequency_hz: float) -> None:
+        timer_period = 1.0 / frequency_hz
+        self.timer.cancel()
+        self.destroy_timer(self.timer)
+        self.timer = self.create_timer(timer_period, self.timer_callback)
+
+    def on_parameter_change(self, params):
+        result = SetParametersResult(successful=True)
+
+        for param in params:
+            if param.name == "publish_frequency_hz":
+                try:
+                    new_frequency = float(param.value)
+                except (TypeError, ValueError):
+                    result.successful = False
+                    result.reason = "publish_frequency_hz must be a number"
+                    return result
+
+                if new_frequency <= 0.0:
+                    result.successful = False
+                    result.reason = "publish_frequency_hz must be > 0"
+                    return result
+
+                self.publish_frequency_hz = new_frequency
+                self._update_timer_frequency(self.publish_frequency_hz)
+                self.get_logger().info(
+                    f"Updated publish frequency to {self.publish_frequency_hz:.2f} Hz"
+                )
+
+            elif param.name == "dev_port":
+                new_port = str(param.value).strip()
+                if not new_port:
+                    result.successful = False
+                    result.reason = "dev_port must be a non-empty string"
+                    return result
+
+                try:
+                    self._connect_bus(new_port)
+                except Exception as exc:
+                    result.successful = False
+                    result.reason = f"Failed to connect dev_port '{new_port}': {exc}"
+                    return result
+
+                self.dev_port = new_port
+                self.get_logger().info(f"Updated Keller sensor port to {self.dev_port}")
+
+        return result
 
     def init_f48(self):
         """
@@ -104,12 +172,13 @@ class Keller26xNode(Node):
         pressure = self.bus.f73(self.address, self.f73_channels["P1"])
         return pressure
 
-    '''
+    """
     calibration callback flow (surface_pressure_callback):
     - on startup, use default surface pressure and add the measured gauge raw pressure to that to get absolute pressure. Log that we are using the default surface pressure.
     - when a surface pressure message is received (via surface_pressure_sub), we update the surface pressure and capture the gauge offset.
     - that gauge offset is then applied to all subsequent gauge pressure measurements and absolute pressure is recalculated accordingly.
-    '''
+    """
+
     def surface_pressure_callback(self, msg: Float64) -> None:
         new_surface_pressure_pa = float(msg.data)
         if abs(new_surface_pressure_pa - self._surface_pressure_pa) > 1e-6:
