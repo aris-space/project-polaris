@@ -1,0 +1,78 @@
+{
+    "1": {
+        "button": 12,
+        "toggle": false,
+        "axis": -1,
+        "direction": "-"
+    },
+    "2": {
+        "button": 14,
+        "toggle": false,
+        "axis": -1,
+        "direction": "+"
+    },
+
+    "3": {
+        "button": 13,
+        "toggle": false,
+        "axis": -1,
+        "direction": "-"
+    },
+    "4": {
+        "button": 15,
+        "toggle": false,
+        "axis": -1,
+        "direction": "+"
+    },
+    
+    
+    "<": {
+        "button": 11,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+    
+    ".": {
+        "button": 3,
+        "toggle": false,
+        "axis": 1,
+        "direction": null
+    },
+
+    ",": {
+        "button": 2,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+
+
+    "Space": {
+        "button": 0,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+
+    "-": {
+        "button": 1,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+
+    "9": {
+        "button": 8,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    },
+    "0": {
+        "button": 9,
+        "toggle": false,
+        "axis": -1,
+        "direction": null
+    }
+
+}
