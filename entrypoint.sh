@@ -10,6 +10,77 @@ source_with_relaxed_nounset() {
   set -u
 }
 
+# Resolve the base ROS setup script across image variants.
+find_base_ros_setup() {
+  local setup_path=""
+  local ros2_bin=""
+  local ros2_prefix=""
+
+  # Common layouts used by official ROS images and custom L4T images.
+  for setup_path in \
+    "/opt/ros/${ROS_DISTRO}/setup.bash" \
+    "/usr/local/ros/${ROS_DISTRO}/setup.bash" \
+    "/usr/local/ros2/${ROS_DISTRO}/setup.bash" \
+    "/usr/local/ros2_${ROS_DISTRO}/setup.bash"; do
+    if [ -f "${setup_path}" ]; then
+      printf '%s\n' "${setup_path}"
+      return 0
+    fi
+  done
+
+  # Fallback: infer from the ros2 executable when it is on PATH.
+  if ros2_bin="$(command -v ros2 2>/dev/null)"; then
+    ros2_prefix="$(dirname "$(dirname "${ros2_bin}")")"
+    setup_path="${ros2_prefix}/setup.bash"
+    if [ -f "${setup_path}" ]; then
+      printf '%s\n' "${setup_path}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# Write a shell hook and ensure interactive bash shells source ROS automatically.
+install_ros_shell_hook() {
+  local base_setup="$1"
+  local hook_path="/etc/profile.d/polaris_ros_setup.sh"
+  local user_hook_path="${HOME}/.polaris_ros_setup.sh"
+  local source_line=""
+
+  if [ -w "/etc/profile.d" ]; then
+    cat > "${hook_path}" <<EOF
+#!/usr/bin/env bash
+if [ -f "${base_setup}" ]; then
+  source "${base_setup}"
+fi
+if [ -f "${ROS_WS}/install/setup.bash" ]; then
+  source "${ROS_WS}/install/setup.bash"
+fi
+EOF
+    chmod 0644 "${hook_path}"
+    source_line="[ -f ${hook_path} ] && source ${hook_path}"
+  else
+    cat > "${user_hook_path}" <<EOF
+#!/usr/bin/env bash
+if [ -f "${base_setup}" ]; then
+  source "${base_setup}"
+fi
+if [ -f "${ROS_WS}/install/setup.bash" ]; then
+  source "${ROS_WS}/install/setup.bash"
+fi
+EOF
+    chmod 0644 "${user_hook_path}"
+    source_line="[ -f ${user_hook_path} ] && source ${user_hook_path}"
+  fi
+
+  if [ -f "${HOME}/.bashrc" ]; then
+    if ! grep -Fqx "${source_line}" "${HOME}/.bashrc"; then
+      printf '\n%s\n' "${source_line}" >> "${HOME}/.bashrc"
+    fi
+  fi
+}
+
 # --- Config defaults ---
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
@@ -19,8 +90,13 @@ REFRESH_PY_PACKAGES="${REFRESH_PY_PACKAGES:-1}"
 ROSDEP_SKIP_KEYS="${ROSDEP_SKIP_KEYS:-pymavlink dvl_a50 python3-jetson-gpio}"
 
 # 1) Source base ROS env (already present in image, but keep explicit here).
-if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
-  source_with_relaxed_nounset "/opt/ros/${ROS_DISTRO}/setup.bash"
+BASE_ROS_SETUP=""
+if BASE_ROS_SETUP="$(find_base_ros_setup)"; then
+  echo "[entrypoint] Sourcing base ROS setup: ${BASE_ROS_SETUP}"
+  source_with_relaxed_nounset "${BASE_ROS_SETUP}"
+  install_ros_shell_hook "${BASE_ROS_SETUP}"
+else
+  echo "[entrypoint] Warning: Could not find base ROS setup for ROS_DISTRO=${ROS_DISTRO}."
 fi
 
 if [ ! -d "${ROS_WS}" ]; then
