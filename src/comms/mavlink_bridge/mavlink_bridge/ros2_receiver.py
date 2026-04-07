@@ -45,10 +45,9 @@ class MavlinkBridgeReceiver(Node):
         self.pixhawk_mode = (
             "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
         )
-        '''TODO: change port back to Ports.SERIAL_PORT1 after testing'''
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection(
-            '/dev/ttyACM0', baud=Comms.SERIAL1_BAUD_RATE
+            Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
         )  # For sending commands to Pixhawk
         # self.port_in = mavutil.mavlink_connection(
         #     "/dev/ttyTHS1", baud=57600
