@@ -1,0 +1,11 @@
+foxglove_bridge:
+  ros__parameters:
+    port: 8765
+    capabilities:
+      - clientPublish
+      - connectionGraph
+      - assets
+      - services
+      - parameters
+    send_buffer_limit: 10000000
+    use_compression: false

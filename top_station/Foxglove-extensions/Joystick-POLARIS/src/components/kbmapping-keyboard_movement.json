@@ -1,0 +1,51 @@
+{
+    
+    "w": {
+        "button": -1,
+        "toggle": false,
+        "axis": 1,
+        "direction": "-"
+    },
+    "s": {
+        "button": -1,
+        "toggle": false,
+        "axis": 1,
+        "direction": "+"
+    },
+    "d": {
+        "button": -1,
+        "toggle": false,
+        "axis": 0,
+        "direction": "+"
+    },
+    "a": {
+        "button": -1,
+        "toggle": false,
+        "axis": 0,
+        "direction": "-"
+    },
+    "ArrowUp": {
+        "axis": 5,
+        "direction": "+",
+        "button": 7,
+        "toggle": false
+    },
+    "ArrowDown": {
+        "axis": 4,
+        "direction": "+",
+        "button": 6,
+        "toggle": false
+    },
+    "ArrowRight": {
+        "axis": 2,
+        "direction": "+",
+        "button": -1,
+        "toggle": false
+    },
+    "ArrowLeft": {
+        "axis": 2,
+        "direction": "-",
+        "button": -1,
+        "toggle": false
+    }
+}
