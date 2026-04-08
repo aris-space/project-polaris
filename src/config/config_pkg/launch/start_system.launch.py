@@ -5,7 +5,6 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from config_pkg.constants import Comms
 
 
 def generate_launch_description():
@@ -29,7 +28,6 @@ def generate_launch_description():
         name="foxglove_bridge",
         parameters=[
             os.path.join(config_pkg_dir, "config", "foxglove.yaml"),
-            {"address": Comms.JETSON_IP_ADDRESS},
         ],
     )
 
