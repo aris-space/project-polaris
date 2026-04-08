@@ -95,8 +95,9 @@ class ModeControlNode(Node):
                     and buttons[JoyControlMapping.MODE_SPARE_1_DPAD_BUTTON_IDX] == 1
                 )
             ):
-                # SPARE MODE 1
-                pass
+                # MANUAL POSITION HOLD MODE
+                self.current_mode = "manual_position_hold"
+                self.pixhawk_mode = "16"
 
             elif (
                 CONTROLLER_LAYOUT == "DESKTOP"

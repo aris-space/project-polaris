@@ -123,6 +123,7 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode == "MANUAL"
             or self.pixhawk_mode == "STABILIZATION"
             or self.pixhawk_mode == "ALT_HOLD"
+            or self.pixhawk_mode == "POSHOLD"
         ) and len(msg.data) == 6:
             self.send_6dof_command(msg.data)
 
@@ -215,6 +216,16 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent STABILIZATION mode command")
             self._file_logger.info("Sent STABILIZATION mode command")
+        elif msg.data == "POSHOLD" or msg.data == "16":
+            mode_id = 16
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "POSHOLD"  # Update the tracked Pixhawk mode
+            self.get_logger().info("Sent POSHOLD mode command (id=16)")
+            self._file_logger.info("Sent POSHOLD mode command (id=16)")
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 

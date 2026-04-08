@@ -8,6 +8,8 @@ Starts all mode-related nodes:
   - manual_control_node:                6DOF joystick control (active in 'manual_control' mode).
   - manual_altitude_hold_control_node:  4DOF joystick control with depth hold
                                         (active in 'manual_depth_hold' mode).
+  - manual_position_hold_node:          6DOF joystick control with position hold
+                                        (active in 'manual_position_hold' mode).
   - emergency_stop_mode_node:           Sends neutral commands to stop all thrusters
                                         (active in 'emergency_stop' mode).
 
@@ -108,6 +110,35 @@ def generate_launch_description():
                         "keyboard_gain_y": 500.0,
                         "keyboard_gain_z": 500.0,
                         "keyboard_gain_r": 500.0,
+                        "keyboard_x_single_press_gain": 500.0,
+                        "keyboard_x_double_press_gain": 1000.0,
+                        "keyboard_x_double_press_window_s": 0.2,
+                    }
+                ],
+            ),
+            Node(
+                package="mode_control_pkg",
+                executable="manual_position_hold_node",
+                name="manual_position_hold_node",
+                output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
+                parameters=[
+                    {
+                        "keyboard_source_frame_id": "keyboard",
+                        "controller_source_frame_id": "controller",
+                        "controller_gain_x": 1000.0,
+                        "controller_gain_y": 500.0,
+                        "controller_gain_z": 500.0,
+                        "controller_gain_r": 500.0,
+                        "controller_gain_s": 300.0,
+                        "controller_gain_t": 300.0,
+                        "keyboard_gain_x": 1000.0,
+                        "keyboard_gain_y": 500.0,
+                        "keyboard_gain_z": 500.0,
+                        "keyboard_gain_r": 500.0,
+                        "keyboard_gain_s": 300.0,
+                        "keyboard_gain_t": 300.0,
                         "keyboard_x_single_press_gain": 500.0,
                         "keyboard_x_double_press_gain": 1000.0,
                         "keyboard_x_double_press_window_s": 0.2,
