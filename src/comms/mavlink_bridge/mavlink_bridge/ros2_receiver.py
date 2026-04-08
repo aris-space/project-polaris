@@ -126,7 +126,9 @@ class MavlinkBridgeReceiver(Node):
             "tuning/vel_xy_i": "PSC_VELXY_I",
         }
 
+
         self.setup_pid_parameters()
+        self.get_logger().info("MavlinkBridgeReceiver: PID parameters initialized")
         self.add_on_set_parameters_callback(self.on_params_changed)
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
