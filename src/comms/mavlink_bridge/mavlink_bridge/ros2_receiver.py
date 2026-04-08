@@ -1,3 +1,4 @@
+import math
 import rclpy
 from rclpy.node import Node, SetParametersResult
 import logging, os
@@ -7,7 +8,7 @@ from config_pkg.constants import Logs, Comms, Ports
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
-from std_msgs.msg import Bool, Int16MultiArray
+from std_msgs.msg import Bool, Int16MultiArray, Float32MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from rcl_interfaces.msg import ParameterDescriptor, FloatingPointRange
 
@@ -87,6 +88,20 @@ class MavlinkBridgeReceiver(Node):
             Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
         )
 
+        self.attitude_step_subscriber = self.create_subscription(
+            Float32MultiArray,
+            "/pixhawk/attitude_step_cmd",
+            self.attitude_step_cb,
+            Comms.SUB_QOS_DEPTH,
+        )
+
+        self.position_step_subscriber = self.create_subscription(
+            Float32MultiArray,
+            "/pixhawk/position_step_cmd",
+            self.position_step_cb,
+            Comms.SUB_QOS_DEPTH,
+        )
+
         ## PID tuning
 
         self.param_map = {
@@ -108,14 +123,12 @@ class MavlinkBridgeReceiver(Node):
             "tuning/depth_vel_d": "PSC_VELZ_D",
             "tuning/pos_xy_p": "PSC_POSXY_P",
             "tuning/vel_xy_p": "PSC_VELXY_P",
-            "tuning/vel_xy_i": "PSC_VELXY_I"
+            "tuning/vel_xy_i": "PSC_VELXY_I",
         }
 
         self.setup_pid_parameters()
         self.add_on_set_parameters_callback(self.on_params_changed)
 
-
-    
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
@@ -152,6 +165,7 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode == "MANUAL"
             or self.pixhawk_mode == "STABILIZATION"
             or self.pixhawk_mode == "ALT_HOLD"
+            or self.pixhawk_mode == "POSHOLD"
         ) and len(msg.data) == 6:
             self.send_6dof_command(msg.data)
 
@@ -209,7 +223,9 @@ class MavlinkBridgeReceiver(Node):
                 mode_id,
             )
 
-            self.get_logger().info("Requesting SCALED_PRESSURE2 message stream from Pixhawk...")
+            self.get_logger().info(
+                "Requesting SCALED_PRESSURE2 message stream from Pixhawk..."
+            )
             self.port.mav.command_long_send(
                 self.port.target_system,
                 self.port.target_component,
@@ -217,10 +233,14 @@ class MavlinkBridgeReceiver(Node):
                 0,  # confirmation
                 mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2,  # message ID = 137
                 20000,  # interval in microseconds (20ms = 50Hz)
-                0, 0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
+                0,
             )
             self.get_logger().info("SCALED_PRESSURE2 request sent (interval=20ms)")
-        
+
             self.pixhawk_mode = "ALT_HOLD"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent ALT_HOLD mode command")
             self._file_logger.info("Sent ALT_HOLD mode command")
@@ -244,6 +264,34 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent STABILIZATION mode command")
             self._file_logger.info("Sent STABILIZATION mode command")
+        elif msg.data == "POSHOLD" or msg.data == "16":
+            mode_id = 16
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "POSHOLD"
+            self.get_logger().info("Sent POSHOLD mode command (id=16)")
+            self._file_logger.info("Sent POSHOLD mode command (id=16)")
+
+    def attitude_step_cb(self, msg):
+        if self.pixhawk_mode != "STABILIZATION":
+            return
+        if len(msg.data) < 3:
+            self.get_logger().warn(
+                "attitude_step_cmd requires 3 values: roll_deg, pitch_deg, yaw_deg"
+            )
+            return
+        self.send_attitude_step(msg.data[0], msg.data[1], msg.data[2])
+
+    def position_step_cb(self, msg):
+        if self.pixhawk_mode != "POSHOLD":
+            return
+        if len(msg.data) < 3:
+            self.get_logger().warn("position_step_cmd requires 3 values: x, y, z")
+            return
+        self.send_position_step(msg.data[0], msg.data[1], msg.data[2])
 
     def reboot_cb(self, msg):
         """
@@ -255,7 +303,7 @@ class MavlinkBridgeReceiver(Node):
                 self.port.target_component,
                 mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
                 0,
-                1, #1 to reboot, 2 for shutdown
+                1,  # 1 to reboot, 2 for shutdown
                 0,
                 0,
                 0,
@@ -326,7 +374,60 @@ class MavlinkBridgeReceiver(Node):
             int(pitch),  # s (Extension 1)
             int(roll),  # t (Extension 2)
         )
-    
+
+    def send_attitude_step(self, roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
+        # Convert degrees to radians.
+        phi = math.radians(roll_deg)
+        theta = math.radians(pitch_deg)
+        psi = math.radians(yaw_deg)
+
+        # Convert Euler angles to quaternion [w, x, y, z].
+        cy = math.cos(psi * 0.5)
+        sy = math.sin(psi * 0.5)
+        cp = math.cos(theta * 0.5)
+        sp = math.sin(theta * 0.5)
+        cr = math.cos(phi * 0.5)
+        sr = math.sin(phi * 0.5)
+
+        q = [
+            cr * cp * cy + sr * sp * sy,
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+        ]
+
+        mav = self.port.mav
+        mav.set_attitude_target_send(
+            0,
+            self.port.target_system,
+            self.port.target_component,
+            0b00000011,
+            q,
+            0,
+            0,
+            0,
+            0.5,
+        )
+
+    def send_position_step(self, x=0.0, y=0.0, z=-1.0):
+        self.port.mav.set_position_target_local_ned_send(
+            0,
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+            0b0000111111111000,
+            float(x),
+            float(y),
+            float(z),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
 
     def setup_pid_parameters(self):
         """Fetches current values from Pixhawk and declares ROS2 parameters."""
@@ -334,29 +435,37 @@ class MavlinkBridgeReceiver(Node):
         fetched_values = {}
 
         slider_desc = ParameterDescriptor(
-            floating_point_range=[FloatingPointRange(from_value=0.0, to_value=5.0, step=0.01)]
+            floating_point_range=[
+                FloatingPointRange(from_value=0.0, to_value=5.0, step=0.01)
+            ]
         )
 
         for ros_name, mav_name in self.param_map.items():
             # 1. Request the parameter
             self.port.mav.param_request_read_send(
-                self.port.target_system, self.port.target_component,
-                mav_name.encode('utf-8'), -1
+                self.port.target_system,
+                self.port.target_component,
+                mav_name.encode("utf-8"),
+                -1,
             )
-            
+
             # 2. Loop briefly to find the SPECIFIC message we want
             # This ignores heartbeats/other traffic that might arrive first
             found = False
             start_time = self.get_clock().now()
-            
-            while (self.get_clock().now() - start_time).nanoseconds < 1e9: # 1 second timeout
-                message = self.port.recv_match(type='PARAM_VALUE', blocking=True, timeout=0.1)
+
+            while (
+                self.get_clock().now() - start_time
+            ).nanoseconds < 1e9:  # 1 second timeout
+                message = self.port.recv_match(
+                    type="PARAM_VALUE", blocking=True, timeout=0.1
+                )
                 if message and message.param_id == mav_name:
                     fetched_values[ros_name] = message.param_value
                     self.get_logger().info(f"Fetched {mav_name}: {message.param_value}")
                     found = True
                     break
-            
+
             if not found:
                 self.get_logger().warn(f"Failed to fetch {mav_name}, using default 0.1")
                 fetched_values[ros_name] = 0.1
@@ -364,7 +473,7 @@ class MavlinkBridgeReceiver(Node):
         # 3. Declare parameters
         for ros_name, val in fetched_values.items():
             self.declare_parameter(ros_name, val, slider_desc)
-        
+
         self.get_logger().info("PID Sync Complete.")
 
     def on_params_changed(self, params):
@@ -373,19 +482,18 @@ class MavlinkBridgeReceiver(Node):
             if p.name in self.param_map:
                 mav_param_id = self.param_map[p.name]
                 new_val = float(p.value)
-                
+
                 self.get_logger().info(f"Setting ArduSub {mav_param_id} to {new_val}")
-                
+
                 # Send the MAVLink command
                 self.port.mav.param_set_send(
                     self.port.target_system,
                     self.port.target_component,
-                    mav_param_id.encode('utf-8'),
+                    mav_param_id.encode("utf-8"),
                     new_val,
-                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
                 )
         return SetParametersResult(successful=True)
-
 
     """--------------------------------------------- main function ---------------------------------------------"""
 

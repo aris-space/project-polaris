@@ -106,8 +106,9 @@ class ModeControlNode(Node):
                     and buttons[JoyControlMapping.MODE_SPARE_2_DPAD_BUTTON_IDX] == 1
                 )
             ):
-                # SPARE MODE 2
-                pass
+                # PID TUNING STEP INPUTS MODE
+                self.current_mode = "step_inputs_mode"
+                self.pixhawk_mode = "STABILIZATION"
 
         # 3. Setting Control (Requires Setting Safety Button Pressed)
         elif self.setting_safety_button_pressed(msg):

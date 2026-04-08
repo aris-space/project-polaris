@@ -114,6 +114,14 @@ class MavlinkBridgeSender(Node):
             Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
+        self.pid_tuning_desired_publisher = self.create_publisher(
+            Float32, "/pixhawk/PID_TUNING/desired", 10
+        )
+
+        self.pid_tuning_achieved_publisher = self.create_publisher(
+            Float32, "/pixhawk/PID_TUNING/achieved", 10
+        )
+
         self.diagnostic_publisher = self.create_publisher(
             DiagnosticArray, "/diagnostics", 10
         )
@@ -177,6 +185,26 @@ class MavlinkBridgeSender(Node):
         )
         self.logger.info("ATTITUDE request sent (interval=20ms)")
 
+        # Request PID_TUNING messages at 20 Hz
+        pid_tuning_msg_id = getattr(mavutil.mavlink, "MAVLINK_MSG_ID_PID_TUNING", 194)
+        self.logger.info("Requesting PID_TUNING message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            pid_tuning_msg_id,
+            50000,  # interval in microseconds (50ms = 20Hz)
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        self.logger.info(
+            f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=50ms)"
+        )
+
 
         self.msg_type_counter = {
             "HEARTBEAT": 0,
@@ -185,6 +213,7 @@ class MavlinkBridgeSender(Node):
             "BATTERY_STATUS": 0,
             # "SCALED_PRESSURE2": 0,
             "MANUAL_CONTROL": 0,
+            "PID_TUNING": 0,
         }
         self.msg_type_counter_interval = 10
 
@@ -215,6 +244,13 @@ class MavlinkBridgeSender(Node):
 
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
+        # Explicitly drain PID_TUNING using typed recv_match as requested.
+        while True:
+            pid_msg = self.port.recv_match(type='PID_TUNING', blocking=False)
+            if pid_msg is None:
+                break
+            self.handle_pid_tuning(pid_msg)
+
         # Process ALL available messages in the buffer (not just one)
         while True:
             msg = self.port.recv_match(blocking=False)
@@ -473,6 +509,24 @@ class MavlinkBridgeSender(Node):
         self.manual_control_publisher.publish(ros_msg)
         self.logger.info(
             f"Published Manual Control: x={msg.x}, y={msg.y}, z={msg.z}, r={msg.r}, s={msg.s}, t={msg.t}"
+        )
+
+    def handle_pid_tuning(self, msg):
+        """Process PID_TUNING message and publish desired/achieved to ROS2."""
+        if not self.message_counter("PID_TUNING"):
+            return
+
+        desired_msg = Float32()
+        achieved_msg = Float32()
+
+        desired_msg.data = float(getattr(msg, "desired", 0.0))
+        achieved_msg.data = float(getattr(msg, "achieved", 0.0))
+
+        self.pid_tuning_desired_publisher.publish(desired_msg)
+        self.pid_tuning_achieved_publisher.publish(achieved_msg)
+
+        self.logger.info(
+            f"Published PID_TUNING: desired={desired_msg.data:.4f}, achieved={achieved_msg.data:.4f}"
         )
 
 
