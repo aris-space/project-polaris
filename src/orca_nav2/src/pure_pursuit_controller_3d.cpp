@@ -226,6 +226,7 @@ namespace orca_nav2
       double best_qy = ry;
       double best_qz = rz;
       double best_path_yaw = tf2::getYaw(plan_.poses[0].pose.orientation);
+      double best_sign = 1.0;
 
       for (size_t i = 0; i + 1 < plan_.poses.size(); ++i) {
         const auto &p1 = plan_.poses[i].pose.position;
