@@ -2,11 +2,13 @@ foxglove_bridge:
   ros__parameters:
     address: 0.0.0.0
     port: 8765
+    # parametersSubscribe: live updates when params change (e.g. PID sync minutes after boot)
     capabilities:
       - clientPublish
       - connectionGraph
       - assets
       - services
       - parameters
+      - parametersSubscribe
     send_buffer_limit: 10000000
     use_compression: false
