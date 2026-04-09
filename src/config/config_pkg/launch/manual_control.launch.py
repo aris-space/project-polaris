@@ -61,7 +61,9 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed process.",
             ),
-            mode_control_launch,
+            # Start MAVLink bridge before mode controllers so serial + UDP are up and
+            # ros2_receiver can expose parameters before mavlink_publisher syncs PID gains.
             mavlink_launch,
+            mode_control_launch,
         ]
     )

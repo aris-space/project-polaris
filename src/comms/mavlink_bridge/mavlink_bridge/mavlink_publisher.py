@@ -1,8 +1,18 @@
+import os
+
+os.environ["MAVLINK20"] = "1"
+
 import math
+import time
+import logging
+import threading
 import rclpy
-import logging, os
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from pymavlink import mavutil
+from rcl_interfaces.srv import SetParameters as SetParametersSrv
 from datetime import datetime
 from std_msgs.msg import Int16MultiArray, Float32
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
@@ -15,6 +25,8 @@ from sensor_msgs.msg import (
 )
 from config_pkg.constants import Comms
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+
+from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
 os.makedirs(log_dir, exist_ok=True)
@@ -77,13 +89,33 @@ class MavlinkBridgeSender(Node):
         self.port = mavutil.mavlink_connection(
             f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
-        self.serial_port = mavutil.mavlink_connection(
-            "/dev/ttyTHS1", baud=57600
-        )  # Serial connection straight to Pixhawk
+        # Serial is reserved for ros2_receiver (one process per tty — shared reads corrupt MAVLink).
 
-        self.port.wait_heartbeat()
-        self.logger.info(f"Heartbeat received from system {self.port.target_system}")
-        
+        # Do not block __init__ forever: without a UDP heartbeat, nothing below ran → no ROS publishers.
+        try:
+            try:
+                self.port.wait_heartbeat(timeout=60.0)
+            except TypeError:
+                self.port.wait_heartbeat()
+        except Exception as e:
+            self.logger.error(
+                f"No UDP MAVLink heartbeat ({e}). "
+                "Check BlueOS/MAVProxy and JETSON_IP; using target_system=1."
+            )
+            self.port.target_system = 1
+            self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+        else:
+            self.logger.info(f"UDP MAVLink heartbeat: system {self.port.target_system}")
+            if self.port.target_component == 0:
+                self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+
+        # Separate groups: long PID sync must not block telemetry (needs MultiThreadedExecutor + 2+ threads).
+        self._cb_telemetry = MutuallyExclusiveCallbackGroup()
+        self._cb_sync = MutuallyExclusiveCallbackGroup()
+
+        # Serialize MAVLink I/O when PID sync runs concurrently with mavlink_callback.
+        self._mav_lock = threading.Lock()
+
         self.last_heartbeat_time = None
 
         self.heartbeat_publisher = self.create_publisher(
@@ -137,14 +169,17 @@ class MavlinkBridgeSender(Node):
         )
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
-        self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz to avoid serial buffer overflow
-        self.create_timer(1.0, self.heartbeat_checker_cb)  # 1 Hz watchdog for Pixhawk heartbeat
+        self.declare_parameter("sync_fc_pid_to_receiver", True)
+        self.declare_parameter("receiver_node_for_pid_sync", "ros2_receiver")
+        # When many nodes start at once (e.g. start_system.launch.py), ros2_receiver can take
+        # >30s to expose set_parameters; default matches full-stack bring-up.
+        self.declare_parameter("receiver_param_service_wait_sec", 120.0)
 
         # Request MANUAL_CONTROL messages at 10 Hz
         self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
-        self.serial_port.mav.command_long_send(
-            self.serial_port.target_system,
-            self.serial_port.target_component,
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
             0,  # confirmation
             mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID = 69
@@ -217,6 +252,151 @@ class MavlinkBridgeSender(Node):
         }
         self.msg_type_counter_interval = 10
 
+        # Start telemetry timers immediately. PID sync can take minutes.
+        self.timer = self.create_timer(
+            0.02, self.mavlink_callback, callback_group=self._cb_telemetry
+        )  # 50 Hz
+        self.create_timer(
+            1.0, self.heartbeat_checker_cb, callback_group=self._cb_telemetry
+        )
+
+        self._pid_sync_timer = None
+        if self.get_parameter("sync_fc_pid_to_receiver").value:
+            self._pid_sync_timer = self.create_timer(
+                0.5, self._deferred_pid_sync_cb, callback_group=self._cb_sync
+            )
+        else:
+            self.logger.info("sync_fc_pid_to_receiver=false; ros2_receiver keeps PID defaults")
+
+    def _deferred_pid_sync_cb(self):
+        """Run FC PID fetch after spin() is active so heartbeats and telemetry are not blocked."""
+        if self._pid_sync_timer is not None:
+            self._pid_sync_timer.cancel()
+            self._pid_sync_timer = None
+        self._sync_fc_pid_to_ros2_receiver()
+
+    def _sync_fc_pid_to_ros2_receiver(self):
+        """Fetch PARAM_VALUE over this node's UDP link; push into ros2_receiver via parameters API."""
+        receiver_node = self.get_parameter("receiver_node_for_pid_sync").value
+        self.logger.info(
+            f"Fetching PID parameters from FC (UDP) to push to node '{receiver_node}' ..."
+        )
+
+        upper_to_ros = {m.upper(): r for r, m in PID_PARAM_MAP.items()}
+        needed = set(upper_to_ros.keys())
+        fetched = {}
+
+        with self._mav_lock:
+            self.port.mav.param_request_list_send(
+                self.port.target_system, self.port.target_component
+            )
+        list_deadline = time.monotonic() + 45.0
+        idle_timeouts = 0
+        while needed and time.monotonic() < list_deadline:
+            with self._mav_lock:
+                msg = self.port.recv_match(
+                    type="PARAM_VALUE", blocking=True, timeout=0.1
+                )
+            if msg is None:
+                idle_timeouts += 1
+                # ~2s of no PARAM_VALUE (was 4 * 0.5s recv); shorter recv timeouts interleave mavlink_callback.
+                if idle_timeouts >= 20:
+                    break
+                continue
+            idle_timeouts = 0
+            pid = normalize_mavlink_param_id(msg.param_id).upper()
+            if pid in needed:
+                ros_name = upper_to_ros[pid]
+                fetched[ros_name] = float(msg.param_value)
+                needed.discard(pid)
+                self.logger.info(f"PID from FC {pid} = {msg.param_value}")
+
+        for ros_name, mav_name in PID_PARAM_MAP.items():
+            if ros_name in fetched:
+                continue
+            want = mav_name.strip().upper()
+            with self._mav_lock:
+                self.port.param_fetch_one(mav_name)
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                with self._mav_lock:
+                    msg = self.port.recv_match(
+                        type="PARAM_VALUE", blocking=True, timeout=0.1
+                    )
+                if msg is None:
+                    continue
+                if normalize_mavlink_param_id(msg.param_id).upper() == want:
+                    fetched[ros_name] = float(msg.param_value)
+                    self.logger.info(f"PID from FC {mav_name} = {msg.param_value}")
+                    break
+
+        if not fetched:
+            self.logger.warning(
+                "No PID parameters received from FC; ros2_receiver keeps defaults"
+            )
+            return
+
+        # Use rcl_interfaces SetParameters service (works on all ROS 2 distros; no rclpy.parameter_client).
+        srv_name = f"/{receiver_node}/set_parameters"
+        cli = self.create_client(
+            SetParametersSrv, srv_name, callback_group=self._cb_sync
+        )
+        wait_budget = float(
+            self.get_parameter("receiver_param_service_wait_sec").value
+        )
+        if not self._wait_for_set_parameters_service(cli, srv_name, wait_budget):
+            self.logger.warning(
+                f"Service '{srv_name}' not available after {wait_budget:.0f}s; "
+                "ros2_receiver may still be starting under heavy launch load. "
+                "Increase receiver_param_service_wait_sec or start mavlink_bridge earlier."
+            )
+            return
+
+        req = SetParametersSrv.Request()
+        req.parameters = [
+            Parameter(name, Parameter.Type.DOUBLE, fetched[name]).to_parameter_msg()
+            for name in fetched
+        ]
+        future = cli.call_async(req)
+        future.add_done_callback(
+            lambda f: self._on_pid_push_done(f, receiver_node, len(fetched))
+        )
+
+    def _on_pid_push_done(self, future, receiver_node: str, n_fetched: int):
+        """Avoid spin_until_future_complete inside a timer (executor deadlock)."""
+        try:
+            resp = future.result()
+        except Exception as e:
+            self.logger.warning(f"set_parameters to '{receiver_node}' failed: {e}")
+            return
+        if resp is None:
+            self.logger.warning(f"set_parameters call to '{receiver_node}' returned no result")
+            return
+        failed = [r for r in resp.results if not r.successful]
+        if not failed:
+            self.logger.info(
+                f"Pushed {n_fetched} PID parameter(s) to '{receiver_node}'"
+            )
+        else:
+            self.logger.warning(
+                f"Some PID parameters failed to set on '{receiver_node}': {failed}"
+            )
+
+    def _wait_for_set_parameters_service(self, cli, srv_name: str, total_timeout_sec: float) -> bool:
+        """Poll until ros2_receiver exposes set_parameters (handles slow joint launches)."""
+        deadline = time.monotonic() + max(5.0, total_timeout_sec)
+        poll = 2.0
+        first = True
+        while time.monotonic() < deadline:
+            if cli.wait_for_service(timeout_sec=poll):
+                return True
+            if first:
+                self.logger.info(
+                    f"Waiting for '{srv_name}' (ros2_receiver starting; normal under full launch)..."
+                )
+                first = False
+        return False
+
     def _on_set_parameters(self, params):
         """Validate and apply dynamic parameter updates at runtime."""
         new_min = self.battery_min_voltage
@@ -244,36 +424,26 @@ class MavlinkBridgeSender(Node):
 
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
-        # Explicitly drain PID_TUNING using typed recv_match as requested.
-        while True:
-            pid_msg = self.port.recv_match(type='PID_TUNING', blocking=False)
-            if pid_msg is None:
-                break
-            self.handle_pid_tuning(pid_msg)
+        with self._mav_lock:
+            # Explicitly drain PID_TUNING using typed recv_match as requested.
+            while True:
+                pid_msg = self.port.recv_match(type="PID_TUNING", blocking=False)
+                if pid_msg is None:
+                    break
+                self.handle_pid_tuning(pid_msg)
 
-        # Process ALL available messages in the buffer (not just one)
-        while True:
-            msg = self.port.recv_match(blocking=False)
-            msg_serial = self.serial_port.recv_match(blocking=False)
-            if msg is None and msg_serial is None:
-                break  # No more messages in either buffer
-
-            if msg_serial is not None:
-                # i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
-                if msg_serial.get_type() == "MANUAL_CONTROL":
-                    self.handle_manual_control(msg_serial)
-                # We can choose to process serial messages differently if needed
-                # For now, we will just log them and not publish to ROS2
-
-            if msg is not None:
-                # self.logger.info(f"Received: {msg.get_type()}")
+            # Process ALL available messages in the buffer (not just one)
+            while True:
+                msg = self.port.recv_match(blocking=False)
+                if msg is None:
+                    break  # No more messages in buffer
 
                 if msg.get_type() == "HEARTBEAT":
                     self.handle_heartbeat(msg)
                 elif msg.get_type() == "ATTITUDE":
-                   self.handle_attitude(msg)
-                # elif msg.get_type() == "RC_CHANNELS":
-                #    self.handle_rc_channels(msg)
+                    self.handle_attitude(msg)
+                elif msg.get_type() == "MANUAL_CONTROL":
+                    self.handle_manual_control(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
                     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
@@ -524,17 +694,21 @@ class MavlinkBridgeSender(Node):
 
         self.pid_tuning_desired_publisher.publish(desired_msg)
         self.pid_tuning_achieved_publisher.publish(achieved_msg)
-
-        self.logger.info(
-            f"Published PID_TUNING: desired={desired_msg.data:.4f}, achieved={achieved_msg.data:.4f}"
-        )
+     
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeSender()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    # Allow mavlink_callback (telemetry) to run while PID sync blocks on PARAM_VALUE I/O.
+    # Two MutuallyExclusiveCallbackGroups run in parallel; need >=2 threads.
+    executor = MultiThreadedExecutor(num_threads=6)
+    executor.add_node(node)
+    try:
+        executor.spin()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

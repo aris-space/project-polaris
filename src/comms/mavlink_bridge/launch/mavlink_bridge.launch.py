@@ -23,6 +23,15 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed node.",
             ),
+            # ros2_receiver must declare parameters before mavlink_publisher can push FC values.
+            Node(
+                package="mavlink_bridge",
+                executable="ros2_receiver",
+                name="ros2_receiver",
+                output="screen",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
+            ),
             Node(
                 package="mavlink_bridge",
                 executable="mavlink_publisher",
@@ -39,14 +48,6 @@ def generate_launch_description():
             #     respawn=respawn,
             #     respawn_delay=respawn_delay,
             # ),
-            Node(
-                package="mavlink_bridge",
-                executable="ros2_receiver",
-                name="ros2_receiver",
-                output="screen",
-                respawn=respawn,
-                respawn_delay=respawn_delay,
-            ),
             Node(
                 package="mavlink_bridge",
                 executable="battery_tracker",

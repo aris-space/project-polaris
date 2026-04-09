@@ -1,16 +1,17 @@
 import math
+
 import rclpy
 from rclpy.node import Node, SetParametersResult
 import logging, os
 from datetime import datetime
 from config_pkg.constants import Logs, Comms, Ports
+from .pid_param_map import PID_PARAM_MAP
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
 from std_msgs.msg import Bool, Int16MultiArray, Float32MultiArray
 from mavros_msgs.msg import OverrideRCIn
-from rcl_interfaces.msg import ParameterDescriptor, FloatingPointRange
 
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
@@ -24,8 +25,8 @@ class MavlinkBridgeReceiver(Node):
     """
 
     def __init__(self):
-        # "mavlink_bridge" is the name of the node
-        super().__init__("mavlink_bridge_receiver")
+        # Must match launch `name="ros2_receiver"` so `/ros2_receiver/set_parameters` and Foxglove match.
+        super().__init__("ros2_receiver")
 
         self._file_logger = logging.getLogger("ros2_receiver")
 
@@ -46,19 +47,46 @@ class MavlinkBridgeReceiver(Node):
         self.pixhawk_mode = (
             "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
         )
-        # configures serial port the pixhawk is connected to and the baud rate
+
+        # Declare tuning parameters BEFORE blocking on serial heartbeat so Foxglove / `ros2 param list`
+        # see tuning/* immediately at spin(), even if the link is slow or down.
+        self.param_map = PID_PARAM_MAP
+        self.declare_pid_parameter_defaults()
+        self._pending_mavlink_params = []
+        self._mavlink_defer_timer = None
+        self.add_on_set_parameters_callback(self.on_params_changed)
+        self.get_logger().info(
+            "MavlinkBridgeReceiver: PID parameters declared (FC sync is done by mavlink_publisher)"
+        )
+
+        # Serial MAVLink to Pixhawk (single reader — mavlink_publisher uses UDP only).
         self.port = mavutil.mavlink_connection(
             Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
-        )  # For sending commands to Pixhawk
-        # self.port_in = mavutil.mavlink_connection(
-        #     "/dev/ttyTHS1", baud=57600
-        # )  # For receiving messages from Pixhawk (e.g., heartbeats, status)
-
-        # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
-        self.port.wait_heartbeat()
-        self.get_logger().info(
-            f"Heartbeat received from system {self.port.target_system}"
         )
+
+        try:
+            try:
+                self.port.wait_heartbeat(timeout=120.0)
+            except TypeError:
+                # Older pymavlink: no timeout= keyword
+                self.port.wait_heartbeat()
+        except Exception as e:
+            self.get_logger().error(
+                f"No serial MAVLink heartbeat: {e}. "
+                "Using target_system=1; fix wiring/port if commands fail."
+            )
+            self.port.target_system = 1
+            self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+        else:
+            self.get_logger().info(
+                f"Heartbeat received from system {self.port.target_system}"
+            )
+            if self.port.target_component == 0:
+                self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+            self.get_logger().info(
+                f"MAVLink target system={self.port.target_system} "
+                f"component={self.port.target_component}"
+            )
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
@@ -101,33 +129,6 @@ class MavlinkBridgeReceiver(Node):
             self.position_step_cb,
             Comms.SUB_QOS_DEPTH,
         )
-
-        ## PID tuning
-
-        self.param_map = {
-            "tuning/roll_rate_p": "ATC_RAT_RLL_P",
-            "tuning/roll_rate_i": "ATC_RAT_RLL_I",
-            "tuning/roll_rate_d": "ATC_RAT_RLL_D",
-            "tuning/pitch_rate_p": "ATC_RAT_PIT_P",
-            "tuning/pitch_rate_i": "ATC_RAT_PIT_I",
-            "tuning/pitch_rate_d": "ATC_RAT_PIT_D",
-            "tuning/yaw_rate_p": "ATC_RAT_YAW_P",
-            "tuning/yaw_rate_i": "ATC_RAT_YAW_I",
-            "tuning/yaw_rate_d": "ATC_RAT_YAW_D",
-            "tuning/roll_angle_p": "ATC_ANG_RLL_P",
-            "tuning/pitch_angle_p": "ATC_ANG_PIT_P",
-            "tuning/yaw_angle_p": "ATC_ANG_YAW_P",
-            "tuning/depth_pos_p": "PSC_POSZ_P",
-            "tuning/depth_vel_p": "PSC_VELZ_P",
-            "tuning/depth_vel_i": "PSC_VELZ_I",
-            "tuning/depth_vel_d": "PSC_VELZ_D",
-            "tuning/pos_xy_p": "PSC_POSXY_P",
-            "tuning/vel_xy_p": "PSC_VELXY_P",
-            "tuning/vel_xy_i": "PSC_VELXY_I",
-        }
-
-        self.setup_pid_parameters()
-        self.add_on_set_parameters_callback(self.on_params_changed)
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
@@ -429,71 +430,41 @@ class MavlinkBridgeReceiver(Node):
             0,
         )
 
-    def setup_pid_parameters(self):
-        """Fetches current values from Pixhawk and declares ROS2 parameters."""
-        self.get_logger().info("Syncing PID parameters from Pixhawk...")
-        fetched_values = {}
-
-        slider_desc = ParameterDescriptor(
-            floating_point_range=[
-                FloatingPointRange(from_value=0.0, to_value=5.0, step=0.01)
-            ]
-        )
-
-        for ros_name, mav_name in self.param_map.items():
-            # 1. Request the parameter
-            self.port.mav.param_request_read_send(
-                self.port.target_system,
-                self.port.target_component,
-                mav_name.encode("utf-8"),
-                -1,
-            )
-
-            # 2. Loop briefly to find the SPECIFIC message we want
-            # This ignores heartbeats/other traffic that might arrive first
-            found = False
-            start_time = self.get_clock().now()
-
-            while (
-                self.get_clock().now() - start_time
-            ).nanoseconds < 1e9:  # 1 second timeout
-                message = self.port.recv_match(
-                    type="PARAM_VALUE", blocking=True, timeout=0.1
-                )
-                if message and message.param_id == mav_name:
-                    fetched_values[ros_name] = message.param_value
-                    self.get_logger().info(f"Fetched {mav_name}: {message.param_value}")
-                    found = True
-                    break
-
-            if not found:
-                self.get_logger().warn(f"Failed to fetch {mav_name}, using default 0.1")
-                fetched_values[ros_name] = 0.1
-
-        # 3. Declare parameters
-        for ros_name, val in fetched_values.items():
-            self.declare_parameter(ros_name, val, slider_desc)
-
-        self.get_logger().info("PID Sync Complete.")
+    def declare_pid_parameter_defaults(self):
+        """Declare tuning parameters (plain doubles; no range/step — FC values may be any float)."""
+        for ros_name in self.param_map:
+            self.declare_parameter(ros_name, 0.1)
 
     def on_params_changed(self, params):
-        """Triggered when you move a slider in Foxglove."""
+        """Forward parameter updates to the flight controller (e.g. ros2 param set / Foxglove)."""
         for p in params:
             if p.name in self.param_map:
                 mav_param_id = self.param_map[p.name]
-                new_val = float(p.value)
-
-                self.get_logger().info(f"Setting ArduSub {mav_param_id} to {new_val}")
-
-                # Send the MAVLink command
-                self.port.mav.param_set_send(
-                    self.port.target_system,
-                    self.port.target_component,
-                    mav_param_id.encode("utf-8"),
-                    new_val,
-                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+                self._pending_mavlink_params.append(
+                    (mav_param_id, float(p.value))
                 )
+        if self._pending_mavlink_params and self._mavlink_defer_timer is None:
+            self._mavlink_defer_timer = self.create_timer(
+                0.02, self._flush_mavlink_param_queue
+            )
         return SetParametersResult(successful=True)
+
+    def _flush_mavlink_param_queue(self):
+        """Send MAVLink param_set after SetParameters returned so the service RPC can finish."""
+        if self._mavlink_defer_timer is not None:
+            self._mavlink_defer_timer.cancel()
+            self._mavlink_defer_timer = None
+        batch = self._pending_mavlink_params
+        self._pending_mavlink_params = []
+        for mav_param_id, new_val in batch:
+            self.get_logger().info(f"Setting ArduSub {mav_param_id} to {new_val}")
+            self.port.mav.param_set_send(
+                self.port.target_system,
+                self.port.target_component,
+                mav_param_id.encode("utf-8"),
+                new_val,
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            )
 
     """--------------------------------------------- main function ---------------------------------------------"""
 

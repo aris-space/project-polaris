@@ -46,6 +46,9 @@ class ModeControlNode(Node):
         )
 
         self.get_logger().info("Mode Control Node Started. Default: manual_control")
+        # Pixhawk is not told MANUAL until a /joy message unless we publish here.
+        self.publish_pixhawk_mode()
+        self.prev_pixhawk_mode = self.pixhawk_mode
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
 

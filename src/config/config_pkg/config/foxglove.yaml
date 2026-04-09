@@ -2,11 +2,21 @@ foxglove_bridge:
   ros__parameters:
     address: 0.0.0.0
     port: 8765
+    # Default true: if listing params from a node times out once (common under heavy launch),
+    # that node is blacklisted for the rest of the bridge process — tuning/* on ros2_receiver
+    # vanishes in Studio while `ros2 param list` still works. Disable so the bridge retries.
+    ignore_unresponsive_param_nodes: false
+    # Poll graph/topics/services/params more often than default 5000ms so late-appearing
+    # params (e.g. tuning/* after mavlink_publisher PID sync) show up without only relying
+    # on reconnect. Studio may still cache the tree — disconnect/reconnect if params are missing.
+    max_update_ms: 1000
+    # parametersSubscribe: live updates when params change (e.g. PID sync minutes after boot)
     capabilities:
       - clientPublish
       - connectionGraph
       - assets
       - services
       - parameters
+      - parametersSubscribe
     send_buffer_limit: 10000000
     use_compression: false
