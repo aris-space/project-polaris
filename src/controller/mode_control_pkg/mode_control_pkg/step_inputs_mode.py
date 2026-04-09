@@ -8,12 +8,14 @@ three submodes using ROS parameters:
     - /tuning/active/poshold   (bool)
 
 Submode behavior:
+  - Default: all /tuning/active/* false → vehicle stays in MANUAL (mode 19).
   - attitude: sends Pixhawk mode STABILIZATION and publishes attitude step
               targets in degrees on /pixhawk/attitude_step_cmd.
-    - depthhold: sends Pixhawk mode ALT_HOLD and publishes a local NED position
-                             target on /pixhawk/position_step_cmd (typically z-only step).
+  - depthhold: sends Pixhawk mode ALT_HOLD and publishes a local NED position
+               target on /pixhawk/position_step_cmd (typically z-only step).
   - poshold: sends Pixhawk mode POSHOLD and publishes local NED position step
              targets on /pixhawk/position_step_cmd.
+  - When all /tuning/active/* are false again → switch back to MANUAL (mode 19).
 
 Step target parameters:
     - tuning/target/attitude_roll_deg, tuning/target/attitude_pitch_deg, tuning/target/attitude_yaw_deg
@@ -32,9 +34,10 @@ class StepInputsModeNode(Node):
 
         self.current_mode = ""
         self._last_active_submode = None
+        self._last_published_pixhawk_mode = None
 
-        # Submode selectors.
-        self.declare_parameter("/tuning/active/attitude", True)
+        # Submode selectors (default all false → MANUAL / mode 19, not STABILIZE / mode 0).
+        self.declare_parameter("/tuning/active/attitude", False)
         self.declare_parameter("/tuning/active/depthhold", False)
         self.declare_parameter("/tuning/active/poshold", False)
 
@@ -86,9 +89,7 @@ class StepInputsModeNode(Node):
 
         submode = self._get_active_submode()
         if submode is None:
-            self.get_logger().warn(
-                "No PID tuning submode active. Set one of params: /tuning/active/attitude, /tuning/active/depthhold, /tuning/active/poshold."
-            )
+            self._publish_mode_cmd("MANUAL")
             return
 
         if submode == "attitude":
@@ -142,14 +143,17 @@ class StepInputsModeNode(Node):
         return None
 
     def _publish_mode_cmd(self, mode_name):
-        if (
-            self._last_active_submode is None
-            or self._submode_to_mode(self._last_active_submode) != mode_name
-        ):
-            msg = String()
-            msg.data = mode_name
-            self.pixhawk_mode_publisher.publish(msg)
-        self._last_active_submode = self._mode_to_submode(mode_name)
+        """Publish /pixhawk/mode_cmd when the requested mode changes (incl. MANUAL / mode 19)."""
+        if self._last_published_pixhawk_mode == mode_name:
+            return
+        msg = String()
+        msg.data = mode_name
+        self.pixhawk_mode_publisher.publish(msg)
+        self._last_published_pixhawk_mode = mode_name
+        if mode_name == "MANUAL":
+            self._last_active_submode = None
+        else:
+            self._last_active_submode = self._mode_to_submode(mode_name)
 
     def _publish_attitude_step(self):
         msg = Float32MultiArray()
