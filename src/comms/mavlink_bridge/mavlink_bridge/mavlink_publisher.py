@@ -5,7 +5,10 @@ os.environ["MAVLINK20"] = "1"
 import math
 import time
 import logging
+import threading
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from pymavlink import mavutil
@@ -88,10 +91,30 @@ class MavlinkBridgeSender(Node):
         )  # UDP connection to companion computer (BlueOS)
         # Serial is reserved for ros2_receiver (one process per tty — shared reads corrupt MAVLink).
 
-        self.port.wait_heartbeat()
-        self.logger.info(f"Heartbeat received from system {self.port.target_system}")
-        if self.port.target_component == 0:
+        # Do not block __init__ forever: without a UDP heartbeat, nothing below ran → no ROS publishers.
+        try:
+            try:
+                self.port.wait_heartbeat(timeout=60.0)
+            except TypeError:
+                self.port.wait_heartbeat()
+        except Exception as e:
+            self.logger.error(
+                f"No UDP MAVLink heartbeat ({e}). "
+                "Check BlueOS/MAVProxy and JETSON_IP; using target_system=1."
+            )
+            self.port.target_system = 1
             self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+        else:
+            self.logger.info(f"UDP MAVLink heartbeat: system {self.port.target_system}")
+            if self.port.target_component == 0:
+                self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+
+        # Separate groups: long PID sync must not block telemetry (needs MultiThreadedExecutor + 2+ threads).
+        self._cb_telemetry = MutuallyExclusiveCallbackGroup()
+        self._cb_sync = MutuallyExclusiveCallbackGroup()
+
+        # Serialize MAVLink I/O when PID sync runs concurrently with mavlink_callback.
+        self._mav_lock = threading.Lock()
 
         self.last_heartbeat_time = None
 
@@ -229,14 +252,28 @@ class MavlinkBridgeSender(Node):
         }
         self.msg_type_counter_interval = 10
 
-        # Single MAVLink reader: sync PID from FC here (UDP) before the 50 Hz drain loop starts.
+        # Start telemetry timers immediately. PID sync can take minutes.
+        self.timer = self.create_timer(
+            0.02, self.mavlink_callback, callback_group=self._cb_telemetry
+        )  # 50 Hz
+        self.create_timer(
+            1.0, self.heartbeat_checker_cb, callback_group=self._cb_telemetry
+        )
+
+        self._pid_sync_timer = None
         if self.get_parameter("sync_fc_pid_to_receiver").value:
-            self._sync_fc_pid_to_ros2_receiver()
+            self._pid_sync_timer = self.create_timer(
+                0.5, self._deferred_pid_sync_cb, callback_group=self._cb_sync
+            )
         else:
             self.logger.info("sync_fc_pid_to_receiver=false; ros2_receiver keeps PID defaults")
 
-        self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz
-        self.create_timer(1.0, self.heartbeat_checker_cb)  # 1 Hz watchdog for Pixhawk heartbeat
+    def _deferred_pid_sync_cb(self):
+        """Run FC PID fetch after spin() is active so heartbeats and telemetry are not blocked."""
+        if self._pid_sync_timer is not None:
+            self._pid_sync_timer.cancel()
+            self._pid_sync_timer = None
+        self._sync_fc_pid_to_ros2_receiver()
 
     def _sync_fc_pid_to_ros2_receiver(self):
         """Fetch PARAM_VALUE over this node's UDP link; push into ros2_receiver via parameters API."""
@@ -249,18 +286,21 @@ class MavlinkBridgeSender(Node):
         needed = set(upper_to_ros.keys())
         fetched = {}
 
-        self.port.mav.param_request_list_send(
-            self.port.target_system, self.port.target_component
-        )
+        with self._mav_lock:
+            self.port.mav.param_request_list_send(
+                self.port.target_system, self.port.target_component
+            )
         list_deadline = time.monotonic() + 45.0
         idle_timeouts = 0
         while needed and time.monotonic() < list_deadline:
-            msg = self.port.recv_match(
-                type="PARAM_VALUE", blocking=True, timeout=0.5
-            )
+            with self._mav_lock:
+                msg = self.port.recv_match(
+                    type="PARAM_VALUE", blocking=True, timeout=0.1
+                )
             if msg is None:
                 idle_timeouts += 1
-                if idle_timeouts >= 4:
+                # ~2s of no PARAM_VALUE (was 4 * 0.5s recv); shorter recv timeouts interleave mavlink_callback.
+                if idle_timeouts >= 20:
                     break
                 continue
             idle_timeouts = 0
@@ -275,12 +315,14 @@ class MavlinkBridgeSender(Node):
             if ros_name in fetched:
                 continue
             want = mav_name.strip().upper()
-            self.port.param_fetch_one(mav_name)
+            with self._mav_lock:
+                self.port.param_fetch_one(mav_name)
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline:
-                msg = self.port.recv_match(
-                    type="PARAM_VALUE", blocking=True, timeout=0.25
-                )
+                with self._mav_lock:
+                    msg = self.port.recv_match(
+                        type="PARAM_VALUE", blocking=True, timeout=0.1
+                    )
                 if msg is None:
                     continue
                 if normalize_mavlink_param_id(msg.param_id).upper() == want:
@@ -296,7 +338,9 @@ class MavlinkBridgeSender(Node):
 
         # Use rcl_interfaces SetParameters service (works on all ROS 2 distros; no rclpy.parameter_client).
         srv_name = f"/{receiver_node}/set_parameters"
-        cli = self.create_client(SetParametersSrv, srv_name)
+        cli = self.create_client(
+            SetParametersSrv, srv_name, callback_group=self._cb_sync
+        )
         wait_budget = float(
             self.get_parameter("receiver_param_service_wait_sec").value
         )
@@ -314,15 +358,24 @@ class MavlinkBridgeSender(Node):
             for name in fetched
         ]
         future = cli.call_async(req)
-        rclpy.spin_until_future_complete(self, future, timeout_sec=60.0)
-        resp = future.result()
+        future.add_done_callback(
+            lambda f: self._on_pid_push_done(f, receiver_node, len(fetched))
+        )
+
+    def _on_pid_push_done(self, future, receiver_node: str, n_fetched: int):
+        """Avoid spin_until_future_complete inside a timer (executor deadlock)."""
+        try:
+            resp = future.result()
+        except Exception as e:
+            self.logger.warning(f"set_parameters to '{receiver_node}' failed: {e}")
+            return
         if resp is None:
-            self.logger.warning(f"set_parameters call to '{receiver_node}' timed out")
+            self.logger.warning(f"set_parameters call to '{receiver_node}' returned no result")
             return
         failed = [r for r in resp.results if not r.successful]
         if not failed:
             self.logger.info(
-                f"Pushed {len(fetched)} PID parameter(s) to '{receiver_node}'"
+                f"Pushed {n_fetched} PID parameter(s) to '{receiver_node}'"
             )
         else:
             self.logger.warning(
@@ -371,29 +424,30 @@ class MavlinkBridgeSender(Node):
 
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
-        # Explicitly drain PID_TUNING using typed recv_match as requested.
-        while True:
-            pid_msg = self.port.recv_match(type='PID_TUNING', blocking=False)
-            if pid_msg is None:
-                break
-            self.handle_pid_tuning(pid_msg)
+        with self._mav_lock:
+            # Explicitly drain PID_TUNING using typed recv_match as requested.
+            while True:
+                pid_msg = self.port.recv_match(type="PID_TUNING", blocking=False)
+                if pid_msg is None:
+                    break
+                self.handle_pid_tuning(pid_msg)
 
-        # Process ALL available messages in the buffer (not just one)
-        while True:
-            msg = self.port.recv_match(blocking=False)
-            if msg is None:
-                break  # No more messages in buffer
+            # Process ALL available messages in the buffer (not just one)
+            while True:
+                msg = self.port.recv_match(blocking=False)
+                if msg is None:
+                    break  # No more messages in buffer
 
-            if msg.get_type() == "HEARTBEAT":
-                self.handle_heartbeat(msg)
-            elif msg.get_type() == "ATTITUDE":
-                self.handle_attitude(msg)
-            elif msg.get_type() == "MANUAL_CONTROL":
-                self.handle_manual_control(msg)
-            elif msg.get_type() == "BATTERY_STATUS":
-                self.handle_battery(msg)
-            elif msg.get_type() == "SCALED_PRESSURE2":
-                self.handle_scaled_pressure(msg)
+                if msg.get_type() == "HEARTBEAT":
+                    self.handle_heartbeat(msg)
+                elif msg.get_type() == "ATTITUDE":
+                    self.handle_attitude(msg)
+                elif msg.get_type() == "MANUAL_CONTROL":
+                    self.handle_manual_control(msg)
+                elif msg.get_type() == "BATTERY_STATUS":
+                    self.handle_battery(msg)
+                elif msg.get_type() == "SCALED_PRESSURE2":
+                    self.handle_scaled_pressure(msg)
 
     def message_counter(self, msg_type: str) -> bool:
         """Only process every Nth message per message type."""
@@ -646,8 +700,15 @@ class MavlinkBridgeSender(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeSender()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    # Allow mavlink_callback (telemetry) to run while PID sync blocks on PARAM_VALUE I/O.
+    # Two MutuallyExclusiveCallbackGroups run in parallel; need >=2 threads.
+    executor = MultiThreadedExecutor(num_threads=6)
+    executor.add_node(node)
+    try:
+        executor.spin()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

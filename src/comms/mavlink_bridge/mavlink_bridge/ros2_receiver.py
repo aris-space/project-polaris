@@ -25,8 +25,8 @@ class MavlinkBridgeReceiver(Node):
     """
 
     def __init__(self):
-        # "mavlink_bridge" is the name of the node
-        super().__init__("mavlink_bridge_receiver")
+        # Must match launch `name="ros2_receiver"` so `/ros2_receiver/set_parameters` and Foxglove match.
+        super().__init__("ros2_receiver")
 
         self._file_logger = logging.getLogger("ros2_receiver")
 
@@ -47,25 +47,46 @@ class MavlinkBridgeReceiver(Node):
         self.pixhawk_mode = (
             "MANUAL"  # To track the current mode for Pixhawk (e.g., MANUAL, ALT_HOLD)
         )
+
+        # Declare tuning parameters BEFORE blocking on serial heartbeat so Foxglove / `ros2 param list`
+        # see tuning/* immediately at spin(), even if the link is slow or down.
+        self.param_map = PID_PARAM_MAP
+        self.declare_pid_parameter_defaults()
+        self._pending_mavlink_params = []
+        self._mavlink_defer_timer = None
+        self.add_on_set_parameters_callback(self.on_params_changed)
+        self.get_logger().info(
+            "MavlinkBridgeReceiver: PID parameters declared (FC sync is done by mavlink_publisher)"
+        )
+
         # Serial MAVLink to Pixhawk (single reader — mavlink_publisher uses UDP only).
-        # A second UDP client to BlueOS often gets no traffic; two serial readers split bytes.
         self.port = mavutil.mavlink_connection(
             Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
         )
 
-        # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
-        self.port.wait_heartbeat()
-        self.get_logger().info(
-            f"Heartbeat received from system {self.port.target_system}"
-        )
-        # pymavlink often leaves target_component at 0; ArduPilot ignores many
-        # parameter requests unless they target the autopilot (component 1).
-        if self.port.target_component == 0:
+        try:
+            try:
+                self.port.wait_heartbeat(timeout=120.0)
+            except TypeError:
+                # Older pymavlink: no timeout= keyword
+                self.port.wait_heartbeat()
+        except Exception as e:
+            self.get_logger().error(
+                f"No serial MAVLink heartbeat: {e}. "
+                "Using target_system=1; fix wiring/port if commands fail."
+            )
+            self.port.target_system = 1
             self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
-        self.get_logger().info(
-            f"MAVLink target system={self.port.target_system} "
-            f"component={self.port.target_component}"
-        )
+        else:
+            self.get_logger().info(
+                f"Heartbeat received from system {self.port.target_system}"
+            )
+            if self.port.target_component == 0:
+                self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+            self.get_logger().info(
+                f"MAVLink target system={self.port.target_system} "
+                f"component={self.port.target_component}"
+            )
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
@@ -108,19 +129,6 @@ class MavlinkBridgeReceiver(Node):
             self.position_step_cb,
             Comms.SUB_QOS_DEPTH,
         )
-
-        ## PID tuning (defaults here; mavlink_publisher syncs from FC over UDP via parameters API)
-        self.param_map = PID_PARAM_MAP
-
-        self.declare_pid_parameter_defaults()
-        self.get_logger().info(
-            "MavlinkBridgeReceiver: PID parameters declared (FC sync is done by mavlink_publisher)"
-        )
-        # Must not block in on_params_changed: bulk SetParameters (e.g. from mavlink_publisher)
-        # needs the callback to return quickly or the RPC times out and params never stick.
-        self._pending_mavlink_params = []  # list of (mav_param_id: str, value: float)
-        self._mavlink_defer_timer = None
-        self.add_on_set_parameters_callback(self.on_params_changed)
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
