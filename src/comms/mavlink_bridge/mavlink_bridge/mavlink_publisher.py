@@ -20,9 +20,21 @@ from sensor_msgs.msg import (
     FluidPressure,  # SCALED_PRESSURE (depth)
 )
 from config_pkg.constants import Comms
+from custom_msgs.msg import PidTuning
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
 from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
+
+# MAVLink PID_TUNING sends one axis per message (axis, desired, achieved). ArduPilot axis IDs 0–5
+# map to roll, pitch, yaw, thrust/depth, then position/translation (vehicle-specific).
+_PID_TUNING_AXIS_TO_FIELDS = (
+    ("roll_des", "roll_ach"),
+    ("pitch_des", "pitch_ach"),
+    ("yaw_des", "yaw_ach"),
+    ("depth_des", "depth_ach"),
+    ("pos_x_des", "pos_x_ach"),
+    ("pos_y_des", "pos_y_ach"),
+)
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
 os.makedirs(log_dir, exist_ok=True)
@@ -147,12 +159,10 @@ class MavlinkBridgeSender(Node):
             Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
-        self.pid_tuning_desired_publisher = self.create_publisher(
-            Float32, "/pixhawk/PID_TUNING/desired", 10
-        )
-
-        self.pid_tuning_achieved_publisher = self.create_publisher(
-            Float32, "/pixhawk/PID_TUNING/achieved", 10
+        # Single message: all 6 controller pairs (desired vs achieved) for plotting.
+        self._pid_tuning = PidTuning()
+        self.pid_tuning_publisher = self.create_publisher(
+            PidTuning, "/pixhawk/PID_TUNING", 10
         )
 
         self.diagnostic_publisher = self.create_publisher(
@@ -250,7 +260,6 @@ class MavlinkBridgeSender(Node):
             "BATTERY_STATUS": 0,
             # "SCALED_PRESSURE2": 0,
             "MANUAL_CONTROL": 0,
-            "PID_TUNING": 0,
         }
         self.msg_type_counter_interval = 10
 
@@ -656,18 +665,34 @@ class MavlinkBridgeSender(Node):
         )
 
     def handle_pid_tuning(self, msg):
-        """Process PID_TUNING message and publish desired/achieved to ROS2."""
-        if not self.message_counter("PID_TUNING"):
-            return
+        """Map MAVLink PID_TUNING into custom_msgs/PidTuning (6 DoF × desired/achieved)."""
+        pt = self._pid_tuning
 
-        desired_msg = Float32()
-        achieved_msg = Float32()
+        # If the FC sends an extended PID_TUNING with all fields in one message, copy them.
+        if hasattr(msg, "roll_des") and hasattr(msg, "roll_ach"):
+            pt.roll_des = float(msg.roll_des)
+            pt.roll_ach = float(msg.roll_ach)
+            pt.pitch_des = float(getattr(msg, "pitch_des", 0.0))
+            pt.pitch_ach = float(getattr(msg, "pitch_ach", 0.0))
+            pt.yaw_des = float(getattr(msg, "yaw_des", 0.0))
+            pt.yaw_ach = float(getattr(msg, "yaw_ach", 0.0))
+            pt.depth_des = float(getattr(msg, "depth_des", 0.0))
+            pt.depth_ach = float(getattr(msg, "depth_ach", 0.0))
+            pt.pos_x_des = float(getattr(msg, "pos_x_des", 0.0))
+            pt.pos_x_ach = float(getattr(msg, "pos_x_ach", 0.0))
+            pt.pos_y_des = float(getattr(msg, "pos_y_des", 0.0))
+            pt.pos_y_ach = float(getattr(msg, "pos_y_ach", 0.0))
+        else:
+            # Standard MAVLink: axis + desired + achieved per message — merge into state.
+            axis = int(getattr(msg, "axis", 255))
+            des = float(getattr(msg, "desired", 0.0))
+            ach = float(getattr(msg, "achieved", 0.0))
+            if 0 <= axis < len(_PID_TUNING_AXIS_TO_FIELDS):
+                d_name, a_name = _PID_TUNING_AXIS_TO_FIELDS[axis]
+                setattr(pt, d_name, des)
+                setattr(pt, a_name, ach)
 
-        desired_msg.data = float(getattr(msg, "desired", 0.0))
-        achieved_msg.data = float(getattr(msg, "achieved", 0.0))
-
-        self.pid_tuning_desired_publisher.publish(desired_msg)
-        self.pid_tuning_achieved_publisher.publish(achieved_msg)
+        self.pid_tuning_publisher.publish(pt)
      
 
 

@@ -15,7 +15,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Distance.msg"
   "msg/Profile.msg"
-  DEPENDENCIES 
+  "msg/PidTuning.msg"
+  DEPENDENCIES
 )
 
 if(BUILD_TESTING)
