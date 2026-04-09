@@ -57,6 +57,29 @@ class ModeControlNode(Node):
         buttons = msg.buttons
         axes = msg.axes
 
+        setting_on = self.setting_safety_button_pressed(msg)
+
+        # Arm/disarm only while SETTING safety (Square) is held — not while MODE safety (Triangle) is held.
+        # JETSON layout uses the same physical D-pad Down for step_inputs_mode and for disarm; if we only
+        # updated prev_* inside the old `elif setting_safety` chain, debounce could go stale and disarm
+        # could fire when combining those inputs. Reset debounce whenever setting safety is released.
+        if setting_on:
+            if CONTROLLER_LAYOUT == "DESKTOP":
+                cur_arm = axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
+                cur_disarm = axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
+            else:
+                cur_arm = buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
+                cur_disarm = buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
+            if cur_arm and not self.prev_arm_button_state:
+                self.publish_arm_cmd(True)
+            if cur_disarm and not self.prev_disarm_button_state:
+                self.publish_arm_cmd(False)
+            self.prev_arm_button_state = cur_arm
+            self.prev_disarm_button_state = cur_disarm
+        else:
+            self.prev_arm_button_state = False
+            self.prev_disarm_button_state = False
+
         # 1. High Priority: Emergency Stop (Touchpad Button)
         if buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX_LEFT] == 1 or buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX_RIGHT] == 1:
             self.current_mode = "emergency_stop"
@@ -109,32 +132,14 @@ class ModeControlNode(Node):
                     and buttons[JoyControlMapping.MODE_SPARE_2_DPAD_BUTTON_IDX] == 1
                 )
             ):
-                # PID TUNING STEP INPUTS MODE
+                # PID TUNING STEP INPUTS MODE — default to MANUAL; step_inputs_mode publishes STAB/ALT/POSH
+                # when a tuning submode is active. Avoid STABILIZATION here then immediate MANUAL from
+                # step_inputs_mode (no submode), which can confuse ArduSub and look like a disarm.
                 self.current_mode = "step_inputs_mode"
-                self.pixhawk_mode = "STABILIZATION"
+                self.pixhawk_mode = "MANUAL"
 
-        # 3. Setting Control (Requires Setting Safety Button Pressed)
-        elif self.setting_safety_button_pressed(msg):
-            # 3.1. Arm Command
-            current_arm_button_state = (
-                axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
-                if CONTROLLER_LAYOUT == "DESKTOP"
-                else buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
-            )
-            if current_arm_button_state and not self.prev_arm_button_state:
-                self.publish_arm_cmd(True)
-            self.prev_arm_button_state = current_arm_button_state
-
-            # 3.2. Disarm Command
-            current_disarm_button_state = (
-                axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
-                if CONTROLLER_LAYOUT == "DESKTOP"
-                else buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
-            )
-            if current_disarm_button_state and not self.prev_disarm_button_state:
-                self.publish_arm_cmd(False)
-            self.prev_disarm_button_state = current_disarm_button_state
-
+        # 3. Setting Control (Requires Setting Safety Button Pressed) — arm/disarm handled above
+        elif setting_on:
             # 3.3. Stabilization Setting Toggle
             current_stabilization_button_state = (
                 axes[JoyControlMapping.SETTING_STABILIZATION_AXIS_IDX] == 1.0
