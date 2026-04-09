@@ -9,7 +9,7 @@ foxglove_bridge:
     # Poll graph/topics/services/params more often than default 5000ms so late-appearing
     # params (e.g. tuning/* after mavlink_publisher PID sync) show up without only relying
     # on reconnect. Studio may still cache the tree — disconnect/reconnect if params are missing.
-    max_update_ms: 1000
+    max_update_ms: 500
     # parametersSubscribe: live updates when params change (e.g. PID sync minutes after boot)
     capabilities:
       - clientPublish
