@@ -1,0 +1,19 @@
+{
+  "extends": "@foxglove/tsconfig/base",
+  "include": ["./src/**/*"],
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "lib": ["es2020"],
+    "target": "es2020",
+    "module": "CommonJS",
+
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "importHelpers": false,
+
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  }
+}

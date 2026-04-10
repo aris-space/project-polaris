@@ -1,0 +1,33 @@
+{
+  "name": "call-service-panel",
+  "displayName": "Call services panel",
+  "description": "Example panel that lets you call services",
+  "publisher": "Foxglove",
+  "homepage": "https://foxglove.dev",
+  "version": "0.0.1",
+  "license": "MIT",
+  "main": "./dist/extension.js",
+  "keywords": [],
+  "scripts": {
+    "build": "foxglove-extension build",
+    "foxglove:prepublish": "foxglove-extension build --mode production",
+    "lint:ci": "eslint --report-unused-disable-directives .",
+    "lint": "eslint --report-unused-disable-directives --fix .",
+    "local-install": "foxglove-extension install",
+    "package": "foxglove-extension package",
+    "pretest": "foxglove-extension pretest"
+  },
+  "devDependencies": {
+    "@foxglove/eslint-plugin": "2.0.0",
+    "@foxglove/extension": "2.17.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "create-foxglove-extension": "1.0.4",
+    "eslint": "9.15.0",
+    "prettier": "3.3.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-json-view": "1.21.3",
+    "typescript": "5.7.2"
+  }
+}
