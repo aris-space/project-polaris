@@ -98,6 +98,25 @@ function parseSectionIndex(path: readonly string[]): number | undefined {
   return Number(sectionMatch[1]);
 }
 
+function extractTopicFromMessagePath(messagePath: string | undefined): string {
+  if (!messagePath || !messagePath.startsWith("/")) {
+    return "";
+  }
+
+  const dotIndex = messagePath.indexOf(".");
+  const bracketIndex = messagePath.indexOf("[");
+  const filterIndex = messagePath.indexOf("{");
+
+  let firstSeparator = -1;
+  for (const index of [dotIndex, bracketIndex, filterIndex]) {
+    if (index !== -1 && (firstSeparator === -1 || index < firstSeparator)) {
+      firstSeparator = index;
+    }
+  }
+
+  return firstSeparator === -1 ? messagePath : messagePath.slice(0, firstSeparator);
+}
+
 export function defaultButtonContent(): ButtonContent[] {
   return [
     {
@@ -291,6 +310,12 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
       return;
     }
 
+    // Keep subscribe source as topic-only even if the messagepath picker returns a field path.
+    if (pathStr.includes("subJoyTopic")) {
+      draft.subJoyTopic = extractTopicFromMessagePath(String(value));
+      return;
+    }
+
     if (pathStr.includes("buttonsPreset")) {
       const preset = value === "empty" ? "empty" : "uuv-settings";
       draft.buttonsPreset = preset;
@@ -385,15 +410,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
   if (config.dataSource === "sub-joy-topic") {
     dataSourceFields.subJoyTopic = {
       label: "Subsc. Joy Topic",
-      input: "select",
+      input: "messagepath",
       value: config.subJoyTopic,
       help: "Select ROS Joy topic to monitor",
-      options: (topics ?? [])
-        .filter((topic) => topic.datatype === "sensor_msgs/msg/Joy")
-        .map((topic) => ({
-          label: topic.name,
-          value: topic.name,
-        })),
+      validTypes: ["sensor_msgs/msg/Joy"],
     };
   }
 
@@ -536,15 +556,18 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Data Source",
       fields: dataSourceFields,
     },
-    publish: {
-      label: "Publish",
-      fields: publishFields,
-    },
     display: {
       label: "Display",
       fields: displayFields,
     },
   };
+
+  if (config.dataSource !== "sub-joy-topic") {
+    settings.publish = {
+      label: "Publish",
+      fields: publishFields,
+    };
+  }
 
   if (config.dataSource === "buttons") {
     settings.buttons = {

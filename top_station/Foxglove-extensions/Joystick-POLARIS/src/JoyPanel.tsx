@@ -68,6 +68,25 @@ function buildKeyMap(mapping: Record<string, RawKbMap>): Map<string, KbMap> {
   return keyMap;
 }
 
+function extractTopicFromMessagePath(messagePath: string | undefined): string {
+  if (!messagePath || !messagePath.startsWith("/")) {
+    return "";
+  }
+
+  const dotIndex = messagePath.indexOf(".");
+  const bracketIndex = messagePath.indexOf("[");
+  const filterIndex = messagePath.indexOf("{");
+
+  let firstSeparator = -1;
+  for (const index of [dotIndex, bracketIndex, filterIndex]) {
+    if (index !== -1 && (firstSeparator === -1 || index < firstSeparator)) {
+      firstSeparator = index;
+    }
+  }
+
+  return firstSeparator === -1 ? messagePath : messagePath.slice(0, firstSeparator);
+}
+
 function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
   const [topics, setTopics] = useState<undefined | Immutable<Topic[]>>();
   const [messages, setMessages] = useState<undefined | Immutable<MessageEvent[]>>();
@@ -216,7 +235,12 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
   // Or subscribe to the relevant topic when in a recorded session
   useEffect(() => {
     if (config.dataSource === "sub-joy-topic") {
-      context.subscribe([config.subJoyTopic]);
+      const topicName = extractTopicFromMessagePath(config.subJoyTopic);
+      if (topicName) {
+        context.subscribe([topicName]);
+      } else {
+        context.unsubscribeAll();
+      }
     } else {
       context.unsubscribeAll();
     }
@@ -751,7 +775,7 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
           gap: `${8 * config.uiScale}px`,
         }}
       >
-        {config.dataSource !== "buttons" ? (
+        {config.dataSource !== "buttons" && config.dataSource !== "sub-joy-topic" ? (
           <FormGroup sx={{ margin: 0 }}>
             <FormControlLabel
               control={<Switch checked={config.inputEnabled} onChange={handleInputEnabledSwitch} />}
@@ -768,6 +792,19 @@ function JoyPanel({ context }: { context: PanelExtensionContext }): JSX.Element 
             onRelease={handleVisualButtonRelease}
             inputEnabled={config.inputEnabled}
           />
+        ) : null}
+        {config.dataSource === "sub-joy-topic" ? (
+          <div
+            style={{
+              padding: `${8 * config.uiScale}px ${12 * config.uiScale}px`,
+              borderRadius: `${6 * config.uiScale}px`,
+              fontFamily: "monospace",
+              fontSize: `${14 * config.uiScale}px`,
+              color: "#ddd",
+            }}
+          >
+            Subscribed topic: {extractTopicFromMessagePath(config.subJoyTopic) || "(none selected)"}
+          </div>
         ) : null}
         {config.layoutName !== "rawjoy" && config.layoutName !== "empty" ? (
           <GamepadView
