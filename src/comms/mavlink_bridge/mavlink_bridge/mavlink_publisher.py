@@ -131,6 +131,17 @@ class MavlinkBridgeSender(Node):
 
         self.last_heartbeat_time = None
 
+        '''TEST: Requesting data stream for debugging'''
+        self.get_logger().warn("Requesting POSITION_TARGET_LOCAL_NED message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system, self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL, 0,
+            85,       # The MAVLink message ID for POSITION_TARGET_LOCAL_NED
+            100000,   # Interval in microseconds (10Hz)
+            0, 0, 0, 0, 0 # Unused parameters
+        )
+        self.get_logger().warn("POSITION_TARGET_LOCAL_NED request sent (interval=100ms)")
+
         self.heartbeat_publisher = self.create_publisher(
             State, "/pixhawk/heartbeat", 10
         )
