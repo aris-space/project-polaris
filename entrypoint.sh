@@ -176,4 +176,18 @@ fi
 export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/shm_profile.xml
 
 # 5) Execute command passed by docker/compose.
+cat <<'NAUTICAL_ASCII'
+[entrypoint] ---------------------------------------------------------------
+                 |    |    |
+                )_)  )_)  )_)
+               )___))___))___)\
+              )____)____)_____)\\
+            _____|____|____|____\\__
+    --------\                   /---------
+      ^^^^^ ^^^^^^^^^^^^^^^^^^^^^
+        ^^^^      ^^^^     ^^^    ^^  ^
+             ^^^^      ^^^
+[entrypoint] ---------------------------------------------------------------
+NAUTICAL_ASCII
+echo "[entrypoint] Initialization complete. Launching command: $*"
 exec "$@"

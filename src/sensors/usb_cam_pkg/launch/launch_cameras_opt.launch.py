@@ -27,7 +27,7 @@ def generate_launch_description():
 
     # Camera 1 Node
     cam_front = Node(
-        package='gscam2',
+        package='gscam',
         executable='gscam_main',
         name='gscam_front',
         namespace='front',
@@ -42,7 +42,7 @@ def generate_launch_description():
 
     # Camera 2 Node
     cam_tube = Node(
-        package='gscam2',
+        package='gscam',
         executable='gscam_main',
         name='gscam_tube',
         namespace='tube',
