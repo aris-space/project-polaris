@@ -1,6 +1,6 @@
 services:
   jetson-container:
-    image: ghcr.io/aris-space/project-polaris-docker:runtime-v1.0.0
+    image: ghcr.io/aris-space/project-polaris-docker:latest-arm64-dev
     container_name: jetson-container
     privileged: true
     network_mode: host
