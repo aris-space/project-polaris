@@ -45,7 +45,7 @@
         # 3) 2: Use UTCTime from the host device.
         # Note: Ensure "UTC Time" or "Sample Time Fine" is selected in MT Manager under Device Settings > Output Configurations, 
         # or you could also set 'enable_deviceConfig: true' for once to configure output.
-        time_option: 0
+        time_option: 2
 
         # Logging Configuration
         # ---------------------
@@ -144,7 +144,9 @@
         pub_pressure: false
         pub_accelerationhr: false      #High Rate Data Acceleration, when this is true, set enable_high_rate to true as well
         pub_angular_velocity_hr: false #High Rate Data Angular Velocity,  when this is true, set enable_high_rate to true as well
-        pub_transform: true
+        # false: driver must NOT publish world->imu_link; that conflicts with static base_link->imu_link
+        # in xsens_mti_node.launch.py (robot_localization / tf2 need one tree).
+        pub_transform: false
         pub_status: true
         pub_twist: false         # For GNSS/INS Version of MTI only
         pub_gnss: false          # For GNSS/INS Version of MTI only

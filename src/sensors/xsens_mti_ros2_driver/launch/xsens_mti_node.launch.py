@@ -43,4 +43,35 @@ def generate_launch_description():
             )
     ld.add_action(xsens_mti_node)
 
+    # Static base_link -> imu_link (mounting only). Keep xsens pub_transform: false so the driver
+    # does not also publish world -> imu_link.
+    # DONE: Replace translation/rotation with measured IMU mounting values. From base_link TO imu_link
+    static_tf_base_to_imu = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_base_to_imu",
+        arguments=[
+            "--x",
+            "0.103",
+            "--y",
+            "0.005",
+            "--z",
+            "0.008",
+            "--roll",
+            "0.0",
+            "--pitch",
+            "0.0",
+            "--yaw",
+            "1.57079633",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            "imu_link",
+        ],
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+    ld.add_action(static_tf_base_to_imu)
+
     return ld

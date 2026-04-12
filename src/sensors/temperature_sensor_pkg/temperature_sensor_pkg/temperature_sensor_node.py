@@ -12,15 +12,19 @@ class Temperature_sensor(Node):
     def __init__(self):
         super().__init__("temperature_sensor_node")
         self.publisher_ = self.create_publisher(
-            Float32MultiArray, "/temperature_sensors", 10
+            Float32MultiArray,
+            "/temperature_sensors",
+            10,
         )
 
         self.diagnostic_publisher = self.create_publisher(
-            DiagnosticArray, "/diagnostics", 10
+            DiagnosticArray,
+            "/diagnostics",
+            10,
         )
 
-        self.warn_level = 50
-        self.error_level = 60
+        self.warn_level = 55
+        self.error_level = 65
 
         self.get_logger().info(
             "Temperature Sensor Node started. warn_level=%.1f°C, error_level=%.1f°C"
@@ -89,38 +93,41 @@ class Temperature_sensor(Node):
 
             diag_msg = DiagnosticArray()
             diag_msg.header.stamp = self.get_clock().now().to_msg()
+
+            summary_level = DiagnosticStatus.OK
+            summary_message = "All sensors OK."
+            status_values = []
             
-            for sensor_i, temp in enumerate(values):
+            for sensor_i, temp_i in enumerate(values):
                 pos = sensors_with_position.get(sensor_i)
+        
+                status_values.append(KeyValue(key=f"sensor_{sensor_i}_{pos}_temp", value=f"{temp_i:.2f}"))              
+                current_sensor_i_level = DiagnosticStatus.OK
+                msg_i = ""
 
-                status = DiagnosticStatus()
-                status.name = f"Sensor {sensor_i} ({pos})"  # Give it a unique name
-                status.hardware_id = f"ds18b20_{sensor_i}"  # Unique ID
-                level = DiagnosticStatus.OK
-                message = "OK"
+                if temp_i <= DISCONNECTED_TEMP:
+                    current_sensor_i_level = DiagnosticStatus.ERROR
+                    msg_i = f"Sensor {sensor_i} ({pos}) disconnected (-127°C)."
 
-                # Add the raw data as a KeyValue pair
-                status.values = [KeyValue(key="temp_c", value=f"{temp:.2f}")]              
+                elif temp_i >= self.error_level:
+                    current_sensor_i_level = DiagnosticStatus.ERROR
+                    msg_i = f"Sensor {sensor_i} ({pos}) is CRITICAL: {temp_i}°C. Throttling ESCs now."
 
-                if temp <= DISCONNECTED_TEMP:
-                    level = DiagnosticStatus.ERROR
-                    message = f"Sensor {sensor_i} ({pos}) disconnected (-127°C)."
-                    self.get_logger().error(message)
+                elif temp_i >= self.warn_level:
+                    current_sensor_i_level = DiagnosticStatus.WARN
+                    msg_i = f"Sensor {sensor_i} ({pos}) is HOT: {temp_i}°C."
 
-                elif temp >= self.error_level:
-                    level = DiagnosticStatus.ERROR
-                    message = f"Sensor {sensor_i} ({pos}) is CRITICAL: {temp}°C. Throttling ESCs now."
-                    self.get_logger().error(message)
+                if current_sensor_i_level > summary_level:
+                    summary_level = current_sensor_i_level
+                    summary_message = msg_i
 
-                elif temp >= self.warn_level:
-                    level = DiagnosticStatus.WARN
-                    message = f"Sensor {sensor_i} ({pos}) is HOT: {temp}°C."
-                    self.get_logger().warning(message)
+            summary_status = DiagnosticStatus()
+            summary_status.name = "Tube Temperature Summary"
+            summary_status.level = summary_level
+            summary_status.message = summary_message
+            summary_status.values = status_values
 
-                status.level = level
-                status.message = message
-                diag_msg.status.append(status)
-
+            diag_msg.status.append(summary_status)
             self.diagnostic_publisher.publish(diag_msg)
 
 

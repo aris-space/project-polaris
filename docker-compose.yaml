@@ -27,6 +27,7 @@ services:
       - ./recordings:/ros2_ws/recordings
       - /dev:/dev
       - ./mavlink_logs:/root/polaris_logs/
+      - /home/polaris5:/home/polaris5
     working_dir: /ros2_ws
     entrypoint: [ "/bin/bash", "/ros2_ws/entrypoint.sh" ]
     stdin_open: true
