@@ -64,7 +64,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            cam_front  # ,
-            # cam_tube
+            cam_front  ,
+            cam_tube
         ]
     )
