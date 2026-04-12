@@ -46,6 +46,8 @@ def generate_launch_description():
     ntrip_version_arg_value = LaunchConfiguration("ntrip_version")
     ntrip_username_arg_value = LaunchConfiguration("ntrip_username")
     ntrip_password_arg_value = LaunchConfiguration("ntrip_password")
+    use_navsat_transform_arg_value = LaunchConfiguration("use_navsat_transform")
+    gps_fix_topic_arg_value = LaunchConfiguration("gps_fix_topic")
 
     # Reuse launch args so local actions honor CLI overrides.
     respawn = respawn_arg_value
@@ -156,8 +158,9 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "use_navsat_transform": "false",
+            "use_navsat_transform": use_navsat_transform_arg_value,
             "use_global_ekf": "true",
+            "gps_fix_topic": gps_fix_topic_arg_value,
         }.items(),
         condition=IfCondition(LaunchConfiguration("use_ekf_localization")),
     )
@@ -265,6 +268,22 @@ def generate_launch_description():
                 description=(
                     "If true, launch robot_localization EKF stack. Pressure depth is always started "
                     "via pressure_pose_pkg (see p_surface_pa)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "use_navsat_transform",
+                default_value="true",
+                description=(
+                    "Forwarded to ekf_localization.launch.py. When true, navsat_transform_node runs "
+                    "and publishes /odometry/gps for ekf_global. Only when use_ekf_localization is true."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "gps_fix_topic",
+                default_value="/gps/selected",
+                description=(
+                    "NavSatFix topic remapped to navsat_transform gps/fix (selector: GNSS + SBL). "
+                    "Override e.g. /fix if your stack publishes fixes only there."
                 ),
             ),
             DeclareLaunchArgument(
