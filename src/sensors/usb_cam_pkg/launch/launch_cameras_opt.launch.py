@@ -1,27 +1,38 @@
 import os
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from config_pkg.constants import Ports
 
 def generate_launch_description():
     # Helper to build the GStreamer string for Jetson Hardware Acceleration
-    def get_gst_config(device_path):
+    def get_gst_config_tube(device_path):
         return (
             f"v4l2src device={device_path} do-timestamp=true ! "
-            "image/jpeg, width=1280, height=720, framerate=30/1 ! "
+            "image/jpeg, width=1280, height=720 ! "
             "nvv4l2decoder mjpeg=1 ! "
             "nvvidconv ! "
             "video/x-raw, format=BGRx ! "
             "videoconvert"
         )
+    
+    def get_gst_config_front(device_path):
+        return (
+            f"v4l2src device={device_path} do-timestamp=true ! "
+            "image/jpeg, width=1920, height=1080 ! " 
+            "nvv4l2decoder mjpeg=1 ! "
+            "nvvidconv ! "
+            "video/x-raw, format=BGR ! "
+            "videoconvert"
+        )
 
     # Camera 1 Node
-    cam_left = Node(
+    cam_front = Node(
         package='gscam2',
         executable='gscam_main',
         name='gscam_front',
         namespace='front',
         parameters=[{
-            'gscam_config': get_gst_config('/dev/video4'),
+            'gscam_config': get_gst_config_front(Ports.USB_CAM_FRONT_PORT),
             'camera_name': 'front_camera',
             'frame_id': 'camera_front_link',
             'image_encoding': 'rgb8',
@@ -30,21 +41,21 @@ def generate_launch_description():
     )
 
     # Camera 2 Node
-    cam_right = Node(
+    cam_tube = Node(
         package='gscam2',
         executable='gscam_main',
-        name='gscam_top',
-        namespace='top',
+        name='gscam_tube',
+        namespace='tube',
         parameters=[{
-            'gscam_config': get_gst_config('/dev/video0'),
-            'camera_name': 'top_camera',
-            'frame_id': 'camera_top_link',
+            'gscam_config': get_gst_config_tube(Ports.USB_CAM_TUBE_PORT),
+            'camera_name': 'tube_camera',
+            'frame_id': 'camera_tube_link',
             'image_encoding': 'rgb8',
             'sync_sink': False
         }]
     )
 
     return LaunchDescription([
-        cam_left,
-        cam_right
+        cam_front#,
+        #cam_tube
     ])
