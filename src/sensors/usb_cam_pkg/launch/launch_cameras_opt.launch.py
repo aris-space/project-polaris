@@ -13,7 +13,8 @@ def generate_launch_description():
             "nvv4l2decoder mjpeg=1 ! "
             "nvvidconv ! "
             "video/x-raw, format=BGRx ! "
-            "videoconvert"
+            "videoconvert ! "
+            "video/x-raw, format=RGB"
         )
 
     def get_gst_config_front(device_path):
@@ -22,8 +23,9 @@ def generate_launch_description():
             "image/jpeg, width=1920, height=1080 ! "
             "nvv4l2decoder mjpeg=1 ! "
             "nvvidconv ! "
-            "video/x-raw, format=BGR ! "
-            "videoconvert"
+            "video/x-raw, format=BGRx ! "
+            "videoconvert ! "
+            "video/x-raw, format=RGB"
         )
 
     # Camera 1 Node
