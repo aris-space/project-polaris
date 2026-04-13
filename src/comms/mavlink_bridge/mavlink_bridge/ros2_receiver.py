@@ -60,6 +60,11 @@ class MavlinkBridgeReceiver(Node):
         self.get_logger().info(
             f"Heartbeat received from system {self.port.target_system}"
         )
+        # Make companion telemetry appear under vehicle sysid in QGC tools.
+        self.port.mav.srcSystem = self.port.target_system
+        self.port.mav.srcComponent = (
+            mavutil.mavlink.MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY
+        )
 
         # Test ODOMETRY stream setup
         self._odom_pose_cov = [0.0] * 21  # <-- Change NaN to 0.0!
@@ -76,6 +81,7 @@ class MavlinkBridgeReceiver(Node):
         self._odom_start_time = time.time()
         self._odom_step_interval_s = 0.3
         self._odom_yaw_steps_deg = [0, 120, -120, 60, -60, 170, -170, 30, -30]
+        self._last_odom_log_t = 0.0
         
         # Track resets
         self._last_step_idx = 0
@@ -331,11 +337,10 @@ class MavlinkBridgeReceiver(Node):
 
     def odometry_test_cb(self):
         t = time.time() - self._odom_start_time
-        
-        # Smoothly sweep yaw from -45 to +45 degrees every 5 seconds
-        amplitude = math.radians(45) # 45 degrees peak
-        period = 5.0 # 5 seconds for a full sweep
-        yaw = amplitude * math.sin((2 * math.pi / period) * t)
+
+        # Abrupt heading jumps make acceptance/testing easy to spot.
+        step_idx = int(t / self._odom_step_interval_s) % len(self._odom_yaw_steps_deg)
+        yaw = math.radians(self._odom_yaw_steps_deg[step_idx])
 
         q = self.yaw_to_quat(yaw)
 
@@ -359,6 +364,12 @@ class MavlinkBridgeReceiver(Node):
             mavutil.mavlink.MAV_ESTIMATOR_TYPE_VISION,  
             100,                                        
         )
+        if t - self._last_odom_log_t >= 1.0:
+            self.get_logger().info(
+                f"Sending ODOMETRY yaw={math.degrees(yaw):.1f}deg "
+                f"src={self.port.mav.srcSystem}/{self.port.mav.srcComponent}"
+            )
+            self._last_odom_log_t = t
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
