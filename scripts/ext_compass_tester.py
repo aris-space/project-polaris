@@ -5,8 +5,8 @@ import os
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 
-# --- connect to Pixhawk ---
-master = mavutil.mavlink_connection("/dev/ttyTHS1", baud=57600)
+# --- connect to MAVLink endpoint ---
+master = mavutil.mavlink_connection("udpout:192.168.194.31:14550")
 master.wait_heartbeat()
 print(f"Heartbeat from system={master.target_system} component={master.target_component}")
 
