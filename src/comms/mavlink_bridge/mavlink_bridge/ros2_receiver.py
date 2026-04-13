@@ -61,20 +61,27 @@ class MavlinkBridgeReceiver(Node):
             f"Heartbeat received from system {self.port.target_system}"
         )
 
-        # Test ODOMETRY stream to validate external yaw acceptance on the FC path.
-        self._odom_pose_cov = [float("nan")] * 21
-        self._odom_vel_cov = [float("nan")] * 21
+        # Test ODOMETRY stream setup
+        self._odom_pose_cov = [0.0] * 21  # <-- Change NaN to 0.0!
         self._odom_pose_cov[0] = 0.01
         self._odom_pose_cov[6] = 0.01
         self._odom_pose_cov[11] = 0.01
         self._odom_pose_cov[15] = 0.05
         self._odom_pose_cov[18] = 0.05
         self._odom_pose_cov[20] = 0.05
+        
+        # Velocity covariance: First element NaN means "ignore velocities"
+        self._odom_vel_cov = [float("nan")] + [0.0] * 20 
+        
         self._odom_start_time = time.time()
         self._odom_step_interval_s = 0.3
         self._odom_yaw_steps_deg = [0, 120, -120, 60, -60, 170, -170, 30, -30]
-        self._odometry_test_timer = self.create_timer(0.1, self.odometry_test_cb)
+        
+        # Track resets
+        self._last_step_idx = 0
+        self._odom_reset_counter = 0
 
+        self._odometry_test_timer = self.create_timer(0.1, self.odometry_test_cb)
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
             OverrideRCIn,
@@ -323,34 +330,28 @@ class MavlinkBridgeReceiver(Node):
         return [cy, 0.0, 0.0, sy]
 
     def odometry_test_cb(self):
-        """
-        Periodically sends abrupt yaw-step ODOMETRY messages for integration testing.
-        """
         t = time.time() - self._odom_start_time
-        step_idx = int(t / self._odom_step_interval_s) % len(self._odom_yaw_steps_deg)
-        yaw_deg = self._odom_yaw_steps_deg[step_idx]
-        yaw = math.radians(yaw_deg)
+        
+        # Smoothly sweep yaw from -45 to +45 degrees every 5 seconds
+        amplitude = math.radians(45) # 45 degrees peak
+        period = 5.0 # 5 seconds for a full sweep
+        yaw = amplitude * math.sin((2 * math.pi / period) * t)
+
         q = self.yaw_to_quat(yaw)
 
         self.port.mav.odometry_send(
-            int(time.time() * 1e6),                     # time_usec
-            mavutil.mavlink.MAV_FRAME_BODY_FRD,         # frame_id
-            mavutil.mavlink.MAV_FRAME_BODY_FRD,         # child_frame_id
-            0.0,
-            0.0,
-            0.0,                                        # x, y, z
-            q,                                          # quaternion [w, x, y, z]
-            0.0,
-            0.0,
-            0.0,                                        # vx, vy, vz
-            0.0,
-            0.0,
-            0.0,                                        # rollspeed, pitchspeed, yawspeed
-            self._odom_pose_cov,                        # pose covariance
-            self._odom_vel_cov,                         # velocity covariance
-            0,                                          # reset_counter
-            mavutil.mavlink.MAV_ESTIMATOR_TYPE_VISION,  # estimator_type
-            100,                                        # quality
+            int(time.time() * 1e6),                     
+            mavutil.mavlink.MAV_FRAME_VISION_NED,       
+            mavutil.mavlink.MAV_FRAME_BODY_FRD,         
+            0.0, 0.0, 0.0,                              
+            q,                                          
+            0.0, 0.0, 0.0,                              
+            0.0, 0.0, 0.0,                              
+            self._odom_pose_cov,                        
+            self._odom_vel_cov,                         
+            0, # No need for reset counter, the motion is continuous                             
+            mavutil.mavlink.MAV_ESTIMATOR_TYPE_VISION,  
+            100,                                        
         )
 
     """--------------------------------------------- main function ---------------------------------------------"""
