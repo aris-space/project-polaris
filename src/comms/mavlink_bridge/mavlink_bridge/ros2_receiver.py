@@ -339,9 +339,15 @@ class MavlinkBridgeReceiver(Node):
 
         q = self.yaw_to_quat(yaw)
 
+        frame_id = getattr(
+            mavutil.mavlink,
+            "MAV_FRAME_VISION_NED",
+            mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+        )
+
         self.port.mav.odometry_send(
             int(time.time() * 1e6),                     
-            mavutil.mavlink.MAV_FRAME_VISION_NED,       
+            frame_id,
             mavutil.mavlink.MAV_FRAME_BODY_FRD,         
             0.0, 0.0, 0.0,                              
             q,                                          
