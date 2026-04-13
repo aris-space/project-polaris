@@ -338,9 +338,10 @@ class MavlinkBridgeReceiver(Node):
     def odometry_test_cb(self):
         t = time.time() - self._odom_start_time
 
-        # Abrupt heading jumps make acceptance/testing easy to spot.
-        step_idx = int(t / self._odom_step_interval_s) % len(self._odom_yaw_steps_deg)
-        yaw = math.radians(self._odom_yaw_steps_deg[step_idx])
+        # Smoothly sweep yaw from -45 to +45 degrees every 5 seconds.
+        amplitude = math.radians(45)
+        period = 5.0
+        yaw = amplitude * math.sin((2 * math.pi / period) * t)
 
         q = self.yaw_to_quat(yaw)
 
