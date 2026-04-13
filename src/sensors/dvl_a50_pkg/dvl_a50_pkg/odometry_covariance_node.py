@@ -1,30 +1,34 @@
 """
 Subscribes to /sensors/dvl/odometry and republishes to /sensors/dvl/odometry_cov
-with dynamically computed twist covariance.
+with twist covariance for robot_localization.
 
-DVL-A50 accuracy variants:
-  - "standard":    ±1.01% of measured speed  (sigma_scale = 0.0101)
-  - "performance": ±0.1%  of measured speed  (sigma_scale = 0.001)
+Default (twist_linear_covariance_model == "stationary_tep"):
+  When bottom lock is held: constant diagonal linear twist variances from pool
+  stationary_02 analysis (lock-masked, header.stamp) — see
+  measurement_noise_constants.py and recordings/stationary_tep_stats.json.
+  Those base variances are **not** edited when tuning; use
+  lock_linear_variance_bias_drift_inflation_factor (default > 1) to widen the
+  covariance slightly for slow DVL bias / drift seen in long stationary runs.
 
-Covariance model:
-  - σ_xy = max(σ_min, σ_scale * |v|)   speed-dependent horizontal std dev
-  - σ_z  = 2 * σ_xy                    vertical is noisier
-  - variance = σ²                       placed on twist covariance diagonal
-  - angular covariance = large variance  DVL does not measure angular rate
+Alternative (twist_linear_covariance_model == "speed_dependent"):
+  DVL-A50 datasheet-style σ proportional to speed (standard / performance variant).
 
-Quality-based inflation:
-  - Subscribes to /sensors/dvl/velocity for the beam_velocities_valid flag
-  - When bottom lock is lost: covariance inflated to no_lock_variance (large m²/s²)
-    so the EKF effectively ignores the measurement
-  - When bottom lock is held: normal speed-dependent covariance
-  - If velocity messages are stale for longer than velocity_stale_timeout_sec,
-    treat as no lock
+When bottom lock is lost or velocity topic is stale: linear variances set to
+no_lock_variance (large m²/s²) so the EKF effectively ignores the update.
 
 Parameters:
-    dvl_variant        (string): "standard" or "performance"        (default: "performance")
-    no_lock_variance   (double): Variance when bottom lock lost [m²/s²] (default: 1e6)
-    angular_covariance (double): Angular rate variance              (default: 1000000.0)
-    velocity_stale_timeout_sec (double): lock flag timeout [s]      (default: 0.5)
+    twist_linear_covariance_model: "stationary_tep" | "speed_dependent"
+    dvl_variant        (string): used only for speed_dependent mode
+    no_lock_variance   (double): Variance when no lock [m²/s²] (default: 1e6)
+    lock_variance_vx   (double): override stationary vx variance when model is stationary_tep
+    lock_variance_vy   (double): override stationary vy variance
+    lock_variance_vz   (double): override stationary vz variance (before floor)
+    lock_variance_vz_floor (double): max(raw vz variance, floor); set 0 to disable
+    lock_linear_variance_bias_drift_inflation_factor (double): multiply vx/vy/vz
+        lock variances in stationary_tep only (default 1.15); base lock_variance_*
+        and constants file stay the pure stationary sample values.
+    angular_covariance (double): Angular rate variance (unused by DVL)
+    velocity_stale_timeout_sec (double): lock flag timeout [s] (default: 0.5)
 """
 
 
@@ -34,6 +38,13 @@ import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from marine_acoustic_msgs.msg import Dvl
+
+from dvl_a50_pkg.measurement_noise_constants import (
+    DVL_LOCK_LINEAR_VARIANCE_X_M2_S2,
+    DVL_LOCK_LINEAR_VARIANCE_Y_M2_S2,
+    DVL_LOCK_LINEAR_VARIANCE_Z_RAW_M2_S2,
+    DEFAULT_LOCK_LINEAR_VARIANCE_Z_FLOOR_M2_S2,
+)
 
 # DVL-A50 accuracy specs from Water Linked
 DVL_VARIANTS = {
@@ -53,10 +64,31 @@ class OdometryCovarianceNode(Node):
     def __init__(self):
         super().__init__("dvl_odometry_covariance")
 
+        self.declare_parameter("twist_linear_covariance_model", "stationary_tep")
         self.declare_parameter("dvl_variant", "performance")
-        self.declare_parameter("no_lock_variance", 1000000.0)
+        self.declare_parameter("no_lock_variance", 1.0e6)
+        self.declare_parameter("lock_variance_vx", DVL_LOCK_LINEAR_VARIANCE_X_M2_S2)
+        self.declare_parameter("lock_variance_vy", DVL_LOCK_LINEAR_VARIANCE_Y_M2_S2)
+        self.declare_parameter("lock_variance_vz", DVL_LOCK_LINEAR_VARIANCE_Z_RAW_M2_S2)
+        self.declare_parameter(
+            "lock_variance_vz_floor", DEFAULT_LOCK_LINEAR_VARIANCE_Z_FLOOR_M2_S2
+        )
+        self.declare_parameter(
+            "lock_linear_variance_bias_drift_inflation_factor",
+            1.15,
+        )
         self.declare_parameter("angular_covariance", 1000000.0)
         self.declare_parameter("velocity_stale_timeout_sec", 0.5)
+
+        self._cov_model = (
+            self.get_parameter("twist_linear_covariance_model").value or "stationary_tep"
+        ).strip().lower()
+        if self._cov_model not in ("stationary_tep", "speed_dependent"):
+            self.get_logger().error(
+                f"Unknown twist_linear_covariance_model '{self._cov_model}', "
+                "using 'stationary_tep'."
+            )
+            self._cov_model = "stationary_tep"
 
         variant = self.get_parameter("dvl_variant").value
         if variant not in DVL_VARIANTS:
@@ -69,7 +101,23 @@ class OdometryCovarianceNode(Node):
 
         self.sigma_scale = DVL_VARIANTS[variant]["sigma_scale"]
         self.sigma_min = DVL_VARIANTS[variant]["sigma_min"]
-        self.no_lock_var = self.get_parameter("no_lock_variance").value
+        self.no_lock_var = float(self.get_parameter("no_lock_variance").value)
+        self._lock_var_vx = float(self.get_parameter("lock_variance_vx").value)
+        self._lock_var_vy = float(self.get_parameter("lock_variance_vy").value)
+        self._lock_var_vz_raw = float(self.get_parameter("lock_variance_vz").value)
+        self._lock_var_vz_floor = float(
+            self.get_parameter("lock_variance_vz_floor").value
+        )
+        self._lock_bias_drift_inflation = float(
+            self.get_parameter(
+                "lock_linear_variance_bias_drift_inflation_factor"
+            ).value
+        )
+        if self._lock_bias_drift_inflation <= 0.0:
+            self.get_logger().warning(
+                "lock_linear_variance_bias_drift_inflation_factor <= 0; using 1.0"
+            )
+            self._lock_bias_drift_inflation = 1.0
         self.ang_cov = self.get_parameter("angular_covariance").value
         self.velocity_stale_timeout_sec = (
             self.get_parameter("velocity_stale_timeout_sec").value
@@ -96,11 +144,40 @@ class OdometryCovarianceNode(Node):
             10,
         )
 
+        vxv, vyv, vzv = self._stationary_lock_linear_variances_effective()
         self.get_logger().info(
-            f"DVL covariance injector: variant={variant}, "
-            f"sigma_scale={self.sigma_scale}, sigma_min={self.sigma_min}, "
+            f"DVL odometry_cov: model={self._cov_model}, "
             f"no_lock_variance={self.no_lock_var}, "
             f"velocity_stale_timeout_sec={self.velocity_stale_timeout_sec}"
+            + (
+                f", stationary_tep: base_lock_var_vx_vy_vz=({self._lock_var_vx:g},"
+                f"{self._lock_var_vy:g},{self._effective_lock_vz_variance():g}), "
+                f"bias_drift_inflation={self._lock_bias_drift_inflation:g}, "
+                f"effective_lock_var_vx_vy_vz=({vxv:g},{vyv:g},{vzv:g})"
+                if self._cov_model == "stationary_tep"
+                else ""
+            )
+            + (
+                f", speed_dep: variant={variant}, sigma_scale={self.sigma_scale}"
+                if self._cov_model == "speed_dependent"
+                else ""
+            )
+        )
+
+    def _effective_lock_vz_variance(self) -> float:
+        z = self._lock_var_vz_raw
+        f = self._lock_var_vz_floor
+        if f > 0.0:
+            return max(z, f)
+        return z
+
+    def _stationary_lock_linear_variances_effective(self) -> tuple[float, float, float]:
+        """Vx, Vy, Vz variances [m²/s²] for stationary_tep after vz floor and drift inflation."""
+        inf = self._lock_bias_drift_inflation
+        return (
+            self._lock_var_vx * inf,
+            self._lock_var_vy * inf,
+            self._effective_lock_vz_variance() * inf,
         )
 
     def velocity_callback(self, msg: Dvl):
@@ -123,6 +200,11 @@ class OdometryCovarianceNode(Node):
             cov[0] = self.no_lock_var
             cov[7] = self.no_lock_var
             cov[14] = self.no_lock_var
+        elif self._cov_model == "stationary_tep":
+            evx, evy, evz = self._stationary_lock_linear_variances_effective()
+            cov[0] = evx
+            cov[7] = evy
+            cov[14] = evz
         else:
             vx = msg.twist.twist.linear.x
             vy = msg.twist.twist.linear.y
@@ -132,9 +214,9 @@ class OdometryCovarianceNode(Node):
             sigma_xy = max(self.sigma_min, self.sigma_scale * speed)
             sigma_z = 2.0 * sigma_xy
 
-            cov[0] = sigma_xy * sigma_xy     # vx variance
-            cov[7] = sigma_xy * sigma_xy     # vy variance
-            cov[14] = sigma_z * sigma_z      # vz variance
+            cov[0] = sigma_xy * sigma_xy
+            cov[7] = sigma_xy * sigma_xy
+            cov[14] = sigma_z * sigma_z
 
         cov[21] = self.ang_cov   # wx — not available
         cov[28] = self.ang_cov   # wy — not available

@@ -244,8 +244,12 @@
         # Sensor Standard Deviation (Optional)
         # ------------------------------------
         # Override the covariance matrix in sensor_msgs/Imu and sensor_msgs/MagneticField messages:
-        linear_acceleration_stddev: [1.05e-3, 1.05e-3, 1.05e-3] # [m/s^2] Standard deviation for linear acceleration
-        angular_velocity_stddev: [3.19e-3, 3.19e-3, 3.19e-3]   # [rad/s] Standard deviation for angular velocity
+        # Gyro std: sqrt(sample variance) stationary_02 lock-masked (header.stamp) — see
+        # dvl_a50_pkg/measurement_noise_constants.py (IMU block) / recordings/stationary_tep_stats.json.
+        # Local EKF fuses angular velocity only (ekf_local.yaml imu0_config).
+        # Accel: same run; not fused in local EKF but kept for REP-145 / downstream.
+        linear_acceleration_stddev: [1.4372e-2, 4.9542e-3, 7.1293e-3] # [m/s^2]
+        angular_velocity_stddev: [1.4395e-3, 1.4831e-3, 1.4506e-3]   # [rad/s]
         magnetic_field_stddev: [1e-7, 1e-7, 1e-7]     # [Tesla] Standard deviation for magnetic field
         # [rad]   Standard deviation for orientation,  
         # for Sirius/Avior, if the pub_euler_stddev is true, will use that value from the sensor and igore this value.
