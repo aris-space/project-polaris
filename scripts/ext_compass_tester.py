@@ -7,8 +7,8 @@ from pymavlink import mavutil
 
 # --- connect to MAVLink endpoint ---
 master = mavutil.mavlink_connection("udpout:192.168.194.31:14550")
-master.wait_heartbeat()
-print(f"Heartbeat from system={master.target_system} component={master.target_component}")
+#master.wait_heartbeat()
+#print(f"Heartbeat from system={master.target_system} component={master.target_component}")
 
 # --- helper: yaw-only quaternion (roll = pitch = 0) ---
 def yaw_to_quat(yaw_rad):
