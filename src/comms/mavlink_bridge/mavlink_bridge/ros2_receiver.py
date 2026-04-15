@@ -11,6 +11,7 @@ from pymavlink import mavutil
 from std_msgs.msg import String
 from std_msgs.msg import Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
+from nav_msgs.msg import Odometry
 
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
@@ -87,6 +88,8 @@ class MavlinkBridgeReceiver(Node):
             self.manual_control_cb,
             Comms.SUB_QOS_DEPTH,
         )
+
+        self.odometry_subscriber = self.create_subscription(Odometry, "/odometry/filtered/local", self.ekf_odom_cb, Comms.SUB_QOS_DEPTH)
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
@@ -320,6 +323,88 @@ class MavlinkBridgeReceiver(Node):
         sy = math.sin(yaw_rad * 0.5)
         return [cy, 0.0, 0.0, sy]
 
+    def ekf_odom_cb(self, msg):
+        """
+        Receives filtered odometry from /odometry/filtered/local (ENU/FLU, ROS convention)
+        and forwards as MAVLink ODOMETRY to Pixhawk (NED/FRD, MAVLink convention).
+
+        Frame conversions applied:
+          Position/velocity: ENU→NED  (x=East,y=North,z=Up) → (x=North,y=East,z=Down)
+                             x_NED = y_ENU,  y_NED = x_ENU,  z_NED = -z_ENU
+          Orientation:       q_NED = q_ENU_to_NED ⊗ q_ENU
+                             q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)  [Rx(π)·Rz(-π/2)]
+          Angular rates:     FLU→FRD: roll unchanged, pitch and yaw negated
+        """
+        # Timestamp from message header in microseconds
+        time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
+
+        # Position: ENU → NED
+        x =  msg.pose.pose.position.y
+        y =  msg.pose.pose.position.x
+        z = -msg.pose.pose.position.z
+
+        # Orientation: apply ENU→NED rotation then express in MAVLink [w,x,y,z] order
+        # q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
+        _s = math.sqrt(0.5)
+        w1, x1, y1, z1 = 0.0, _s, _s, 0.0                          # q_ENU_to_NED
+        w2 = msg.pose.pose.orientation.w
+        x2 = msg.pose.pose.orientation.x
+        y2 = msg.pose.pose.orientation.y
+        z2 = msg.pose.pose.orientation.z
+        q = [
+            w1*w2 - x1*x2 - y1*y2 - z1*z2,   # w
+            w1*x2 + x1*w2 + y1*z2 - z1*y2,   # x
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,   # y
+            w1*z2 + x1*y2 - y1*x2 + z1*w2,   # z
+        ]
+
+        # Linear velocity: ENU → NED
+        vx =  msg.twist.twist.linear.y
+        vy =  msg.twist.twist.linear.x
+        vz = -msg.twist.twist.linear.z
+
+        # Angular rates: FLU → FRD (roll unchanged, pitch and yaw negated)
+        rollspeed  =  msg.twist.twist.angular.x
+        pitchspeed = -msg.twist.twist.angular.y
+        yawspeed   = -msg.twist.twist.angular.z
+
+        # Covariance: transform ENU/FLU → NED/FRD, then extract upper triangle (21 elements).
+        # Permutation p=[1,0,2,3,4,5], signs s=[1,1,-1,1,-1,-1] for both pose and twist:
+        #   NED[0]=ENU[1](North), NED[1]=ENU[0](East), NED[2]=-ENU[2](Down),
+        #   roll unchanged, pitch negated, yaw negated.
+        # Each entry: (index into ROS 36-element array, sign factor)
+        # Derived from: C_NED[i,j] = s[i]*s[j] * C_ENU[p[i]*6 + p[j]]
+        _COV_MAP = [
+            ( 7, 1), ( 6, 1), ( 8,-1), ( 9, 1), (10,-1), (11,-1),  # row 0 (North)
+            ( 0, 1), ( 2,-1), ( 3, 1), ( 4,-1), ( 5,-1),            # row 1 (East)
+            (14, 1), (15,-1), (16, 1), (17, 1),                      # row 2 (Down)
+            (21, 1), (22,-1), (23,-1),                               # row 3 (roll)
+            (28, 1), (29, 1),                                        # row 4 (pitch)
+            (35, 1),                                                 # row 5 (yaw)
+        ]
+        pose_cov  = [float(msg.pose.covariance[i])  * s for i, s in _COV_MAP]
+        twist_cov = [float(msg.twist.covariance[i]) * s for i, s in _COV_MAP]
+
+        qual = self.get_parameter("external_odom_quality").get_parameter_value().integer_value
+        qual = max(-1, min(100, int(qual)))
+
+        m = mavutil.mavlink
+        self.port.mav.odometry_send(
+            time_usec,
+            m.MAV_FRAME_LOCAL_FRD,
+            m.MAV_FRAME_BODY_FRD,
+            x, y, z,
+            q,
+            vx, vy, vz,
+            rollspeed, pitchspeed, yawspeed,
+            pose_cov,
+            twist_cov,
+            self._odom_reset_counter,
+            m.MAV_ESTIMATOR_TYPE_VISION,
+            qual,
+        )
+
+
     def odometry_test_cb(self):
         t = time.time() - self._odom_start_time
 
@@ -377,8 +462,6 @@ class MavlinkBridgeReceiver(Node):
             self._last_odom_log_t = t
 
     """--------------------------------------------- main function ---------------------------------------------"""
-
-
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeReceiver()
