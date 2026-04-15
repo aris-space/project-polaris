@@ -118,9 +118,9 @@ def _launch_setup(context, *args, **kwargs):
         executable="static_transform_publisher",
         name="static_tf_base_to_dvl",
         arguments=[
-            "--x", "0.735818",
-            "--y", "-0.000483",
-            "--z", "-0.067591",
+            "--x", "0.791618",
+            "--y", "-0.000336",
+            "--z", "-0.067891",
             "--roll", "3.141592653589793",
             "--pitch", "0.0",
             "--yaw", "-0.7853981633974483",
