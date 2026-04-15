@@ -30,4 +30,3 @@ settings.json
 # VS Code extension artifact
 .vscode/settings.json
 mavlink_logs/
-GEMINI.md
