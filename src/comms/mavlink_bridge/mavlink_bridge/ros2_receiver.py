@@ -47,8 +47,8 @@ class MavlinkBridgeReceiver(Node):
 
         # configures serial port the pixhawk is connected to and the baud rate
         self.port = mavutil.mavlink_connection(
-            Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
-        )  # For sending commands to Pixhawk
+            Comms.MAVLINK_ROUTER_TCP
+        )  # For sending commands to Pixhawk via mavlink-router
         # self.port_in = mavutil.mavlink_connection(
         #     "/dev/ttyTHS1", baud=57600
         # )  # For receiving messages from Pixhawk (e.g., heartbeats, status)
