@@ -29,5 +29,4 @@ settings.json
 /recordings/
 # VS Code extension artifact
 .vscode/settings.json
-
-GEMINI.md
+mavlink_logs/
