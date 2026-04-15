@@ -72,7 +72,7 @@ class MavlinkBridgeReceiver(Node):
         self._last_odom_log_t = 0.0
         self._odom_reset_counter = 0
 
-        self._odometry_test_timer = self.create_timer(0.1, self.odometry_test_cb)
+        self._odometry_test_timer = self.create_timer(0.05, self.odometry_test_cb)
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
             OverrideRCIn,
@@ -331,11 +331,8 @@ class MavlinkBridgeReceiver(Node):
         y = radius * math.sin(circ_omega * t)
         z = -0.5  # 0.5 m depth (NED convention: negative = down)
 
-        # --- Sample orientation: smooth yaw sweep ±45 deg over 5 s ---
-        yaw_amp = math.radians(45)
-        yaw_period = 5.0
-        yaw_omega = 2 * math.pi / yaw_period
-        yaw = yaw_amp * math.sin(yaw_omega * t)
+        # --- Sample orientation: fixed yaw = 0 deg for clean EKF3 fusion test ---
+        yaw = 0.0
         q = self.yaw_to_quat(yaw)
 
         # --- Sample velocities: tangential to circle ---
@@ -343,8 +340,8 @@ class MavlinkBridgeReceiver(Node):
         vy =  radius * circ_omega * math.cos(circ_omega * t)
         vz = 0.0
 
-        # --- Sample angular rates: yaw-rate only (derivative of yaw sinusoid) ---
-        yaw_rate = yaw_amp * yaw_omega * math.cos(yaw_omega * t)
+        # --- Angular rates: zero, since yaw is constant ---
+        yaw_rate = 0.0
 
         # Quality from parameter, clamped to -1..100 (matches external_odom_cb)
         qual = self.get_parameter("external_odom_quality").get_parameter_value().integer_value
