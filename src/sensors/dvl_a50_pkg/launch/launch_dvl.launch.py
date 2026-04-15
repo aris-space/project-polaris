@@ -12,7 +12,7 @@ automatically on startup.
 Published topics (under /sensors/dvl/):
   - dvl/velocity             (marine_acoustic_msgs/Dvl)
   - dvl/dead_reckoning       (geometry_msgs/PoseWithCovarianceStamped)
-  - dvl/odometry             (nav_msgs/Odometry)          — raw from driver (``publish_odometry_on_dead_reckoning`` in dvl_a50.yaml)
+  - dvl/odometry             (nav_msgs/Odometry)          — raw from driver
   - dvl/odometry_cov         (nav_msgs/Odometry)          — twist covariance (stationary TEP / lock inflation)
 
 Frame convention (must stay consistent for TF + robot_localization):

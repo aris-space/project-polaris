@@ -4,6 +4,11 @@ set -euo pipefail
 # This script initializes and repairs git submodules.
 # It is intended to be run from the repository root.
 
+# Returns 0 if a basic internet connection is available, 1 otherwise.
+has_internet() {
+  timeout 3 bash -c 'echo >/dev/tcp/8.8.8.8/53' 2>/dev/null
+}
+
 # Ensure we are in a git repository
 if [ ! -d .git ] && [ ! -f .git ]; then
   echo "Error: Not in a git repository root."
@@ -34,13 +39,20 @@ echo "[setup_submodules] Syncing submodules..."
 git submodule sync --recursive
 
 echo "[setup_submodules] Updating submodules..."
-# Try a standard update first.
-if ! git submodule update --init --recursive; then
-  echo "[setup_submodules] Submodule update failed. Attempting to fix by cleaning submodules..."
-  # If update fails, we try to clean. foreach might also hit ownership issues, 
-  # but we've tried to mark them safe above.
-  git submodule foreach --recursive 'git clean -ffdx && git reset --hard'
-  git submodule update --init --recursive
+if has_internet; then
+  # Try a standard update first.
+  if ! git submodule update --init --recursive; then
+    echo "[setup_submodules] Submodule update failed. Attempting to fix by cleaning submodules..."
+    # If update fails, we try to clean. foreach might also hit ownership issues,
+    # but we've tried to mark them safe above.
+    git submodule foreach --recursive 'git clean -ffdx && git reset --hard'
+    git submodule update --init --recursive
+  fi
+else
+  echo "[setup_submodules] No internet access — skipping submodule fetch."
+  # --no-fetch uses only already-downloaded objects; safe when offline.
+  git submodule update --init --recursive --no-fetch 2>/dev/null \
+    || echo "[setup_submodules] Warning: Some submodules may not be initialized (offline)."
 fi
 
 # Apply sparse-checkout logic for Foxglove Bridge
