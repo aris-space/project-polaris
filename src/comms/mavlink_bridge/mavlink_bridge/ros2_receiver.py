@@ -67,24 +67,9 @@ class MavlinkBridgeReceiver(Node):
         )
 
         # Test ODOMETRY stream setup
-        self._odom_pose_cov = [0.0] * 21  # <-- Change NaN to 0.0!
-        self._odom_pose_cov[0] = 0.01
-        self._odom_pose_cov[6] = 0.01
-        self._odom_pose_cov[11] = 0.01
-        self._odom_pose_cov[15] = 0.05
-        self._odom_pose_cov[18] = 0.05
-        self._odom_pose_cov[20] = 0.05
-        
-        # Velocity covariance: First element NaN means "ignore velocities"
-        self._odom_vel_cov = [float("nan")] + [0.0] * 20 
-        
+        self.declare_parameter("external_odom_quality", 100)
         self._odom_start_time = time.time()
-        self._odom_step_interval_s = 0.3
-        self._odom_yaw_steps_deg = [0, 120, -120, 60, -60, 170, -170, 30, -30]
         self._last_odom_log_t = 0.0
-        
-        # Track resets
-        self._last_step_idx = 0
         self._odom_reset_counter = 0
 
         self._odometry_test_timer = self.create_timer(0.1, self.odometry_test_cb)
@@ -338,36 +323,58 @@ class MavlinkBridgeReceiver(Node):
     def odometry_test_cb(self):
         t = time.time() - self._odom_start_time
 
-        # Smoothly sweep yaw from -45 to +45 degrees every 5 seconds.
-        amplitude = math.radians(45)
-        period = 5.0
-        yaw = amplitude * math.sin((2 * math.pi / period) * t)
+        # --- Sample position: slow circular path (radius=1 m, period=20 s) ---
+        radius = 1.0
+        circ_period = 20.0
+        circ_omega = 2 * math.pi / circ_period
+        x = radius * math.cos(circ_omega * t)
+        y = radius * math.sin(circ_omega * t)
+        z = -0.5  # 0.5 m depth (NED convention: negative = down)
 
+        # --- Sample orientation: smooth yaw sweep ±45 deg over 5 s ---
+        yaw_amp = math.radians(45)
+        yaw_period = 5.0
+        yaw_omega = 2 * math.pi / yaw_period
+        yaw = yaw_amp * math.sin(yaw_omega * t)
         q = self.yaw_to_quat(yaw)
 
-        frame_id = getattr(
-            mavutil.mavlink,
-            "MAV_FRAME_VISION_NED",
-            mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+        # --- Sample velocities: tangential to circle ---
+        vx = -radius * circ_omega * math.sin(circ_omega * t)
+        vy =  radius * circ_omega * math.cos(circ_omega * t)
+        vz = 0.0
+
+        # --- Sample angular rates: yaw-rate only (derivative of yaw sinusoid) ---
+        yaw_rate = yaw_amp * yaw_omega * math.cos(yaw_omega * t)
+
+        # Quality from parameter, clamped to -1..100 (matches external_odom_cb)
+        qual = self.get_parameter("external_odom_quality").get_parameter_value().integer_value
+        qual = max(-1, min(100, int(qual)))
+
+        # Timestamp from ROS clock in microseconds (matches external_odom_cb)
+        time_usec = self.get_clock().now().nanoseconds // 1000
+
+        m = mavutil.mavlink
+        self.port.mav.odometry_send(
+            time_usec,
+            m.MAV_FRAME_LOCAL_FRD,    # parent frame: local FRD
+            m.MAV_FRAME_BODY_FRD,     # child frame: body FRD
+            x, y, z,
+            q,
+            vx, vy, vz,
+            0.0, 0.0, yaw_rate,       # rollspeed, pitchspeed, yawspeed
+            [float("nan")] * 21,      # pose covariance (NaN = unknown)
+            [float("nan")] * 21,      # velocity covariance (NaN = unknown)
+            self._odom_reset_counter,
+            m.MAV_ESTIMATOR_TYPE_VISION,
+            qual,
         )
 
-        self.port.mav.odometry_send(
-            int(time.time() * 1e6),                     
-            frame_id,
-            mavutil.mavlink.MAV_FRAME_BODY_FRD,         
-            0.0, 0.0, 0.0,                              
-            q,                                          
-            0.0, 0.0, 0.0,                              
-            0.0, 0.0, 0.0,                              
-            self._odom_pose_cov,                        
-            self._odom_vel_cov,                         
-            0, # No need for reset counter, the motion is continuous                             
-            mavutil.mavlink.MAV_ESTIMATOR_TYPE_VISION,  
-            100,                                        
-        )
         if t - self._last_odom_log_t >= 1.0:
             self.get_logger().info(
-                f"Sending ODOMETRY yaw={math.degrees(yaw):.1f}deg "
+                f"[odom_test] yaw={math.degrees(yaw):.1f}deg  "
+                f"pos=({x:.2f},{y:.2f},{z:.2f})  "
+                f"vel=({vx:.2f},{vy:.2f},{vz:.2f})  "
+                f"qual={qual}  "
                 f"src={self.port.mav.srcSystem}/{self.port.mav.srcComponent}"
             )
             self._last_odom_log_t = t
