@@ -61,6 +61,7 @@ def generate_launch_description():
     temperature_sensor_pkg_dir = get_package_share_directory("temperature_sensor_pkg")
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
+    keller_26x_pkg_dir = get_package_share_directory("keller_26x_pkg")
     ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
     pressure_pose_pkg_dir = get_package_share_directory("pressure_pose_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
@@ -151,6 +152,16 @@ def generate_launch_description():
         }.items(),
     )
 
+    keller_pressure_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(keller_26x_pkg_dir, "launch", "keller_26x.launch.py")
+        ),
+        launch_arguments={
+            "respawn": respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
+    )
+
     localization_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -165,7 +176,7 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_ekf_localization")),
     )
 
-    # pressure_pose_pkg only; EKF consumes /sensors/pressure/pose_enu from ekf_local.yaml.
+    # Keller driver + static TF; pressure_pose_pkg converts pressure to pose for EKF.
     pressure_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -336,6 +347,7 @@ def generate_launch_description():
             temperature_launch,
             xsens_launch,
             dvl_launch,
+            keller_pressure_launch,
             localization_launch,
             pressure_launch,
             usb_cam_launch,

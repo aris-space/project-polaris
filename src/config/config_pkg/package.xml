@@ -12,6 +12,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>pressure_pose_pkg</exec_depend>
+  <exec_depend>keller_26x_pkg</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
