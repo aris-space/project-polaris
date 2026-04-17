@@ -2,9 +2,9 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
 
-  <name>orca_nav2</name>
+  <name>orca_base</name>
   <version>0.5.0</version>
-  <description>Orca Nav2 plugins</description>
+  <description>Orca controller</description>
 
   <maintainer email="clyde@mcqueen.net">Clyde McQueen</maintainer>
   <license>MIT</license>
@@ -21,27 +21,23 @@
   <!-- This recursively depends on a set of common linters -->
   <test_depend>ament_lint_common</test_depend>
 
-  <depend>builtin_interfaces</depend>
+  <!-- Ament uses these linters, turn them on/off one by one to debug: -->
+<!--  <test_depend>ament_cmake_copyright</test_depend>-->
+<!--  <test_depend>ament_cmake_cppcheck</test_depend>-->
+<!--  <test_depend>ament_cmake_cpplint</test_depend>-->
+<!--  <test_depend>ament_cmake_flake8</test_depend>-->
+<!--  <test_depend>ament_cmake_lint_cmake</test_depend>-->
+<!--  <test_depend>ament_cmake_pep257</test_depend>-->
+<!--  <test_depend>ament_cmake_uncrustify</test_depend>-->
+<!--  <test_depend>ament_cmake_xmllint</test_depend>-->
+
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
-  <depend>nav2_core</depend>
-  <depend>nav2_costmap_2d</depend>
-  <depend>nav2_util</depend>
-  <depend>nav2_msgs</depend>
-  <!--<depend>orca_shared</depend>-->
   <depend>rclcpp</depend>
-  <depend>rclcpp_action</depend>
-  <depend>rclcpp_lifecycle</depend>
-  <depend>pluginlib</depend>
-  <depend>std_msgs</depend>
-  <depend>tf2_ros</depend>
-  <depend>visualization_msgs</depend>
+  <depend>ros2_shared</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
-    <nav2_core plugin="${prefix}/goal_checker_3d_plugin.xml" />
-    <nav2_core plugin="${prefix}/progress_checker_3d_plugin.xml" />
-    <nav2_core plugin="${prefix}/pure_pursuit_controller_3d_plugin.xml" />
-    <nav2_core plugin="${prefix}/straight_line_planner_3d_plugin.xml" />
   </export>
+
 </package>

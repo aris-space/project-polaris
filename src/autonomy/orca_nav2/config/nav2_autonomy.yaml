@@ -9,17 +9,19 @@ controller_server:
     PurePursuit3D:
       plugin: "orca_nav2/PurePursuitController3D"
       x_vel: 0.4
-      x_accel: 0.4
+      x_accel: 0.2
       z_vel: 0.2
       z_accel: 0.2
-      yaw_vel: 0.4
-      yaw_accel: 0.4
-      lookahead_dist: 1.0
+      yaw_vel: 0.2
+      yaw_accel: 0.1
+      lookahead_dist: 3.0
       transform_tolerance: 1.0
       goal_tolerance: 0.1
       tick_rate: 20.0
       x_error: 0.0
       yaw_error: 0.0
+      # Publishes errors + closest point, robot pose (map), twist (see orca_bringup README)
+      publish_tracking_error: true
 
     GoalChecker3D:
       plugin: "orca_nav2/GoalChecker3D"

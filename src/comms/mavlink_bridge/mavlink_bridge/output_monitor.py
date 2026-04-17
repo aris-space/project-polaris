@@ -10,6 +10,12 @@ from sensor_msgs.msg import (
     BatteryState,  # BATTERY_STATUS
     FluidPressure,  # SCALED_PRESSURE (depth)
 )
+#sim:
+LOG_DIR = "~/polaris_logs"
+SUB_QOS_DEPTH = 10
+#
+
+from geometry_msgs.msg import Twist
 
 
 class OutputMonitor(Node):
@@ -37,6 +43,7 @@ class OutputMonitor(Node):
         self.pitch = 0.0
         self.yaw = 0.0
         self.rc_channels = []
+        self.cmd_vel = None
         self.battery_current = 0.0
         self.pressure_diff = 0.0
 
@@ -48,17 +55,22 @@ class OutputMonitor(Node):
         self.create_subscription(
             FluidPressure, "/pixhawk/scaled_pressure", self.pressure_cb, 10
         )
+        self.create_subscription(Twist, "/pixhawk/cmd_vel", self.cmd_vel_cb, SUB_QOS_DEPTH)
+
 
         self.timer = self.create_timer(0.5, self.print_dashboard)  # 2Hz refresh rate
 
     def heartbeat_cb(self, msg):
         # msg.mode is already a human-readable string (e.g., "STABILIZE", "MANUAL")
-        self.mode = msg.mode
-        self.armed = msg.armed
-        # Map system_status integer to human-readable string
-        self.system_status = self.SYSTEM_STATUS_MAP.get(
-            msg.system_status, f"UNKNOWN({msg.system_status})"
-        )
+        fields = {}
+        for item in msg.data.split(";"):
+            if "=" in item:
+                key, value = item.split("=", 1)
+                fields[key.strip()] = value.strip()
+        self.mode = fields.get("mode", "UNKNOWN")
+        self.armed = fields.get("armed", "0") == "1"
+        status_raw = int(fields.get("system_status", "-1"))
+        self.system_status = self.SYSTEM_STATUS_MAP.get(status_raw, f"UNKNOWN({status_raw})")
 
     def attitude_cb(self, msg):
         # Convert quaternion back to Euler angles for display
@@ -94,6 +106,16 @@ class OutputMonitor(Node):
     def pressure_cb(self, msg):
         self.pressure_diff = msg.fluid_pressure
 
+    def cmd_vel_cb(self, msg):
+        self.cmd_velocity = (
+            msg.linear.x,
+            msg.linear.y,
+            msg.linear.z,
+            msg.angular.x,
+            msg.angular.y,
+            msg.angular.z,
+        )
+
     # this function actually print the dashboard
     def print_dashboard(self):
         # Clear screen code
@@ -109,20 +131,33 @@ class OutputMonitor(Node):
         print(f"Pitch: {self.pitch}")
         print(f"Yaw: {self.yaw}")
 
+        print(f"Pressure (abs est., Pa): {self.pressure_diff}")
+
         print(f"Battery Current: {self.battery_current}")
         print(f"Pressure Diff: {self.pressure_diff}")
 
         print(f"RC Channels: {list(self.rc_channels)}")
+
+        cv = self.cmd_velocity
+        print(
+            "cmd_vel (lin x,y,z | ang x,y,z): "
+            f"{list(cv) if cv is not None else 'no msgs yet'}"
+        )
+
         print("============================")
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = OutputMonitor()
-    rclpy.spin(node)  # keeps the node running
-    node.destroy_node()
-    rclpy.shutdown()
-
+    try:
+        rclpy.spin(node)  # keeps the node running
+    except KeyboardInterrupt:
+        node.get_logger().info("KeyboardInterrupt received, shutting down output_monitor")
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

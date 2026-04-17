@@ -1,0 +1,89 @@
+<!--
+  A simple behavior tree that replans at 1Hz. Recovery consists of waiting (drifting while hovering)
+  for a few seconds. Orca4 doesn't use costmaps, so there's no need to clear them.
+  RateController re-calculates the path iff the lookahead-distance CANNOT reach the deired path.
+  Starting point: navigate_w_replanning_and_recovery.xml
+-->
+
+<!-- <root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="10" name="NavigateRecovery">
+      
+      <PipelineSequence name="NavigateWithReplanning">
+        
+        <RateController hz="1.0"> 
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
+        </RateController>
+        
+        <FollowPath path="{path}" controller_id="LongStraightLine" goal_checker_id="goal_checker"/>
+      
+      </PipelineSequence>
+      
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Wait wait_duration="2"/>
+      </ReactiveFallback>
+      
+    </RecoveryNode>
+  </BehaviorTree>
+</root>  -->
+
+<!-- <root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="10" name="NavigateRecovery">
+      
+      <PipelineSequence name="NavigateWithReplanning">
+        
+        <RateController hz="1.0"> 
+          <Fallback>
+            <IsStraightPathValid path="{path}" max_dist="1.5"/> 
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
+          </Fallback>
+        </RateController>
+
+        <FollowPath path="{path}" controller_id="LongStraightLine" goal_checker_id="goal_checker"/>               
+      
+      </PipelineSequence>
+      
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Wait wait_duration="2"/>
+      </ReactiveFallback>
+      
+    </RecoveryNode>
+  </BehaviorTree>
+</root> -->
+
+
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="10" name="NavigateRecovery">
+      
+      <PipelineSequence name="NavigateWithReplanning">
+        
+        <RateController hz="1.0"> 
+          <Fallback>
+            <IsStraightPathValid path="{path}" max_dist="1.5"/> 
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
+          </Fallback>
+        </RateController>
+        
+        <Fallback>
+          <Sequence>
+            <IsSharpTurn path="{path}" min_angle_rad="0.785" release_angle_rad="0.0873"/>
+            <FollowPath path="{path}" controller_id="SharpTurn" goal_checker_id="goal_checker"/>
+          </Sequence>
+          <FollowPath path="{path}" controller_id="LongStraightLine" goal_checker_id="goal_checker"/>
+        </Fallback>
+        
+      
+      </PipelineSequence>
+      
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <Wait wait_duration="2"/>
+      </ReactiveFallback>
+      
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
