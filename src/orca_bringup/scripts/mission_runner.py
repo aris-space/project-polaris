@@ -52,6 +52,13 @@ from std_msgs.msg import Bool
 from std_msgs.msg import Header
 from std_msgs.msg import String
 
+from nav2_ready_wait import wait_for_waypoint_follower_active
+from pixhawk_ready_wait import (
+    PixhawkState,
+    ensure_armed_and_mode_guided,
+    make_heartbeat_callback,
+)
+
 
 class SendGoalResult(Enum):
     SUCCESS = 0     # Goal succeeded
@@ -199,19 +206,36 @@ def main():
         mode_pub = node.create_publisher(String, '/pixhawk/mode_cmd', 10)
         arm_pub = node.create_publisher(Bool, '/pixhawk/arm_cmd', 10)
 
+        hb_state = PixhawkState()
+        node.create_subscription(
+            String,
+            '/pixhawk/heartbeat',
+            make_heartbeat_callback(hb_state),
+            10,
+        )
+
         # Allow discovery; flush a few spins so /pixhawk/* reaches mavlink_bridge reliably.
         for _ in range(10):
             executor.spin_once(timeout_sec=0.05)
 
-        print('>>> Setting Pixhawk mode to GUIDED <<<')
-        mode_pub.publish(String(data='GUIDED'))
-        for _ in range(40):
-            executor.spin_once(timeout_sec=0.05)
+        if not wait_for_waypoint_follower_active(executor, node, timeout_sec=180.0):
+            print('Nav2 not ready; exiting.')
+            return
 
-        print('>>> Arming <<<')
-        arm_pub.publish(Bool(data=True))
-        for _ in range(20):
-            executor.spin_once(timeout_sec=0.05)
+        if not ensure_armed_and_mode_guided(
+            executor, node, arm_pub, mode_pub, hb_state
+        ):
+            print(
+                'Pixhawk not ready for mission; skipping Nav2 goal (no path published).',
+                flush=True,
+            )
+            mode_pub.publish(String(data='MANUAL'))
+            for _ in range(25):
+                executor.spin_once(timeout_sec=0.05)
+            arm_pub.publish(Bool(data=False))
+            for _ in range(25):
+                executor.spin_once(timeout_sec=0.05)
+            return
 
         print('>>> Executing mission <<<')
         send_goal(executor, follow_waypoints, delay_loop)

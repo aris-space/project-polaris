@@ -27,6 +27,7 @@
 // from launch_ros.actions import Node
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -606,6 +607,7 @@ namespace orca_nav2
 } // namespace orca_nav2
 
 #include "pluginlib/class_list_macros.hpp"
+
 
 // Register this controller as a nav2_core plugin
 PLUGINLIB_EXPORT_CLASS(orca_nav2::PurePursuitController3D, nav2_core::Controller)

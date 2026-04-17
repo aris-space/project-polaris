@@ -23,6 +23,12 @@ from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import Bool, String
 
 from load_wsg84_points_to_waypoints import process_coordinates
+from nav2_ready_wait import wait_for_waypoint_follower_active
+from pixhawk_ready_wait import (
+    PixhawkState,
+    ensure_armed_and_mode_guided,
+    make_heartbeat_callback,
+)
 
 
 class SendGoalResult(Enum):
@@ -100,7 +106,6 @@ def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.
         if time.time() - start >= timeout_sec:
             print(
                 f'Timed out after {timeout_sec:.0f}s waiting for /follow_waypoints. '
-                'Is sim_launch running with nav:=true? Did you source install/setup.bash? '
                 'Check: ros2 action list | grep follow ; ros2 lifecycle get /waypoint_follower'
             )
             return False
@@ -245,20 +250,34 @@ def main() -> None:
         mode_pub = node.create_publisher(String, '/pixhawk/mode_cmd', 10)
         arm_pub = node.create_publisher(Bool, '/pixhawk/arm_cmd', 10)
 
+        hb_state = PixhawkState()
+        node.create_subscription(
+            String,
+            '/pixhawk/heartbeat',
+            make_heartbeat_callback(hb_state),
+            10,
+        )
+
         print(f'Loaded {len(goal.poses)} waypoints (map ENU)')
 
         for _ in range(10):
             executor.spin_once(timeout_sec=0.05)
 
-        print('>>> Setting Pixhawk mode to GUIDED <<<')
-        mode_pub.publish(String(data='GUIDED'))
-        for _ in range(40):
-            executor.spin_once(timeout_sec=0.05)
+        if not wait_for_waypoint_follower_active(executor, node, timeout_sec=180.0):
+            print('Nav2 not ready; exiting.', file=sys.stderr)
+            sys.exit(1)
 
-        print('>>> Arming <<<')
-        arm_pub.publish(Bool(data=True))
-        for _ in range(20):
-            executor.spin_once(timeout_sec=0.05)
+        # Do not send Nav2 goals until heartbeat confirms arm + GUIDED (avoids orphan path in RViz).
+        if not ensure_armed_and_mode_guided(
+            executor, node, arm_pub, mode_pub, hb_state
+        ):
+            print(
+                'Pixhawk not ready for mission; skipping Nav2 goal (no path published).',
+                file=sys.stderr,
+            )
+            publish_manual_and_spin(executor, node, mode_pub, spins=20)
+            publish_disarm_and_spin(executor, node, arm_pub, spins=20)
+            sys.exit(1)
 
         print('>>> Executing mission <<<')
         mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub)

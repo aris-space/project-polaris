@@ -15,6 +15,7 @@
   <author>Clyde McQueen</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
   <test_depend>ament_lint_auto</test_depend>
 
@@ -22,11 +23,13 @@
   <test_depend>ament_lint_common</test_depend>
 
   <depend>angles</depend>
+  <depend>behaviortree_cpp_v3</depend>
   <depend>builtin_interfaces</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>nav2_core</depend>
   <depend>nav2_costmap_2d</depend>
+  <depend>nav2_behavior_tree</depend>
   <depend>nav2_util</depend>
   <depend>nav2_msgs</depend>
   <!--<depend>orca_shared</depend>-->
@@ -35,6 +38,8 @@
   <depend>rclcpp_lifecycle</depend>
   <depend>pluginlib</depend>
   <depend>std_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>visualization_msgs</depend>
 
@@ -42,7 +47,7 @@
     <build_type>ament_cmake</build_type>
     <nav2_core plugin="${prefix}/goal_checker_3d_plugin.xml" />
     <nav2_core plugin="${prefix}/progress_checker_3d_plugin.xml" />
-    <nav2_core plugin="${prefix}/pure_pursuit_controller_3d_plugin.xml" />
+    <nav2_core plugin="${prefix}/orca_controllers_plugins.xml" />
     <nav2_core plugin="${prefix}/straight_line_planner_3d_plugin.xml" />
   </export>
 </package>

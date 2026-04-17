@@ -1,78 +1,29 @@
-## Launch files
+## Start simulation (for rosbag see below)
+```bash
+ros2 launch orca_bringup sim_launch.py (bag:=True)
+```
 
-### [sim_launch.py](launch/sim_launch.py)
+## Start mission
+```bash
+ros2 run orca_bringup WSG84_mission_starter.py
+```
 
-Launch ROV or AUV simulation in Gazebo.
-Calls [bringup.py](launch/bringup.py).
+## Start current in m/s
+`/orca_bringup/scripts/current_vector_node.py`
+```bash
+ros2 run orca_bringup current_vector_node.py --ros-args -p direction:="x, con_xy, ramp_xyz" -p amplitude:=0.8 -p period:=15.0
+```
 
-To see parameters: `ros2 launch --show-args orca_bringup sim_launch.py`
-
-### [bringup.py](launch/bringup.py)
-
-Bring up all core ROV and AUV nodes, including ORB_SLAM2 and Nav2.
-Calls [navigation_launch.py](launch/navigation_launch.py).
-
-### [navigation_launch.py](launch/navigation_launch.py)
-
-Nav2 navigation launch file, modified to avoid launch the velocity smoother.
-
-## Scenarios
-
-### Full automation
-
-In a terminal run:
-~~~
-source src/orca4/setup.bash
-ros2 launch orca_bringup sim_launch.py
-~~~
-
-Execute a mission in a 2nd terminal:
-~~~
-source src/orca4/setup.bash
-ros2 run orca_bringup mission_runner.py
-~~~
-
-### Using MAVProxy
-
-It is possible to launch Gazebo and ArduSub and control the sub using MAVProxy.
-
-Launch a minimal system:
-~~~
-ros2 launch orca_bringup sim_launch.py base:=false comms:=false nav:=false rviz:=false
-~~~
-
-Launch MAVProxy in a 2nd terminal:
-~~~
-mavproxy.py --master tcp:127.0.0.1:5760 --sitl 127.0.0.1:5501 --out 127.0.0.1:14550 --out 127.0.0.1:14551 --out udp:0.0.0.0:14550 --console
-~~~
-
-You can use MAVProxy to send commands directly to ArduSub:
-~~~
-arm throttle
-rc 3 1450
-rc 3 1500
-mode alt_hold
-disarm
-~~~
-
-RC channels:
-* RC 3 -- vertical
-* RC 4 -- yaw
-* RC 5 -- forward
-* RC 6 -- strafe
-
-### MAVProxy + SLAM
-
-This will bring up a minimal system with SLAM and RViz:
-~~~
-ros2 launch orca_bringup sim_launch.py base:=false comms:=false nav:=false
-~~~
-
-You can use MAVProxy to drive the sub around the seafloor and build a map.
+## Start just mission and send cmd_vel
+```bash
+ros2 topic pub -1 /pixhawk/arm_cmd std_msgs/msg/Bool "{data: true}"
+ros2 topic pub -1 /pixhawk/mode_cmd std_msgs/msg/String "{data: GUIDED}"
+ros2 topic pub -r 20 /pixhawk/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+```
 
 ## Tracking errors: rosbag → CSV (Docker vs host)
 
-The Nav2 plugin `orca_nav2/PurePursuitController3D` can publish three diagnostics
+The Nav2 plugin `orca_nav2/PurePursuitController3D` can publish six diagnostics
 (`std_msgs/msg/Float64`) while it is actively following a plan:
 
 | Topic | Type | Meaning |
@@ -183,8 +134,6 @@ import pandas as pd
 df = pd.read_csv("tracking_errors_wide.csv")
 print(df.describe())
 ```
-
-No ROS 2 installation is required on that machine.
 
 ---
 

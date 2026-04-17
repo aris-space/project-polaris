@@ -5,17 +5,21 @@ Export PurePursuit tracking topics from a rosbag2 folder to plain CSV (no ROS ne
 
 Rosbag2: a *bag directory* contains ``metadata.yaml`` plus ``*.db3`` or ``*.mcap``.
 
-Topics (when ``publish_tracking_error`` is true on PurePursuitController3D):
+PurePursuit topics (recorded when ``publish_tracking_error`` is true on PurePursuitController3D):
 
   std_msgs/Float64: cross_track_xy, vertical_error, yaw_error
   geometry_msgs/PointStamped: closest point on path (``pure_pursuit_closest_point_map``, frame = map)
   geometry_msgs/PoseStamped: robot pose in map (``pure_pursuit_robot_pose_map``)
   geometry_msgs/TwistStamped: robot twist from Nav2 odom (``pure_pursuit_robot_twist``, frame = robot pose frame)
 
+Also supported if present in the bag:
+
+  geometry_msgs/Vector3: ocean current m/s (``/ocean_current``, sim bridge or ``current_vector_node``)
+
 Outputs:
 
   tracking_errors_long.csv — unified long format (see README in export folder)
-  tracking_errors_wide.csv — one row per cross-track sample; errors + closest + pose + twist (as-of merged)
+  tracking_errors_wide.csv — one row per cross-track sample; errors + closest + pose + twist + ocean_current (as-of merged)
   tracking_export_README.txt
 
 Usage:
@@ -40,6 +44,7 @@ TOPIC_YAW = '/pure_pursuit_yaw_error'
 TOPIC_CLOSEST = '/pure_pursuit_closest_point_map'
 TOPIC_POSE = '/pure_pursuit_robot_pose_map'
 TOPIC_TWIST = '/pure_pursuit_robot_twist'
+TOPIC_OCEAN_CURRENT = '/ocean_current'
 
 TOPICS_FLOAT = (TOPIC_CROSS, TOPIC_VERT, TOPIC_YAW)
 LONG_HEADER = [
@@ -72,7 +77,7 @@ def _storage_id_from_metadata(bag_dir: Path) -> str:
 
 
 def _read_bag_mixed(bag_dir: Path):
-    from geometry_msgs.msg import PointStamped, PoseStamped, TwistStamped
+    from geometry_msgs.msg import PointStamped, PoseStamped, TwistStamped, Vector3
     from rclpy.serialization import deserialize_message
     from rosbag2_py import ConverterOptions, SequentialReader, StorageOptions
     from std_msgs.msg import Float64
@@ -84,6 +89,7 @@ def _read_bag_mixed(bag_dir: Path):
         TOPIC_CLOSEST,
         TOPIC_POSE,
         TOPIC_TWIST,
+        TOPIC_OCEAN_CURRENT,
     }
     sid = _storage_id_from_metadata(bag_dir)
     storage_options = StorageOptions(uri=str(bag_dir), storage_id=sid)
@@ -99,6 +105,7 @@ def _read_bag_mixed(bag_dir: Path):
     closest: List[Tuple[float, Tuple[float, float, float]]] = []
     pose: List[Tuple[float, Tuple[float, ...]]] = []
     twist: List[Tuple[float, Tuple[float, ...]]] = []
+    ocean_current: List[Tuple[float, Tuple[float, float, float]]] = []
 
     while reader.has_next():
         topic, data, t_ns = reader.read_next()
@@ -114,7 +121,7 @@ def _read_bag_mixed(bag_dir: Path):
             msg = deserialize_message(data, PointStamped)
             x, y, z = msg.point.x, msg.point.y, msg.point.z
             closest.append((t_sec, (x, y, z)))
-            row = [t_sec, topic, 'point', x, y, z] + [''] * 9
+            row = [t_sec, topic, 'point', x, y, z] + [''] * 10
             long_rows.append(row)
         elif topic == TOPIC_POSE:
             msg = deserialize_message(data, PoseStamped)
@@ -132,9 +139,15 @@ def _read_bag_mixed(bag_dir: Path):
             twist.append((t_sec, tup))
             row = [t_sec, topic, 'twist', *tup] + [''] * 7
             long_rows.append(row)
+        elif topic == TOPIC_OCEAN_CURRENT:
+            msg = deserialize_message(data, Vector3)
+            x, y, z = msg.x, msg.y, msg.z
+            ocean_current.append((t_sec, (x, y, z)))
+            row = [t_sec, topic, 'vector3', x, y, z] + [''] * 10
+            long_rows.append(row)
 
     long_rows.sort(key=lambda r: r[0])
-    return long_rows, float_scalar, closest, pose, twist
+    return long_rows, float_scalar, closest, pose, twist, ocean_current
 
 
 def _asof_backward(
@@ -189,6 +202,7 @@ def _write_wide_csv(
     closest: List[Tuple[float, Tuple[float, float, float]]],
     pose: List[Tuple[float, Tuple[float, ...]]],
     twist: List[Tuple[float, Tuple[float, ...]]],
+    ocean_current: List[Tuple[float, Tuple[float, float, float]]],
 ) -> None:
     master = sorted(by_float.get(TOPIC_CROSS, []), key=lambda x: x[0])
     vert = sorted(by_float.get(TOPIC_VERT, []), key=lambda x: x[0])
@@ -216,6 +230,9 @@ def _write_wide_csv(
         'twist_angular_x',
         'twist_angular_y',
         'twist_angular_z',
+        'ocean_current_x_m_s',
+        'ocean_current_y_m_s',
+        'ocean_current_z_m_s',
     ]
 
     def fmt_num(x: float) -> object:
@@ -233,8 +250,9 @@ def _write_wide_csv(
         ccol = _asof_backward_tuple(master, closest, 3)
         pcol = _asof_backward_tuple(master, pose, 7)
         tcol = _asof_backward_tuple(master, twist, 6)
+        ocol = _asof_backward_tuple(master, ocean_current, 3)
 
-        for (t, cx), v, y, c3, p7, t6 in zip(master, vcol, ycol, ccol, pcol, tcol):
+        for (t, cx), v, y, c3, p7, t6, o3 in zip(master, vcol, ycol, ccol, pcol, tcol, ocol):
             w.writerow(
                 [
                     t,
@@ -257,6 +275,9 @@ def _write_wide_csv(
                     fmt_num(t6[3]),
                     fmt_num(t6[4]),
                     fmt_num(t6[5]),
+                    fmt_num(o3[0]),
+                    fmt_num(o3[1]),
+                    fmt_num(o3[2]),
                 ],
             )
 
@@ -274,9 +295,10 @@ tracking_errors_long.csv
     point   — v0,v1,v2 = closest path point x,y,z (map frame, see bag headers)
     pose    — v0..v6 = position x,y,z and orientation quaternion x,y,z,w (map)
     twist   — v0..v5 = linear x,y,z then angular x,y,z (Nav2-reported body twist)
+    vector3 — v0,v1,v2 = ocean current x,y,z (m/s, /ocean_current)
 
 tracking_errors_wide.csv
-  One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist columns
+  One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current columns
   use the last sample at or before that time (same controller tick → aligned).
 
 Plain UTF-8; no ROS needed to analyze. Produced by export_tracking_bag_csv.py
@@ -333,7 +355,7 @@ def main() -> int:
         return 1
 
     try:
-        long_rows, by_float, closest, pose, twist = _read_bag_mixed(bag_dir)
+        long_rows, by_float, closest, pose, twist, ocean_current = _read_bag_mixed(bag_dir)
     except Exception as e:
         print(f'Failed to read bag: {e}', file=sys.stderr)
         print('Source ROS 2 setup (rosbag2_py, rclpy, geometry_msgs).', file=sys.stderr)
@@ -347,7 +369,7 @@ def main() -> int:
     readme_path = out_dir / 'tracking_export_README.txt'
 
     _write_long_csv(long_path, long_rows)
-    _write_wide_csv(wide_path, by_float, closest, pose, twist)
+    _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current)
     _write_readme(readme_path, bag_dir)
 
     print(f'Wrote {len(long_rows)} long rows → {long_path}')
