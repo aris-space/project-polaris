@@ -2,7 +2,7 @@
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     global_frame: "map"
     robot_base_frame: "base_link"
     transform_tolerance: 1.0
@@ -65,11 +65,11 @@ bt_navigator:
 
 bt_navigator_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 controller_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
@@ -136,7 +136,7 @@ controller_server:
 
 controller_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 
 # The local costmap is always empty
@@ -148,7 +148,7 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
-      use_sim_time: true
+      use_sim_time: false
       rolling_window: true
       width: 3
       height: 3
@@ -170,7 +170,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: true
+      use_sim_time: false
       rolling_window: true
       track_unknown_space: true
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -186,7 +186,7 @@ global_costmap:
 
 planner_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     planner_plugins: ["StraightLine"]
 
     # OrcaPlanner parameters
@@ -196,7 +196,7 @@ planner_server:
 
 planner_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 # Nav2 Humble: use behavior_plugins + nav2_behaviors/* (not recovery_plugins / nav2_recoveries).
 # Wrong names/types leave behavior_server configure failing → unconfigured forever.
@@ -215,7 +215,7 @@ behavior_server:
     global_frame: "odom"
     robot_base_frame: "base_link"
     transform_timeout: 2.0
-    use_sim_time: True
+    use_sim_time: false
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
@@ -223,11 +223,11 @@ behavior_server:
 
 robot_state_publisher:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 waypoint_follower:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     loop_rate: 20
     stop_on_failure: False
     waypoint_task_executor_plugin: "wait_at_waypoint"

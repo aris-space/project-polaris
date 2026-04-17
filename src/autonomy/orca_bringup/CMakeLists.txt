@@ -22,4 +22,4 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-ament_auto_package(INSTALL_TO_SHARE behavior_trees cfg launch missions params)
+ament_auto_package(INSTALL_TO_SHARE behavior_trees launch missions params)
