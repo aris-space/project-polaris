@@ -78,8 +78,8 @@ class MavlinkBridgeSender(Node):
             f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection(
-            "/dev/ttyTHS1", baud=57600
-        )  # Serial connection straight to Pixhawk
+            Comms.MAVLINK_ROUTER_TCP
+        )  # TCP connection to mavlink-router (replaces direct serial)
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
@@ -90,9 +90,9 @@ class MavlinkBridgeSender(Node):
             State, "/pixhawk/heartbeat", 10
         )
 
-        self.attitude_euler_publisher = self.create_publisher(
-            Vector3, "/pixhawk/attitude_euler", 10
-        )
+        # self.attitude_euler_publisher = self.create_publisher(
+        #     Vector3, "/pixhawk/attitude_euler", 10
+        # )
         self.attitude_quaternion_publisher = self.create_publisher(
             Quaternion, "/pixhawk/attitude_quaternion", 10
         )
@@ -167,17 +167,17 @@ class MavlinkBridgeSender(Node):
         )
         self.logger.info("SCALED_PRESSURE2 request sent (interval=20ms)")
 
-        # ADDED: Request ATTITUDE messages at 50 Hz
-        self.logger.info("Requesting ATTITUDE EULERmessage stream from Pixhawk...")
-        self.port.mav.command_long_send(
-            self.port.target_system,
-            self.port.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0,  # confirmation
-            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,  # message ID = 30
-            20000,  # interval in microseconds (20ms = 50Hz)
-            0, 0, 0, 0, 0,
-        )
+        # # ADDED: Request ATTITUDE messages at 50 Hz
+        # self.logger.info("Requesting ATTITUDE EULERmessage stream from Pixhawk...")
+        # self.port.mav.command_long_send(
+        #     self.port.target_system,
+        #     self.port.target_component,
+        #     mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+        #     0,  # confirmation
+        #     mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,  # message ID = 30
+        #     20000,  # interval in microseconds (20ms = 50Hz)
+        #     0, 0, 0, 0, 0,
+        # )
 
         self.logger.info("Requesting ATTITUDE QUATERNION message stream from Pixhawk...")
         self.port.mav.command_long_send(
@@ -194,7 +194,7 @@ class MavlinkBridgeSender(Node):
 
         self.msg_type_counter = {
             "HEARTBEAT": 0,
-            "ATTITUDE": 0,
+            # "ATTITUDE": 0,
             "RC_CHANNELS": 0,
             "BATTERY_STATUS": 0,
             # "SCALED_PRESSURE2": 0,
@@ -248,8 +248,8 @@ class MavlinkBridgeSender(Node):
 
                 if msg.get_type() == "HEARTBEAT":
                     self.handle_heartbeat(msg)
-                elif msg.get_type() == "ATTITUDE":
-                   self.handle_attitude_euler(msg)
+                # elif msg.get_type() == "ATTITUDE":
+                #    self.handle_attitude_euler(msg)
                 elif msg.get_type() == "ATTITUDE_QUATERNION":
                    self.handle_attitude_quaternion(msg)
                 # elif msg.get_type() == "RC_CHANNELS":
@@ -374,16 +374,13 @@ class MavlinkBridgeSender(Node):
         self.diagnostic_publisher.publish(diag_msg)
 
 
-    def handle_attitude_euler(self, msg):
-        """Process ATTITUDE_EULER message and publish to ROS2"""
-        ros_msg = Vector3()
-
-        #Convert Euler angles (radians) to Quaternion
-        ros_msg.x = msg.roll
-        ros_msg.y = msg.pitch
-        ros_msg.z = msg.yaw
-
-        self.attitude_euler_publisher.publish(ros_msg)
+    # def handle_attitude_euler(self, msg):
+    #     """Process ATTITUDE_EULER message and publish to ROS2"""
+    #     ros_msg = Vector3()
+    #     ros_msg.x = msg.roll
+    #     ros_msg.y = msg.pitch
+    #     ros_msg.z = msg.yaw
+    #     self.attitude_euler_publisher.publish(ros_msg)
 
     def handle_attitude_quaternion(self, msg):
         """Process ATTITUDE_EULER message and publish to ROS2"""
