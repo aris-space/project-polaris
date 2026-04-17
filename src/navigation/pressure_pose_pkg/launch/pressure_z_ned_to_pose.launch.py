@@ -34,7 +34,7 @@ def generate_launch_description():
                             LaunchConfiguration("p_surface_pa"), value_type=float
                         ),
                         "fluid_pressure_is_gauge": False,
-                        "sensor_z_offset_m": 0.0,
+                        "sensor_z_offset_m": 0.04605,
                     }
                 ],
             ),
@@ -46,7 +46,7 @@ def generate_launch_description():
                 arguments=[
                     "--x", "0.0",
                     "--y", "0.0",
-                    "--z", "0.0",
+                    "--z", "-0.04605",
                     "--roll", "0.0",
                     "--pitch", "0.0",
                     "--yaw", "0.0",
