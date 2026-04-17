@@ -59,6 +59,8 @@ def generate_launch_description():
     respawn = LaunchConfiguration('respawn')
     respawn_delay = LaunchConfiguration('respawn_delay')
 
+    # TODO: Change odom_topic in nav2_params.yaml to /odometry/filtered/local
+    # TODO: Is this tf_rempapping necessary? where is it used?
     tf_remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
     cont_remappings = tf_remappings + [('/cmd_vel', '/pixhawk/cmd_vel')]
 

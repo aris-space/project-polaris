@@ -13,14 +13,11 @@ endif()
 # Install scripts
 install(
   PROGRAMS
-  scripts/dump_rosout.py
   scripts/export_tracking_bag_csv.py
   scripts/load_wsg84_points_to_waypoints.py
   scripts/nav2_ready_wait.py
   scripts/pixhawk_ready_wait.py
   scripts/mission_runner.py
-  scripts/current_vector_node.py
-  scripts/odom_to_tf.py
   scripts/WSG84_mission_starter.py
   DESTINATION lib/${PROJECT_NAME}
 )
