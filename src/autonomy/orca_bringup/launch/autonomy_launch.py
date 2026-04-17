@@ -46,7 +46,6 @@ from nav2_common.launch import RewrittenYaml
 
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
-    mavlink_bridge_dir = get_package_share_directory('mavlink_bridge')
 
     # -------------------------------------------------------------------------
     # use_sim_time is ALWAYS False for hardware.
@@ -57,7 +56,8 @@ def generate_launch_description():
 
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
-    rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
+    # TODO: Remove all Rviz!
+    # rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
 
     # TODO: Rewrite nav2_params.yaml: inject use_sim_time=False and the BT path.
     configured_nav2_params = RewrittenYaml(
@@ -78,18 +78,6 @@ def generate_launch_description():
             'bag',
             default_value='False',
             description='Record interesting topics to a rosbag?',
-        ),
-
-        DeclareLaunchArgument(
-            'comms_respawn',
-            default_value='True',
-            description='Respawn MAVLink bridge nodes on crash?',
-        ),
-
-        DeclareLaunchArgument(
-            'enable_external_odom',
-            default_value='True',
-            description='Forward /odom to ArduSub as MAVLink ODOMETRY (ros2_receiver).',
         ),
 
         DeclareLaunchArgument(
@@ -120,126 +108,30 @@ def generate_launch_description():
         ),
 
         # -----------------------------------------------------------------
-        # Optional: RViz2
-        # -----------------------------------------------------------------
-        ExecuteProcess(
-            cmd=['rviz2', '-d', rviz_file],
-            output='screen',
-            condition=IfCondition(LaunchConfiguration('rviz')),
-        ),
-
-        # -----------------------------------------------------------------
-        # MAVLink bridge — talks to Pixhawk over MAVLink.
-        # Connection URLs come from env vars (see file header).
-        # use_sim_time is forwarded explicitly as False.
-        # -----------------------------------------------------------------
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(mavlink_bridge_dir, 'launch', 'mavlink_bridge.launch.py')
-            ),
-            launch_arguments={
-                'respawn': LaunchConfiguration('comms_respawn'),
-                'respawn_delay': '2.0',
-                'use_sim_time': use_sim_time,
-                'enable_external_odom': LaunchConfiguration('enable_external_odom'),
-            }.items(),
-        ),
-
-        # -----------------------------------------------------------------
         # Odometry path visualisation node.
         # -----------------------------------------------------------------
-        Node(
-            package='orca_base',
-            executable='odom_to_path_node',
-            output='screen',
-            parameters=[{
-                'use_sim_time': False,
-                'max_poses': 5000,
-            }],
-        ),
+        # Node(
+        #     package='orca_base',
+        #     executable='odom_to_path_node',
+        #     output='screen',
+        #     parameters=[{
+        #         'use_sim_time': False,
+        #         'max_poses': 5000,
+        #     }],
+        # ),
 
-        # -----------------------------------------------------------------
-        # TODO: LOCALIZATION NODE
-        #
-        # You MUST supply a node (or set of nodes) that continuously
-        # broadcasts the map -> odom TF.  Without this the Nav2 lifecycle
-        # manager cannot configure and all navigation will be blocked.
-        #
-        # The localization must keep running for the full mission duration —
-        # the BT recovery is a Wait (drift/hover), not a re-localise, so
-        # Nav2 will stall immediately if the TF chain breaks.
-        #
-        # Options (uncomment / replace with your actual package):
-        #
-        #   A) DVL-based dead reckoning + initial USBL fix:
-        #      Node(package='your_dvl_localizer', executable='dvl_localizer', ...)
-        #
-        #   B) Visual SLAM (ORB-SLAM2, RTAB-Map, …):
-        #      Node(package='rtabmap_ros', executable='rtabmap', ...)
-        #
-        #   C) Temporary static map -> odom TF for bench tests ONLY
-        #      (vehicle stays at origin, navigation will NOT work in open water):
-        #      ExecuteProcess(
-        #          cmd=['/opt/ros/humble/lib/tf2_ros/static_transform_publisher',
-        #               '--frame-id', 'map', '--child-frame-id', 'odom'],
-        #          output='screen',
-        #      ),
-        # -----------------------------------------------------------------
-
-        # -----------------------------------------------------------------
-        # Base controller + Nav2 are delayed so the TF chain (map->odom->
-        # base_link) is already publishing before the Nav2 lifecycle manager
-        # autostarts.  Without the delay, behavior_server may reach the
-        # configure phase before the TF is available and fail permanently.
-        #
-        # On hardware the delay also gives the MAVLink bridge time to
-        # connect and receive the first heartbeat from ArduSub.
-        # -----------------------------------------------------------------
-        TimerAction(
-            period=5.0,
-            actions=[
-
-                # TODO: base_controller
-                #
-                # base_controller is the node that:
-                #   - subscribes  /cmd_vel, ArduSub EKF pose, SLAM pose
-                #   - publishes   /odom, odom->base_link TF, RC overrides to ArduSub
-                #   - always must be enabled on hardware
-                #
-                # The source exists at orca_base/src/base_controller.cpp but
-                # is NOT compiled — it was removed from orca_base/CMakeLists.txt.
-                # Before using this launch file you MUST re-add it:
-                #
-                #   ament_auto_add_executable(base_controller src/base_controller.cpp)
-                #
-                # Then rebuild orca_base and uncomment the Node below.
-                #
-                # Node(
-                #     package='orca_base',
-                #     executable='base_controller',
-                #     output='screen',
-                #     parameters=[{
-                #         'use_sim_time': False,
-                #     }],
-                # ),
-
-                # Nav2 stack: controller_server, planner_server, behavior_server,
-                # bt_navigator, waypoint_follower, lifecycle_manager.
-                # velocity_smoother is NOT included (does not work in 3D).
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(
-                        os.path.join(orca_bringup_dir, 'launch', 'navigation_launch.py')
-                    ),
-                    launch_arguments={
-                        'namespace': '',
-                        'use_sim_time': use_sim_time,
-                        'autostart': 'True',
-                        'params_file': configured_nav2_params,
-                        'use_composition': 'False',
-                        'use_respawn': 'False',
-                        'container_name': 'nav2_container',
-                    }.items(),
-                ),
-            ],
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(orca_bringup_dir, 'launch', 'navigation_launch.py')
+            ),
+            launch_arguments={
+                'namespace': '',
+                'use_sim_time': use_sim_time,
+                'autostart': 'False',
+                'params_file': configured_nav2_params,
+                'use_composition': 'False',
+                'use_respawn': 'True',
+                'container_name': 'nav2_container',
+            }.items(),
         ),
     ])
