@@ -13,8 +13,7 @@
 # limitations under the License.
 
 """
-Copied from https://github.com/ros-planning/navigation2 and modified for Orca4
-
+Copied from https://github.com/ros-planning/navigation2 and modified for Polaris
 velocity_smoother doesn't work in 3D, so don't use it.
 """
 

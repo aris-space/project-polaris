@@ -56,8 +56,6 @@ def generate_launch_description():
 
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
-    # TODO: Remove all Rviz!
-    # rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
 
     # TODO: Rewrite nav2_params.yaml: inject use_sim_time=False and the BT path.
     configured_nav2_params = RewrittenYaml(
@@ -80,11 +78,6 @@ def generate_launch_description():
             description='Record interesting topics to a rosbag?',
         ),
 
-        DeclareLaunchArgument(
-            'rviz',
-            default_value='False',
-            description='Launch RViz2?',
-        ),
 
         # -----------------------------------------------------------------
         # Optional: rosbag recording (hardware-relevant topics only).
