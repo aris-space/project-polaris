@@ -34,7 +34,7 @@ from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
 
 
-# TODO: Delete this rosbag things or at least comment them out.
+# DONE: Delete this rosbag things or at least comment them out.
 
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
@@ -58,10 +58,10 @@ def generate_launch_description():
     respawn = LaunchConfiguration('respawn')
     respawn_delay = LaunchConfiguration('respawn_delay')
 
-    # TODO: Change odom_topic in nav2_params.yaml to /odometry/filtered/local
-    # TODO: Is this tf_rempapping necessary? where is it used?
-    tf_remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
-    cont_remappings = tf_remappings + [('/cmd_vel', '/pixhawk/cmd_vel')]
+    # DONE: Change odom_topic in nav2_params.yaml to /odometry/filtered/local
+    # DONE: Is this tf_rempapping necessary? where is it used? NOT NECESSARY
+    # tf_remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+    cont_remappings = [('/cmd_vel', '/pixhawk/cmd_vel')]
 
     controller_server = Node(
         package='nav2_controller',
@@ -82,7 +82,6 @@ def generate_launch_description():
         respawn=respawn,
         respawn_delay=respawn_delay,
         parameters=[configured_nav2_params],
-        remappings=tf_remappings,
     )
 
     behavior_server = Node(
@@ -93,7 +92,6 @@ def generate_launch_description():
         respawn=respawn,
         respawn_delay=respawn_delay,
         parameters=[configured_nav2_params],
-        remappings=tf_remappings,
     )
 
     bt_navigator = Node(
@@ -104,7 +102,6 @@ def generate_launch_description():
         respawn=respawn,
         respawn_delay=respawn_delay,
         parameters=[configured_nav2_params],
-        remappings=tf_remappings,
     )
 
     waypoint_follower = Node(
@@ -115,7 +112,6 @@ def generate_launch_description():
         respawn=respawn,
         respawn_delay=respawn_delay,
         parameters=[configured_nav2_params],
-        remappings=tf_remappings,
     )
 
     lifecycle_manager = Node(

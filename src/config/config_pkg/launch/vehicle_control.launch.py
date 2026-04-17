@@ -15,6 +15,8 @@ from datetime import datetime
 from config_pkg.constants import Logs
 
 
+# TODO: IS respwan and such really used?
+
 def generate_launch_description():
     # IncludeLaunchDescription arguments must remain launch substitutions/strings.
     respawn_arg_value = LaunchConfiguration("respawn")
