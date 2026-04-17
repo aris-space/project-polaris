@@ -22,9 +22,9 @@ from rclpy.parameter import Parameter
 from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import Bool, String
 
-from load_wsg84_points_to_waypoints import process_coordinates
-from nav2_ready_wait import wait_for_waypoint_follower_active
-from pixhawk_ready_wait import (
+from autonomy.orca_bringup.scripts.load_wsg84_points_to_waypoints import process_coordinates
+from autonomy.orca_bringup.scripts.nav2_ready_wait import wait_for_waypoint_follower_active
+from autonomy.orca_bringup.scripts.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,
