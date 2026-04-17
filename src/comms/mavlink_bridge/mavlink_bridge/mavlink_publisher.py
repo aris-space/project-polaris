@@ -78,7 +78,7 @@ class MavlinkBridgeSender(Node):
             f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection(
-            "/dev/ttyTHS1", baud=57600
+            "/dev/ttyTHS1", baud=115200
         )  # Serial connection straight to Pixhawk
 
         self.port.wait_heartbeat()

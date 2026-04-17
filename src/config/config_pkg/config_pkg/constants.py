@@ -162,7 +162,7 @@ class JoyControlMapping:
 class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
     SUB_QOS_DEPTH = 10
-    SERIAL1_BAUD_RATE = 57600
+    SERIAL1_BAUD_RATE = 115200
     JETSON_IP_ADDRESS = "192.168.194.20" # Changed it for the jetsonorinnano2, beceause the 1 did not started up.
     # PING_SONAR_BAUD_RATE = 115200
     USB0_BAUD_RATE = 115200
