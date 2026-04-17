@@ -21,6 +21,7 @@ def generate_launch_description():
     )
     xsens_respawn_arg_value = LaunchConfiguration("xsens_respawn", default="true")
     dvl_respawn_arg_value = LaunchConfiguration("dvl_respawn", default="true")
+    keller_respawn_arg_value = LaunchConfiguration("keller_respawn", default="true")
     usb_cam_respawn_arg_value = LaunchConfiguration("usb_cam_respawn", default="false")
     ping_sonar_respawn_arg_value = LaunchConfiguration(
         "ping_sonar_respawn", default="true"
@@ -49,6 +50,7 @@ def generate_launch_description():
     temperature_sensor_pkg_dir = get_package_share_directory("temperature_sensor_pkg")
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
+    keller_26x_pkg_dir = get_package_share_directory("keller_26x_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
 
     gnss_launch = IncludeLaunchDescription(
@@ -113,6 +115,16 @@ def generate_launch_description():
         }.items(),
     )
 
+    keller_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(keller_26x_pkg_dir, "launch", "keller_26x.launch.py")
+        ),
+        launch_arguments={
+            "respawn": keller_respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
+    )
+
     usb_cam_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(usb_cam_pkg_dir, "launch", "launch_cameras.launch.py")
@@ -169,6 +181,11 @@ def generate_launch_description():
                 description="Respawn DVL nodes if they exit/crash.",
             ),
             DeclareLaunchArgument(
+                "keller_respawn",
+                default_value="true",
+                description="Respawn Keller pressure sensor nodes if they exit/crash.",
+            ),
+            DeclareLaunchArgument(
                 "usb_cam_respawn",
                 default_value="false",
                 description="Respawn USB camera nodes if they exit/crash.",
@@ -195,11 +212,15 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "ntrip_use_https",
-                default_value=EnvironmentVariable("NTRIP_USE_HTTPS", default_value="false"),
+                default_value=EnvironmentVariable(
+                    "NTRIP_USE_HTTPS", default_value="false"
+                ),
             ),
             DeclareLaunchArgument(
                 "ntrip_host",
-                default_value=EnvironmentVariable("NTRIP_HOST", default_value="www.swipos.ch"),
+                default_value=EnvironmentVariable(
+                    "NTRIP_HOST", default_value="www.swipos.ch"
+                ),
             ),
             DeclareLaunchArgument(
                 "ntrip_port",
@@ -213,7 +234,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "ntrip_version",
-                default_value=EnvironmentVariable("NTRIP_VERSION", default_value="Ntrip/1.0"),
+                default_value=EnvironmentVariable(
+                    "NTRIP_VERSION", default_value="Ntrip/1.0"
+                ),
             ),
             DeclareLaunchArgument(
                 "ntrip_username",
@@ -228,6 +251,7 @@ def generate_launch_description():
             temperature_launch,
             xsens_launch,
             dvl_launch,
+            keller_launch,
             usb_cam_launch,
             ping_sonar_node,
             jetson_temperature_node,

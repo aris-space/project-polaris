@@ -29,4 +29,4 @@ settings.json
 /recordings/
 # VS Code extension artifact
 .vscode/settings.json
-
+mavlink_logs/
