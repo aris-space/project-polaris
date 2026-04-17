@@ -19,9 +19,12 @@ Prerequisites (must be running before or alongside this launch):
        export MAVLINK_RECEIVER_URL="udp:192.168.2.2:14551"    # write to FC
      (Or use serial:/dev/ttyUSB0:115200 etc.)
 
-Usage:
-  ros2 launch orca_bringup hardware_launch.py
-  ros2 launch orca_bringup hardware_launch.py rviz:=False bag:=True
+Usage (via start_system):
+  ros2 launch config_pkg start_system.launch.py autonomy:=true
+
+Usage (standalone):
+  ros2 launch orca_bringup autonomy_launch.py
+  ros2 launch orca_bringup autonomy_launch.py rviz:=False bag:=True
 """
 
 import os
@@ -56,7 +59,7 @@ def generate_launch_description():
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
     rviz_file = os.path.join(orca_bringup_dir, 'cfg', 'sim_launch.rviz')
 
-    # Rewrite nav2_params.yaml: inject use_sim_time=False and the BT path.
+    # TODO: Rewrite nav2_params.yaml: inject use_sim_time=False and the BT path.
     configured_nav2_params = RewrittenYaml(
         source_file=nav2_params_file,
         param_rewrites={
