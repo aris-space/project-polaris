@@ -48,8 +48,8 @@
                 "ms-python.debugpy", // Python Debugger :contentReference[oaicite:13]{index=13}
                 "ms-python.vscode-python-envs", // Python Environments :contentReference[oaicite:14]{index=14}
                 "ms-python.black-formatter", // Black Formatter :contentReference[oaicite:15]{index=15}
-                // PlatformIO
-                "platformio.platformio-ide" // PlatformIO IDE :contentReference[oaicite:16]{index=16}
+                // Claude Code
+                "anthropic.claude-code", // Claude Code :contentReference[oaicite:16]{index=16}
             ],
             "settings": {
                 "[python]": {
