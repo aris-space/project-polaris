@@ -148,11 +148,11 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'bag',
-            default_value='False',
-            description='Record interesting topics to a rosbag?',
-        ),
+        # DeclareLaunchArgument(
+        #     'bag',
+        #     default_value='False',
+        #     description='Record interesting topics to a rosbag?',
+        # ),
         DeclareLaunchArgument(
             'respawn',
             default_value='true',
@@ -164,22 +164,22 @@ def generate_launch_description():
             description='Seconds to wait before restarting a crashed node.',
         ),
 
-        ExecuteProcess(
-            cmd=[
-                'ros2', 'bag', 'record',
-                '/pure_pursuit_cross_track_xy',
-                '/pure_pursuit_vertical_error',
-                '/pure_pursuit_yaw_error',
-                '/pure_pursuit_closest_point_map',
-                '/pure_pursuit_robot_pose_map',
-                '/pure_pursuit_robot_twist',
-                '/odom',
-                '/pixhawk/attitude',
-                '/pixhawk/battery',
-            ],
-            output='screen',
-            condition=IfCondition(LaunchConfiguration('bag')),
-        ),
+        # ExecuteProcess(
+        #     cmd=[
+        #         'ros2', 'bag', 'record',
+        #         '/pure_pursuit_cross_track_xy',
+        #         '/pure_pursuit_vertical_error',
+        #         '/pure_pursuit_yaw_error',
+        #         '/pure_pursuit_closest_point_map',
+        #         '/pure_pursuit_robot_pose_map',
+        #         '/pure_pursuit_robot_twist',
+        #         '/odom',
+        #         '/pixhawk/attitude',
+        #         '/pixhawk/battery',
+        #     ],
+        #     output='screen',
+        #     condition=IfCondition(LaunchConfiguration('bag')),
+        # ),
 
         controller_server,
         planner_server,
