@@ -103,6 +103,11 @@ def analyze_bag(bag_dir: Path) -> dict:
             "velocity (unique TOV) + dead_reckoning (reused ts) publishing "
             "two odometry messages per upstream message each."
         ),
+        "note": (
+            "If identity holds, duplicate odometry stamps follow from "
+            "velocity (unique TOV) + dead_reckoning (reused ts) publishing "
+            "two odometry messages per upstream message each."
+        ),
     }
 
 

@@ -38,5 +38,22 @@ def generate_launch_description():
                     }
                 ],
             ),
+            # Static base_link -> pixhawk_pressure_link. Replace with measured mounting values.
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="static_tf_base_to_bluerobotics_pressure",
+                arguments=[
+                    "--x", "0.0",
+                    "--y", "0.0",
+                    "--z", "0.0",
+                    "--roll", "0.0",
+                    "--pitch", "0.0",
+                    "--yaw", "0.0",
+                    "--frame-id", "base_link",
+                    "--child-frame-id", "bluerobotics_pressure_link",
+                ],
+                output="screen",
+            ),
         ]
     )
