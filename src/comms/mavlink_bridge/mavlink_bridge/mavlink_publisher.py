@@ -78,8 +78,8 @@ class MavlinkBridgeSender(Node):
             f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
         self.serial_port = mavutil.mavlink_connection(
-            "/dev/ttyTHS1", baud=115200
-        )  # Serial connection straight to Pixhawk
+            Comms.MAVLINK_ROUTER_TCP
+        )  # TCP connection to mavlink-router (replaces direct serial)
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
