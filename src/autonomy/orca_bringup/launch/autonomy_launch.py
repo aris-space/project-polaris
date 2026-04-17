@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-
-# Copyright (c) ARIS Space — autonomy stack for Orca4 AUV.
-
 """
 Nav2 autonomy stack: planner, controller, behaviors, BT navigator,
 waypoint follower and lifecycle manager for 3D AUV mission execution.
@@ -36,6 +33,8 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
 
+
+# TODO: Delete this rosbag things or at least comment them out.
 
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
