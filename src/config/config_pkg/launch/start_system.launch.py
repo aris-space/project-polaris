@@ -10,9 +10,9 @@ from launch_ros.actions import Node
 def generate_launch_description():
     config_pkg_dir = get_package_share_directory("config_pkg")
 
-    manual_control_launch = IncludeLaunchDescription(
+    vehicle_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(config_pkg_dir, "launch", "manual_control.launch.py")
+            os.path.join(config_pkg_dir, "launch", "vehicle_control.launch.py")
         )
     )
 
@@ -33,7 +33,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            manual_control_launch,
+            vehicle_control_launch,
             sensors_launch,
             foxglove_node,
         ]
