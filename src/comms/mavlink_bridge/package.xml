@@ -16,6 +16,10 @@
   <depend>std_msgs</depend>
   <depend>pymavlink</depend>
   <depend>mavros_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>geometry_msgs</depend>
   
 
   <export>

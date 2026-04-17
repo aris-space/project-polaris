@@ -26,6 +26,8 @@ class ModeControlNode(Node):
         self.prev_arm_button_state = 0
         self.prev_disarm_button_state = 0
         self.prev_stabilization_button_state = 0
+        self.prev_collision_avoidance_button_state = 0
+        self.current_collision_avoidance_checking_state = False
 
         # Publishers & Subscribers
         self.mode_publisher = self.create_publisher(
@@ -39,6 +41,10 @@ class ModeControlNode(Node):
             Joy, "/joy", self.command_callback, 10
         )
 
+        self.collision_avoidance_checking_publisher = self.create_publisher(
+            Bool, "/collision_avoidance/checking", 10
+        )
+
         self.get_logger().info("Mode Control Node Started. Default: manual_control")
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
@@ -47,6 +53,29 @@ class ModeControlNode(Node):
     def command_callback(self, msg):
         buttons = msg.buttons
         axes = msg.axes
+
+        setting_on = self.setting_safety_button_pressed(msg)
+
+        # Arm/disarm only while SETTING safety (Square) is held — not while MODE safety (Triangle) is held.
+        # JETSON layout uses the same physical D-pad Down for step_inputs_mode and for disarm; if we only
+        # updated prev_* inside the old `elif setting_safety` chain, debounce could go stale and disarm
+        # could fire when combining those inputs. Reset debounce whenever setting safety is released.
+        if setting_on:
+            if CONTROLLER_LAYOUT == "DESKTOP":
+                cur_arm = axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
+                cur_disarm = axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
+            else:
+                cur_arm = buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
+                cur_disarm = buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
+            if cur_arm and not self.prev_arm_button_state:
+                self.publish_arm_cmd(True)
+            if cur_disarm and not self.prev_disarm_button_state:
+                self.publish_arm_cmd(False)
+            self.prev_arm_button_state = cur_arm
+            self.prev_disarm_button_state = cur_disarm
+        else:
+            self.prev_arm_button_state = False
+            self.prev_disarm_button_state = False
 
         # 1. High Priority: Emergency Stop (Touchpad Button)
         if buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX_LEFT] == 1 or buttons[JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX_RIGHT] == 1:
@@ -103,30 +132,14 @@ class ModeControlNode(Node):
                 # SPARE MODE 2
                 pass
 
-        # 3. Setting Control (Requires Setting Safety Button Pressed)
-        elif self.setting_safety_button_pressed(msg):
-            # 3.1. Arm Command
-            current_arm_button_state = (
-                axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == 1.0
-                if CONTROLLER_LAYOUT == "DESKTOP"
-                else buttons[JoyControlMapping.SETTING_ARM_BUTTON_IDX] == 1
-            )
-            if current_arm_button_state and not self.prev_arm_button_state:
-                self.publish_arm_cmd(True)
-            self.prev_arm_button_state = current_arm_button_state
-
-            # 3.2. Disarm Command
-            current_disarm_button_state = (
-                axes[JoyControlMapping.SETTING_ARM_DISARM_AXIS_IDX] == -1.0
-                if CONTROLLER_LAYOUT == "DESKTOP"
-                else buttons[JoyControlMapping.SETTING_DISARM_BUTTON_IDX] == 1
-            )
-            if current_disarm_button_state and not self.prev_disarm_button_state:
-                self.publish_arm_cmd(False)
-            self.prev_disarm_button_state = current_disarm_button_state
-
+        # 3. Setting Control (Requires Setting Safety Button Pressed) — arm/disarm handled above
+        elif setting_on:
             # 3.3. Stabilization Setting Toggle
-            current_stabilization_button_state = buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1
+            current_stabilization_button_state = (
+                axes[JoyControlMapping.SETTING_STABILIZATION_AXIS_IDX] == 1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else
+                buttons[JoyControlMapping.SETTING_STABILIZATION_BUTTON_IDX] == 1)
             if current_stabilization_button_state and not self.prev_stabilization_button_state:
                 if self.current_mode != "manual_control":
                     self.get_logger().info(
@@ -140,6 +153,25 @@ class ModeControlNode(Node):
                         self.last_pixhawk_mode_before_stabilization = self.pixhawk_mode
                         self.pixhawk_mode = "STABILIZATION"
             self.prev_stabilization_button_state = current_stabilization_button_state
+
+            # 3.4. Collision Avoidance Setting Toggle
+            current_collision_avoidance_button_state = (
+                axes[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_AXIS_IDX] == -1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else buttons[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_BUTTON_IDX] == 1)
+            if current_collision_avoidance_button_state and not self.prev_collision_avoidance_button_state:
+                self.get_logger().info("Toggling Collision Avoidance Setting")
+                if self.current_mode == "emergency_stop":
+                    self.get_logger().info(
+                        "Collision Avoidance not available in Emergency Stop mode"
+                    )
+                elif self.current_collision_avoidance_checking_state:
+                    self.current_collision_avoidance_checking_state = False
+                    self.publish_collision_avoidance_checking(False)
+                elif not self.current_collision_avoidance_checking_state:
+                    self.current_collision_avoidance_checking_state = True
+                    self.publish_collision_avoidance_checking(True)
+            self.prev_collision_avoidance_button_state = current_collision_avoidance_button_state
 
         # 4. Only publish and log if the state has actually changed
         if self.current_mode != self.prev_mode:
@@ -168,6 +200,12 @@ class ModeControlNode(Node):
         arm_cmd_msg = Bool()
         arm_cmd_msg.data = arm_bool
         self.arm_cmd_publisher.publish(arm_cmd_msg)
+
+    def publish_collision_avoidance_checking(self, checking_bool):
+        checking_msg = Bool()
+        checking_msg.data = checking_bool
+        self.get_logger().info(f"Published /collision_avoidance/checking: {checking_bool}")
+        self.collision_avoidance_checking_publisher.publish(checking_msg)
 
     def mode_safety_button_pressed(self, msg):
         # This function should check the state of the safety button

@@ -18,7 +18,6 @@ env/
 .coverage
 coverage.xml
 ping-python/
-src/measurement/ping_sonar/
 
 settings.json
 .env
@@ -28,3 +27,6 @@ settings.json
 **/install/
 **/log/
 /recordings/
+# VS Code extension artifact
+.vscode/settings.json
+mavlink_logs/
