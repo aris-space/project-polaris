@@ -1,30 +1,21 @@
 #!/usr/bin/env python3
 
-# Copyright (c) ARIS Space — hardware bringup for Orca4 AUV.
-#
-# Drop-in replacement for sim_launch.py without any Gazebo, ros_gz_bridge,
-# or use_sim_time dependencies.  Localization (map -> odom TF) must be
-# provided externally — see the TODO block below.
+# Copyright (c) ARIS Space — autonomy stack for Orca4 AUV.
 
 """
-Hardware bringup: MAVLink bridge, base controller, Nav2, optional RViz / rosbag.
+Nav2 autonomy stack: planner, controller, behaviors, BT navigator,
+waypoint follower and lifecycle manager for 3D AUV mission execution.
 
-Prerequisites (must be running before or alongside this launch):
-  1. A localization source that publishes the map -> odom TF continuously.
-     This can be a SLAM node (ORB-SLAM2, RTAB-Map, …), a USBL/DVL-based
-     dead-reckoning node, or any other source.  See the placeholder below.
-  2. ArduSub running on the real Pixhawk, reachable via MAVLink.
-     Set the connection URLs with environment variables BEFORE launching:
-       export MAVLINK_PUBLISHER_URL="udp:192.168.2.2:14550"   # read from FC
-       export MAVLINK_RECEIVER_URL="udp:192.168.2.2:14551"    # write to FC
-     (Or use serial:/dev/ttyUSB0:115200 etc.)
+Nodes start unconfigured (autostart=False). Activate on demand via:
+  ros2 service call /lifecycle_manager_navigation/manage_nodes \
+      nav2_msgs/srv/ManageLifecycleNodes "{command: 0}"
 
 Usage (via start_system):
   ros2 launch config_pkg start_system.launch.py autonomy:=true
 
 Usage (standalone):
   ros2 launch orca_bringup autonomy_launch.py
-  ros2 launch orca_bringup autonomy_launch.py rviz:=False bag:=True
+  ros2 launch orca_bringup autonomy_launch.py bag:=True
 """
 
 import os
@@ -33,12 +24,14 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    EmitEvent,
     ExecuteProcess,
-    IncludeLaunchDescription,
-    TimerAction,
+    LogInfo,
+    RegisterEventHandler,
 )
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
@@ -47,17 +40,13 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
 
-    # -------------------------------------------------------------------------
-    # use_sim_time is ALWAYS False for hardware.
-    # It is NOT exposed as a launch argument intentionally so it can never
-    # be accidentally set to True when launching on the real vehicle.
-    # -------------------------------------------------------------------------
+    # use_sim_time is ALWAYS False for hardware — not exposed as an arg
+    # so it can never be accidentally set to True on the real vehicle.
     use_sim_time = 'False'
 
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
 
-    # TODO: Rewrite nav2_params.yaml: inject use_sim_time=False and the BT path.
     configured_nav2_params = RewrittenYaml(
         source_file=nav2_params_file,
         param_rewrites={
@@ -67,22 +56,113 @@ def generate_launch_description():
         convert_types=True,
     )
 
-    return LaunchDescription([
+    respawn = LaunchConfiguration('respawn')
+    respawn_delay = LaunchConfiguration('respawn_delay')
 
-        # -----------------------------------------------------------------
-        # Launch arguments
-        # -----------------------------------------------------------------
+    tf_remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
+    cont_remappings = tf_remappings + [('/cmd_vel', '/pixhawk/cmd_vel')]
+
+    controller_server = Node(
+        package='nav2_controller',
+        executable='controller_server',
+        name='controller_server',
+        output='screen',
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+        parameters=[configured_nav2_params],
+        remappings=cont_remappings,
+    )
+
+    planner_server = Node(
+        package='nav2_planner',
+        executable='planner_server',
+        name='planner_server',
+        output='screen',
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+        parameters=[configured_nav2_params],
+        remappings=tf_remappings,
+    )
+
+    behavior_server = Node(
+        package='nav2_behaviors',
+        executable='behavior_server',
+        name='behavior_server',
+        output='screen',
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+        parameters=[configured_nav2_params],
+        remappings=tf_remappings,
+    )
+
+    bt_navigator = Node(
+        package='nav2_bt_navigator',
+        executable='bt_navigator',
+        name='bt_navigator',
+        output='screen',
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+        parameters=[configured_nav2_params],
+        remappings=tf_remappings,
+    )
+
+    waypoint_follower = Node(
+        package='nav2_waypoint_follower',
+        executable='waypoint_follower',
+        name='waypoint_follower',
+        output='screen',
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+        parameters=[configured_nav2_params],
+        remappings=tf_remappings,
+    )
+
+    lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_navigation',
+        output='screen',
+        parameters=[{
+            'use_sim_time': False,
+            'autostart': False,
+            'node_names': [
+                'controller_server',
+                'planner_server',
+                'behavior_server',
+                'bt_navigator',
+                'waypoint_follower',
+            ],
+            'bond_timeout': 15.0,
+        }],
+    )
+
+    on_exit_shutdown = RegisterEventHandler(
+        OnProcessExit(
+            target_action=lifecycle_manager,
+            on_exit=[
+                LogInfo(msg='[FATAL] Lifecycle manager exited — shutting down autonomy stack.'),
+                EmitEvent(event=Shutdown(reason='Lifecycle manager lost')),
+            ],
+        )
+    )
+
+    return LaunchDescription([
         DeclareLaunchArgument(
             'bag',
             default_value='False',
             description='Record interesting topics to a rosbag?',
         ),
+        DeclareLaunchArgument(
+            'respawn',
+            default_value='true',
+            description='Respawn Nav2 nodes on crash?',
+        ),
+        DeclareLaunchArgument(
+            'respawn_delay',
+            default_value='2.0',
+            description='Seconds to wait before restarting a crashed node.',
+        ),
 
-
-        # -----------------------------------------------------------------
-        # Optional: rosbag recording (hardware-relevant topics only).
-        # /ocean_current is intentionally removed — it does not exist on hardware.
-        # -----------------------------------------------------------------
         ExecuteProcess(
             cmd=[
                 'ros2', 'bag', 'record',
@@ -100,31 +180,11 @@ def generate_launch_description():
             condition=IfCondition(LaunchConfiguration('bag')),
         ),
 
-        # -----------------------------------------------------------------
-        # Odometry path visualisation node.
-        # -----------------------------------------------------------------
-        # Node(
-        #     package='orca_base',
-        #     executable='odom_to_path_node',
-        #     output='screen',
-        #     parameters=[{
-        #         'use_sim_time': False,
-        #         'max_poses': 5000,
-        #     }],
-        # ),
-
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(orca_bringup_dir, 'launch', 'navigation_launch.py')
-            ),
-            launch_arguments={
-                'namespace': '',
-                'use_sim_time': use_sim_time,
-                'autostart': 'False',
-                'params_file': configured_nav2_params,
-                'use_composition': 'False',
-                'use_respawn': 'True',
-                'container_name': 'nav2_container',
-            }.items(),
-        ),
+        controller_server,
+        planner_server,
+        behavior_server,
+        bt_navigator,
+        waypoint_follower,
+        lifecycle_manager,
+        on_exit_shutdown,
     ])
