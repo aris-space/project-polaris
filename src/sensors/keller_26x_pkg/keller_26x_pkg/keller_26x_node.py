@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
 from sensor_msgs.msg import FluidPressure
+from sensor_msgs.msg import Temperature
 from std_msgs.msg import Float64
 
 from config_pkg.constants import Ports
@@ -23,9 +24,12 @@ class Keller26xNode(Node):
             "surface_pressure_topic", "/sensors/pressure/p_surface_pa"
         )
         self.declare_parameter(
-            "gauge_pressure_topic", "sensors/keller26x/gauge_pressure"
+            "gauge_pressure_topic", "/sensors/keller26x/gauge_pressure"
         )
-        self.declare_parameter("abs_pressure_topic", "sensors/keller26x/abs_pressure")
+        self.declare_parameter("abs_pressure_topic", "/sensors/keller26x/abs_pressure")
+        self.declare_parameter(
+            "water_temperature_topic", "/sensors/keller26x/water_temperature_degc"
+        )
         self.declare_parameter("default_atmospheric_pressure_pa", 101325.0)
         self.declare_parameter("pressure_frame_id", "keller_pressure_link")
         self.declare_parameter("publish_frequency_hz", 30.0)
@@ -42,6 +46,7 @@ class Keller26xNode(Node):
         self.p1_Pa = 0.0
         self.p1_gauge_pa = 0.0
         self.p1_gauge_raw_pa = 0.0
+        self.water_temperature_c = 0.0
         self.serial_number = None
         self._surface_pressure_pa = float(
             self.get_parameter("default_atmospheric_pressure_pa").value
@@ -64,6 +69,9 @@ class Keller26xNode(Node):
         surface_pressure_topic = str(self.get_parameter("surface_pressure_topic").value)
         gauge_pressure_topic = str(self.get_parameter("gauge_pressure_topic").value)
         abs_pressure_topic = str(self.get_parameter("abs_pressure_topic").value)
+        water_temperature_topic = str(
+            self.get_parameter("water_temperature_topic").value
+        )
         self.pressure_frame_id = str(self.get_parameter("pressure_frame_id").value)
 
         self.gauge_pub = self.create_publisher(
@@ -76,6 +84,11 @@ class Keller26xNode(Node):
             abs_pressure_topic,
             10,
         )
+        self.water_temperature_pub = self.create_publisher(
+            Temperature,
+            water_temperature_topic,
+            10,
+        )
         self.surface_pressure_sub = self.create_subscription(
             Float64,
             surface_pressure_topic,
@@ -85,11 +98,16 @@ class Keller26xNode(Node):
 
         timer_period = 1.0 / self.publish_frequency_hz
         self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.water_temperature_timer = self.create_timer(
+            1.0 / 5.0,
+            self.water_temperature_timer_callback,
+        )
         self.add_on_set_parameters_callback(self.on_parameter_change)
 
         self.get_logger().info(
             f"Started Keller26x pressure node. Gauge topic: {gauge_pressure_topic}. "
             f"Absolute topic: {abs_pressure_topic}. Using default atmospheric pressure "
+            f"Water temperature topic: {water_temperature_topic} (5.0 Hz). "
             f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}. "
             f"Message frame_id={self.pressure_frame_id}. Publish frequency: {self.publish_frequency_hz} Hz. "
             f"Device port: {self.dev_port}."
@@ -172,6 +190,10 @@ class Keller26xNode(Node):
         pressure = self.bus.f73(self.address, self.f73_channels["P1"])
         return pressure
 
+    def measure_water_temperature(self) -> float:
+        """Get water temperature from channel T in degC."""
+        return self.bus.f73(self.address, self.f73_channels["T"])
+
     """
     calibration callback flow (surface_pressure_callback):
     - on startup, use default surface pressure and add the measured gauge raw pressure to that to get absolute pressure. Log that we are using the default surface pressure.
@@ -239,6 +261,16 @@ class Keller26xNode(Node):
             f"atm_source={self._surface_pressure_source}",
             throttle_duration_sec=5.0,
         )
+
+    def water_temperature_timer_callback(self) -> None:
+        self.water_temperature_c = self.measure_water_temperature()
+
+        temp_msg = Temperature()
+        temp_msg.header.stamp = self.get_clock().now().to_msg()
+        temp_msg.header.frame_id = self.pressure_frame_id
+        temp_msg.temperature = self.water_temperature_c
+        temp_msg.variance = 0.0
+        self.water_temperature_pub.publish(temp_msg)
 
 
 def main(args=None):

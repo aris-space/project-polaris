@@ -6,7 +6,14 @@ from std_msgs.msg import Float64
 
 
 class PressureZNedToPoseNode(Node):
-    """Convert absolute pressure to ENU z for robot_localization (z-only pose)."""
+    """Convert absolute (or gauge) fluid pressure to ENU z for robot_localization (z-only pose).
+
+    MAVLink SCALED_PRESSURE / SCALED_PRESSURE2 ``press_abs`` is *absolute* static pressure in hPa
+    (your bridge converts to Pa). That is not depth by itself: depth in water is proportional to
+    (P_abs - P_surface). Pixhawk sensor calibration corrects scale/offset of the sensor; it does
+    not remove the need for a surface reference unless you interpret the stream as gauge pressure
+    (see ``fluid_pressure_is_gauge``).
+    """
 
     def __init__(self) -> None:
         super().__init__("pressure_z_ned_to_pose_node")
@@ -18,13 +25,15 @@ class PressureZNedToPoseNode(Node):
         self.declare_parameter("unused_variance", 1000000.0)
         self.declare_parameter("water_density_kg_m3", 1000.0)
         self.declare_parameter("gravity_m_s2", 9.80665)
-        self.declare_parameter("calibration_duration_sec", 8.0)
         # Positive value means sensor is below vehicle origin (depth-positive convention).
         self.declare_parameter("sensor_z_offset_m", 0.0)
-        # Optional in-mission recalibration while surfaced.
-        self.declare_parameter("update_surface_when_surfaced", False)
-        self.declare_parameter("surfaced_depth_threshold_m", 0.15)
-        self.declare_parameter("surface_update_alpha", 0.02)
+        # Absolute pressure at the water surface (Pa), same units as sensor_msgs/FluidPressure.
+        # Used when fluid_pressure_is_gauge is false. Typical: ~101325 Pa at surface; override
+        # for barometric altitude or a measured surface value.
+        self.declare_parameter("p_surface_pa", 101325.0)
+        # If true, treat fluid_pressure as gauge (Pa) relative to surface (0 at surface) so
+        # depth = p / (rho*g). Use only if your firmware publishes gauge pressure in this field.
+        self.declare_parameter("fluid_pressure_is_gauge", False)
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
@@ -35,64 +44,34 @@ class PressureZNedToPoseNode(Node):
             Float64, "/sensors/pressure/p_surface_pa", 10
         )
 
-        self._calibration_done = False
-        self._calibration_start_sec = self.get_clock().now().nanoseconds * 1e-9
-        self._calibration_count = 0
-        self._calibration_sum_pa = 0.0
-        self._p_surface_pa = None
-
+        gauge = bool(self.get_parameter("fluid_pressure_is_gauge").value)
+        p_surf = float(self.get_parameter("p_surface_pa").value)
         self.get_logger().info(
-            f"Pressure adapter started: {input_topic} (abs pressure) -> {output_topic} (z_enu). "
-            "Calibrating surface pressure at startup..."
+            f"Pressure adapter: {input_topic} -> {output_topic} (z_enu). "
+            f"{'Gauge mode: depth = p/(rho*g).' if gauge else f'Absolute mode: p_surface_pa={p_surf:.1f} Pa.'}"
         )
 
     def callback(self, msg: FluidPressure) -> None:
-        p_abs_pa = float(msg.fluid_pressure)
-        now_sec = self.get_clock().now().nanoseconds * 1e-9
-
-        if not self._calibration_done:
-            self._calibration_sum_pa += p_abs_pa
-            self._calibration_count += 1
-
-            duration = float(self.get_parameter("calibration_duration_sec").value)
-            if now_sec - self._calibration_start_sec < duration:
-                return
-
-            if self._calibration_count == 0:
-                self.get_logger().warning("Surface calibration got no samples yet.")
-                return
-
-            self._p_surface_pa = self._calibration_sum_pa / float(self._calibration_count)
-            self._calibration_done = True
-            self.get_logger().info(
-                f"Surface calibration done: p_surface={self._p_surface_pa:.2f} Pa "
-                f"from {self._calibration_count} samples."
-            )
-
-        if self._p_surface_pa is None:
-            return
-
-        p_surface_msg = Float64()
-        p_surface_msg.data = self._p_surface_pa
-        self.p_surface_pub.publish(p_surface_msg)
-
+        p_pa = float(msg.fluid_pressure)
+        gauge = bool(self.get_parameter("fluid_pressure_is_gauge").value)
         rho = float(self.get_parameter("water_density_kg_m3").value)
         g = float(self.get_parameter("gravity_m_s2").value)
         sensor_z_offset_m = float(self.get_parameter("sensor_z_offset_m").value)
 
-        # depth is positive down
-        depth_sensor_m = (p_abs_pa - self._p_surface_pa) / (rho * g)
+        if gauge:
+            p_surface_used = 0.0
+            depth_sensor_m = p_pa / (rho * g)
+        else:
+            p_surface_used = float(self.get_parameter("p_surface_pa").value)
+            depth_sensor_m = (p_pa - p_surface_used) / (rho * g)
+
+        p_surface_msg = Float64()
+        p_surface_msg.data = p_surface_used
+        self.p_surface_pub.publish(p_surface_msg)
+
         depth_vehicle_m = depth_sensor_m - sensor_z_offset_m
         # ENU z is positive up
         z_enu = -depth_vehicle_m
-
-        if bool(self.get_parameter("update_surface_when_surfaced").value):
-            surfaced_threshold = float(
-                self.get_parameter("surfaced_depth_threshold_m").value
-            )
-            if abs(depth_vehicle_m) <= surfaced_threshold:
-                alpha = float(self.get_parameter("surface_update_alpha").value)
-                self._p_surface_pa = (1.0 - alpha) * self._p_surface_pa + alpha * p_abs_pa
 
         out = PoseWithCovarianceStamped()
         out.header.stamp = self.get_clock().now().to_msg()

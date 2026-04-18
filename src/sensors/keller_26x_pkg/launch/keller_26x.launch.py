@@ -26,9 +26,9 @@ def _launch_setup(context, *args, **kwargs):
             executable="static_transform_publisher",
             name="static_tf_base_to_keller_pressure",
             arguments=[
-                "--x", "0.0",
-                "--y", "0.0",
-                "--z", "0.0",
+                "--x", "0.005607",
+                "--y", "-0.000299",
+                "--z", "0.117520",
                 "--roll", "0.0",
                 "--pitch", "0.0",
                 "--yaw", "0.0",

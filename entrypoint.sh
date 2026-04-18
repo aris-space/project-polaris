@@ -81,6 +81,11 @@ EOF
   fi
 }
 
+# Returns 0 if a basic internet connection is available, 1 otherwise.
+has_internet() {
+  timeout 3 bash -c 'echo >/dev/tcp/8.8.8.8/53' 2>/dev/null
+}
+
 # --- Config defaults ---
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
@@ -117,18 +122,22 @@ fi
 # 2) Optional dependency install for mounted workspaces.
 if [ "${ROSDEP_INSTALL}" = "1" ]; then
   if command -v rosdep >/dev/null 2>&1; then
-    echo "[entrypoint] Updating package lists..."
-    apt-get update
-    
-    echo "[entrypoint] Fixing rosdep permissions and updating..."
     rosdep fix-permissions
-    rosdep update || true
-    
-    if command -v rosdep-install-workspace >/dev/null 2>&1; then
-      rosdep-install-workspace "${ROS_WS}"
+    if has_internet; then
+      echo "[entrypoint] Updating package lists..."
+      apt-get update
+
+      echo "[entrypoint] Updating rosdep rules..."
+      rosdep update || true
+
+      if command -v rosdep-install-workspace >/dev/null 2>&1; then
+        rosdep-install-workspace "${ROS_WS}"
+      else
+        echo "[entrypoint] Installing dependencies with rosdep..."
+        rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+      fi
     else
-      echo "[entrypoint] Installing dependencies with rosdep..."
-      rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+      echo "[entrypoint] No internet access — skipping apt-get update, rosdep update, and rosdep install."
     fi
   else
     echo "ROSDEP_INSTALL=1 but neither 'rosdep-install-workspace' nor 'rosdep' was found."

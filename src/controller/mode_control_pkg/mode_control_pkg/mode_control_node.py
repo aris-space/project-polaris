@@ -132,11 +132,8 @@ class ModeControlNode(Node):
                     and buttons[JoyControlMapping.MODE_SPARE_2_DPAD_BUTTON_IDX] == 1
                 )
             ):
-                # PID TUNING STEP INPUTS MODE — default to MANUAL; step_inputs_mode publishes STAB/ALT/POSH
-                # when a tuning submode is active. Avoid STABILIZATION here then immediate MANUAL from
-                # step_inputs_mode (no submode), which can confuse ArduSub and look like a disarm.
-                self.current_mode = "step_inputs_mode"
-                self.pixhawk_mode = "MANUAL"
+                # SPARE MODE 2
+                pass
 
         # 3. Setting Control (Requires Setting Safety Button Pressed) — arm/disarm handled above
         elif setting_on:

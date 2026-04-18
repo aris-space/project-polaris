@@ -39,6 +39,8 @@ class Ice_Measurement(Node):
         # --- Parameter-controlled recording ---
         self.declare_parameter("recording", False)
         self.recording = bool(self.get_parameter("recording").value)
+        self.declare_parameter("speed_of_sound", 1500000)
+        self.speed_of_sound = int(self.get_parameter("speed_of_sound").value)
         self.ping = Ping1D()  # initializes object
         self.ping.connect_serial(
             Ports.PING_SONAR_PORT, 115200
@@ -59,7 +61,6 @@ class Ice_Measurement(Node):
         self.scan_start = 0
         self.scan_length = 1000
         self.number_bins = 200
-        self.speed_of_sound = 1500000
         self.ping_interval = 0.05
 
         self.bin_time = (2 * self.scan_length) / (
@@ -68,6 +69,7 @@ class Ice_Measurement(Node):
 
         # set functions based on the config factors
         self.ping.set_range(self.scan_start, self.scan_length, verify=False)
+        self.ping.set_speed_of_sound(self.speed_of_sound, verify=False)
         self.get_logger().info("Range set")
 
         
@@ -177,6 +179,27 @@ class Ice_Measurement(Node):
                         successful=False,
                         reason="recording must be a boolean",
                     )
+            if param.name == "speed_of_sound":
+                if param.type_ not in (param.Type.INTEGER, param.Type.DOUBLE):
+                    return SetParametersResult(
+                        successful=False,
+                        reason="speed_of_sound must be a number",
+                    )
+                new_speed = int(param.value)
+                if new_speed <= 0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason="speed_of_sound must be > 0",
+                    )
+                self.speed_of_sound = new_speed
+                self.bin_time = (2 * self.scan_length) / (
+                    self.number_bins * self.speed_of_sound
+                )
+                self.ping.set_speed_of_sound(self.speed_of_sound, verify=False)
+                self.get_logger().info(
+                    f"speed_of_sound set to {self.speed_of_sound}"
+                )
+                return SetParametersResult(successful=True)
 
 
 def main(args=None):

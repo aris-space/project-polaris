@@ -61,32 +61,17 @@ class MavlinkBridgeReceiver(Node):
 
         # Serial MAVLink to Pixhawk (single reader — mavlink_publisher uses UDP only).
         self.port = mavutil.mavlink_connection(
-            Ports.SERIAL_PORT1, baud=Comms.SERIAL1_BAUD_RATE
-        )
+            Comms.MAVLINK_ROUTER_TCP
+        )  # For sending commands to Pixhawk via mavlink-router
+        # self.port_in = mavutil.mavlink_connection(
+        #     "/dev/ttyTHS1", baud=115200
+        # )  # For receiving messages from Pixhawk (e.g., heartbeats, status)
 
-        try:
-            try:
-                self.port.wait_heartbeat(timeout=120.0)
-            except TypeError:
-                # Older pymavlink: no timeout= keyword
-                self.port.wait_heartbeat()
-        except Exception as e:
-            self.get_logger().error(
-                f"No serial MAVLink heartbeat: {e}. "
-                "Using target_system=1; fix wiring/port if commands fail."
-            )
-            self.port.target_system = 1
-            self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
-        else:
-            self.get_logger().info(
-                f"Heartbeat received from system {self.port.target_system}"
-            )
-            if self.port.target_component == 0:
-                self.port.target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
-            self.get_logger().info(
-                f"MAVLink target system={self.port.target_system} "
-                f"component={self.port.target_component}"
-            )
+        # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
+        self.port.wait_heartbeat()
+        self.get_logger().info(
+            f"Heartbeat received from system {self.port.target_system}"
+        )
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(

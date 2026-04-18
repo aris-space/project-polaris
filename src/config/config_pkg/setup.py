@@ -26,6 +26,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'mavlink_debugger = config_pkg.mavlink_debugger:main',
         ],
     },
 )
