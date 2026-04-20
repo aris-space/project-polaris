@@ -8,7 +8,7 @@
 # Shell in:  docker exec -it polaris-sim bash
 services:
   jetson-container:
-    image: ghcr.io/aris-space/project-polaris-docker:runtime
+    image: ghcr.io/aris-space/project-polaris-docker:dev-x64
     container_name: jetson-container
     privileged: true
     network_mode: host
