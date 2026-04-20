@@ -14,10 +14,15 @@ points are inserted every ``--step`` horizontal metres, all with
 
 Usage
 -----
-    python3 leg_partitioning.py input.csv -o output.csv
-    python3 leg_partitioning.py input.csv --step 5 -o output.csv
+    python3 leg_partitioning.py default_wgs84_mission.csv
+    python3 leg_partitioning.py default_wgs84_mission.csv --step 5
 
-If ``-o`` is omitted the result is written to ``<input>_partitioned.csv``.
+Bare filenames are resolved against
+``src/autonomy/orca_bringup/missions/`` (relative to the repo root).
+Absolute paths and paths containing a separator are used as-is.
+
+If ``-o`` is omitted the result is written next to the input as
+``<input-stem>_partitioned.csv`` in the same missions directory.
 """
 
 from __future__ import annotations
@@ -28,6 +33,17 @@ import math
 import sys
 from pathlib import Path
 from typing import List
+
+_MISSIONS_DIR = (Path(__file__).resolve().parent.parent
+                 / 'src' / 'autonomy' / 'orca_bringup' / 'missions')
+
+
+def _resolve_mission_path(p: Path) -> Path:
+    """Resolve bare filenames against the repo's missions directory."""
+    if p.is_absolute() or len(p.parts) > 1 or p.exists():
+        return p
+    return _MISSIONS_DIR / p
+
 
 # ── WGS-84 maths (same as load_wsg84_points_to_waypoints.py) ─────────
 
@@ -130,8 +146,12 @@ def main() -> None:
                         help='Max horizontal distance between waypoints [m] (default: 10)')
     args = parser.parse_args()
 
+    args.input = _resolve_mission_path(args.input)
+
     if args.output is None:
         args.output = args.input.with_stem(args.input.stem + '_partitioned')
+    else:
+        args.output = _resolve_mission_path(args.output)
 
     # ── Read ──────────────────────────────────────────────────────────
     with open(args.input, newline='') as f:
