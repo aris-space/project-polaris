@@ -437,9 +437,9 @@ class MavlinkBridgeSender(Node):
         self.battery_consumed_publisher.publish(consumed_msg)
 
         self.battery_publisher.publish(ros_msg)
-        self.logger.info(
-            f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
-        )
+        # self.logger.info(
+        #     f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
+        # )
 
         diag_msg = DiagnosticArray()
         diag_msg.header.stamp = self.get_clock().now().to_msg()
