@@ -56,7 +56,9 @@ class RecorderControllerNode(Node):
         self.last_error: Optional[str] = None
 
         self.base_output_dir.mkdir(parents=True, exist_ok=True)
-        self.get_logger().info(f"Recorder controller ready. command={self.command_topic} status={self.status_topic}")
+        self.get_logger().info(
+            f"Recorder controller ready. command={self.command_topic} status={self.status_topic}"
+        )
 
     def on_command(self, msg: String) -> None:
         try:
@@ -152,7 +154,7 @@ class RecorderControllerNode(Node):
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            preexec_fn=os.setsid,
+            start_new_session=True,
         )
         self.get_logger().info(f"Started recording: {self.output_path}")
         self.get_logger().info(f"Recording command: {' '.join(cmd)}")
@@ -161,12 +163,35 @@ class RecorderControllerNode(Node):
         if not self.is_recording():
             raise RuntimeError("No recording is active")
 
-        assert self.record_process is not None
-        os.killpg(os.getpgid(self.record_process.pid), signal.SIGINT)
-        self.record_process.wait(timeout=10)
-        self.record_process = None
+        self.stop_record_process()
         self.active_event = None
         self.get_logger().info("Stopped recording")
+
+    def stop_record_process(self, timeout: float = 10.0) -> None:
+        process = self.record_process
+        if process is None:
+            return
+
+        try:
+            if process.poll() is None:
+                os.killpg(os.getpgid(process.pid), signal.SIGINT)
+                process.wait(timeout=timeout)
+        except ProcessLookupError:
+            pass
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    process.wait(timeout=timeout)
+                except Exception:  # noqa: BLE001
+                    self.get_logger().warning(
+                        "Recorder process did not exit cleanly after stop request"
+                    )
+        finally:
+            self.record_process = None
 
     def add_instant_event(self, event_name: str) -> None:
         event: Dict[str, Any] = {"type": "instant", "timestamp": iso_now()}
@@ -283,13 +308,7 @@ class RecorderControllerNode(Node):
         self.status_pub.publish(String(data=json.dumps(status)))
 
     def destroy_node(self) -> bool:
-        if self.is_recording() and self.record_process is not None:
-            try:
-                os.killpg(os.getpgid(self.record_process.pid), signal.SIGINT)
-                self.record_process.wait(timeout=10)
-            except Exception:  # noqa: BLE001
-                pass
-            self.record_process = None
+        self.stop_record_process(timeout=5.0)
         return super().destroy_node()
 
 

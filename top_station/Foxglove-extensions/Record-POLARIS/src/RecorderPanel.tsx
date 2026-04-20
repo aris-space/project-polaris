@@ -744,9 +744,9 @@ function RecorderPanel({ context }: { context: PanelExtensionContext }): ReactEl
   const recordingButtonKind = isRecording ? "danger" : "primary";
   const recordingButtonLabel = isRecording
     ? stopConfirmPending
-      ? "■ Confirm Stop"
-      : "■ Stop Rec"
-    : "● Start Rec";
+      ? "■ Confirm stop"
+      : "■ Stop rec"
+    : "● START REC";
   const missingSettingsMetadataFields = !isRecording
     ? [
         metadata.name.trim() === "" ? "mission name" : null,
@@ -760,7 +760,7 @@ function RecorderPanel({ context }: { context: PanelExtensionContext }): ReactEl
     !isRecording && (missingSettingsMetadataFields.length > 0 || missingPanelMetadataFields.length > 0);
 
   const longEventButtonKind = hasActiveLongEvent ? "danger" : "accent";
-  const longEventButtonLabel = hasActiveLongEvent ? "Stop Long Event" : "Start Long Event";
+  const longEventButtonLabel = hasActiveLongEvent ? "Stop long event" : "Start long event";
 
   const instantEventButtonDisabled = false;
   const longEventButtonDisabled = false;
@@ -805,7 +805,6 @@ function RecorderPanel({ context }: { context: PanelExtensionContext }): ReactEl
                 : "0 0 0 1px rgba(34, 160, 107, 0.38), 0 0 0 4px rgba(34, 160, 107, 0.10)",
               opacity: startRecordingDisabled ? 0.55 : 1,
               cursor: startRecordingDisabled ? "not-allowed" : "pointer",
-              textTransform: "uppercase",
             }}
             onMouseOver={(e) => {
               if (!startRecordingDisabled) {
@@ -904,7 +903,6 @@ function RecorderPanel({ context }: { context: PanelExtensionContext }): ReactEl
               maxWidth: "none",
               opacity: instantEventButtonDisabled ? 0.55 : 1,
               cursor: instantEventButtonDisabled ? "not-allowed" : "pointer",
-              textTransform: "uppercase",
             }}
             onMouseOver={(e) => {
               if (!instantEventButtonDisabled) {
@@ -914,7 +912,7 @@ function RecorderPanel({ context }: { context: PanelExtensionContext }): ReactEl
             onMouseOut={(e) => (e.currentTarget.style.backgroundColor = palette.buttonGhost)}
             onClick={() => publishCommand("add_instant_event", instantEventName)}
           >
-            Add Instant Event
+            Add instant event
           </button>
           <input
             placeholder="optional label"

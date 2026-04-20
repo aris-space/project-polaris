@@ -29,11 +29,10 @@ Panel name in Foxglove:
 
 Recorder Controller (POLARIS)
 
-## ROS2 Node (Temporary Co-Located)
+## ROS2 Node
 
-The matching ROS2 node is currently in:
+The matching ROS 2 node is in:
 
 RECORDER_ROS_NODE/recorder_controller_node
 
-You can keep it here while developing and move it into your ROS2 src folder later.
-The panel-node contract is topic-based JSON, so moving the node will not require panel refactoring.
+The panel-node contract is topic-based JSON, so your colleagues can import the node into their ROS 2 launch/code without refactoring the panel.

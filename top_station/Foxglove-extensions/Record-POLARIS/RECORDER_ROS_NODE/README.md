@@ -1,6 +1,6 @@
-# Recorder ROS2 Node (Temporary Location)
+# Recorder ROS2 Node
 
-This folder intentionally keeps the ROS2 node next to the Foxglove extension for fast iteration.
+This package contains the reusable ROS 2 node only. Import it into your workspace and wire startup from your own launch/system code.
 
 ## Package
 
@@ -43,11 +43,7 @@ Node publishes std_msgs/msg/String with JSON in data:
 
 ## Build and Run
 
-From your ROS2 workspace root (recommended final location), place or move this package into src, then:
-
-1. colcon build --packages-select recorder_controller_node
-2. source install/setup.bash
-3. ros2 run recorder_controller_node recorder_controller
+From your ROS 2 workspace root, place this package into `src/`, then build with `colcon build --packages-select recorder_controller_node` and run `ros2 run recorder_controller_node recorder_controller` from your own startup flow.
 
 ## Parameters
 
