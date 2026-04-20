@@ -349,20 +349,22 @@ class MavlinkBridgeReceiver(Node):
         y =  msg.pose.pose.position.x
         z = -msg.pose.pose.position.z
 
-        # Orientation: apply ENU→NED rotation then express in MAVLink [w,x,y,z] order
-        # q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
+        # Orientation: ENU/FLU → NED/FRD
+        # q_mav = q_ENU_to_NED ⊗ q_ros ⊗ q_FLU_to_FRD
+        # q_ENU_to_NED = (0, √0.5, √0.5, 0),  q_FLU_to_FRD = (0, 1, 0, 0)
         _s = math.sqrt(0.5)
-        w1, x1, y1, z1 = 0.0, _s, _s, 0.0        # q_ENU_to_NED
         w2 = msg.pose.pose.orientation.w
         x2 = msg.pose.pose.orientation.x
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
-        q = [
-            w1*w2 - x1*x2 - y1*y2 - z1*z2,   # w
-            w1*x2 + x1*w2 + y1*z2 - z1*y2,   # x
-            w1*y2 - x1*z2 + y1*w2 + z1*x2,   # y
-            w1*z2 + x1*y2 - y1*x2 + z1*w2,   # z
-        ]
+        # Step 1: q_tmp = q_ENU_to_NED ⊗ q_ros
+        w1, x1, y1, z1 = 0.0, _s, _s, 0.0
+        wt = w1*w2 - x1*x2 - y1*y2 - z1*z2
+        xt = w1*x2 + x1*w2 + y1*z2 - z1*y2
+        yt = w1*y2 - x1*z2 + y1*w2 + z1*x2
+        zt = w1*z2 + x1*y2 - y1*x2 + z1*w2
+        # Step 2: q_mav = q_tmp ⊗ (0, 1, 0, 0)  →  (-xt, wt, zt, -yt)
+        q = [-xt, wt, zt, -yt]
 
         # Linear velocity: body FLU → body FRD (robot_localization outputs body-frame twist)
         vx =  msg.twist.twist.linear.x
