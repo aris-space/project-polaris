@@ -181,5 +181,6 @@ if [ -f "${ROS_WS}/install/setup.bash" ]; then
   source_with_relaxed_nounset "${ROS_WS}/install/setup.bash"
 fi
 
-# 5) Execute command passed by docker/compose.
-exec "$@"
+# 5) Launch the full system in a tmux session.
+LAUNCH_CMD="${LAUNCH_CMD:-ros2 launch config_pkg start_system.launch.py}"
+exec tmux new-session -s polaris "bash -c 'source ${ROS_WS}/install/setup.bash && ${LAUNCH_CMD}; exec bash'"
