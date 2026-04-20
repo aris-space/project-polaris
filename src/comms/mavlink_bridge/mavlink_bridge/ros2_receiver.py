@@ -67,7 +67,10 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.declare_parameter("external_odom_quality", 100)
+        self.declare_parameter("external_odom_max_rate_hz", 30.0)
+        
         self._odom_reset_counter = 0
+        self._external_odom_last_send_ns = 0
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
@@ -322,6 +325,15 @@ class MavlinkBridgeReceiver(Node):
           Velocity:      body FLU→FRD  vx unchanged, vy=-vy, vz=-vz
           Angular rates: body FLU→FRD  roll unchanged, pitch and yaw negated
         """
+        # Limit send rate to avoid flooding the serial port.
+        now_ns = self.get_clock().now().nanoseconds
+        max_hz = self.get_parameter("external_odom_max_rate_hz").get_parameter_value().double_value
+        if max_hz > 0.0:
+            min_interval_ns = int(1e9 / max_hz)
+            if now_ns - self._external_odom_last_send_ns < min_interval_ns:
+                return
+        self._external_odom_last_send_ns = now_ns
+
         # Timestamp from message header in microseconds
         time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
 
@@ -333,7 +345,7 @@ class MavlinkBridgeReceiver(Node):
         # Orientation: apply ENU→NED rotation then express in MAVLink [w,x,y,z] order
         # q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
         _s = math.sqrt(0.5)
-        w1, x1, y1, z1 = 0.0, _s, _s, 0.0                          # q_ENU_to_NED
+        w1, x1, y1, z1 = 0.0, _s, _s, 0.0        # q_ENU_to_NED
         w2 = msg.pose.pose.orientation.w
         x2 = msg.pose.pose.orientation.x
         y2 = msg.pose.pose.orientation.y
