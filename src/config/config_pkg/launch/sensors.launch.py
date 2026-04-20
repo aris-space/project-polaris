@@ -23,6 +23,7 @@ def generate_launch_description():
     dvl_respawn_arg_value = LaunchConfiguration("dvl_respawn", default="true")
     keller_respawn_arg_value = LaunchConfiguration("keller_respawn", default="true")
     usb_cam_respawn_arg_value = LaunchConfiguration("usb_cam_respawn", default="false")
+    uwgpsg2_respawn_arg_value = LaunchConfiguration("uwgpsg2_respawn", default="true")
     ping_sonar_respawn_arg_value = LaunchConfiguration(
         "ping_sonar_respawn", default="true"
     )
@@ -52,6 +53,7 @@ def generate_launch_description():
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
     keller_26x_pkg_dir = get_package_share_directory("keller_26x_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
+    uwgpsg2_translator_pkg_dir = get_package_share_directory("uwgpsg2_translator")
 
     gnss_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -135,6 +137,16 @@ def generate_launch_description():
         }.items(),
     )
 
+    uwgpsg2_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(uwgpsg2_translator_pkg_dir, "launch", "launch_uwgpsg2.launch.py")
+        ),
+        launch_arguments={
+            "respawn": uwgpsg2_respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
+    )
+
     ping_sonar_node = Node(
         package="ping_sonar",
         executable="ice_measurement",
@@ -189,6 +201,11 @@ def generate_launch_description():
                 "usb_cam_respawn",
                 default_value="false",
                 description="Respawn USB camera nodes if they exit/crash.",
+            ),
+            DeclareLaunchArgument(
+                "uwgpsg2_respawn",
+                default_value="true",
+                description="Respawn UGPS G2 nodes if they exit/crash.",
             ),
             DeclareLaunchArgument(
                 "ping_sonar_respawn",
@@ -253,6 +270,7 @@ def generate_launch_description():
             dvl_launch,
             keller_launch,
             usb_cam_launch,
+            uwgpsg2_launch,
             ping_sonar_node,
             jetson_temperature_node,
         ]
