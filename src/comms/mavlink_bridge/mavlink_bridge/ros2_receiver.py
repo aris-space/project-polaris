@@ -250,22 +250,6 @@ class MavlinkBridgeReceiver(Node):
             0,  # buttons bitmask
         )
 
-    def send_4dof_command_test(self, control_input):
-        """
-        Input values: -1000 to 1000 (except heave, see below)
-        """
-        self._file_logger.info(
-            f"DUMMY FUNCTION Sending 4DOF command with control input"
-        )
-        self.port.mav.manual_control_send(
-            self.port.target_system,
-            123,  # x: Forward/Back
-            123,  # y: Left/Right
-            500,  # z: Up/Down (range 0-1000, 500 is neutral)
-            123,  # r: Yaw
-            0,  # buttons bitmask
-        )
-
     def send_6dof_command(self, control_input):
         """
         Note: Extension fields (s, t) are usually enabled in
