@@ -11,6 +11,7 @@ from std_msgs.msg import String
 from std_msgs.msg import Bool, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import NavSatFix
 
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
@@ -71,6 +72,7 @@ class MavlinkBridgeReceiver(Node):
         
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
+        self._gps_origin_sent = False
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
@@ -88,6 +90,8 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.odometry_subscriber = self.create_subscription(Odometry, "/odometry/filtered/local", self.ekf_odom_cb, Comms.SUB_QOS_DEPTH)
+
+        self.gps_fix_subscriber = self.create_subscription(NavSatFix, "/gps/filtered", self.gps_origin_cb, Comms.SUB_QOS_DEPTH)
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
@@ -233,22 +237,6 @@ class MavlinkBridgeReceiver(Node):
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
-    def send_4dof_command(self, control_input):
-        """
-        Input values: -1000 to 1000 (except heave, see below)
-        """
-        self._file_logger.info(
-            f"Sending 4DOF command with control input: {control_input}"
-        )
-        surge, sway, heave, yaw = control_input
-        self.port.mav.manual_control_send(
-            self.port.target_system,
-            int(surge),  # x: Forward/Back
-            int(sway),  # y: Left/Right
-            int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
-            int(yaw),  # r: Yaw
-            0,  # buttons bitmask
-        )
 
     def send_4dof_command_test(self, control_input):
         """
@@ -312,6 +300,25 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info("Sent reboot command to Pixhawk")
             self._file_logger.info("Sent reboot command to Pixhawk")
+
+    def gps_origin_cb(self, msg: NavSatFix):
+        if self._gps_origin_sent or msg.status.status < 0:
+            return
+        time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
+        self.port.mav.set_gps_global_origin_send(
+            self.port.target_system,
+            int(msg.latitude  * 1e7),
+            int(msg.longitude * 1e7),
+            int(msg.altitude  * 1e3),
+            time_usec,
+        )
+        self._gps_origin_sent = True
+        self.get_logger().info(
+            f"GPS_GLOBAL_ORIGIN sent: lat={msg.latitude:.7f}, lon={msg.longitude:.7f}, alt={msg.altitude:.2f}m"
+        )
+        self._file_logger.info(
+            f"GPS_GLOBAL_ORIGIN sent to Pixhawk: lat={msg.latitude:.7f}, lon={msg.longitude:.7f}, alt={msg.altitude:.2f}m"
+        )
 
     def ekf_odom_cb(self, msg):
         """
