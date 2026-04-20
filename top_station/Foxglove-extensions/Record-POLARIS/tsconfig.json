@@ -1,19 +1,13 @@
 {
-  "extends": "@foxglove/tsconfig/base",
-  "include": ["./src/**/*"],
+  "include": ["./src/index.ts", "./src/RecorderPanel.tsx"],
   "compilerOptions": {
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "lib": ["es2020"],
+    "lib": ["dom", "es2020"],
+    "jsx": "react-jsx",
     "target": "es2020",
-    "module": "CommonJS",
-
-    "moduleResolution": "node",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
-    "importHelpers": false,
-
     "declaration": false,
-    "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": true
   }
 }
