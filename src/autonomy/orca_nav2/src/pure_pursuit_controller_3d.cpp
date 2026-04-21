@@ -45,7 +45,9 @@
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/string.hpp"
 #include "tf2/utils.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
@@ -58,12 +60,13 @@ namespace orca_nav2
   {
     double max_a_{};
     double max_dv_{};
+    double k_decelerate_{};
 
   public:
     Limiter() = default;
 
-    Limiter(const double &max_a, const double &dt)
-        : max_a_{max_a}, max_dv_{max_a * dt}
+    Limiter(const double &max_a, const double &dt, const double &k_decelerate)
+        : max_a_{max_a}, max_dv_{max_a * dt}, k_decelerate_{k_decelerate}
     {
       assert(max_a > 0);
       assert(dt > 0);
@@ -75,8 +78,9 @@ namespace orca_nav2
     void decelerate(double &v, const double &goal_dist) const
     {
       assert(v * goal_dist >= 0);
-      auto decel_v = std::sqrt(2 * std::abs(goal_dist) * max_a_);
-      auto result_v = std::min(std::abs(v), decel_v);
+      auto soft_v = std::abs(goal_dist) * k_decelerate_;
+      auto physical_v = std::sqrt(2 * std::abs(goal_dist) * max_a_);
+      auto result_v = std::min({std::abs(v), soft_v, physical_v});
       v = std::copysign(result_v, v);
     }
 
@@ -112,6 +116,7 @@ namespace orca_nav2
     double transform_tolerance_{};
     double goal_tolerance_{}; // Stop motion when we're very close to the goal
     double tick_rate_{};      // Tick rate, used to compute dt
+    double K_descelerate_{};
 
     Limiter x_limiter_;
     Limiter z_limiter_;
@@ -133,6 +138,25 @@ namespace orca_nav2
 
     double x_error_{};
     double yaw_error_{};
+
+    // Cross-track velocity damping — derivative term on lateral error.
+    // v_cross = vel.x*sin(yaw_err) + vel.y*cos(yaw_err)  (body frame, + = drifting left of path)
+    // Correction: angular.z -= K_cross_vel * v_cross
+    // Start conservative: 0.0 (disabled). A safe first value to try is ~0.3.
+    double K_cross_vel_{0.0};
+
+    // Safety cutoff — if velocity vector points more than this many radians off the path,
+    // immediately zero linear.x to stop the spiral mechanism.
+    // 0.0 = disabled. A conservative first value is M_PI/2 (90 deg).
+    double max_velocity_divergence_rad_{0.0};
+    double min_speed_divergence_check_{0.02};  // m/s — skip check when nearly stopped
+
+    rclcpp::Clock::SharedPtr clock_;
+
+    // Emergency publishers — wired to MAVLink bridge topics.
+    // Fired when max_velocity_divergence_rad threshold is crossed.
+    rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr arm_cmd_pub_;
+    rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr mode_cmd_pub_;
 
     bool publish_tracking_error_{true};
     rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Float64>::SharedPtr cross_track_xy_pub_;
@@ -432,6 +456,18 @@ namespace orca_nav2
       PARAMETER(parent, name, x_error, 0.0)
       PARAMETER(parent, name, yaw_error, 0.0)
       PARAMETER(parent, name, publish_tracking_error, true)
+      PARAMETER(parent, name, K_cross_vel, 0.0)
+      PARAMETER(parent, name, max_velocity_divergence_rad, 0.0)
+      PARAMETER(parent, name, min_speed_divergence_check, 0.02)
+      PARAMETER(parent, name, K_descelerate, 0.2)
+
+      clock_ = parent->get_clock();
+
+      // Emergency publishers — always created, not gated on publish_tracking_error_
+      arm_cmd_pub_ = parent->create_publisher<std_msgs::msg::Bool>(
+        "/pixhawk/arm_cmd", rclcpp::QoS(1).reliable());
+      mode_cmd_pub_ = parent->create_publisher<std_msgs::msg::String>(
+        "/pixhawk/mode_cmd", rclcpp::QoS(1).reliable());
 
       if (publish_tracking_error_) {
         cross_track_xy_pub_ = parent->create_publisher<std_msgs::msg::Float64>(
@@ -448,9 +484,9 @@ namespace orca_nav2
           "pure_pursuit_robot_twist", rclcpp::QoS(10));
       }
 
-      x_limiter_ = Limiter(x_accel_, 1. / tick_rate_);
-      z_limiter_ = Limiter(z_accel_, 1. / tick_rate_);
-      yaw_limiter_ = Limiter(yaw_accel_, 1. / tick_rate_);
+      x_limiter_ = Limiter(x_accel_, 1. / tick_rate_, K_descelerate_);
+      z_limiter_ = Limiter(z_accel_, 1. / tick_rate_, K_descelerate_);
+      yaw_limiter_ = Limiter(yaw_accel_, 1. / tick_rate_, K_descelerate_);
 
       transform_tolerance_d_ = rclcpp::Duration::from_seconds(transform_tolerance_);
 
@@ -465,50 +501,32 @@ namespace orca_nav2
       closest_point_pub_.reset();
       robot_pose_map_pub_.reset();
       robot_twist_pub_.reset();
+      arm_cmd_pub_.reset();
+      mode_cmd_pub_.reset();
     }
 
     void activate() override
     {
-      if (cross_track_xy_pub_) {
-        cross_track_xy_pub_->on_activate();
-      }
-      if (vertical_error_pub_) {
-        vertical_error_pub_->on_activate();
-      }
-      if (yaw_error_pub_) {
-        yaw_error_pub_->on_activate();
-      }
-      if (closest_point_pub_) {
-        closest_point_pub_->on_activate();
-      }
-      if (robot_pose_map_pub_) {
-        robot_pose_map_pub_->on_activate();
-      }
-      if (robot_twist_pub_) {
-        robot_twist_pub_->on_activate();
-      }
+      if (cross_track_xy_pub_) { cross_track_xy_pub_->on_activate(); }
+      if (vertical_error_pub_) { vertical_error_pub_->on_activate(); }
+      if (yaw_error_pub_) { yaw_error_pub_->on_activate(); }
+      if (closest_point_pub_) { closest_point_pub_->on_activate(); }
+      if (robot_pose_map_pub_) { robot_pose_map_pub_->on_activate(); }
+      if (robot_twist_pub_) { robot_twist_pub_->on_activate(); }
+      if (arm_cmd_pub_) { arm_cmd_pub_->on_activate(); }
+      if (mode_cmd_pub_) { mode_cmd_pub_->on_activate(); }
     }
 
     void deactivate() override
     {
-      if (cross_track_xy_pub_) {
-        cross_track_xy_pub_->on_deactivate();
-      }
-      if (vertical_error_pub_) {
-        vertical_error_pub_->on_deactivate();
-      }
-      if (yaw_error_pub_) {
-        yaw_error_pub_->on_deactivate();
-      }
-      if (closest_point_pub_) {
-        closest_point_pub_->on_deactivate();
-      }
-      if (robot_pose_map_pub_) {
-        robot_pose_map_pub_->on_deactivate();
-      }
-      if (robot_twist_pub_) {
-        robot_twist_pub_->on_deactivate();
-      }
+      if (cross_track_xy_pub_) { cross_track_xy_pub_->on_deactivate(); }
+      if (vertical_error_pub_) { vertical_error_pub_->on_deactivate(); }
+      if (yaw_error_pub_) { yaw_error_pub_->on_deactivate(); }
+      if (closest_point_pub_) { closest_point_pub_->on_deactivate(); }
+      if (robot_pose_map_pub_) { robot_pose_map_pub_->on_deactivate(); }
+      if (robot_twist_pub_) { robot_twist_pub_->on_deactivate(); }
+      if (arm_cmd_pub_) { arm_cmd_pub_->on_deactivate(); }
+      if (mode_cmd_pub_) { mode_cmd_pub_->on_deactivate(); }
     }
 
     // Pose is base_f_odom, it's 3D, and it comes from /tf via:
@@ -527,63 +545,109 @@ namespace orca_nav2
       geometry_msgs::msg::TwistStamped cmd_vel;
       cmd_vel.header = pose.header;
 
-      if (publish_tracking_error_ && cross_track_xy_pub_ && vertical_error_pub_ && yaw_error_pub_ &&
-        closest_point_pub_ && robot_pose_map_pub_ && robot_twist_pub_ && !plan_.poses.empty())
+      // Compute tracking error unconditionally: needed for cross-track damping and publishing.
+      double cross_xy = 0.0, z_err = 0.0, yaw_err = 0.0;
+      geometry_msgs::msg::Point closest_map;
+      geometry_msgs::msg::PoseStamped pose_f_map;
+      bool have_tracking = false;
+
+      if (!plan_.poses.empty() && transform_pose(pose, pose_f_map, plan_.header.frame_id)) {
+        tracking_error_from_plan(pose_f_map, cross_xy, z_err, yaw_err, closest_map);
+        have_tracking = true;
+      }
+
+      if (publish_tracking_error_ && have_tracking &&
+          cross_track_xy_pub_ && vertical_error_pub_ && yaw_error_pub_ &&
+          closest_point_pub_ && robot_pose_map_pub_ && robot_twist_pub_)
       {
-        geometry_msgs::msg::PoseStamped pose_f_map;
-        if (transform_pose(pose, pose_f_map, plan_.header.frame_id)) {
-          double cross_xy = 0.0;
-          double z_err = 0.0;
-          double yaw_err = 0.0;
-          geometry_msgs::msg::Point closest_map;
-          tracking_error_from_plan(pose_f_map, cross_xy, z_err, yaw_err, closest_map);
-          std_msgs::msg::Float64 cross_msg;
-          cross_msg.data = cross_xy;
-          cross_track_xy_pub_->publish(cross_msg);
-          std_msgs::msg::Float64 z_msg;
-          z_msg.data = z_err;
-          vertical_error_pub_->publish(z_msg);
-          std_msgs::msg::Float64 yaw_msg;
-          yaw_msg.data = yaw_err;
-          yaw_error_pub_->publish(yaw_msg);
+        std_msgs::msg::Float64 cross_msg;  cross_msg.data = cross_xy;
+        cross_track_xy_pub_->publish(cross_msg);
+        std_msgs::msg::Float64 z_msg;      z_msg.data = z_err;
+        vertical_error_pub_->publish(z_msg);
+        std_msgs::msg::Float64 yaw_msg;    yaw_msg.data = yaw_err;
+        yaw_error_pub_->publish(yaw_msg);
 
-          geometry_msgs::msg::PointStamped cp;
-          cp.header.stamp = pose.header.stamp;
-          cp.header.frame_id = plan_.header.frame_id;
-          cp.point = closest_map;
-          closest_point_pub_->publish(cp);
+        geometry_msgs::msg::PointStamped cp;
+        cp.header.stamp = pose.header.stamp;
+        cp.header.frame_id = plan_.header.frame_id;
+        cp.point = closest_map;
+        closest_point_pub_->publish(cp);
 
-          pose_f_map.header.stamp = pose.header.stamp;
-          robot_pose_map_pub_->publish(pose_f_map);
+        pose_f_map.header.stamp = pose.header.stamp;
+        robot_pose_map_pub_->publish(pose_f_map);
 
-          geometry_msgs::msg::TwistStamped tw;
-          tw.header.stamp = pose.header.stamp;
-          tw.header.frame_id = pose.header.frame_id;
-          tw.twist = velocity;
-          robot_twist_pub_->publish(tw);
-        }
+        geometry_msgs::msg::TwistStamped tw;
+        tw.header.stamp = pose.header.stamp;
+        tw.header.frame_id = pose.header.frame_id;
+        tw.twist = velocity;
+        robot_twist_pub_->publish(tw);
       }
 
       // Track the plan
       cmd_vel.twist = pure_pursuit_3d(pose);
+
+      // Cross-track velocity damping: derivative feedback on lateral error.
+      // v_cross is the velocity component perpendicular to the path (body frame).
+      // Positive v_cross = drifting left of path → subtract from angular.z to steer right.
+      // Tuned via K_cross_vel (0 = disabled). Units: (rad/s) / (m/s).
+      if (have_tracking && K_cross_vel_ > 0.0) {
+        const double v_cross = velocity.linear.x * std::sin(yaw_err) +
+                               velocity.linear.y * std::cos(yaw_err);
+        cmd_vel.twist.angular.z -= K_cross_vel_ * v_cross;
+      }
 
       // Limit acceleration
       x_limiter_.limit(cmd_vel.twist.linear.x, prev_vel_.linear.x);
       z_limiter_.limit(cmd_vel.twist.linear.z, prev_vel_.linear.z);
       yaw_limiter_.limit(cmd_vel.twist.angular.z, prev_vel_.angular.z);
 
-      // Twist parameter from nav2_controller is generated from a Twist2D, so linear.z is always 0
-      // Keep a copy of the previous cmd_vel instead
+      // Velocity-divergence emergency: decompose velocity into path axes (body frame).
+      //   path_tangent_body = ( cos(yaw_err), -sin(yaw_err) )
+      //   path_normal_body  = ( sin(yaw_err),  cos(yaw_err) )  ← same as v_cross above
+      //
+      //   v_along = velocity component along  path tangent  (+forward along path)
+      //   v_perp  = velocity component along  path normal   (+left of path)
+      //
+      // diverge_angle = atan2(|v_perp|, v_along)  ∈ [0, π]
+      //   0°  = perfectly aligned with path
+      //   45° = 45° off path (fires for BOTH into-path and away-from-path symmetrically)
+      //   90° = perpendicular — definitely an emergency
+      //  >90° = pointing backward — always fires
+      //
+      // atan2 is preferred over acos(dot/|v|): numerically stable everywhere, no clamping needed.
+      if (have_tracking && max_velocity_divergence_rad_ > 0.0) {
+        const double vel_xy = std::hypot(velocity.linear.x, velocity.linear.y);
+        if (vel_xy > min_speed_divergence_check_) {
+          const double v_along = velocity.linear.x * std::cos(yaw_err) -
+                                 velocity.linear.y * std::sin(yaw_err);
+          const double v_perp  = velocity.linear.x * std::sin(yaw_err) +
+                                 velocity.linear.y * std::cos(yaw_err);
+          const double diverge_angle = std::atan2(std::abs(v_perp), v_along);
+          if (diverge_angle > max_velocity_divergence_rad_) {
+            RCLCPP_ERROR(logger_,
+              "EMERGENCY: velocity %.1f deg off path (limit %.1f deg) — disarming + MANUAL",
+              diverge_angle * 180.0 / M_PI,
+              max_velocity_divergence_rad_ * 180.0 / M_PI);
+
+            if (arm_cmd_pub_) {
+              std_msgs::msg::Bool disarm;
+              disarm.data = false;  // false = disarm
+              arm_cmd_pub_->publish(disarm);
+            }
+            if (mode_cmd_pub_) {
+              std_msgs::msg::String mode;
+              mode.data = "MANUAL";
+              mode_cmd_pub_->publish(mode);
+            }
+
+            throw std::runtime_error(
+              "Velocity divergence emergency: disarmed and switched to MANUAL");
+          }
+        }
+      }
+
+      // Twist from nav2_controller is Twist2D so linear.z is always 0; keep our own prev copy.
       prev_vel_ = cmd_vel.twist;
-
-#if 0
-    // I'm getting jumps in velocity from max_v to 0 to max_v, but it is not coming from this
-    // routine. Somewhere upstream there appears to be a "cmd_vel = {}".
-
-    if (cmd_vel.twist.angular.z < 0.01 && cmd_vel.twist.angular.z > -0.01) {
-      std::cout << "sending 0 yaw vel" << std::endl;
-    }
-#endif
 
       return cmd_vel;
     }

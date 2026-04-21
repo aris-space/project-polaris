@@ -28,7 +28,7 @@
   </BehaviorTree>
 </root>  -->
 
-<!-- <root main_tree_to_execute="MainTree">
+<root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="10" name="NavigateRecovery">
       
@@ -36,7 +36,7 @@
         
         <RateController hz="1.0"> 
           <Fallback>
-            <IsStraightPathValid path="{path}" max_dist="1.5"/> 
+            <IsStraightPathValid path="{path}" max_dist="1.0"/> 
             <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
           </Fallback>
         </RateController>
@@ -52,10 +52,10 @@
       
     </RecoveryNode>
   </BehaviorTree>
-</root> -->
+</root>
 
 
-<root main_tree_to_execute="MainTree">
+<!-- <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="10" name="NavigateRecovery">
       
@@ -86,4 +86,4 @@
       
     </RecoveryNode>
   </BehaviorTree>
-</root>
+</root> -->

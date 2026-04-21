@@ -2,11 +2,11 @@
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
     global_frame: "map"
     robot_base_frame: "base_link"
     transform_tolerance: 1.0
-    odom_topic: "/odometry/filtered/local"
+    odom_topic: "/odom"
     bt_loop_duration: 10
     default_server_timeout: 20
     default_nav_to_pose_bt_xml: "bringup.py should replace me"
@@ -65,12 +65,11 @@ bt_navigator:
 
 bt_navigator_rclcpp_node:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
 
 controller_server:
   ros__parameters:
-    use_sim_time: false
-    odom_topic: "/odometry/filtered/local"
+    use_sim_time: True
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
@@ -88,31 +87,46 @@ controller_server:
     # Goal checker parameters
     goal_checker:
       plugin: "orca_nav2/GoalChecker3D"
-      xy_goal_tolerance: 0.8
-      z_goal_tolerance: 0.5
+      xy_goal_tolerance: 0.3
+      z_goal_tolerance: 0.25
 
     # Controller parameters
     LongStraightLine:
       plugin: "orca_nav2/PurePursuitController3D"
-      lookahead_dist: 1.0
+      lookahead_dist: 3.5
       transform_tolerance: 1.0
-      goal_tolerance: 0.2
+      goal_tolerance: 0.2 # 0.4? but we are doing a very long strate! pay attention goal stioll needs to be reached!!¨!!!!!!!!!!!!!!!!!
       tick_rate: 20.0
 
       x_vel: 0.4
-      x_accel: 0.4
-      z_vel: 0.3
-      z_accel: 0.3
-      yaw_vel: 0.25
-      yaw_accel: 0.5
+      x_accel: 0.15
+      z_vel: 0.2
+      z_accel: 0.15
+      yaw_vel: 0.35
+      yaw_accel: 0.15
 
       # The motion model may be bogus, so actual velocity may be lower or higher than desired
       # velocity. Specify a range using the error terms, e.g.,
       # [(1 - yaw_error_) * yaw_vel_, (1 + yaw_error_) * yaw_vel_]
-      x_error: 0.5
-      yaw_error: 0.6
+      x_error: 0.30 #0.3, 0.35
+      yaw_error: 0.15 #0.15, 0.2
       # Tracking topics: 3x Float64 + PointStamped + PoseStamped + TwistStamped (see README)
       publish_tracking_error: true
+
+      # Cross-track velocity damping (PD derivative term on lateral error).
+      # angular.z -= K_cross_vel * v_cross,  where v_cross = vel.x*sin(yaw_err) + vel.y*cos(yaw_err)
+      # Units: (rad/s) / (m/s).  0.0 = disabled.  Conservative starting point: 0.3.
+      K_cross_vel: 0.23 #0.15
+
+      # Velocity-divergence emergency threshold (rad).
+      # If the velocity vector points more than this angle off the path tangent:
+      #   1. Publishes False  on /pixhawk/arm_cmd  → disarm
+      #   2. Publishes MANUAL on /pixhawk/mode_cmd → manual mode
+      #   3. Throws ControllerException            → aborts navigation
+      # 0.0 = disabled.  0.785 = 45 deg (strict).  1.05 = 60 deg (more tolerant).
+      max_velocity_divergence_rad: 0.96  # 55 deg — fires symmetrically for both into and away from path
+      min_speed_divergence_check: 0.25  # m/s — skip check when nearly stopped
+      K_descelerate: 0.5
 
     SharpTurn:
       plugin: "orca_nav2/SharpTurnController3D"
@@ -137,7 +151,7 @@ controller_server:
 
 controller_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
 
 
 # The local costmap is always empty
@@ -147,9 +161,9 @@ local_costmap:
     ros__parameters:
       update_frequency: 5.0
       publish_frequency: 2.0
-      global_frame: "/odometry/filtered/local"
+      global_frame: odom
       robot_base_frame: base_link
-      use_sim_time: false
+      use_sim_time: true
       rolling_window: true
       width: 3
       height: 3
@@ -171,7 +185,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: false
+      use_sim_time: true
       rolling_window: true
       track_unknown_space: true
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -187,17 +201,18 @@ global_costmap:
 
 planner_server:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
     planner_plugins: ["StraightLine"]
 
     # OrcaPlanner parameters
     StraightLine:
       plugin: "orca_nav2/StraightLinePlanner3D"
-      planning_dist: 0.1  # Plan a pose every planning_dist meters
+      planning_dist: 0.1    # Plan a pose every planning_dist meters
+
 
 planner_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
 
 # Nav2 Humble: use behavior_plugins + nav2_behaviors/* (not recovery_plugins / nav2_recoveries).
 # Wrong names/types leave behavior_server configure failing → unconfigured forever.
@@ -213,10 +228,10 @@ behavior_server:
       plugin: "nav2_behaviors/BackUp"
     wait:
       plugin: "nav2_behaviors/Wait"
-    global_frame: "/odometry/filtered/local"
+    global_frame: "odom"
     robot_base_frame: "base_link"
     transform_timeout: 2.0
-    use_sim_time: false
+    use_sim_time: True
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
@@ -224,11 +239,11 @@ behavior_server:
 
 robot_state_publisher:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
 
 waypoint_follower:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: True
     loop_rate: 20
     stop_on_failure: False
     waypoint_task_executor_plugin: "wait_at_waypoint"

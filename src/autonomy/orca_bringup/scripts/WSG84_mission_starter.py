@@ -31,6 +31,7 @@ from autonomy.orca_bringup.scripts.pixhawk_ready_wait import (
 )
 
 
+
 class SendGoalResult(Enum):
     SUCCESS = 0
     FAILURE = 1
@@ -113,14 +114,21 @@ def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.
     return False
 
 
-def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub) -> SendGoalResult:
+def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
+              status_pub=None, total_waypoints: int = 0) -> SendGoalResult:
     goal_handle = None
+
+    def feedback_cb(feedback_msg):
+        wp = feedback_msg.feedback.current_waypoint
+        if status_pub is not None:
+            status_pub.publish(String(data=f"{wp + 1}/{total_waypoints}"))
+
     try:
         if not wait_for_follow_waypoints(executor, action_client):
             return SendGoalResult.FAILURE
 
         print('Sending goal...')
-        goal_future = action_client.send_goal_async(send_goal_msg)
+        goal_future = action_client.send_goal_async(send_goal_msg, feedback_callback=feedback_cb)
         executor.spin_until_future_complete(goal_future, timeout_sec=120.0)
         if not goal_future.done():
             print('Timeout waiting for goal acceptance from Nav2.')
@@ -136,15 +144,27 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub) -
 
         print('Goal accepted with ID: {}'.format(bytes(goal_handle.goal_id.uuid).hex()))
         result_future = goal_handle.get_result_async()
-        executor.spin_until_future_complete(result_future)
+        executor.spin_until_future_complete(result_future, timeout_sec=3600.0)
+
+        if not result_future.done():
+            print('Timeout waiting for mission result (Nav2 unreachable?)')
+            return SendGoalResult.FAILURE
 
         result = result_future.result()
 
         if result is None:
             raise RuntimeError('Exception while getting result: {!r}'.format(result_future.exception()))
 
-        print('Goal completed')
-        return SendGoalResult.SUCCESS
+        status = result.status
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            print('Goal completed')
+            return SendGoalResult.SUCCESS
+        elif status == GoalStatus.STATUS_CANCELED:
+            print('Goal was canceled externally')
+            return SendGoalResult.CANCELED
+        else:
+            print(f'Goal ended with status {status} (Nav2 may have shut down mid-mission)')
+            return SendGoalResult.FAILURE
 
     except KeyboardInterrupt:
         if goal_handle is None:
@@ -249,6 +269,7 @@ def main() -> None:
         follow_waypoints = ActionClient(node, FollowWaypoints, '/follow_waypoints')
         mode_pub = node.create_publisher(String, '/pixhawk/mode_cmd', 10)
         arm_pub = node.create_publisher(Bool, '/pixhawk/arm_cmd', 10)
+        status_pub = node.create_publisher(String, '/mission_status', 10)
 
         hb_state = PixhawkState()
         node.create_subscription(
@@ -280,7 +301,8 @@ def main() -> None:
             sys.exit(1)
 
         print('>>> Executing mission <<<')
-        mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub)
+        mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
+                                   status_pub=status_pub, total_waypoints=len(goal.poses))
 
         if mission_result == SendGoalResult.SUCCESS and rclpy.ok():
             print('>>> Disarming <<<')
@@ -289,6 +311,11 @@ def main() -> None:
             print('>>> Setting Pixhawk mode to MANUAL <<<')
             mode_pub.publish(String(data='MANUAL'))
             rclpy.spin_once(node, timeout_sec=0.2)
+        elif mission_result == SendGoalResult.FAILURE and rclpy.ok():
+            # Nav2 died mid-mission; attempt best-effort disarm + MANUAL.
+            print('>>> Mission aborted; attempting disarm + MANUAL <<<')
+            publish_manual_and_spin(executor, node, mode_pub, spins=20)
+            publish_disarm_and_spin(executor, node, arm_pub, spins=20)
         elif mission_result == SendGoalResult.CANCELED and rclpy.ok():
             # send_goal already sent MANUAL + disarm; optional flush if drops occurred.
             print('>>> Post-cancel flush (MANUAL + disarm) <<<')
