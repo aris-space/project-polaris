@@ -330,19 +330,15 @@ class MavlinkBridgeReceiver(Node):
             f"GPS_GLOBAL_ORIGIN sent to Pixhawk: lat={msg.latitude:.7f}, lon={msg.longitude:.7f}, alt={msg.altitude:.2f}m"
         )
 
-    def ekf_odom_cb(self, msg):
-        """
-        Receives filtered odometry from /odometry/filtered/local (ENU/FLU, ROS convention)
-        and forwards as MAVLink ODOMETRY to Pixhawk (NED/FRD, MAVLink convention).
+    # Currently sending position, velocity, attitude, rates. Later then seperated and different frequencies.
+    def external_odom_cb(self, msg):
+        """Stream nav_msgs/Odometry to FCU as MAVLink ODOMETRY (ArduPilot external nav)."""
+        try:
+            self._external_odom_cb_impl(msg)
+        except Exception as e:
+            self.get_logger().error(f"external_odom_cb failed: {e}", throttle_duration_sec=5.0)
 
-        Frame conversions applied:
-          Position:      ENU→NED  x_NED=y_ENU,  y_NED=x_ENU,  z_NED=-z_ENU
-          Orientation:   q_NED = q_ENU_to_NED ⊗ q_ENU
-                         q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
-          Velocity:      body FLU→FRD  vx unchanged, vy=-vy, vz=-vz
-          Angular rates: body FLU→FRD  roll unchanged, pitch and yaw negated
-        """
-        # Limit send rate to avoid flooding the serial port.
+    def _external_odom_cb_impl(self, msg):
         now_ns = self.get_clock().now().nanoseconds
         max_hz = self.get_parameter("external_odom_max_rate_hz").get_parameter_value().double_value
         if max_hz > 0.0:
@@ -354,34 +350,62 @@ class MavlinkBridgeReceiver(Node):
         # Timestamp from message header in microseconds
         time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
 
-        # Position: ENU → NED
-        x =  msg.pose.pose.position.y
-        y =  msg.pose.pose.position.x
-        z = -msg.pose.pose.position.z
+        # Raw Position: ENU -> NED
+        nx =  msg.pose.pose.position.y
+        ny =  msg.pose.pose.position.x
+        nz = -msg.pose.pose.position.z
 
-        # Orientation: ENU/FLU → NED/FRD
-        # q_mav = q_ENU_to_NED ⊗ q_ros ⊗ q_FLU_to_FRD
-        # q_ENU_to_NED = (0, √0.5, √0.5, 0),  q_FLU_to_FRD = (0, 1, 0, 0)
+        # Raw Orientation: ENU/FLU -> NED/FRD
         _s = math.sqrt(0.5)
         w2 = msg.pose.pose.orientation.w
         x2 = msg.pose.pose.orientation.x
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
-        # Step 1: q_tmp = q_ENU_to_NED ⊗ q_ros
+        
+        # Step 1: q_tmp = q_ENU_to_NED ⊗ q_ros_flu
         w1, x1, y1, z1 = 0.0, _s, _s, 0.0
         wt = w1*w2 - x1*x2 - y1*y2 - z1*z2
         xt = w1*x2 + x1*w2 + y1*z2 - z1*y2
         yt = w1*y2 - x1*z2 + y1*w2 + z1*x2
         zt = w1*z2 + x1*y2 - y1*x2 + z1*w2
-        # Step 2: q_mav = q_tmp ⊗ (0, 1, 0, 0)  →  (-xt, wt, zt, -yt)
-        q = [-xt, wt, zt, -yt]
+        
+        # Step 2: q_ned_frd = q_tmp ⊗ (0, 1, 0, 0)
+        qw = -xt
+        qx =  wt
+        qy =  zt
+        qz = -yt
 
-        # Linear velocity: body FLU → body FRD (robot_localization outputs body-frame twist)
+        # Step 3: Extract ONLY the Yaw component from the NED quaternion
+        yaw = math.atan2(2.0 * (qw*qz + qx*qy), 1.0 - 2.0 * (qy*qy + qz*qz))
+
+        # Step 4: Rotate the Position into the FRD frame (strip the yaw)
+        cos_y = math.cos(yaw)
+        sin_y = math.sin(yaw)
+        x_lfrd =  nx * cos_y + ny * sin_y
+        y_lfrd = -nx * sin_y + ny * cos_y
+        z_lfrd =  nz
+
+        # Step 5: Create a 'Zero-Yaw' version of the orientation (strip the yaw)
+        half_yaw = -yaw / 2.0
+        cp = math.cos(half_yaw)
+        sp = math.sin(half_yaw)
+        
+        q_frd = [
+            cp*qw - sp*qz,
+            cp*qx - sp*qy,
+            cp*qy + sp*qx,
+            cp*qz + sp*qw
+        ]
+
+        norm = math.sqrt(sum(i**2 for i in q_frd))
+        q_frd = [i/norm for i in q_frd]
+
+        # Linear velocity: body FLU -> body FRD
         vx =  msg.twist.twist.linear.x
         vy = -msg.twist.twist.linear.y
         vz = -msg.twist.twist.linear.z
 
-        # Angular rates: body FLU → body FRD (roll unchanged, pitch and yaw negated)
+        # Angular rates: body FLU -> body FRD
         rollspeed  =  msg.twist.twist.angular.x
         pitchspeed = -msg.twist.twist.angular.y
         yawspeed   = -msg.twist.twist.angular.z
@@ -417,10 +441,10 @@ class MavlinkBridgeReceiver(Node):
         m = mavutil.mavlink
         self.port.mav.odometry_send(
             time_usec,
-            m.MAV_FRAME_LOCAL_FRD,
+            m.MAV_FRAME_LOCAL_FRD,  # Back to LOCAL_FRD for the EKF bypass
             m.MAV_FRAME_BODY_FRD,
-            x, y, z,
-            q,
+            x_lfrd, y_lfrd, z_lfrd, # Send the yaw-stripped position
+            q_frd,                  # Send the yaw-stripped orientation
             vx, vy, vz,
             rollspeed, pitchspeed, yawspeed,
             pose_cov,
