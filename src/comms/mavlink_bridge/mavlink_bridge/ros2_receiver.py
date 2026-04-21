@@ -120,9 +120,7 @@ class MavlinkBridgeReceiver(Node):
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
         if (
-            self.pixhawk_mode == "MANUAL"
-            or self.pixhawk_mode == "STABILIZATION"
-            or self.pixhawk_mode == "ALT_HOLD"
+            self.pixhawk_mode in ("MANUAL", "STABILIZE", "ALT_HOLD")
         ) and len(msg.data) == 6:
             self.send_6dof_command(msg.data)
 
@@ -205,16 +203,26 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
             self._file_logger.info("Sent MANUAL mode command")
-        elif msg.data == "STABILIZATION":
+        elif msg.data == "STABILIZE":
             mode_id = 0
             self.port.mav.set_mode_send(
                 self.port.target_system,
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
-            self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
-            self.get_logger().info("Sent STABILIZATION mode command")
-            self._file_logger.info("Sent STABILIZATION mode command")
+            self.pixhawk_mode = "STABILIZE"
+            self.get_logger().info("Sent STABILIZE mode command")
+            self._file_logger.info("Sent STABILIZE mode command")
+        elif msg.data == "GUIDED":
+            mode_id = 4
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "GUIDED"
+            self.get_logger().info("Sent GUIDED mode command")
+            self._file_logger.info("Sent GUIDED mode command")
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
