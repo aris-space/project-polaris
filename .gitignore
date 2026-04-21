@@ -30,3 +30,5 @@ settings.json
 # VS Code extension artifact
 .vscode/settings.json
 mavlink_logs/
+CLAUDE.md
+
