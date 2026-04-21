@@ -64,11 +64,6 @@ class MavlinkBridgeReceiver(Node):
         self.get_logger().info(
             f"Heartbeat received from system {self.port.target_system}"
         )
-        # Make companion telemetry appear under vehicle sysid in QGC tools.
-        self.port.mav.srcSystem = self.port.target_system
-        self.port.mav.srcComponent = (
-            mavutil.mavlink.MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY
-        )
 
         self.declare_parameter("external_odom_quality", 100)
         self.declare_parameter("external_odom_max_rate_hz", 30.0)
@@ -87,47 +82,74 @@ class MavlinkBridgeReceiver(Node):
         self._port_lock = threading.Lock()
         self._param_value_queue: queue.Queue = queue.Queue(maxsize=2000)
         self._pid_fetch_result_queue: queue.Queue = queue.Queue(maxsize=1)
-        
+
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
 
         # Depth monitoring state (populated by MAVLink drain loop)
-        self._vfrhud_alt      = float('nan')  # VFR_HUD.alt   — baro depth (m, negative = submerged)
-        self._vfrhud_climb    = float('nan')  # VFR_HUD.climb — vertical velocity (m/s, negative = descending)
-        self._nav_alt_error   = float('nan')  # NAV_CONTROLLER_OUTPUT.alt_error (desired - actual, m)
-        self._pid_desired     = float('nan')  # PID_TUNING axis=4 fields
-        self._pid_achieved    = float('nan')
-        self._pid_P           = float('nan')
-        self._pid_I           = float('nan')
-        self._pid_D           = float('nan')
+        self._vfrhud_alt = float(
+            "nan"
+        )  # VFR_HUD.alt   — baro depth (m, negative = submerged)
+        self._vfrhud_climb = float(
+            "nan"
+        )  # VFR_HUD.climb — vertical velocity (m/s, negative = descending)
+        self._nav_alt_error = float(
+            "nan"
+        )  # NAV_CONTROLLER_OUTPUT.alt_error (desired - actual, m)
+        self._pid_desired = float("nan")  # PID_TUNING axis=4 fields
+        self._pid_achieved = float("nan")
+        self._pid_P = float("nan")
+        self._pid_I = float("nan")
+        self._pid_D = float("nan")
         # Timestamps of last receive — used to suppress stale publishes
-        self._t_nav   = 0.0   # last NAV_CONTROLLER_OUTPUT receive time (monotonic)
-        self._t_pid   = 0.0   # last PID_TUNING axis=4 receive time
-        _STALE_S      = 0.5   # treat data older than this as absent
+        self._t_nav = 0.0  # last NAV_CONTROLLER_OUTPUT receive time (monotonic)
+        self._t_pid = 0.0  # last PID_TUNING axis=4 receive time
+        _STALE_S = 0.5  # treat data older than this as absent
         self._STALE_S = _STALE_S
 
         # Request VFR_HUD (74), NAV_CONTROLLER_OUTPUT (62) at 10 Hz
         # PID_TUNING (98) is enabled via GCS_PID_MASK param on the FC (already set to 8)
         for _msg_id in (74, 62):
             self.port.mav.command_long_send(
-                self.port.target_system, self.port.target_component,
+                self.port.target_system,
+                self.port.target_component,
                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-                0, _msg_id, 100_000, 0, 0, 0, 0, 0,
+                0,
+                _msg_id,
+                100_000,
+                0,
+                0,
+                0,
+                0,
+                0,
             )
         # Legacy fallback covering VFR_HUD + NAV_CONTROLLER_OUTPUT + PID_TUNING streams
-        for _stream in (mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
-                        mavutil.mavlink.MAV_DATA_STREAM_EXTRA2,
-                        mavutil.mavlink.MAV_DATA_STREAM_EXTRA3):
+        for _stream in (
+            mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
+            mavutil.mavlink.MAV_DATA_STREAM_EXTRA2,
+            mavutil.mavlink.MAV_DATA_STREAM_EXTRA3,
+        ):
             self.port.mav.request_data_stream_send(
-                self.port.target_system, self.port.target_component,
-                _stream, 10, 1,
+                self.port.target_system,
+                self.port.target_component,
+                _stream,
+                10,
+                1,
             )
 
-        self._depth_target_pub    = self.create_publisher(Float32,      '/pixhawk/DEPTH_TARGET',   10)
-        self._depth_achieved_pub  = self.create_publisher(Float32,      '/pixhawk/DEPTH_ACHIEVED', 10)
-        self._depth_velocity_pub  = self.create_publisher(Float32,      '/pixhawk/DEPTH_VELOCITY', 10)
+        self._depth_target_pub = self.create_publisher(
+            Float32, "/pixhawk/DEPTH_TARGET", 10
+        )
+        self._depth_achieved_pub = self.create_publisher(
+            Float32, "/pixhawk/DEPTH_ACHIEVED", 10
+        )
+        self._depth_velocity_pub = self.create_publisher(
+            Float32, "/pixhawk/DEPTH_VELOCITY", 10
+        )
         # [desired, achieved, P, I, D]
-        self._pid_accz_pub        = self.create_publisher(Float32MultiArray, '/pixhawk/PID_ACCZ',  10)
+        self._pid_accz_pub = self.create_publisher(
+            Float32MultiArray, "/pixhawk/PID_ACCZ", 10
+        )
 
         # Drain incoming MAVLink at 50 Hz (non-blocking); publish at 5 Hz
         self.create_timer(0.02, self._mavlink_drain_cb)
@@ -153,7 +175,9 @@ class MavlinkBridgeReceiver(Node):
             Comms.SUB_QOS_DEPTH,
         )
 
-        self.odometry_subscriber = self.create_subscription(Odometry, "/odometry/filtered/local", self.ekf_odom_cb, Comms.SUB_QOS_DEPTH)
+        self.odometry_subscriber = self.create_subscription(
+            Odometry, "/odometry/filtered/local", self.ekf_odom_cb, Comms.SUB_QOS_DEPTH
+        )
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
@@ -167,7 +191,7 @@ class MavlinkBridgeReceiver(Node):
         self.pixhawk_reboot_subscriber = self.create_subscription(
             Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
         )
-    
+
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
@@ -261,7 +285,9 @@ class MavlinkBridgeReceiver(Node):
                 mode_id,
             )
 
-            self.get_logger().info("Requesting SCALED_PRESSURE2 message stream from Pixhawk...")
+            self.get_logger().info(
+                "Requesting SCALED_PRESSURE2 message stream from Pixhawk..."
+            )
             self.port.mav.command_long_send(
                 self.port.target_system,
                 self.port.target_component,
@@ -269,10 +295,14 @@ class MavlinkBridgeReceiver(Node):
                 0,  # confirmation
                 mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2,  # message ID = 137
                 20000,  # interval in microseconds (20ms = 50Hz)
-                0, 0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
+                0,
             )
             self.get_logger().info("SCALED_PRESSURE2 request sent (interval=20ms)")
-        
+
             self.pixhawk_mode = "ALT_HOLD"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent ALT_HOLD mode command")
             self._file_logger.info("Sent ALT_HOLD mode command")
@@ -341,7 +371,7 @@ class MavlinkBridgeReceiver(Node):
             int(pitch),  # s (Extension 1)
             int(roll),  # t (Extension 2)
         )
-    
+
     def reboot_cb(self, msg):
         """
         Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
@@ -352,7 +382,7 @@ class MavlinkBridgeReceiver(Node):
                 self.port.target_component,
                 mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
                 0,
-                1, #1 to reboot, 2 for shutdown
+                1,  # 1 to reboot, 2 for shutdown
                 0,
                 0,
                 0,
@@ -377,7 +407,11 @@ class MavlinkBridgeReceiver(Node):
         """
         # Limit send rate to avoid flooding the serial port.
         now_ns = self.get_clock().now().nanoseconds
-        max_hz = self.get_parameter("external_odom_max_rate_hz").get_parameter_value().double_value
+        max_hz = (
+            self.get_parameter("external_odom_max_rate_hz")
+            .get_parameter_value()
+            .double_value
+        )
         if max_hz > 0.0:
             min_interval_ns = int(1e9 / max_hz)
             if now_ns - self._external_odom_last_send_ns < min_interval_ns:
@@ -388,61 +422,95 @@ class MavlinkBridgeReceiver(Node):
         time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
 
         # Position: ENU → NED
-        x =  msg.pose.pose.position.y
-        y =  msg.pose.pose.position.x
+        x = msg.pose.pose.position.y
+        y = msg.pose.pose.position.x
         z = -msg.pose.pose.position.z
 
         # Orientation: apply ENU→NED rotation then express in MAVLink [w,x,y,z] order
         # q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
         _s = math.sqrt(0.5)
-        w1, x1, y1, z1 = 0.0, _s, _s, 0.0        # q_ENU_to_NED
+        w1, x1, y1, z1 = 0.0, _s, _s, 0.0  # q_ENU_to_NED
         w2 = msg.pose.pose.orientation.w
         x2 = msg.pose.pose.orientation.x
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
         q = [
-            w1*w2 - x1*x2 - y1*y2 - z1*z2,   # w
-            w1*x2 + x1*w2 + y1*z2 - z1*y2,   # x
-            w1*y2 - x1*z2 + y1*w2 + z1*x2,   # y
-            w1*z2 + x1*y2 - y1*x2 + z1*w2,   # z
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,  # z
         ]
 
         # Linear velocity: body FLU → body FRD (robot_localization outputs body-frame twist)
-        vx =  msg.twist.twist.linear.x
+        vx = msg.twist.twist.linear.x
         vy = -msg.twist.twist.linear.y
         vz = -msg.twist.twist.linear.z
 
         # Angular rates: body FLU → body FRD (roll unchanged, pitch and yaw negated)
-        rollspeed  =  msg.twist.twist.angular.x
+        rollspeed = msg.twist.twist.angular.x
         pitchspeed = -msg.twist.twist.angular.y
-        yawspeed   = -msg.twist.twist.angular.z
+        yawspeed = -msg.twist.twist.angular.z
 
         # Pose covariance: ENU→NED, permutation p=[1,0,2,3,4,5], signs s=[1,1,-1,1,-1,-1]
         # C_NED[i,j] = s[i]*s[j] * C_ENU[p[i]*6 + p[j]]
         _POSE_COV_MAP = [
-            ( 7, 1), ( 6, 1), ( 8,-1), ( 9, 1), (10,-1), (11,-1),  # row 0 (North)
-            ( 0, 1), ( 2,-1), ( 3, 1), ( 4,-1), ( 5,-1),            # row 1 (East)
-            (14, 1), (15,-1), (16, 1), (17, 1),                      # row 2 (Down)
-            (21, 1), (22,-1), (23,-1),                               # row 3 (roll)
-            (28, 1), (29, 1),                                        # row 4 (pitch)
-            (35, 1),                                                 # row 5 (yaw)
+            (7, 1),
+            (6, 1),
+            (8, -1),
+            (9, 1),
+            (10, -1),
+            (11, -1),  # row 0 (North)
+            (0, 1),
+            (2, -1),
+            (3, 1),
+            (4, -1),
+            (5, -1),  # row 1 (East)
+            (14, 1),
+            (15, -1),
+            (16, 1),
+            (17, 1),  # row 2 (Down)
+            (21, 1),
+            (22, -1),
+            (23, -1),  # row 3 (roll)
+            (28, 1),
+            (29, 1),  # row 4 (pitch)
+            (35, 1),  # row 5 (yaw)
         ]
 
         # Twist covariance: body FLU→FRD, permutation p=[0,1,2,3,4,5], signs s=[1,-1,-1,1,-1,-1]
         # C_FRD[i,j] = s[i]*s[j] * C_FLU[i*6 + j]
         _TWIST_COV_MAP = [
-            ( 0, 1), ( 1,-1), ( 2,-1), ( 3, 1), ( 4,-1), ( 5,-1),  # row 0 (fwd)
-            ( 7, 1), ( 8, 1), ( 9,-1), (10, 1), (11, 1),            # row 1 (right)
-            (14, 1), (15,-1), (16, 1), (17, 1),                      # row 2 (down)
-            (21, 1), (22,-1), (23,-1),                               # row 3 (roll)
-            (28, 1), (29, 1),                                        # row 4 (pitch)
-            (35, 1),                                                 # row 5 (yaw)
+            (0, 1),
+            (1, -1),
+            (2, -1),
+            (3, 1),
+            (4, -1),
+            (5, -1),  # row 0 (fwd)
+            (7, 1),
+            (8, 1),
+            (9, -1),
+            (10, 1),
+            (11, 1),  # row 1 (right)
+            (14, 1),
+            (15, -1),
+            (16, 1),
+            (17, 1),  # row 2 (down)
+            (21, 1),
+            (22, -1),
+            (23, -1),  # row 3 (roll)
+            (28, 1),
+            (29, 1),  # row 4 (pitch)
+            (35, 1),  # row 5 (yaw)
         ]
 
-        pose_cov  = [float(msg.pose.covariance[i])  * s for i, s in _POSE_COV_MAP]
+        pose_cov = [float(msg.pose.covariance[i]) * s for i, s in _POSE_COV_MAP]
         twist_cov = [float(msg.twist.covariance[i]) * s for i, s in _TWIST_COV_MAP]
 
-        qual = self.get_parameter("external_odom_quality").get_parameter_value().integer_value
+        qual = (
+            self.get_parameter("external_odom_quality")
+            .get_parameter_value()
+            .integer_value
+        )
         qual = max(-1, min(100, int(qual)))
 
         m = mavutil.mavlink
@@ -450,17 +518,22 @@ class MavlinkBridgeReceiver(Node):
             time_usec,
             m.MAV_FRAME_LOCAL_FRD,
             m.MAV_FRAME_BODY_FRD,
-            x, y, z,
+            x,
+            y,
+            z,
             q,
-            vx, vy, vz,
-            rollspeed, pitchspeed, yawspeed,
+            vx,
+            vy,
+            vz,
+            rollspeed,
+            pitchspeed,
+            yawspeed,
             pose_cov,
             twist_cov,
             self._odom_reset_counter,
             m.MAV_ESTIMATOR_TYPE_VISION,
             qual,
         )
-
 
     def _mavlink_drain_cb(self):
         """Drain up to 20 incoming MAVLink messages per 20 ms tick (non-blocking)."""
@@ -470,20 +543,20 @@ class MavlinkBridgeReceiver(Node):
                 if msg is None:
                     break
                 t = msg.get_type()
-                if t == 'VFR_HUD':
-                    self._vfrhud_alt   = msg.alt
+                if t == "VFR_HUD":
+                    self._vfrhud_alt = msg.alt
                     self._vfrhud_climb = msg.climb
-                elif t == 'NAV_CONTROLLER_OUTPUT':
+                elif t == "NAV_CONTROLLER_OUTPUT":
                     self._nav_alt_error = msg.alt_error
                     self._t_nav = time.monotonic()
-                elif t == 'PID_TUNING' and getattr(msg, 'axis', None) == 4:
-                    self._pid_desired  = msg.desired
+                elif t == "PID_TUNING" and getattr(msg, "axis", None) == 4:
+                    self._pid_desired = msg.desired
                     self._pid_achieved = msg.achieved
-                    self._pid_P        = msg.P
-                    self._pid_I        = msg.I
-                    self._pid_D        = msg.D
+                    self._pid_P = msg.P
+                    self._pid_I = msg.I
+                    self._pid_D = msg.D
                     self._t_pid = time.monotonic()
-                elif t == 'PARAM_VALUE':
+                elif t == "PARAM_VALUE":
                     try:
                         self._param_value_queue.put_nowait(msg)
                     except queue.Full:
@@ -500,10 +573,12 @@ class MavlinkBridgeReceiver(Node):
             msg.data = float(self._vfrhud_alt)
             self._depth_achieved_pub.publish(msg)
 
-        if (self.pixhawk_mode == 'ALT_HOLD'
-                and nav_fresh
-                and math.isfinite(self._vfrhud_alt)
-                and math.isfinite(self._nav_alt_error)):
+        if (
+            self.pixhawk_mode == "ALT_HOLD"
+            and nav_fresh
+            and math.isfinite(self._vfrhud_alt)
+            and math.isfinite(self._nav_alt_error)
+        ):
             msg = Float32()
             # alt_error = desired - actual  →  desired = actual + alt_error
             msg.data = float(self._vfrhud_alt + self._nav_alt_error)
@@ -524,6 +599,7 @@ class MavlinkBridgeReceiver(Node):
                 float(self._pid_D),
             ]
             self._pid_accz_pub.publish(msg)
+
     """--------------------------------------------- PID fetch from FC (startup) -----------------------------------------------"""
 
     def _start_pid_fetch_cb(self):
@@ -559,7 +635,9 @@ class MavlinkBridgeReceiver(Node):
                 except queue.Empty:
                     idle_timeouts += 1
                     if idle_timeouts >= 10:  # 5 s of silence → give up on list
-                        fl.warning("PID fetch: no PARAM_VALUE for 5 s, moving to retries")
+                        fl.warning(
+                            "PID fetch: no PARAM_VALUE for 5 s, moving to retries"
+                        )
                         break
                     continue
                 idle_timeouts = 0
@@ -646,12 +724,15 @@ class MavlinkBridgeReceiver(Node):
                     (self.param_map[p.name], float(p.value), p.name, old_val)
                 )
         if self._pending_mavlink_params and self._mavlink_defer_timer is None:
-            self._mavlink_defer_timer = self.create_timer(0.02, self._flush_mavlink_param_queue)
+            self._mavlink_defer_timer = self.create_timer(
+                0.02, self._flush_mavlink_param_queue
+            )
         return SetParametersResult(successful=True)
 
     def _flush_mavlink_param_queue(self):
         """Send each queued param_set and wait for FC confirmation (PARAM_VALUE echo).
-        If the FC does not echo within 2 s, the ROS param is reverted to its previous value."""
+        If the FC does not echo within 2 s, the ROS param is reverted to its previous value.
+        """
         if self._mavlink_defer_timer is not None:
             self._mavlink_defer_timer.cancel()
             self._mavlink_defer_timer = None
@@ -670,10 +751,15 @@ class MavlinkBridgeReceiver(Node):
             confirmed = False
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline:
-                msg = self.port.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.1)
+                msg = self.port.recv_match(
+                    type="PARAM_VALUE", blocking=True, timeout=0.1
+                )
                 if msg is None:
                     continue
-                if normalize_mavlink_param_id(msg.param_id).upper() == mav_param_id.upper():
+                if (
+                    normalize_mavlink_param_id(msg.param_id).upper()
+                    == mav_param_id.upper()
+                ):
                     confirmed = True
                     self.get_logger().info(
                         f"FC confirmed {mav_param_id} = {msg.param_value}"
@@ -686,13 +772,15 @@ class MavlinkBridgeReceiver(Node):
                 )
                 self._reverting = True
                 try:
-                    self.set_parameters([
-                        RclpyParameter(ros_name, RclpyParameter.Type.DOUBLE, old_val)
-                    ])
+                    self.set_parameters(
+                        [RclpyParameter(ros_name, RclpyParameter.Type.DOUBLE, old_val)]
+                    )
                 finally:
                     self._reverting = False
 
     """--------------------------------------------- main function ---------------------------------------------"""
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeReceiver()
