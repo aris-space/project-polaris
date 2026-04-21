@@ -23,12 +23,12 @@ class JetsonTemperature(Node):
     def timer_callback(self):
         
         cpu_temp = self.read_thermal_zone(0)
-        gpu_temp = self.read_thermal_zone(1)
+        #gpu_temp = self.read_thermal_zone(1)
         tj_temp = self.read_thermal_zone(8)
         
         temperatures = {
             'cpu': cpu_temp,
-            'gpu': gpu_temp,
+            #'gpu': gpu_temp,
             'junction': tj_temp,
         }
 
