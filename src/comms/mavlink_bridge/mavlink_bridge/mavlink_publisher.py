@@ -96,6 +96,8 @@ class MavlinkBridgeSender(Node):
         # Lock: main spin (mavlink_callback) vs PID param fetch thread.
         self._mav_lock = threading.Lock()
         self._pid_queue: queue.Queue = queue.Queue(maxsize=1)
+        # mavlink_callback forwards PARAM_VALUE here so the fetch thread isn't starved.
+        self._param_value_queue: queue.Queue = queue.Queue(maxsize=2000)
         self._pid_apply_timer = None
         self._pid_pending_fetched = None  # dict[str, float] | None
         self._pid_set_cli = None
@@ -153,7 +155,7 @@ class MavlinkBridgeSender(Node):
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
         # Dynamic sync control — must be declared before the timer block reads them
-        self.declare_parameter("sync_fc_pid_to_receiver", True)
+        self.declare_parameter("sync_fc_pid_to_receiver", False)
         self.declare_parameter("receiver_node_for_pid_sync", "mavlink_bridge_receiver")
         self.declare_parameter("receiver_pid_push_chunk_size", 6)
 
@@ -265,7 +267,11 @@ class MavlinkBridgeSender(Node):
         threading.Thread(target=self._thread_fetch_pid_params, daemon=True).start()
 
     def _thread_fetch_pid_params(self):
-        """Fetch PID params from FC over MAVLink (daemon thread — no rclpy calls here)."""
+        """Fetch PID params from FC over MAVLink (daemon thread — no rclpy calls here).
+
+        NOTE: This runs only when sync_fc_pid_to_receiver=true (default: false).
+        The receiver node fetches its own PID params directly via its TCP connection.
+        """
         fl = self._file_logger
         fetched = {}
         try:
@@ -280,9 +286,9 @@ class MavlinkBridgeSender(Node):
             list_deadline = time.monotonic() + 45.0
             idle_timeouts = 0
             while needed and time.monotonic() < list_deadline:
-                with self._mav_lock:
-                    msg = self.port.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.1)
-                if msg is None:
+                try:
+                    msg = self._param_value_queue.get(timeout=0.1)
+                except queue.Empty:
                     idle_timeouts += 1
                     if idle_timeouts >= 20:
                         break
@@ -304,9 +310,9 @@ class MavlinkBridgeSender(Node):
                     self.port.param_fetch_one(mav_name)
                 deadline = time.monotonic() + 2.0
                 while time.monotonic() < deadline:
-                    with self._mav_lock:
-                        msg = self.port.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.1)
-                    if msg is None:
+                    try:
+                        msg = self._param_value_queue.get(timeout=0.1)
+                    except queue.Empty:
                         continue
                     if normalize_mavlink_param_id(msg.param_id).upper() == want:
                         fetched[ros_name] = float(msg.param_value)
@@ -442,6 +448,11 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif mtype == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
+                elif mtype == "PARAM_VALUE":
+                    try:
+                        self._param_value_queue.put_nowait(msg)
+                    except queue.Full:
+                        pass
 
     def message_counter(self, msg_type: str) -> bool:
         """Only process every Nth message per message type."""

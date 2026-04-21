@@ -1,3 +1,5 @@
+import queue
+import threading
 import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
@@ -56,9 +58,6 @@ class MavlinkBridgeReceiver(Node):
         self.port = mavutil.mavlink_connection(
             Comms.MAVLINK_ROUTER_TCP
         )  # For sending commands to Pixhawk via mavlink-router
-        # self.port_in = mavutil.mavlink_connection(
-        #     "/dev/ttyTHS1", baud=115200
-        # )  # For receiving messages from Pixhawk (e.g., heartbeats, status)
 
         # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
         self.port.wait_heartbeat()
@@ -82,6 +81,12 @@ class MavlinkBridgeReceiver(Node):
         self._reverting = False  # prevents revert calls from re-triggering MAVLink send
         self.declare_pid_parameter_defaults()
         self.add_on_set_parameters_callback(self.on_params_changed)
+
+        # PID fetch from FC — uses the existing TCP connection (self.port).
+        # _port_lock serialises sends from the fetch thread vs. the spin-thread drain loop.
+        self._port_lock = threading.Lock()
+        self._param_value_queue: queue.Queue = queue.Queue(maxsize=2000)
+        self._pid_fetch_result_queue: queue.Queue = queue.Queue(maxsize=1)
         
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
@@ -128,13 +133,18 @@ class MavlinkBridgeReceiver(Node):
         self.create_timer(0.02, self._mavlink_drain_cb)
         self.create_timer(0.20, self._depth_publish_cb)
 
-        # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
-        self.rc_override_subscriber = self.create_subscription(
-            OverrideRCIn,
-            "/pixhawk/rc_override",
-            self.rc_override_cb,
-            Comms.SUB_QOS_DEPTH,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
-        )
+        # One-shot trigger (1 s after init) → starts PID fetch background thread.
+        # Apply-timer polls the result queue every 0.5 s and sets ROS params once done.
+        self._pid_fetch_trigger = self.create_timer(1.0, self._start_pid_fetch_cb)
+        self.create_timer(0.5, self._apply_fetched_pid_cb)
+
+        # # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
+        # self.rc_override_subscriber = self.create_subscription(
+        #     OverrideRCIn,
+        #     "/pixhawk/rc_override",
+        #     self.rc_override_cb,
+        #     Comms.SUB_QOS_DEPTH,  # overrideRCIn is a 8 integer array, so the function currently only accepts that input type
+        # )
 
         self.manual_control_subscriber = self.create_subscription(
             Int16MultiArray,
@@ -162,29 +172,29 @@ class MavlinkBridgeReceiver(Node):
 
     """--------------------------------------------- Callback functions for the subscribers ---------------------------------------------"""
 
-    def rc_override_cb(self, msg):
-        """
-        Called automatically when a message arrives on "pixhawk/rc_override" topic.
-        Converts the ROS2 OverrideRCIn message to MAVLink RC_OVERRIDE and sends it to Pixhawk.
-        """
-        self.get_logger().info(f"Received ROS2 RC override: {msg.channels}")
+    # def rc_override_cb(self, msg):
+    #     """
+    #     Called automatically when a message arrives on "pixhawk/rc_override" topic.
+    #     Converts the ROS2 OverrideRCIn message to MAVLink RC_OVERRIDE and sends it to Pixhawk.
+    #     """
+    #     self.get_logger().info(f"Received ROS2 RC override: {msg.channels}")
 
-        channels = msg.channels
+    #     channels = msg.channels
 
-        # Send MAVLink RC_CHANNELS_OVERRIDE message
-        # Arguments: target_system, target_component and the different RCOverride values in channels
-        self.port.mav.rc_channels_override_send(
-            self.port.target_system,  # Target system ID
-            self.port.target_component,  # Target component ID
-            channels[0],
-            channels[1],
-            channels[2],
-            channels[3],
-            channels[4],
-            channels[5],
-            channels[6],
-            channels[7],
-        )
+    #     # Send MAVLink RC_CHANNELS_OVERRIDE message
+    #     # Arguments: target_system, target_component and the different RCOverride values in channels
+    #     self.port.mav.rc_channels_override_send(
+    #         self.port.target_system,  # Target system ID
+    #         self.port.target_component,  # Target component ID
+    #         channels[0],
+    #         channels[1],
+    #         channels[2],
+    #         channels[3],
+    #         channels[4],
+    #         channels[5],
+    #         channels[6],
+    #         channels[7],
+    #     )
 
     def manual_control_cb(self, msg):
         """
@@ -289,22 +299,22 @@ class MavlinkBridgeReceiver(Node):
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
-    def send_4dof_command(self, control_input):
-        """
-        Input values: -1000 to 1000 (except heave, see below)
-        """
-        self._file_logger.info(
-            f"Sending 4DOF command with control input: {control_input}"
-        )
-        surge, sway, heave, yaw = control_input
-        self.port.mav.manual_control_send(
-            self.port.target_system,
-            int(surge),  # x: Forward/Back
-            int(sway),  # y: Left/Right
-            int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
-            int(yaw),  # r: Yaw
-            0,  # buttons bitmask
-        )
+    # def send_4dof_command(self, control_input):
+    #     """
+    #     Input values: -1000 to 1000 (except heave, see below)
+    #     """
+    #     self._file_logger.info(
+    #         f"Sending 4DOF command with control input: {control_input}"
+    #     )
+    #     surge, sway, heave, yaw = control_input
+    #     self.port.mav.manual_control_send(
+    #         self.port.target_system,
+    #         int(surge),  # x: Forward/Back
+    #         int(sway),  # y: Left/Right
+    #         int(heave),  # z: Up/Down (range 0-1000, 500 is neutral)
+    #         int(yaw),  # r: Yaw
+    #         0,  # buttons bitmask
+    #     )
 
     def send_6dof_command(self, control_input):
         """
@@ -454,24 +464,30 @@ class MavlinkBridgeReceiver(Node):
 
     def _mavlink_drain_cb(self):
         """Drain up to 20 incoming MAVLink messages per 20 ms tick (non-blocking)."""
-        for _ in range(20):
-            msg = self.port.recv_match(blocking=False)
-            if msg is None:
-                break
-            t = msg.get_type()
-            if t == 'VFR_HUD':
-                self._vfrhud_alt   = msg.alt
-                self._vfrhud_climb = msg.climb
-            elif t == 'NAV_CONTROLLER_OUTPUT':
-                self._nav_alt_error = msg.alt_error
-                self._t_nav = time.monotonic()
-            elif t == 'PID_TUNING' and getattr(msg, 'axis', None) == 4:
-                self._pid_desired  = msg.desired
-                self._pid_achieved = msg.achieved
-                self._pid_P        = msg.P
-                self._pid_I        = msg.I
-                self._pid_D        = msg.D
-                self._t_pid = time.monotonic()
+        with self._port_lock:
+            for _ in range(20):
+                msg = self.port.recv_match(blocking=False)
+                if msg is None:
+                    break
+                t = msg.get_type()
+                if t == 'VFR_HUD':
+                    self._vfrhud_alt   = msg.alt
+                    self._vfrhud_climb = msg.climb
+                elif t == 'NAV_CONTROLLER_OUTPUT':
+                    self._nav_alt_error = msg.alt_error
+                    self._t_nav = time.monotonic()
+                elif t == 'PID_TUNING' and getattr(msg, 'axis', None) == 4:
+                    self._pid_desired  = msg.desired
+                    self._pid_achieved = msg.achieved
+                    self._pid_P        = msg.P
+                    self._pid_I        = msg.I
+                    self._pid_D        = msg.D
+                    self._t_pid = time.monotonic()
+                elif t == 'PARAM_VALUE':
+                    try:
+                        self._param_value_queue.put_nowait(msg)
+                    except queue.Full:
+                        pass
 
     def _depth_publish_cb(self):
         """Publish depth topics at 5 Hz. Suppresses stale controller data."""
@@ -508,6 +524,108 @@ class MavlinkBridgeReceiver(Node):
                 float(self._pid_D),
             ]
             self._pid_accz_pub.publish(msg)
+    """--------------------------------------------- PID fetch from FC (startup) -----------------------------------------------"""
+
+    def _start_pid_fetch_cb(self):
+        """One-shot timer callback: cancel self, then start the background fetch thread."""
+        self._pid_fetch_trigger.cancel()
+        self._pid_fetch_trigger = None
+        threading.Thread(target=self._thread_fetch_pid_params, daemon=True).start()
+
+    def _thread_fetch_pid_params(self):
+        """Fetch PID gains from the FC using the receiver's existing TCP connection.
+
+        Runs in a daemon thread. PARAM_VALUE messages are received by _mavlink_drain_cb
+        and forwarded to _param_value_queue; this thread only sends requests (under the
+        port lock) and reads from the queue.
+        """
+        fl = self._file_logger
+        fetched = {}
+        try:
+            upper_to_ros = {m.upper(): r for r, m in self.param_map.items()}
+            needed = set(upper_to_ros.keys())
+
+            fl.info("PID fetch: sending PARAM_REQUEST_LIST over TCP ...")
+            with self._port_lock:
+                self.port.mav.param_request_list_send(
+                    self.port.target_system, self.port.target_component
+                )
+
+            list_deadline = time.monotonic() + 45.0
+            idle_timeouts = 0
+            while needed and time.monotonic() < list_deadline:
+                try:
+                    msg = self._param_value_queue.get(timeout=0.5)
+                except queue.Empty:
+                    idle_timeouts += 1
+                    if idle_timeouts >= 10:  # 5 s of silence → give up on list
+                        fl.warning("PID fetch: no PARAM_VALUE for 5 s, moving to retries")
+                        break
+                    continue
+                idle_timeouts = 0
+                pid = normalize_mavlink_param_id(msg.param_id).upper()
+                if pid in needed:
+                    ros_name = upper_to_ros[pid]
+                    fetched[ros_name] = float(msg.param_value)
+                    needed.discard(pid)
+                    fl.info(f"PID from FC: {pid} = {msg.param_value}")
+
+            # Individual retries for anything still missing after the full list
+            for ros_name, mav_name in self.param_map.items():
+                if ros_name in fetched:
+                    continue
+                want = mav_name.strip().upper()
+                fl.info(f"PID fetch: retrying {mav_name} individually ...")
+                with self._port_lock:
+                    self.port.param_fetch_one(mav_name)
+                deadline = time.monotonic() + 3.0
+                while time.monotonic() < deadline:
+                    try:
+                        msg = self._param_value_queue.get(timeout=0.2)
+                    except queue.Empty:
+                        continue
+                    if normalize_mavlink_param_id(msg.param_id).upper() == want:
+                        fetched[ros_name] = float(msg.param_value)
+                        fl.info(f"PID from FC (retry): {mav_name} = {msg.param_value}")
+                        break
+
+            for ros_name in self.param_map:
+                if ros_name not in fetched:
+                    fl.error(
+                        f"PID fetch FAILED for {self.param_map[ros_name]} ({ros_name});"
+                        " sentinel 9999.0"
+                    )
+                    fetched[ros_name] = 9999.0
+
+        except Exception as e:
+            fl.error(f"PID fetch thread error: {e}")
+            for ros_name in self.param_map:
+                fetched.setdefault(ros_name, 9999.0)
+
+        try:
+            self._pid_fetch_result_queue.put_nowait(fetched)
+        except queue.Full:
+            pass
+        fl.info(f"PID fetch: complete ({len(fetched)} params)")
+
+    def _apply_fetched_pid_cb(self):
+        """Spin-thread timer: apply fetched PID params to ROS params without pushing back to FC."""
+        try:
+            fetched = self._pid_fetch_result_queue.get_nowait()
+        except queue.Empty:
+            return
+        params_to_set = [
+            RclpyParameter(name, RclpyParameter.Type.DOUBLE, value)
+            for name, value in fetched.items()
+        ]
+        self._reverting = True  # skip on_params_changed → FC push
+        try:
+            self.set_parameters(params_to_set)
+        finally:
+            self._reverting = False
+        self.get_logger().info(f"Applied {len(fetched)} PID params fetched from FC")
+
+    """------------------------------------------- pid gains as rosparams functions --------------------------------------------"""
 
     def declare_pid_parameter_defaults(self):
         """Declare tuning parameters with sentinel 9999.0 so failed fetches are immediately visible."""
