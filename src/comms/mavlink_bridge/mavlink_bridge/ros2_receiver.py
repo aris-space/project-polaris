@@ -312,6 +312,16 @@ class MavlinkBridgeReceiver(Node):
             int(msg.altitude  * 1e3),
             time_usec,
         )
+        self.port.mav.set_home_position_send(
+            self.port.target_system,
+            int(msg.latitude * 1e7),
+            int(msg.longitude * 1e7),
+            int(msg.altitude * 1e3),
+            0.0, 0.0, 0.0,         # x, y, z local NED (unknown)
+            [1.0, 0.0, 0.0, 0.0],  # quaternion
+            0.0, 0.0, 0.0,         # approach_x, approach_y, approach_z
+            time_usec,
+        )
         self._gps_origin_sent = True
         self.get_logger().info(
             f"GPS_GLOBAL_ORIGIN sent: lat={msg.latitude:.7f}, lon={msg.longitude:.7f}, alt={msg.altitude:.2f}m"
