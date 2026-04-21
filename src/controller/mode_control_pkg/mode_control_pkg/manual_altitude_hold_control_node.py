@@ -15,7 +15,7 @@ Publishes:
     by the mavlink_bridge ros2_receiver, which sends it as a MAVLink MANUAL_CONTROL
     message to the Pixhawk.
 
-Only processes joystick input when current_mode == 'manual_depth_hold'.
+Only processes joystick input when current_mode == 'ALT_HOLD'.
 
 Int16MultiArray layout (6 values, roll and pitch fixed at 0):
   data[0] = x   (surge:  forward/back,  -1000 to 1000)
@@ -121,7 +121,7 @@ class ManualAltitudeHoldControlNode(Node):
 
     def joy_callback(self, msg):
         """Called when a joystick message arrives from /joy. Updates stored values and timestamp."""
-        if self.current_mode != "manual_depth_hold":
+        if self.current_mode != "ALT_HOLD":
             return
 
         self.last_joy_time = self.get_clock().now()
@@ -129,7 +129,7 @@ class ManualAltitudeHoldControlNode(Node):
 
     def timer_callback(self):
         """Publishes at 20Hz. Falls back to neutral if /joy times out."""
-        if self.current_mode != "manual_depth_hold":
+        if self.current_mode != "ALT_HOLD":
             return
 
         elapsed = (self.get_clock().now() - self.last_joy_time).nanoseconds / 1e9

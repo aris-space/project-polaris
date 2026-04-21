@@ -20,22 +20,22 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed node.",
             ),
-            # Node(
-            #     package="usb_cam",
-            #     executable="usb_cam_node_exe",
-            #     name="camera_front",
-            #     namespace="front",
-            #     respawn=respawn,
-            #     respawn_delay=respawn_delay,
-            #     parameters=[
-            #         {
-            #             "video_device": Ports.USB_CAM_FRONT_PORT,
-            #             "pixel_format": "mjpeg2rgb",  # The format that fixed the crash
-            #             "image_width": 640,
-            #             "image_height": 480,
-            #         }
-            #     ],
-            # ),
+            Node(
+                package="usb_cam",
+                executable="usb_cam_node_exe",
+                name="camera_front",
+                namespace="front",
+                respawn=respawn,
+                respawn_delay=respawn_delay,
+                parameters=[
+                    {
+                        "video_device": Ports.USB_CAM_FRONT_PORT,
+                        "pixel_format": "mjpeg2rgb",  # The format that fixed the crash
+                        "image_width": 640,
+                        "image_height": 480,
+                    }
+                ],
+            ),
             Node(
                 package="usb_cam",
                 executable="usb_cam_node_exe",
@@ -45,7 +45,7 @@ def generate_launch_description():
                 respawn_delay=respawn_delay,
                 parameters=[
                     {
-                        "video_device": '/dev/video0',
+                        "video_device": Ports.USB_CAM_TUBE_PORT,
                         "pixel_format": "mjpeg2rgb",
                         "image_width": 640,
                         "image_height": 480,
