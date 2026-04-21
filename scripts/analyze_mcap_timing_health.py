@@ -43,6 +43,9 @@ MANUAL_TOPICS = frozenset(
 )
 
 STARTUP_NS = int(5e9)  # first 5 s from first message on this topic (log_time)
+DEFAULT_ROOTS: tuple[str, ...] = (
+    "recordings/rosbags",
+)
 
 
 def _is_raw_rosbag_mcap(p: Path) -> bool:
@@ -425,7 +428,7 @@ def main() -> int:
     ap.add_argument(
         "roots",
         nargs="*",
-        default=["recordings/rosbags"],
+        default=list(DEFAULT_ROOTS),
         help="Roots to scan for *_0.mcap (default: recordings/rosbags)",
     )
     ap.add_argument("--all-topics", action="store_true", help="Analyze every topic (slow, large output)")
@@ -440,7 +443,13 @@ def main() -> int:
         print("No raw *_0.mcap files under rosbags (excluding __bodyframe).", file=sys.stderr)
         return 1
 
-    results = [analyze_bag(p, args.all_topics) for p in mcaps]
+    results = []
+    for p in mcaps:
+        try:
+            results.append(analyze_bag(p, args.all_topics))
+        except Exception as e:
+            print(f"WARNING: skipping {p.parent.name} — {e}", file=sys.stderr)
+            results.append({"bag_name": p.parent.name, "mcap_path": str(p), "topics": {}, "bag_suggestion": "unreadable", "flagged_topics": [], "error": str(e)})
 
     if args.json:
         print(json.dumps(results, indent=2))

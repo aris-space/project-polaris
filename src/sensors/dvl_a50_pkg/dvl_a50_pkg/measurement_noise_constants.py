@@ -10,8 +10,7 @@ Regenerate JSON after new pool data and update these literals if needed.
 """
 
 # Twist linear velocity variance [m^2/s^2] when bottom lock is valid (diagonal only).
-# odometry_covariance_node multiplies these by lock_linear_variance_bias_drift_inflation_factor
-# (ROS param, default 1.15) for runtime tuning without changing the recorded stationary stats.
+# odometry_covariance_node uses these directly (with optional z-floor safeguard).
 DVL_LOCK_LINEAR_VARIANCE_X_M2_S2 = 5.581725289274474e-05
 DVL_LOCK_LINEAR_VARIANCE_Y_M2_S2 = 7.83722133250522e-06
 DVL_LOCK_LINEAR_VARIANCE_Z_RAW_M2_S2 = 9.434414856439562e-08

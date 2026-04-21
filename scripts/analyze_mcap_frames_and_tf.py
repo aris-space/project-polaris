@@ -39,6 +39,9 @@ EXPECTED_STATIC_PARENT_CHILD: tuple[tuple[str, str], ...] = (
 )
 EXPECTED_IMU_HEADER_FRAME = "imu_link"
 EXPECTED_DVL_SENSOR_FRAME = "dvl_a50_link"
+DEFAULT_ROOTS: tuple[str, ...] = (
+    "recordings/rosbags",
+)
 
 
 def _under_raw_rosbags(path: Path) -> bool:
@@ -477,7 +480,7 @@ def main() -> int:
     ap.add_argument(
         "roots",
         nargs="*",
-        default=["recordings/rosbags"],
+        default=list(DEFAULT_ROOTS),
         help="Scan under these roots for rosbag2 dirs (default: recordings/rosbags)",
     )
     ap.add_argument("--json", action="store_true", help="Print JSON only")
@@ -491,7 +494,13 @@ def main() -> int:
         print("No raw rosbag2 directories found.", file=sys.stderr)
         return 1
 
-    reports = [analyze_bag(b) for b in bags]
+    reports = []
+    for b in bags:
+        try:
+            reports.append(analyze_bag(b))
+        except Exception as e:
+            print(f"WARNING: skipping {b.name} — {e}", file=sys.stderr)
+            reports.append({"bag_name": b.name, "bag_dir": str(b), "error": str(e), "bag_suggestion": "unreadable"})
 
     if args.json:
         print(json.dumps(reports, indent=2))
