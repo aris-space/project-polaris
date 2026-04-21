@@ -173,9 +173,8 @@ if [ "${AUTO_BUILD}" = "1" ]; then
     rm -rf "${ROS_WS}/build/dvl_a50" "${ROS_WS}/install/dvl_a50"
   fi
 
-  rm -f "${ROS_WS}/.build_complete"
   colcon build --symlink-install
-  touch "${ROS_WS}/.build_complete" # file for checking if all packages are built
+  echo "[POLARIS] BUILD COMPLETE"
 fi
 
 # 4) Source overlay for this process tree when available.
@@ -183,3 +182,5 @@ if [ -f "${ROS_WS}/install/setup.bash" ]; then
   source_with_relaxed_nounset "${ROS_WS}/install/setup.bash"
 fi
 
+# 5) Hand off to the command specified in docker-compose (default: sleep infinity).
+exec "$@"
