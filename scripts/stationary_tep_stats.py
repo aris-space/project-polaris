@@ -128,6 +128,8 @@ def _dt_stats_sec(times_ns: np.ndarray) -> dict[str, Any]:
     return {
         "n_messages": int(times_ns.size),
         "n_dt": int(n),
+        "n_zero_dt": int(np.sum(dt == 0.0)),
+        "n_negative_dt": int(np.sum(dt < 0.0)),
         "dt_mean_s": float(dt.mean()),
         "dt_std_s": float(dt.std(ddof=1)) if n > 1 else 0.0,
         "dt_min_s": float(dt.min()),
@@ -138,6 +140,17 @@ def _dt_stats_sec(times_ns: np.ndarray) -> dict[str, Any]:
         "approx_mean_hz": float(1.0 / dt.mean()) if dt.mean() > 0 else None,
         "histogram_dt_ms": hist,
     }
+
+
+def _resolve_bags_root(repo_root: Path, bags_root_arg: Path | None) -> Path:
+    return (bags_root_arg if bags_root_arg is not None else (repo_root / "recordings" / "rosbags")).resolve()
+
+
+def _latest_date_dir(bags_root: Path) -> Path | None:
+    dated = sorted(
+        d for d in bags_root.iterdir() if d.is_dir() and d.name[:4].isdigit() and d.name.count("-") == 2
+    )
+    return dated[-1] if dated else None
 
 
 def _series_stats(values: np.ndarray) -> dict[str, float | None]:
@@ -768,20 +781,47 @@ def main() -> None:
         default=120.0,
         help="Duration of non-overlapping bins for bias-drift analysis (default: 120).",
     )
+    ap.add_argument(
+        "--bags-root",
+        type=Path,
+        default=None,
+        help="Root containing dated rosbag folders (default: <repo>/recordings/rosbags).",
+    )
+    ap.add_argument(
+        "--bags-date",
+        type=str,
+        default=None,
+        help="Date folder under bags root (e.g. 2026-04-19). Default: latest available date folder.",
+    )
     args = ap.parse_args()
     root = args.repo_root.resolve()
     out_json = args.out_json or (root / "recordings" / "stationary_tep_stats.json")
     out_html = args.out_html or (root / "recordings" / "stationary_tep_stats_report.html")
 
-    bags_root = root / "recordings" / "rosbags" / "2026-03-26"
-    b1 = next(bags_root.glob("stationary_01_*"), None)
-    b2 = next(bags_root.glob("stationary_02_*"), None)
-    if not b1 or not b1.is_dir():
-        print(f"Missing stationary_01 bag under {bags_root}", file=sys.stderr)
+    rosbags_root = _resolve_bags_root(root, args.bags_root)
+    if not rosbags_root.is_dir():
+        print(f"Missing rosbags root: {rosbags_root}", file=sys.stderr)
         sys.exit(1)
-    if not b2 or not b2.is_dir():
-        print(f"Missing stationary_02 bag under {bags_root}", file=sys.stderr)
+
+    date_dir = (rosbags_root / args.bags_date) if args.bags_date else _latest_date_dir(rosbags_root)
+    if date_dir is None or not date_dir.is_dir():
+        print(
+            f"No dated bag folder found under {rosbags_root}. Provide --bags-date explicitly.",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
+    b1 = next(date_dir.glob("stationary_01_*"), None)
+    b2 = next(date_dir.glob("stationary_02_*"), None)
+    if not b1 or not b1.is_dir() or not b2 or not b2.is_dir():
+        stationary_dirs = sorted(d for d in date_dir.iterdir() if d.is_dir() and d.name.startswith("stationary_"))
+        if len(stationary_dirs) < 2:
+            print(
+                f"Need at least two stationary_* bags under {date_dir} (or provide a date with stationary_01 and stationary_02).",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        b1, b2 = stationary_dirs[0], stationary_dirs[1]
 
     ekf_rel = "src/navigation/ekf_localization_pkg/config/ekf_local.yaml"
 
@@ -805,14 +845,14 @@ def main() -> None:
         "bags": [
             analyze_pair(
                 b1,
-                label="stationary_01 — full bag",
+                label=f"{b1.name} — full bag",
                 field_note="Baseline / comparison. Field log: stormier conditions at the steg.",
                 mask_lock=False,
                 drift_window_sec=args.drift_window_sec,
             ),
             analyze_pair(
                 b2,
-                label="stationary_02 — lock-masked",
+                label=f"{b2.name} — lock-masked",
                 field_note="Preferred for DVL-inclusive stationary stats: IMU and DVL samples only during bottom-lock-true unions; odometry_cov also covariance-gated.",
                 mask_lock=True,
                 drift_window_sec=args.drift_window_sec,
