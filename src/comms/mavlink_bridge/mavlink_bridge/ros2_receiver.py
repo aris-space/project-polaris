@@ -104,10 +104,6 @@ class MavlinkBridgeReceiver(Node):
             Comms.SUB_QOS_DEPTH,
         )
 
-        self.odometry_subscriber = self.create_subscription(Odometry, "/odometry/filtered/local", self.ekf_odom_cb, Comms.SUB_QOS_DEPTH)
-
-        self.gps_fix_subscriber = self.create_subscription(NavSatFix, "/gps/filtered", self.gps_origin_cb, Comms.SUB_QOS_DEPTH)
-
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
             String, "/pixhawk/mode_cmd", self.mode_selection_cb, Comms.SUB_QOS_DEPTH
@@ -121,26 +117,14 @@ class MavlinkBridgeReceiver(Node):
             Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
         )
 
-        # -------- External odometry -> MAVLink ODOMETRY (msg 331) --------
-        # Forwards nav_msgs/Odometry to the Pixhawk as external nav so EK3 can
-        # fuse it (VISO_TYPE=1, EK3_SRC1_POSXY/VELXY=6). This is what unlocks
-        # GUIDED on hardware that has no GPS/DVL/USBL.
-        # Throttle incoming rate to ~50 Hz; ArduPilot handles 20-50 Hz well,
-        # and anything much higher wastes link bandwidth.
-        self._external_odom_last_send_ns = 0
-        self._external_odom_max_rate_hz = 50.0
-        self._external_odom_quality = 100
-
         self.external_odom_subscriber = self.create_subscription(
             Odometry,
             "/odometry/filtered/local",
             self.external_odom_cb,
             qos_profile_sensor_data,
         )
-        self.get_logger().info(
-            "External nav: forwarding '/odometry/filtered/local' to Pixhawk "
-            "as MAVLink ODOMETRY"
-        )
+
+        self.gps_fix_subscriber = self.create_subscription(NavSatFix,"/gps/filtered", self.gps_origin_cb, Comms.SUB_QOS_DEPTH)
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
@@ -329,62 +313,6 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "GUIDED"
             self.get_logger().info("Sent GUIDED mode command")
             self._file_logger.info("Sent GUIDED mode command")
-
-    def external_odom_cb(self, msg: Odometry) -> None:
-        """Forward a ROS nav_msgs/Odometry sample to the Pixhawk as MAVLink ODOMETRY.
-
-        Assumes the incoming odometry follows REP-103:
-          - pose in an ENU world frame (header.frame_id, e.g. 'odom')
-          - twist in the FLU body frame (child_frame_id, e.g. 'base_link')
-        Conversion to ArduPilot's NED world / FRD body conventions happens in
-        `ros_odom_to_mavlink_odometry`.
-
-        Rate-limited via `external_odom_max_rate_hz` so the MAVLink link does
-        not get saturated by a fast EKF publish rate.
-        """
-        now_ns = self.get_clock().now().nanoseconds
-        max_hz = self._external_odom_max_rate_hz
-        if max_hz > 0.0:
-            min_interval_ns = int(1e9 / max_hz)
-            if now_ns - self._external_odom_last_send_ns < min_interval_ns:
-                return
-        self._external_odom_last_send_ns = now_ns
-
-        p = msg.pose.pose.position
-        oq = msg.pose.pose.orientation
-        tw = msg.twist.twist
-        x, y, z, quat, vel, rates = ros_odom_to_mavlink_odometry(
-            float(p.x),
-            float(p.y),
-            float(p.z),
-            oq,
-            (float(tw.linear.x), float(tw.linear.y), float(tw.linear.z)),
-            (float(tw.angular.x), float(tw.angular.y), float(tw.angular.z)),
-        )
-
-        # Use the odometry's own header timestamp so EK3 time-aligns the
-        # measurement correctly (VISO_DELAY_MS parameter expects consistent
-        # timestamping).
-        stamp = msg.header.stamp
-        time_usec = int(stamp.sec * 1_000_000 + stamp.nanosec // 1000)
-
-        quality = max(-1, min(100, int(self._external_odom_quality)))
-
-        m = mavutil.mavlink
-        self.port.mav.odometry_send(
-            time_usec,
-            m.MAV_FRAME_LOCAL_FRD,          # frame_id  (ArduPilot treats LOCAL_FRD == LOCAL_NED for pose)
-            m.MAV_FRAME_BODY_FRD,           # child_frame_id (twist frame)
-            x, y, z,                        # position (NED, meters)
-            list(quat),                     # attitude quaternion (w, x, y, z)
-            vel[0], vel[1], vel[2],         # body-frame linear velocity (m/s, FRD)
-            rates[0], rates[1], rates[2],   # body-frame angular velocity (rad/s, FRD)
-            nan_pose_covariance(),
-            nan_velocity_covariance(),
-            0,                              # reset_counter
-            m.MAV_ESTIMATOR_TYPE_VISION,
-            quality,
-        )
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
     def send_4dof_command(self, control_input):
