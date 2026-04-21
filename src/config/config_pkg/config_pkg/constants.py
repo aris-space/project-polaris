@@ -149,8 +149,8 @@ class JoyControlMapping:
         MODE_SPARE_2_DPAD_BUTTON_IDX = JoyPS4.DPAD_DOWN  # D-pad Down
         SETTING_ARM_BUTTON_IDX = JoyPS4.DPAD_UP  # D-pad Up
         SETTING_DISARM_BUTTON_IDX = JoyPS4.DPAD_DOWN  # D-pad Down
-        SETTING_STABILIZATION_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Left
-        SETTING_COLLISION_AVOIDANCE_BUTTON_IDX = JoyPS4.DPAD_RIGHT  # D-pad Right
+        SETTING_COLLISION_AVOIDANCE_BUTTON_IDX = JoyPS4.DPAD_LEFT  # D-pad Left
+        SETTING_REBOOT_BUTTON_IDX = JoyPS4.DPAD_RIGHT  # D-pad Right
     LINEAR_SPEED_X_AXIS_IDX = JoyPS4.LEFT_STICK_X_AXIS  # Left Stick X-Axis
     LINEAR_SPEED_Y_AXIS_IDX = JoyPS4.LEFT_STICK_Y_AXIS  # Left Stick Y-Axis
     LINEAR_SPEED_Z_FORWARD_AXIS_IDX = JoyPS4.L2_TRIGGER_AXIS  # L2 Trigger Axis
@@ -163,7 +163,7 @@ class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 115200
-    JETSON_IP_ADDRESS = "192.168.194.20" # Changed it for the jetsonorinnano2, beceause the 1 did not started up.
+    JETSON_IP_ADDRESS = "10.5.5.158" # Changed it for the jetsonorinnano2, beceause the 1 did not started up.
     MAVLINK_ROUTER_TCP = "tcp:127.0.0.1:5760"  # mavlink-router TCP server (owns /dev/ttyTHS1)
     # PING_SONAR_BAUD_RATE = 115200
     USB0_BAUD_RATE = 115200

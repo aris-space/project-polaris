@@ -16,7 +16,8 @@ Button layout:
   MODE safety (Triangle) + D-pad Right  → GUIDED
   SETTING safety (Square) + D-pad Up    → Arm
   SETTING safety (Square) + D-pad Down  → Disarm
-  SETTING safety (Square) + D-pad Right → Toggle collision avoidance
+  SETTING safety (Square) + D-pad Left  → Toggle collision avoidance
+  SETTING safety (Square) + D-pad Right → Reboot Pixhawk
   L3 or R3 (any time, rising edge)      → Emergency disarm + reset to MANUAL
 """
 
@@ -38,11 +39,13 @@ class ModeControlNode(Node):
         self.prev_disarm_button_state = False
         self.prev_emergency_button_state = False
         self.prev_collision_avoidance_button_state = False
+        self.prev_reboot_button_state = False
         self.collision_avoidance_active = False
 
         self.mode_publisher = self.create_publisher(String, "/mode_control/current_mode", 10)
         self.pixhawk_mode_publisher = self.create_publisher(String, "/pixhawk/mode_cmd", 10)
         self.arm_cmd_publisher = self.create_publisher(Bool, "/pixhawk/arm_cmd", 10)
+        self.reboot_cmd_publisher = self.create_publisher(Bool, "/pixhawk/reboot_cmd", 10)
         self.collision_avoidance_checking_publisher = self.create_publisher(
             Bool, "/collision_avoidance/checking", 10
         )
@@ -106,10 +109,10 @@ class ModeControlNode(Node):
                 elif buttons[JoyControlMapping.MODE_SPARE_1_DPAD_BUTTON_IDX] == 1:
                     self._set_mode("GUIDED")
 
-        # 3. Settings (SETTING safety held, no emergency) — collision avoidance toggle
+        # 3. Settings (SETTING safety held, no emergency) — collision avoidance toggle + reboot
         elif setting_on and not cur_emergency:
             cur_ca = (
-                axes[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_AXIS_IDX] == -1.0
+                axes[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_AXIS_IDX] == 1.0
                 if CONTROLLER_LAYOUT == "DESKTOP"
                 else buttons[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_BUTTON_IDX] == 1
             )
@@ -117,6 +120,15 @@ class ModeControlNode(Node):
                 self.collision_avoidance_active = not self.collision_avoidance_active
                 self.publish_collision_avoidance_checking(self.collision_avoidance_active)
             self.prev_collision_avoidance_button_state = cur_ca
+
+            cur_reboot = (
+                axes[JoyControlMapping.SETTING_COLLISION_AVOIDANCE_AXIS_IDX] == -1.0
+                if CONTROLLER_LAYOUT == "DESKTOP"
+                else buttons[JoyControlMapping.SETTING_REBOOT_BUTTON_IDX] == 1
+            )
+            if cur_reboot and not self.prev_reboot_button_state:
+                self.publish_reboot_cmd()
+            self.prev_reboot_button_state = cur_reboot
 
     def _set_mode(self, mode: str):
         """Publish mode to /mode_control/current_mode and /pixhawk/mode_cmd together."""
@@ -135,6 +147,12 @@ class ModeControlNode(Node):
         msg.data = arm
         self.arm_cmd_publisher.publish(msg)
         self.get_logger().info(f"{'Arm' if arm else 'Disarm'} command sent")
+
+    def publish_reboot_cmd(self):
+        msg = Bool()
+        msg.data = True
+        self.reboot_cmd_publisher.publish(msg)
+        self.get_logger().info("Reboot command sent to Pixhawk")
 
     def publish_collision_avoidance_checking(self, active: bool):
         msg = Bool()
