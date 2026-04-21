@@ -1,8 +1,14 @@
 import math
+import os
+import queue
+import time
+import logging
+import threading
 import rclpy
-import logging, os
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from pymavlink import mavutil
+from rcl_interfaces.srv import SetParameters as SetParametersSrv
 from datetime import datetime
 from std_msgs.msg import Int16MultiArray, Float32
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
@@ -15,6 +21,8 @@ from sensor_msgs.msg import (
 )
 from config_pkg.constants import Comms
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+
+from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
 
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
@@ -78,12 +86,23 @@ class MavlinkBridgeSender(Node):
         self.port = mavutil.mavlink_connection(
             f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
-        self.serial_port = mavutil.mavlink_connection(
-            Comms.MAVLINK_ROUTER_TCP
-        )  # TCP connection to mavlink-router (replaces direct serial)
+        # self.serial_port = mavutil.mavlink_connection(
+        #     Comms.MAVLINK_ROUTER_TCP
+        # )  # TCP connection to mavlink-router (replaces direct serial)
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
+
+        # Lock: main spin (mavlink_callback) vs PID param fetch thread.
+        self._mav_lock = threading.Lock()
+        self._pid_queue: queue.Queue = queue.Queue(maxsize=1)
+        self._pid_apply_timer = None
+        self._pid_pending_fetched = None  # dict[str, float] | None
+        self._pid_set_cli = None
+        self._pid_set_cli_srv = None
+        self._pid_chunk_batches = []
+        self._pid_chunk_values = None
+        self._pid_chunk_receiver = None
 
         self.last_heartbeat_time = None
 
@@ -133,31 +152,38 @@ class MavlinkBridgeSender(Node):
         )
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
-        self.timer = self.create_timer(
-            0.02, self.mavlink_callback
-        )  # 50 Hz to avoid serial buffer overflow
-        self.create_timer(
-            1.0, self.heartbeat_checker_cb
-        )  # 1 Hz watchdog for Pixhawk heartbeat
+        # Dynamic sync control — must be declared before the timer block reads them
+        self.declare_parameter("sync_fc_pid_to_receiver", True)
+        self.declare_parameter("receiver_node_for_pid_sync", "mavlink_bridge_receiver")
+        self.declare_parameter("receiver_pid_push_chunk_size", 6)
+
+        self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz
+        self.create_timer(1.0, self.heartbeat_checker_cb)  # 1 Hz heartbeat watchdog
+
+        self._pid_sync_timer = None
+        if self.get_parameter("sync_fc_pid_to_receiver").value:
+            self._pid_sync_timer = self.create_timer(0.5, self._deferred_pid_sync_cb)
+        else:
+            self.logger.info("sync_fc_pid_to_receiver=false; ros2_receiver keeps PID defaults")
 
         # Request MANUAL_CONTROL messages at 10 Hz
-        self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
-        self.serial_port.mav.command_long_send(
-            self.serial_port.target_system,
-            self.serial_port.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0,  # confirmation
-            mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID = 69
-            100000,  # interval in microseconds (100ms = 10Hz)
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-        self.logger.info(
-            f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
-        )
+        # self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
+        # self.serial_port.mav.command_long_send(
+        #     self.serial_port.target_system,
+        #     self.serial_port.target_component,
+        #     mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+        #     0,  # confirmation
+        #     mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL,  # message ID = 69
+        #     100000,  # interval in microseconds (100ms = 10Hz)
+        #     0,
+        #     0,
+        #     0,
+        #     0,
+        #     0,
+        # )
+        # self.logger.info(
+        #     f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
+        # )
 
         # ADDED: Request SCALED_PRESSURE2 messages at 50 Hz
         self.logger.info("Requesting SCALED_PRESSURE2 message stream from Pixhawk...")
@@ -206,6 +232,20 @@ class MavlinkBridgeSender(Node):
         )
         self.logger.info("BOTH ATTITUDE request sent (interval=20ms)")
 
+        # Request PID_TUNING messages at 20 Hz
+        pid_tuning_msg_id = getattr(mavutil.mavlink, "MAVLINK_MSG_ID_PID_TUNING", 194)
+        self.logger.info("Requesting PID_TUNING message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,
+            pid_tuning_msg_id,
+            100000,  # 100ms = 10 Hz
+            0, 0, 0, 0, 0,
+        )
+        self.logger.info(f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=100ms)")
+
         self.msg_type_counter = {
             # "HEARTBEAT": 0,
             # "ATTITUDE": 0,
@@ -215,6 +255,151 @@ class MavlinkBridgeSender(Node):
             "MANUAL_CONTROL": 0,
         }
         self.msg_type_counter_interval = 10
+
+    def _deferred_pid_sync_cb(self):
+        """One-shot: fires once, then kicks off the background fetch thread."""
+        if self._pid_sync_timer is not None:
+            self._pid_sync_timer.cancel()
+            self._pid_sync_timer = None
+        self._pid_apply_timer = self.create_timer(0.2, self._apply_pid_from_queue)
+        threading.Thread(target=self._thread_fetch_pid_params, daemon=True).start()
+
+    def _thread_fetch_pid_params(self):
+        """Fetch PID params from FC over MAVLink (daemon thread — no rclpy calls here)."""
+        fl = self._file_logger
+        fetched = {}
+        try:
+            fl.info("PID fetch thread: requesting PARAM_VALUE from FC ...")
+            upper_to_ros = {m.upper(): r for r, m in PID_PARAM_MAP.items()}
+            needed = set(upper_to_ros.keys())
+
+            with self._mav_lock:
+                self.port.mav.param_request_list_send(
+                    self.port.target_system, self.port.target_component
+                )
+            list_deadline = time.monotonic() + 45.0
+            idle_timeouts = 0
+            while needed and time.monotonic() < list_deadline:
+                with self._mav_lock:
+                    msg = self.port.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.1)
+                if msg is None:
+                    idle_timeouts += 1
+                    if idle_timeouts >= 20:
+                        break
+                    continue
+                idle_timeouts = 0
+                pid = normalize_mavlink_param_id(msg.param_id).upper()
+                if pid in needed:
+                    ros_name = upper_to_ros[pid]
+                    fetched[ros_name] = float(msg.param_value)
+                    needed.discard(pid)
+                    fl.info(f"PID from FC {pid} = {msg.param_value}")
+
+            # Individual retries for anything still missing
+            for ros_name, mav_name in PID_PARAM_MAP.items():
+                if ros_name in fetched:
+                    continue
+                want = mav_name.strip().upper()
+                with self._mav_lock:
+                    self.port.param_fetch_one(mav_name)
+                deadline = time.monotonic() + 2.0
+                while time.monotonic() < deadline:
+                    with self._mav_lock:
+                        msg = self.port.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.1)
+                    if msg is None:
+                        continue
+                    if normalize_mavlink_param_id(msg.param_id).upper() == want:
+                        fetched[ros_name] = float(msg.param_value)
+                        fl.info(f"PID from FC {mav_name} = {msg.param_value}")
+                        break
+
+            # Params that could not be fetched get a high sentinel so failures are obvious in Foxglove.
+            for ros_name in PID_PARAM_MAP:
+                if ros_name not in fetched:
+                    fl.error(f"PID fetch FAILED for {PID_PARAM_MAP[ros_name]} ({ros_name}); setting sentinel 9999.0")
+                    fetched[ros_name] = 9999.0
+
+        except Exception as e:
+            fl.error(f"PID fetch thread failed: {e}")
+            # Mark every param as failed so caller can see it
+            for ros_name in PID_PARAM_MAP:
+                fetched.setdefault(ros_name, 9999.0)
+
+        try:
+            self._pid_queue.put_nowait(fetched)
+        except queue.Full:
+            pass
+        fl.info(f"PID fetch thread: done ({len(fetched)} params).")
+
+    def _stop_pid_apply_timer(self):
+        if self._pid_apply_timer is not None:
+            self._pid_apply_timer.cancel()
+            self._pid_apply_timer = None
+
+    def _apply_pid_from_queue(self):
+        """Drain queue; push params to ros2_receiver in small chunks."""
+        try:
+            while True:
+                self._pid_pending_fetched = self._pid_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        if self._pid_pending_fetched is None:
+            return
+
+        fetched = self._pid_pending_fetched
+        receiver_node = self.get_parameter("receiver_node_for_pid_sync").value
+        srv_name = f"/{receiver_node}/set_parameters"
+
+        if self._pid_set_cli is None or self._pid_set_cli_srv != srv_name:
+            self._pid_set_cli = self.create_client(SetParametersSrv, srv_name)
+            self._pid_set_cli_srv = srv_name
+
+        if not self._pid_set_cli.wait_for_service(timeout_sec=0.3):
+            return  # Retry next tick
+
+        names = list(fetched.keys())
+        chunk = max(1, int(self.get_parameter("receiver_pid_push_chunk_size").value))
+        self._pid_chunk_batches = [names[i: i + chunk] for i in range(0, len(names), chunk)]
+        self._pid_chunk_values = fetched
+        self._pid_chunk_receiver = receiver_node
+        self._pid_pending_fetched = None
+        self._stop_pid_apply_timer()
+        self._push_next_pid_chunk()
+
+    def _push_next_pid_chunk(self):
+        """Send one batch of set_parameters; chain until all batches are sent."""
+        if not self._pid_chunk_batches:
+            recv = self._pid_chunk_receiver
+            n = len(self._pid_chunk_values) if self._pid_chunk_values else 0
+            self._pid_chunk_values = None
+            self._pid_chunk_receiver = None
+            self.logger.info(f"Pushed {n} PID parameter(s) to '{recv}'")
+            return
+
+        batch = self._pid_chunk_batches.pop(0)
+        fv = self._pid_chunk_values
+        req = SetParametersSrv.Request()
+        req.parameters = [
+            Parameter(name, Parameter.Type.DOUBLE, fv[name]).to_parameter_msg()
+            for name in batch
+        ]
+        future = self._pid_set_cli.call_async(req)
+        future.add_done_callback(self._on_pid_chunk_done)
+
+    def _on_pid_chunk_done(self, future):
+        try:
+            resp = future.result()
+        except Exception as e:
+            self.logger.warning(f"PID parameter chunk failed: {e}")
+            self._pid_chunk_batches = []
+            self._pid_chunk_values = None
+            return
+        if resp is not None:
+            failed = [r for r in resp.results if not r.successful]
+            if failed:
+                self.logger.warning(f"Some PID parameters in chunk rejected: {failed}")
+        self._push_next_pid_chunk()
 
     def _on_set_parameters(self, params):
         """Validate and apply dynamic parameter updates at runtime."""
@@ -242,35 +427,20 @@ class MavlinkBridgeSender(Node):
         return SetParametersResult(successful=True)
 
     def mavlink_callback(self):
-        """Timer callback - drains all buffered MAVLink messages and routes them"""
-        # Process ALL available messages in the buffer (not just one)
-        while True:
-            msg = self.port.recv_match(blocking=False)
-            msg_serial = self.serial_port.recv_match(blocking=False)
-            if msg is None and msg_serial is None:
-                break  # No more messages in either buffer
-
-            if msg_serial is not None:
-                # i self.logger.info(f"Received from serial: {msg_serial.get_type()}")
-                if msg_serial.get_type() == "MANUAL_CONTROL":
-                    self.handle_manual_control(msg_serial)
-                # We can choose to process serial messages differently if needed
-                # For now, we will just log them and not publish to ROS2
-
-            if msg is not None:
-                # self.logger.info(f"Received: {msg.get_type()}")
-
-                if msg.get_type() == "HEARTBEAT":
+        """Timer callback - drain UDP buffer and publish to ROS2."""
+        with self._mav_lock:
+            while True:
+                msg = self.port.recv_match(blocking=False)
+                if msg is None:
+                    break
+                mtype = msg.get_type()
+                if mtype == "HEARTBEAT":
                     self.handle_heartbeat(msg)
-                # elif msg.get_type() == "ATTITUDE":
-                #    self.handle_attitude_euler(msg)
-                elif msg.get_type() == "ATTITUDE_QUATERNION":
+                elif mtype == "ATTITUDE_QUATERNION":
                     self.handle_attitude_quaternion(msg)
-                # elif msg.get_type() == "RC_CHANNELS":
-                #    self.handle_rc_channels(msg)
-                elif msg.get_type() == "BATTERY_STATUS":
+                elif mtype == "BATTERY_STATUS":
                     self.handle_battery(msg)
-                elif msg.get_type() == "SCALED_PRESSURE2":
+                elif mtype == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
 
     def message_counter(self, msg_type: str) -> bool:

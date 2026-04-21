@@ -1,16 +1,21 @@
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 import logging, os
 import math
+import time
 from datetime import datetime
 from config_pkg.constants import Logs, Comms, Ports
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
-from std_msgs.msg import Bool, Int16MultiArray
+from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
+
+from rclpy.parameter import Parameter as RclpyParameter
+from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
 
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
@@ -68,9 +73,60 @@ class MavlinkBridgeReceiver(Node):
 
         self.declare_parameter("external_odom_quality", 100)
         self.declare_parameter("external_odom_max_rate_hz", 30.0)
+
+        # PID tuning parameters — declared early so Foxglove sees them before FC fetch completes.
+        # Default 9999.0 is a sentinel: any param still at 9999.0 after startup failed to fetch from FC.
+        self.param_map = PID_PARAM_MAP
+        self._pending_mavlink_params = []
+        self._mavlink_defer_timer = None
+        self._reverting = False  # prevents revert calls from re-triggering MAVLink send
+        self.declare_pid_parameter_defaults()
+        self.add_on_set_parameters_callback(self.on_params_changed)
         
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
+
+        # Depth monitoring state (populated by MAVLink drain loop)
+        self._vfrhud_alt      = float('nan')  # VFR_HUD.alt   — baro depth (m, negative = submerged)
+        self._vfrhud_climb    = float('nan')  # VFR_HUD.climb — vertical velocity (m/s, negative = descending)
+        self._nav_alt_error   = float('nan')  # NAV_CONTROLLER_OUTPUT.alt_error (desired - actual, m)
+        self._pid_desired     = float('nan')  # PID_TUNING axis=4 fields
+        self._pid_achieved    = float('nan')
+        self._pid_P           = float('nan')
+        self._pid_I           = float('nan')
+        self._pid_D           = float('nan')
+        # Timestamps of last receive — used to suppress stale publishes
+        self._t_nav   = 0.0   # last NAV_CONTROLLER_OUTPUT receive time (monotonic)
+        self._t_pid   = 0.0   # last PID_TUNING axis=4 receive time
+        _STALE_S      = 0.5   # treat data older than this as absent
+        self._STALE_S = _STALE_S
+
+        # Request VFR_HUD (74), NAV_CONTROLLER_OUTPUT (62) at 10 Hz
+        # PID_TUNING (98) is enabled via GCS_PID_MASK param on the FC (already set to 8)
+        for _msg_id in (74, 62):
+            self.port.mav.command_long_send(
+                self.port.target_system, self.port.target_component,
+                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+                0, _msg_id, 100_000, 0, 0, 0, 0, 0,
+            )
+        # Legacy fallback covering VFR_HUD + NAV_CONTROLLER_OUTPUT + PID_TUNING streams
+        for _stream in (mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
+                        mavutil.mavlink.MAV_DATA_STREAM_EXTRA2,
+                        mavutil.mavlink.MAV_DATA_STREAM_EXTRA3):
+            self.port.mav.request_data_stream_send(
+                self.port.target_system, self.port.target_component,
+                _stream, 10, 1,
+            )
+
+        self._depth_target_pub    = self.create_publisher(Float32,      '/pixhawk/DEPTH_TARGET',   10)
+        self._depth_achieved_pub  = self.create_publisher(Float32,      '/pixhawk/DEPTH_ACHIEVED', 10)
+        self._depth_velocity_pub  = self.create_publisher(Float32,      '/pixhawk/DEPTH_VELOCITY', 10)
+        # [desired, achieved, P, I, D]
+        self._pid_accz_pub        = self.create_publisher(Float32MultiArray, '/pixhawk/PID_ACCZ',  10)
+
+        # Drain incoming MAVLink at 50 Hz (non-blocking); publish at 5 Hz
+        self.create_timer(0.02, self._mavlink_drain_cb)
+        self.create_timer(0.20, self._depth_publish_cb)
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
@@ -395,6 +451,128 @@ class MavlinkBridgeReceiver(Node):
             qual,
         )
 
+
+    def _mavlink_drain_cb(self):
+        """Drain up to 20 incoming MAVLink messages per 20 ms tick (non-blocking)."""
+        for _ in range(20):
+            msg = self.port.recv_match(blocking=False)
+            if msg is None:
+                break
+            t = msg.get_type()
+            if t == 'VFR_HUD':
+                self._vfrhud_alt   = msg.alt
+                self._vfrhud_climb = msg.climb
+            elif t == 'NAV_CONTROLLER_OUTPUT':
+                self._nav_alt_error = msg.alt_error
+                self._t_nav = time.monotonic()
+            elif t == 'PID_TUNING' and getattr(msg, 'axis', None) == 4:
+                self._pid_desired  = msg.desired
+                self._pid_achieved = msg.achieved
+                self._pid_P        = msg.P
+                self._pid_I        = msg.I
+                self._pid_D        = msg.D
+                self._t_pid = time.monotonic()
+
+    def _depth_publish_cb(self):
+        """Publish depth topics at 5 Hz. Suppresses stale controller data."""
+        now = time.monotonic()
+        nav_fresh = (now - self._t_nav) < self._STALE_S
+        pid_fresh = (now - self._t_pid) < self._STALE_S
+
+        if math.isfinite(self._vfrhud_alt):
+            msg = Float32()
+            msg.data = float(self._vfrhud_alt)
+            self._depth_achieved_pub.publish(msg)
+
+        if (self.pixhawk_mode == 'ALT_HOLD'
+                and nav_fresh
+                and math.isfinite(self._vfrhud_alt)
+                and math.isfinite(self._nav_alt_error)):
+            msg = Float32()
+            # alt_error = desired - actual  →  desired = actual + alt_error
+            msg.data = float(self._vfrhud_alt + self._nav_alt_error)
+            self._depth_target_pub.publish(msg)
+
+        if math.isfinite(self._vfrhud_climb):
+            msg = Float32()
+            msg.data = float(self._vfrhud_climb)
+            self._depth_velocity_pub.publish(msg)
+
+        if pid_fresh and math.isfinite(self._pid_desired):
+            msg = Float32MultiArray()
+            msg.data = [
+                float(self._pid_desired),
+                float(self._pid_achieved),
+                float(self._pid_P),
+                float(self._pid_I),
+                float(self._pid_D),
+            ]
+            self._pid_accz_pub.publish(msg)
+
+    def declare_pid_parameter_defaults(self):
+        """Declare tuning parameters with sentinel 9999.0 so failed fetches are immediately visible."""
+        for ros_name in self.param_map:
+            self.declare_parameter(ros_name, 9999.0)
+
+    def on_params_changed(self, params):
+        """Queue tuning parameter changes for deferred send to FC."""
+        if self._reverting:
+            return SetParametersResult(successful=True)
+        for p in params:
+            if p.name in self.param_map:
+                try:
+                    old_val = float(self.get_parameter(p.name).value)
+                except Exception:
+                    old_val = 9999.0
+                self._pending_mavlink_params.append(
+                    (self.param_map[p.name], float(p.value), p.name, old_val)
+                )
+        if self._pending_mavlink_params and self._mavlink_defer_timer is None:
+            self._mavlink_defer_timer = self.create_timer(0.02, self._flush_mavlink_param_queue)
+        return SetParametersResult(successful=True)
+
+    def _flush_mavlink_param_queue(self):
+        """Send each queued param_set and wait for FC confirmation (PARAM_VALUE echo).
+        If the FC does not echo within 2 s, the ROS param is reverted to its previous value."""
+        if self._mavlink_defer_timer is not None:
+            self._mavlink_defer_timer.cancel()
+            self._mavlink_defer_timer = None
+        batch = self._pending_mavlink_params
+        self._pending_mavlink_params = []
+        for mav_param_id, new_val, ros_name, old_val in batch:
+            self.get_logger().info(f"Setting ArduSub {mav_param_id} = {new_val}")
+            self.port.mav.param_set_send(
+                self.port.target_system,
+                self.port.target_component,
+                mav_param_id.encode("utf-8"),
+                new_val,
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            )
+            # Wait for FC echo confirming the write
+            confirmed = False
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                msg = self.port.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.1)
+                if msg is None:
+                    continue
+                if normalize_mavlink_param_id(msg.param_id).upper() == mav_param_id.upper():
+                    confirmed = True
+                    self.get_logger().info(
+                        f"FC confirmed {mav_param_id} = {msg.param_value}"
+                    )
+                    break
+            if not confirmed:
+                self.get_logger().error(
+                    f"FC did not confirm {mav_param_id} within 2 s; "
+                    f"reverting {ros_name} to {old_val}"
+                )
+                self._reverting = True
+                try:
+                    self.set_parameters([
+                        RclpyParameter(ros_name, RclpyParameter.Type.DOUBLE, old_val)
+                    ])
+                finally:
+                    self._reverting = False
 
     """--------------------------------------------- main function ---------------------------------------------"""
 def main(args=None):
