@@ -163,7 +163,7 @@ class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
     SUB_QOS_DEPTH = 10
     SERIAL1_BAUD_RATE = 115200
-    JETSON_IP_ADDRESS = "10.5.5.158" # Changed it for the jetsonorinnano2, beceause the 1 did not started up.
+    JETSON_IP_ADDRESS = "192.168.194.20" # Changed it for the jetsonorinnano2, beceause the 1 did not started up.
     MAVLINK_ROUTER_TCP = "tcp:127.0.0.1:5760"  # mavlink-router TCP server (owns /dev/ttyTHS1)
     # PING_SONAR_BAUD_RATE = 115200
     USB0_BAUD_RATE = 115200
