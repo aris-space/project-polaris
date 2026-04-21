@@ -13,6 +13,7 @@ from std_msgs.msg import Bool, Int16MultiArray
 from nav_msgs.msg import Odometry
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import NavSatFix
 
 from mavlink_bridge.odom_mavlink import (
@@ -94,6 +95,12 @@ class MavlinkBridgeReceiver(Node):
             Int16MultiArray,
             "/pixhawk/manual_control",
             self.manual_control_cb,
+            Comms.SUB_QOS_DEPTH,
+        )
+        self.guided_setpoint_subscriber = self.create_subscription(
+            Twist, # Depending on the msg type from imports
+            "/pixhawk/cmd_vel",
+            self.cmd_vel_cb,
             Comms.SUB_QOS_DEPTH,
         )
 
@@ -188,6 +195,52 @@ class MavlinkBridgeReceiver(Node):
             self._file_logger.warning(
                 f"Received manual control command in unsupported mode: {self.pixhawk_mode}. Command ignored. (manual_control_cb function in ros2_receiver.py)"
             )
+
+    # For Autonomy if we send just x, z lin.velocity and yaw rate.
+    def cmd_vel_cb(self, msg):
+        # msg is geometry_msgs.msg.Twist        
+        # ArduSub needs GUIDED mode for velocity setpoints
+        if self.pixhawk_mode != "GUIDED":
+            return
+
+        # 1. Map ROS ENU (Body) to ArduSub NED (Body)
+        # ROS X (Forward) -> NED X (Surge)
+        # ROS Y (Left)    -> NED Y (Sway) - We set this to 0 if not used
+        # ROS Z (Up)      -> NED Z (Heave) - Flip sign because Z is down in NED
+        surge = float(msg.linear.x)
+        heave = -float(msg.linear.z) 
+        
+        # ROS Angular Z (CCW) -> NED Yaw Rate (CW) - Flip sign
+        yaw_rate = -float(msg.angular.z)
+
+        # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
+        # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
+        # set VY_IGNORE when commanding vx,vz; otherwise guided_set_velocity() is skipped.
+        m = mavutil.mavlink
+        type_mask = (
+            m.POSITION_TARGET_TYPEMASK_X_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+        )
+
+        # 3. Send to Pixhawk
+        # Using MAV_FRAME_BODY_OFFSET_NED so "Forward" is relative to the sub's nose
+        self.port.mav.set_position_target_local_ned_send(
+            0,                                              # time_boot_ms
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED,      # Frame: Body-Relative
+            type_mask,
+            0.0, 0.0, 0.0,                                  # Position (ignored)
+            surge, 0.0, heave,                              # Velocities (m/s)
+            0.0, 0.0, 0.0,                                  # Acceleration (ignored)
+            0.0,                                            # Yaw Angle (ignored)
+            yaw_rate                                        # Yaw Rate (rad/s)
+        )
 
     def arm_disarm_cb(self, msg):
         """
