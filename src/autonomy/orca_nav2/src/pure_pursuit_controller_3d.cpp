@@ -165,6 +165,7 @@ namespace orca_nav2
     rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PointStamped>::SharedPtr closest_point_pub_;
     rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr robot_pose_map_pub_;
     rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::TwistStamped>::SharedPtr robot_twist_pub_;
+    rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr desired_path_pub_;
 
     static constexpr double lower(double v, double e) { return (1.0 - e) * v; }
     static constexpr double upper(double v, double e) { return (1.0 + e) * v; }
@@ -482,6 +483,8 @@ namespace orca_nav2
           "pure_pursuit_robot_pose_map", rclcpp::QoS(10));
         robot_twist_pub_ = parent->create_publisher<geometry_msgs::msg::TwistStamped>(
           "pure_pursuit_robot_twist", rclcpp::QoS(10));
+        desired_path_pub_ = parent->create_publisher<nav_msgs::msg::Path>(
+          "pure_pursuit_desired_path", rclcpp::QoS(10));
       }
 
       x_limiter_ = Limiter(x_accel_, 1. / tick_rate_, K_descelerate_);
@@ -501,6 +504,7 @@ namespace orca_nav2
       closest_point_pub_.reset();
       robot_pose_map_pub_.reset();
       robot_twist_pub_.reset();
+      desired_path_pub_.reset();
       arm_cmd_pub_.reset();
       mode_cmd_pub_.reset();
     }
@@ -513,6 +517,7 @@ namespace orca_nav2
       if (closest_point_pub_) { closest_point_pub_->on_activate(); }
       if (robot_pose_map_pub_) { robot_pose_map_pub_->on_activate(); }
       if (robot_twist_pub_) { robot_twist_pub_->on_activate(); }
+      if (desired_path_pub_) { desired_path_pub_->on_activate(); }
       if (arm_cmd_pub_) { arm_cmd_pub_->on_activate(); }
       if (mode_cmd_pub_) { mode_cmd_pub_->on_activate(); }
     }
@@ -525,6 +530,7 @@ namespace orca_nav2
       if (closest_point_pub_) { closest_point_pub_->on_deactivate(); }
       if (robot_pose_map_pub_) { robot_pose_map_pub_->on_deactivate(); }
       if (robot_twist_pub_) { robot_twist_pub_->on_deactivate(); }
+      if (desired_path_pub_) { desired_path_pub_->on_deactivate(); }
       if (arm_cmd_pub_) { arm_cmd_pub_->on_deactivate(); }
       if (mode_cmd_pub_) { mode_cmd_pub_->on_deactivate(); }
     }
@@ -659,6 +665,7 @@ namespace orca_nav2
         throw nav2_core::PlannerException("Received plan with zero length");
       }
       plan_ = plan;
+      if (desired_path_pub_) { desired_path_pub_->publish(plan_); }
     }
 
     void setSpeedLimit(const double &, const bool &) override
