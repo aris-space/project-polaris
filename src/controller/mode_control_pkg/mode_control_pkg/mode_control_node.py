@@ -77,6 +77,7 @@ class ModeControlNode(Node):
         else:
             self.prev_arm_button_state = False
             self.prev_disarm_button_state = False
+            self.prev_reboot_button_state = False
 
         # 1. Emergency disarm: L3 or R3, rising edge → disarm and reset to MANUAL
         cur_emergency = (

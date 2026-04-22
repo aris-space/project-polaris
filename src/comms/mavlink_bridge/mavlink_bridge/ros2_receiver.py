@@ -288,6 +288,8 @@ class MavlinkBridgeReceiver(Node):
     def reboot_cb(self, msg):
         """
         Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
+        NOTE: ArduSub rejects this command if the vehicle is armed (MAV_RESULT_DENIED).
+        Always disarm before rebooting.
         """
         if msg.data:
             self.port.mav.command_long_send(
@@ -295,7 +297,7 @@ class MavlinkBridgeReceiver(Node):
                 self.port.target_component,
                 mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
                 0,
-                1, #1 to reboot, 2 for shutdown
+                1,  # 1 to reboot, 2 for shutdown
                 0,
                 0,
                 0,
@@ -303,8 +305,18 @@ class MavlinkBridgeReceiver(Node):
                 0,
                 0,
             )
-            self.get_logger().info("Sent reboot command to Pixhawk")
+            self.get_logger().info("Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)")
             self._file_logger.info("Sent reboot command to Pixhawk")
+
+            ack = self.port.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
+            if ack is None:
+                self.get_logger().warn("Reboot: no ACK received from Pixhawk within 3s")
+                self._file_logger.warning("Reboot: no ACK received")
+            elif ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                self.get_logger().error(
+                    f"Reboot rejected by Pixhawk (MAV_RESULT={ack.result}). Is the vehicle disarmed?"
+                )
+                self._file_logger.error(f"Reboot rejected: MAV_RESULT={ack.result}")
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
