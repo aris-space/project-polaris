@@ -1,3 +1,5 @@
+import math
+
 import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
@@ -13,8 +15,6 @@ from keller_protocol import keller_protocol as kp
 # https://github.com/KELLERAGfuerDruckmesstechnik/keller_protocol_python
 
 
-# TODO: Make the udev rule if not done just use: /dev/ttyUSB0 and to check ls /dev/ttyUSB*
-# On Windows it is like "COM3" e.g.
 class Keller26xNode(Node):
 
     def __init__(self):
@@ -263,7 +263,17 @@ class Keller26xNode(Node):
         )
 
     def water_temperature_timer_callback(self) -> None:
-        self.water_temperature_c = self.measure_water_temperature()
+        try:
+            reading = self.measure_water_temperature()
+        except Exception as exc:
+            self.get_logger().warning(f"Failed to read water temperature: {exc}")
+            return
+
+        if math.isnan(reading):
+            self.get_logger().warning("Water temperature reading is NaN — skipping publish")
+            return
+
+        self.water_temperature_c = reading
 
         temp_msg = Temperature()
         temp_msg.header.stamp = self.get_clock().now().to_msg()
