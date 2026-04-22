@@ -352,6 +352,17 @@ class OdomTrack:
     sigma_p: np.ndarray   # (N,) sqrt(P_xx + P_yy) EKF self-reported uncertainty
 
 
+@dataclass
+class DriftResult:
+    drift_rate_m_per_m: float
+    drift_rate_pct: float
+    total_distance_m: float
+    total_time_s: float
+    n_pairs: int
+    errors_m: np.ndarray
+    distances_m: np.ndarray
+
+
 def convert_odom(bag_data: BagData, datum: Datum) -> OdomTrack:
     """Convert /odometry/filtered/local messages to lat/lon using fixed T matrix."""
     msgs = bag_data.odom_msgs
@@ -516,6 +527,95 @@ def plot_overlay(
     return fig, ax, out_path
 
 
+# ── drift curve ────────────────────────────────────────────────────────────
+
+def plot_drift(
+    odom_track: OdomTrack,
+    gated_fixes: list,
+    datum: Datum,
+    bag_name: str,
+    out_dir: Path,
+) -> tuple:
+    """Error-vs-distance drift curve with EKF self-reported P overlay."""
+    if len(gated_fixes) < 5:
+        print(f"WARNING: only {len(gated_fixes)} GNSS fixes — skipping drift curve.")
+        result = DriftResult(0.0, 0.0,
+                             float(odom_track.dist[-1]),
+                             (odom_track.t_ns[-1] - odom_track.t_ns[0]) / 1e9,
+                             0, np.array([]), np.array([]))
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.text(0.5, 0.5, "< 5 GNSS fixes\n(drift curve unavailable)",
+                ha="center", va="center", transform=ax.transAxes)
+        out_path = out_dir / f"{bag_name}_drift.png"
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return fig, ax, result, out_path
+
+    odom_t = odom_track.t_ns
+    errors, distances, sigmas = [], [], []
+    for fix, _ in gated_fixes:
+        idx = int(np.argmin(np.abs(odom_t - fix.t_ns)))
+        gap_s = abs(int(odom_t[idx]) - fix.t_ns) / 1e9
+        if gap_s > 0.5:
+            continue
+        e_gnss, n_gnss, _, _ = utm.from_latlon(fix.lat, fix.lon)
+        err = math.hypot(
+            odom_track.E[idx] - e_gnss,
+            odom_track.N_utm[idx] - n_gnss,
+        )
+        errors.append(err)
+        distances.append(float(odom_track.dist[idx]))
+        sigmas.append(float(odom_track.sigma_p[idx]))
+
+    errors    = np.array(errors)
+    distances = np.array(distances)
+    sigmas    = np.array(sigmas)
+
+    if len(distances) >= 2 and distances.max() > distances.min():
+        coeffs = np.polyfit(distances, errors, 1)
+        slope, intercept = float(coeffs[0]), float(coeffs[1])
+    else:
+        slope, intercept = 0.0, 0.0
+
+    result = DriftResult(
+        drift_rate_m_per_m=slope,
+        drift_rate_pct=slope * 100.0,
+        total_distance_m=float(odom_track.dist[-1]),
+        total_time_s=(odom_track.t_ns[-1] - odom_track.t_ns[0]) / 1e9,
+        n_pairs=len(errors),
+        errors_m=errors,
+        distances_m=distances,
+    )
+
+    print(f"\nDrift rate: {slope * 100:.2f} m per 100 m traveled  ({slope * 1000:.2f} m per km)")
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.scatter(distances, errors, s=20, c="steelblue", zorder=4, alpha=0.8,
+               label="Dead-reckoning error (m)")
+    if len(distances) > 0:
+        sort_idx = np.argsort(distances)
+        ax.fill_between(
+            distances[sort_idx],
+            sigmas[sort_idx],
+            alpha=0.25, color="orange", label="EKF sigma_pos = sqrt(P_xx+P_yy)",
+        )
+        ax.plot(distances[sort_idx],
+                np.polyval([slope, intercept], distances[sort_idx]),
+                "--", color="crimson", lw=1.5,
+                label=f"Drift fit: {slope * 100:.2f} m / 100 m")
+    ax.set_xlabel("Distance traveled (m)")
+    ax.set_ylabel("Position error vs GNSS (m)")
+    ax.set_title(f"{bag_name} — Dead-reckoning drift", fontsize=9)
+    ax.legend(fontsize=8)
+    ax.grid(True, lw=0.3, alpha=0.5)
+    ax.set_ylim(bottom=0)
+
+    out_path = out_dir / f"{bag_name}_drift.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    print(f"Saved: {out_path.name}")
+    return fig, ax, result, out_path
+
+
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag_dir", type=Path, help="Bag directory containing <name>_0.mcap")
@@ -556,6 +656,14 @@ def main():
     gated     = gate_fixes(bag_data.fix_msgs, h_accs, args.max_h_acc)
     verify_heading(odom, gated, datum)
     overlay_fig, _, _ = plot_overlay(odom, gated, datum, bag_dir.name, out_dir)
+    drift_fig, _, drift_result, _ = plot_drift(odom, gated, datum, bag_dir.name, out_dir)
+    plt.close("all")
+    print(f"\nSUMMARY")
+    print(f"  Total distance   : {drift_result.total_distance_m:.2f} m")
+    print(f"  Total time       : {drift_result.total_time_s:.1f} s")
+    print(f"  Drift rate       : {drift_result.drift_rate_pct:.2f} m per 100 m")
+    print(f"  GNSS fixes used  : {len(gated)} / {len(bag_data.fix_msgs)}")
+    print(f"  Output dir       : {out_dir}")
 
 
 if __name__ == "__main__":
