@@ -39,6 +39,98 @@ _COV_DIAGONAL = 2
 _COV_KNOWN    = 3
 
 
+# ── dataclasses ──────────────────────────────────────────────────────────────
+
+@dataclass
+class FixMsg:
+    t_ns: int
+    lat: float
+    lon: float
+    status: int      # status.status field; ≥0 means fix
+    cov: list        # 9-element row-major position_covariance
+    cov_type: int    # COVARIANCE_TYPE_* constant
+
+@dataclass
+class UbxHpMsg:
+    t_ns: int
+    h_acc_raw: int   # raw 0.1 mm units from ublox
+
+@dataclass
+class ImuMsg:
+    t_ns: int
+    qx: float
+    qy: float
+    qz: float
+    qw: float
+
+@dataclass
+class OdomMsg:
+    t_ns: int
+    x: float
+    y: float
+    cov_xx: float    # pose.covariance[0]  (x variance)
+    cov_yy: float    # pose.covariance[7]  (y variance)
+
+@dataclass
+class BagData:
+    fix_msgs:    list = field(default_factory=list)
+    ubx_hp_msgs: list = field(default_factory=list)
+    imu_msgs:    list = field(default_factory=list)
+    odom_msgs:   list = field(default_factory=list)
+
+
+# ── pure math helpers ────────────────────────────────────────────────────────
+
+def _h_acc_from_navsatfix(cov: list, cov_type: int) -> float | None:
+    """Largest horizontal 1-sigma from NavSatFix position_covariance (ENU, row-major 3×3)."""
+    if cov_type == _COV_UNKNOWN:
+        return None
+    if cov_type == _COV_DIAGONAL:
+        if len(cov) < 5:
+            return None
+        return math.sqrt(max(0.0, float(cov[0]), float(cov[4])))
+    if len(cov) < 9:
+        return None
+    a, b, d = float(cov[0]), float(cov[1]), float(cov[4])
+    tr = a + d
+    det = a * d - b * b
+    disc = max(0.0, tr * tr - 4.0 * det)
+    return math.sqrt(max(0.0, 0.5 * (tr + math.sqrt(disc))))
+
+
+def _h_acc_from_ubx(h_acc_raw: int) -> float | None:
+    """Convert raw ublox h_acc (0.1 mm units) to meters. Returns None for sentinel 0xFFFFFFFF."""
+    if h_acc_raw == 0xFFFFFFFF:
+        return None
+    return float(h_acc_raw) * 1e-4
+
+
+def _quat_to_yaw(qx: float, qy: float, qz: float, qw: float) -> float:
+    """Extract yaw (rad) from unit quaternion using scipy ZYX Euler convention."""
+    return float(Rotation.from_quat([qx, qy, qz, qw]).as_euler("ZYX")[0])
+
+
+def _wrap_pi(angle: float) -> float:
+    """Wrap angle to (-π, π]."""
+    return (angle + math.pi) % (2 * math.pi) - math.pi
+
+
+def _compute_psi(theta_imu_rad: float) -> float:
+    """Compute fixed rotation angle ψ (rad) from raw IMU yaw.
+
+    Chain: θ_imu → +π (base_link←imu_link TF) → +yaw_offset → +mag_decl
+    """
+    theta_base = _wrap_pi(theta_imu_rad + _IMU_TF_YAW)
+    return _wrap_pi(theta_base + _YAW_OFFSET + _MAG_DECL)
+
+
+def _odom_to_utm(x: float, y: float, E0: float, N0: float, psi: float) -> tuple[float, float]:
+    """Apply fixed rotation matrix T: odom (x, y) → UTM (E, N)."""
+    E = E0 + math.cos(psi) * x - math.sin(psi) * y
+    N = N0 + math.sin(psi) * x + math.cos(psi) * y
+    return E, N
+
+
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag_dir", type=Path, help="Bag directory containing <name>_0.mcap")
