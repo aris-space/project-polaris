@@ -322,7 +322,7 @@ def compute_datum(
     if yaws_before and yaws_after:
         all_yaws = yaws_before + yaws_after
         unwrapped = np.unwrap(all_yaws)
-        delta_deg = abs(math.degrees(_wrap_pi(unwrapped[-1] - unwrapped[0])))
+        delta_deg = abs(math.degrees(unwrapped[-1] - unwrapped[0]))
         if delta_deg > 2.0:
             print(f"WARNING: IMU heading changed {delta_deg:.1f}° in ±1 s around datum fix. "
                   "Xsens NorthReference filter may not have converged.")
