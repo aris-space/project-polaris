@@ -434,6 +434,87 @@ def verify_heading(
         print("  (OK)")
 
 
+# ── satellite overlay plot ─────────────────────────────────────────────────
+
+def plot_overlay(
+    odom_track: OdomTrack,
+    gated_fixes: list,
+    datum: Datum,
+    bag_name: str,
+    out_dir: Path,
+) -> tuple:
+    """Satellite overlay: GNSS ground truth (blue) + odom converted (red)."""
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    t0 = gated_fixes[0][0].t_ns if gated_fixes else datum.t_ns
+    gnss_E, gnss_N, gnss_h, gnss_t = [], [], [], []
+    for fix, h in gated_fixes:
+        e, n, _, _ = utm.from_latlon(fix.lat, fix.lon)
+        gnss_E.append(e)
+        gnss_N.append(n)
+        gnss_h.append(h)
+        gnss_t.append((fix.t_ns - t0) / 1e9)
+    gnss_E = np.array(gnss_E)
+    gnss_N = np.array(gnss_N)
+    gnss_t = np.array(gnss_t)
+    gnss_h = np.array(gnss_h)
+
+    odom_t_rel = (odom_track.t_ns - t0) / 1e9
+    t_max = max(float(gnss_t.max()) if len(gnss_t) else 0.0, float(odom_t_rel.max()))
+
+    sc_odom = ax.scatter(
+        odom_track.E, odom_track.N_utm,
+        c=odom_t_rel, cmap="Reds", s=6, alpha=0.7, zorder=3,
+        vmin=0, vmax=t_max, label="Odom (converted)",
+    )
+    step = max(1, len(odom_track.E) // 10)
+    for i in range(step, len(odom_track.E), step):
+        dE = odom_track.E[i] - odom_track.E[i - 1]
+        dN = odom_track.N_utm[i] - odom_track.N_utm[i - 1]
+        if math.hypot(dE, dN) > 0.05:
+            ax.annotate("", xy=(odom_track.E[i], odom_track.N_utm[i]),
+                        xytext=(odom_track.E[i - 1], odom_track.N_utm[i - 1]),
+                        arrowprops=dict(arrowstyle="->", color="darkred", lw=1.0))
+
+    ax.scatter(
+        gnss_E, gnss_N, c=gnss_t, cmap="Blues", s=20, alpha=0.9,
+        zorder=4, vmin=0, vmax=t_max, label="GNSS /fix (gated)",
+    )
+    for i in range(0, len(gnss_E), max(1, len(gnss_E) // 20)):
+        circle = plt.Circle(
+            (gnss_E[i], gnss_N[i]), gnss_h[i],
+            fill=False, color="steelblue", linewidth=0.8, alpha=0.5, zorder=3,
+        )
+        ax.add_patch(circle)
+
+    ax.scatter([datum.E0], [datum.N0], marker="*", s=200, c="gold",
+               zorder=6, label=f"Datum (psi={math.degrees(datum.psi):.1f} deg)")
+
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_xlabel("UTM Easting (m)")
+    ax.set_ylabel("UTM Northing (m)")
+    ax.set_title(
+        f"{bag_name}\npsi={math.degrees(datum.psi):.1f} deg  "
+        f"GNSS fixes used: {len(gated_fixes)}",
+        fontsize=9,
+    )
+    ax.legend(fontsize=8, loc="best")
+    ax.grid(True, lw=0.3, alpha=0.5)
+    plt.colorbar(sc_odom, ax=ax, label="Time (s)", fraction=0.03)
+
+    if _HAS_CONTEXTILY:
+        try:
+            ctx.add_basemap(ax, crs=f"EPSG:326{datum.zone_num:02d}", zoom="auto",
+                            source=ctx.providers.OpenStreetMap.Mapnik, alpha=0.6)
+        except Exception as e:
+            print(f"WARNING: contextily satellite tiles failed: {e}")
+
+    out_path = out_dir / f"{bag_name}_overlay.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    print(f"Saved: {out_path.name}")
+    return fig, ax, out_path
+
+
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag_dir", type=Path, help="Bag directory containing <name>_0.mcap")
@@ -473,6 +554,7 @@ def main():
     h_accs    = merge_h_acc(bag_data.fix_msgs, bag_data.ubx_hp_msgs)
     gated     = gate_fixes(bag_data.fix_msgs, h_accs, args.max_h_acc)
     verify_heading(odom, gated, datum)
+    overlay_fig, _, _ = plot_overlay(odom, gated, datum, bag_dir.name, out_dir)
 
 
 if __name__ == "__main__":
