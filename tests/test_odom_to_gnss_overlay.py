@@ -120,3 +120,52 @@ class TestOdomToUtm:
         E, N = _odom_to_utm(10.0, 0.0, 1000.0, 2000.0, math.pi / 2)
         assert E == pytest.approx(1000.0, abs=1e-9)
         assert N == pytest.approx(2010.0, rel=1e-9)
+
+
+from odom_to_gnss_overlay import merge_h_acc, gate_fixes
+
+
+class TestGateFixes:
+    def _make_fix(self, t_ns, lat=47.0, lon=8.0, status=0, cov=None, cov_type=_COV_KNOWN):
+        if cov is None:
+            cov = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        return FixMsg(t_ns=t_ns, lat=lat, lon=lon, status=status, cov=cov, cov_type=cov_type)
+
+    def test_rejects_no_fix_status(self):
+        fixes = [self._make_fix(1000, status=-1)]
+        assert gate_fixes(fixes, [0.5], max_h_acc_m=2.0) == []
+
+    def test_rejects_large_h_acc(self):
+        fixes = [self._make_fix(1000, status=0)]
+        assert gate_fixes(fixes, [3.0], max_h_acc_m=2.0) == []
+
+    def test_rejects_none_h_acc(self):
+        fixes = [self._make_fix(1000, status=0, cov_type=_COV_UNKNOWN)]
+        assert gate_fixes(fixes, [None], max_h_acc_m=2.0) == []
+
+    def test_accepts_good_fix(self):
+        fixes = [self._make_fix(1000, status=0)]
+        accepted = gate_fixes(fixes, [1.0], max_h_acc_m=2.0)
+        assert len(accepted) == 1
+        assert accepted[0][0].t_ns == 1000
+
+
+class TestMergeHAcc:
+    def test_prefers_ubx_within_50ms(self):
+        # UBX 10 ms after fix → 0.5 m (5000 * 1e-4)
+        fixes = [FixMsg(t_ns=1_000_000_000, lat=0, lon=0, status=0,
+                        cov=[4.0, 0, 0, 0, 4.0, 0, 0, 0, 0], cov_type=_COV_KNOWN)]
+        ubx = [UbxHpMsg(t_ns=1_000_000_000 + 10_000_000, h_acc_raw=5000)]
+        assert merge_h_acc(fixes, ubx)[0] == pytest.approx(0.5, rel=1e-6)
+
+    def test_falls_back_to_covariance_when_no_ubx(self):
+        # cov [[4,0],[0,4]] → eigenvalue=4 → sqrt(4)=2.0
+        fixes = [FixMsg(t_ns=1_000_000_000, lat=0, lon=0, status=0,
+                        cov=[4.0, 0, 0, 0, 4.0, 0, 0, 0, 0], cov_type=_COV_KNOWN)]
+        assert merge_h_acc(fixes, [])[0] == pytest.approx(2.0, rel=1e-6)
+
+    def test_sentinel_ubx_falls_back_to_covariance(self):
+        fixes = [FixMsg(t_ns=1_000_000_000, lat=0, lon=0, status=0,
+                        cov=[4.0, 0, 0, 0, 4.0, 0, 0, 0, 0], cov_type=_COV_KNOWN)]
+        ubx = [UbxHpMsg(t_ns=1_000_000_000 + 5_000_000, h_acc_raw=0xFFFFFFFF)]
+        assert merge_h_acc(fixes, ubx)[0] == pytest.approx(2.0, rel=1e-6)

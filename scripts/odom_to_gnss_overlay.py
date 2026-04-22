@@ -205,6 +205,140 @@ def read_bag(bag_dir: Path) -> BagData:
     return data
 
 
+# ── GNSS quality gate ────────────────────────────────────────────────────────
+
+_UBX_MATCH_NS = 50_000_000  # 50 ms
+
+
+def merge_h_acc(
+    fix_msgs: list,
+    ubx_msgs: list,
+) -> list:
+    """For each /fix, return best h_acc: UBX HP (if within 50 ms) else NavSatFix covariance."""
+    ubx_t = np.array([m.t_ns for m in ubx_msgs], dtype=np.int64) if ubx_msgs else None
+    result = []
+    for fix in fix_msgs:
+        if ubx_t is not None and len(ubx_t):
+            idx = int(np.argmin(np.abs(ubx_t - fix.t_ns)))
+            if abs(int(ubx_t[idx]) - fix.t_ns) <= _UBX_MATCH_NS:
+                val = _h_acc_from_ubx(ubx_msgs[idx].h_acc_raw)
+                if val is not None:
+                    result.append(val)
+                    continue
+        result.append(_h_acc_from_navsatfix(fix.cov, fix.cov_type))
+    return result
+
+
+def gate_fixes(
+    fix_msgs: list,
+    h_accs: list,
+    max_h_acc_m: float,
+) -> list:
+    """Return (fix, h_acc) pairs that pass the quality gate."""
+    accepted = []
+    for fix, h in zip(fix_msgs, h_accs):
+        if fix.status < 0:
+            continue
+        if h is None:
+            continue
+        if h > max_h_acc_m:
+            continue
+        accepted.append((fix, h))
+    return accepted
+
+
+# ── datum and ψ ──────────────────────────────────────────────────────────────
+
+@dataclass
+class Datum:
+    E0: float
+    N0: float
+    zone_num: int
+    zone_letter: str
+    t_ns: int
+    psi: float
+    theta_imu: float
+    theta_base: float
+
+
+def compute_datum(
+    bag_data: BagData,
+    max_h_acc_m: float,
+) -> Datum:
+    """Find first quality-gated fix, compute UTM datum and ψ."""
+    if not bag_data.fix_msgs:
+        print("ERROR: no /fix messages in bag.", file=sys.stderr)
+        sys.exit(1)
+    if not bag_data.odom_msgs:
+        print("ERROR: no /odometry/filtered/local messages in bag.", file=sys.stderr)
+        sys.exit(1)
+
+    h_accs = merge_h_acc(bag_data.fix_msgs, bag_data.ubx_hp_msgs)
+    if not bag_data.ubx_hp_msgs:
+        print("WARNING: /ubx_nav_hp_pos_llh not in bag — using NavSatFix covariance for h_acc.")
+
+    gated = gate_fixes(bag_data.fix_msgs, h_accs, max_h_acc_m)
+    if not gated:
+        total = len(bag_data.fix_msgs)
+        print(f"ERROR: no /fix passes quality gate (max_h_acc={max_h_acc_m} m, "
+              f"tried {total} fixes). Try --max-h-acc with a higher value.", file=sys.stderr)
+        sys.exit(1)
+
+    total = len(bag_data.fix_msgs)
+    accepted_h = [h for _, h in gated]
+    print(f"\nGNSS quality gate:")
+    print(f"  Total /fix        : {total}")
+    print(f"  Accepted          : {len(gated)}  ({100*len(gated)/total:.0f}%)")
+    print(f"  Rejected          : {total - len(gated)}")
+    print(f"  h_acc accepted    : min={min(accepted_h):.3f} m  "
+          f"mean={sum(accepted_h)/len(accepted_h):.3f} m  max={max(accepted_h):.3f} m")
+
+    first_fix, _ = gated[0]
+    e0, n0, zone_num, zone_letter = utm.from_latlon(first_fix.lat, first_fix.lon)
+
+    if not bag_data.imu_msgs:
+        print("ERROR: no /imu/data messages in bag.", file=sys.stderr)
+        sys.exit(1)
+    imu_t = np.array([m.t_ns for m in bag_data.imu_msgs], dtype=np.int64)
+    idx = int(np.argmin(np.abs(imu_t - first_fix.t_ns)))
+    imu_gap_s = abs(imu_t[idx] - first_fix.t_ns) / 1e9
+    if imu_gap_s > 0.5:
+        print(f"ERROR: nearest /imu/data is {imu_gap_s:.2f} s away from first fix "
+              f"(limit: 0.5 s).", file=sys.stderr)
+        sys.exit(1)
+
+    imu = bag_data.imu_msgs[idx]
+    theta_imu = _quat_to_yaw(imu.qx, imu.qy, imu.qz, imu.qw)
+    theta_base = _wrap_pi(theta_imu + _IMU_TF_YAW)
+    psi = _compute_psi(theta_imu)
+
+    # Sanity check: was heading still changing at datum time?
+    t_lo = first_fix.t_ns - 1_000_000_000
+    t_hi = first_fix.t_ns + 1_000_000_000
+    yaws_before = [_quat_to_yaw(m.qx, m.qy, m.qz, m.qw)
+                   for m in bag_data.imu_msgs if t_lo <= m.t_ns <= first_fix.t_ns]
+    yaws_after  = [_quat_to_yaw(m.qx, m.qy, m.qz, m.qw)
+                   for m in bag_data.imu_msgs if first_fix.t_ns <= m.t_ns <= t_hi]
+    if yaws_before and yaws_after:
+        all_yaws = yaws_before + yaws_after
+        unwrapped = np.unwrap(all_yaws)
+        delta_deg = abs(math.degrees(_wrap_pi(unwrapped[-1] - unwrapped[0])))
+        if delta_deg > 2.0:
+            print(f"WARNING: IMU heading changed {delta_deg:.1f}° in ±1 s around datum fix. "
+                  "Xsens NorthReference filter may not have converged.")
+
+    print(f"\nDatum:")
+    print(f"  First qualified fix  : {first_fix.t_ns / 1e9:.3f} s  "
+          f"lat={first_fix.lat:.7f}  lon={first_fix.lon:.7f}")
+    print(f"  UTM E₀={e0:.3f}  N₀={n0:.3f}  zone={zone_num}{zone_letter}")
+    print(f"  θ_imu  = {math.degrees(theta_imu):.2f}°  "
+          f"θ_base = {math.degrees(theta_base):.2f}°  ψ = {math.degrees(psi):.2f}°")
+
+    return Datum(E0=e0, N0=n0, zone_num=zone_num, zone_letter=zone_letter,
+                 t_ns=first_fix.t_ns, psi=psi,
+                 theta_imu=theta_imu, theta_base=theta_base)
+
+
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag_dir", type=Path, help="Bag directory containing <name>_0.mcap")
