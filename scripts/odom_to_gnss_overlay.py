@@ -620,6 +620,88 @@ def plot_drift(
     return fig, ax, result, out_path
 
 
+# ── dual-panel figure ──────────────────────────────────────────────────────
+
+def save_dual_panel(
+    overlay_png: Path,
+    drift_png: Path,
+    bag_name: str,
+    out_dir: Path,
+) -> Path:
+    """Combine overlay (left) and drift curve (right) into one figure using PIL."""
+    try:
+        from PIL import Image as PilImage
+        img_o = np.array(PilImage.open(overlay_png))
+        img_d = np.array(PilImage.open(drift_png))
+        fig, axes = plt.subplots(1, 2, figsize=(20, 10),
+                                 gridspec_kw={"wspace": 0.05})
+        axes[0].imshow(img_o)
+        axes[0].axis("off")
+        axes[1].imshow(img_d)
+        axes[1].axis("off")
+        fig.suptitle(f"{bag_name} — Dead-reckoning evaluation", fontsize=11)
+    except ImportError:
+        fig = plt.figure(figsize=(10, 4))
+        fig.text(0.5, 0.5,
+                 "Install Pillow for dual-panel figure (pip install pillow)",
+                 ha="center", va="center", fontsize=12)
+        fig.suptitle(f"{bag_name} — Dead-reckoning evaluation", fontsize=11)
+
+    out_path = out_dir / f"{bag_name}_combined.png"
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {out_path.name}")
+    return out_path
+
+
+# ── JSON metadata ──────────────────────────────────────────────────────────
+
+def save_metadata(
+    datum: Datum,
+    gated_fixes: list,
+    total_fixes: int,
+    drift: DriftResult,
+    bag_name: str,
+    out_dir: Path,
+) -> Path:
+    accepted_h = [h for _, h in gated_fixes]
+    meta = {
+        "bag": bag_name,
+        "datum": {
+            "E0": datum.E0, "N0": datum.N0,
+            "zone_num": datum.zone_num, "zone_letter": datum.zone_letter,
+            "t_s": datum.t_ns / 1e9,
+            "psi_rad": datum.psi, "psi_deg": math.degrees(datum.psi),
+            "theta_imu_rad": datum.theta_imu,
+            "theta_imu_deg": math.degrees(datum.theta_imu),
+            "theta_base_rad": datum.theta_base,
+            "theta_base_deg": math.degrees(datum.theta_base),
+        },
+        "gnss": {
+            "total_fixes": total_fixes,
+            "accepted_fixes": len(gated_fixes),
+            "rejected_fixes": total_fixes - len(gated_fixes),
+            "h_acc_min_m":  float(min(accepted_h)) if accepted_h else None,
+            "h_acc_mean_m": float(sum(accepted_h) / len(accepted_h)) if accepted_h else None,
+            "h_acc_max_m":  float(max(accepted_h)) if accepted_h else None,
+        },
+        "drift": {
+            "rate_m_per_m":    drift.drift_rate_m_per_m,
+            "rate_pct":        drift.drift_rate_pct,
+            "rate_m_per_100m": drift.drift_rate_m_per_m * 100.0,
+            "n_pairs":         drift.n_pairs,
+        },
+        "track": {
+            "total_distance_m": drift.total_distance_m,
+            "total_time_s":     drift.total_time_s,
+        },
+    }
+    out_path = out_dir / f"{bag_name}_odom_gnss_metadata.json"
+    out_path.write_text(json.dumps(meta, indent=2))
+    print(f"Saved: {out_path.name}")
+    return out_path
+
+
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag_dir", type=Path, help="Bag directory containing <name>_0.mcap")
@@ -640,6 +722,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"{'=' * 60}")
+    print(f"Odom-to-GNSS Overlay Analysis")
     print(f"Bag      : {bag_dir.name}")
     print(f"Max h_acc: {args.max_h_acc} m")
     print(f"Output   : {out_dir}")
@@ -654,21 +737,32 @@ def main():
         print("ERROR: /odometry/filtered/local not found in bag.", file=sys.stderr)
         sys.exit(1)
 
-    datum     = compute_datum(bag_data, args.max_h_acc)
-    odom      = convert_odom(bag_data, datum)
-    h_accs    = merge_h_acc(bag_data.fix_msgs, bag_data.ubx_hp_msgs)
-    gated     = gate_fixes(bag_data.fix_msgs, h_accs, args.max_h_acc)
+    datum  = compute_datum(bag_data, args.max_h_acc)
+    odom   = convert_odom(bag_data, datum)
+    h_accs = merge_h_acc(bag_data.fix_msgs, bag_data.ubx_hp_msgs)
+    gated  = gate_fixes(bag_data.fix_msgs, h_accs, args.max_h_acc)
+
     verify_heading(odom, gated, datum)
-    overlay_fig, _, _ = plot_overlay(odom, gated, datum, bag_dir.name, out_dir)
-    drift_fig, _, drift_result, _ = plot_drift(odom, gated, datum, bag_dir.name, out_dir)
+
+    _, _, overlay_png = plot_overlay(odom, gated, datum, bag_dir.name, out_dir)
     plt.close("all")
-    print(f"\nSUMMARY")
-    print(f"  Total distance   : {drift_result.total_distance_m:.2f} m")
-    print(f"  Total time       : {drift_result.total_time_s:.1f} s")
-    print(f"  Drift rate       : {drift_result.drift_rate_pct:.2f} m per 100 m")
-    print(f"  GNSS fixes used  : {len(gated)} / {len(bag_data.fix_msgs)}")
+
+    _, _, drift_result, drift_png = plot_drift(odom, gated, datum, bag_dir.name, out_dir)
+    plt.close("all")
+
+    save_dual_panel(overlay_png, drift_png, bag_dir.name, out_dir)
+
+    save_metadata(datum, gated, len(bag_data.fix_msgs), drift_result, bag_dir.name, out_dir)
+
+    print(f"\n{'=' * 60}")
+    print(f"SUMMARY")
+    print(f"  Total distance    : {drift_result.total_distance_m:.2f} m")
+    print(f"  Total time        : {drift_result.total_time_s:.1f} s")
+    print(f"  Drift rate        : {drift_result.drift_rate_pct:.2f} m per 100 m")
+    print(f"  GNSS fixes used   : {len(gated)} / {len(bag_data.fix_msgs)}")
     print(f"  Odom pairs matched: {drift_result.n_pairs} / {len(gated)}")
-    print(f"  Output dir       : {out_dir}")
+    print(f"  Output dir        : {out_dir}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
