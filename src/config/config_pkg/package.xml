@@ -7,6 +7,13 @@
   <maintainer email="buehlern@student.ethz.ch">root</maintainer>
   <license>TODO: License declaration</license>
 
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>ekf_localization_pkg</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>pressure_pose_pkg</exec_depend>
+  <exec_depend>keller_26x_pkg</exec_depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

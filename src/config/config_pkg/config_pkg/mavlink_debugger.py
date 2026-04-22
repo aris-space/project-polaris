@@ -7,7 +7,7 @@ class UARTDebugNode(Node):
     def __init__(self):
         super().__init__('uart_debug_node')
         self.device = '/dev/ttyTHS1'
-        self.baud = 57600
+        self.baud = 115200
         
         try:
             self.ser = serial.Serial(

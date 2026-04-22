@@ -1097,7 +1097,7 @@ def main():
     parser.add_argument(
         '--baud-flightstack',
         action="store",
-        default="57600",
+        default="115200",
         help="Comma-separated list of baud rate of the serial port (default is 57600) when communicating with flight stack (Mavlink or NSH), only required for true serial ports."  # NOQA
     )
     parser.add_argument('--force', action='store_true', default=False, help='Override board type check and continue loading')

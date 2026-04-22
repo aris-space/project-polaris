@@ -75,29 +75,6 @@ def generate_launch_description():
         remappings=[("odometry/filtered", "/odometry/filtered/local")],
     )
 
-    pressure_adapter_node = Node(
-        package="ekf_localization_pkg",
-        executable="pressure_z_ned_to_pose_node",
-        name="pressure_z_ned_to_pose_node",
-        output="screen",
-        parameters=[
-            {
-                "input_topic": "/pixhawk/scaled_pressure",
-                "output_topic": "/sensors/pressure/pose_enu",
-                "output_frame_id": "odom",
-                "z_variance": 0.04,
-                "unused_variance": 1000000.0,
-                "water_density_kg_m3": 1000.0,
-                "gravity_m_s2": 9.80665,
-                "calibration_duration_sec": 8.0,
-                "sensor_z_offset_m": 0.0,
-                "update_surface_when_surfaced": False,
-                "surfaced_depth_threshold_m": 0.15,
-                "surface_update_alpha": 0.02,
-            }
-        ],
-    )
-
     navsat_node = Node(
         package="robot_localization",
         executable="navsat_transform_node",
@@ -132,7 +109,6 @@ def generate_launch_description():
             gps_fix_topic_arg,
             imu_topic_arg,
             odom_topic_arg,
-            pressure_adapter_node,
             ekf_node,
             navsat_node,
             ekf_global_node,

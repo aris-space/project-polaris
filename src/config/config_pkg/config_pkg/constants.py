@@ -28,10 +28,10 @@ class Ports:
     PING_SONAR_PORT = "/dev/uart_port_2"
     TOP_ULTRASONIC_PORT = "/dev/uart_port_3"
     ARDUINO_PORT = "/dev/arduino_nano"
-    USB_CAM_FRONT_PORT = "/dev/video0"
-    USB_CAM_TUBE_PORT = "/dev/video1"
+    USB_CAM_FRONT_PORT = "/dev/cam_front"
+    USB_CAM_TUBE_PORT = "/dev/cam_tube"
     SERIAL_PORT1 = "/dev/ttyTHS1"
-    KELLER_SENSOR = "/dev/ttyUSB0"
+    KELLER_SENSOR = "/dev/keller"
 
 
 class Logs:
@@ -162,7 +162,8 @@ class JoyControlMapping:
 class Comms:
     IP_ADDRESS = "XXX.XXX.X.XX"  # Tethered IP
     SUB_QOS_DEPTH = 10
-    SERIAL1_BAUD_RATE = 57600
+    SERIAL1_BAUD_RATE = 115200
     JETSON_IP_ADDRESS = "192.168.194.20" # Changed it for the jetsonorinnano2, beceause the 1 did not started up.
+    MAVLINK_ROUTER_TCP = "tcp:127.0.0.1:5760"  # mavlink-router TCP server (owns /dev/ttyTHS1)
     # PING_SONAR_BAUD_RATE = 115200
     USB0_BAUD_RATE = 115200
