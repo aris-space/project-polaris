@@ -476,16 +476,17 @@ def plot_overlay(
                         xytext=(odom_track.E[i - 1], odom_track.N_utm[i - 1]),
                         arrowprops=dict(arrowstyle="->", color="darkred", lw=1.0))
 
-    ax.scatter(
-        gnss_E, gnss_N, c=gnss_t, cmap="Blues", s=20, alpha=0.9,
-        zorder=4, vmin=0, vmax=t_max, label="GNSS /fix (gated)",
-    )
-    for i in range(0, len(gnss_E), max(1, len(gnss_E) // 20)):
-        circle = plt.Circle(
-            (gnss_E[i], gnss_N[i]), gnss_h[i],
-            fill=False, color="steelblue", linewidth=0.8, alpha=0.5, zorder=3,
+    if len(gnss_E) > 0:
+        ax.scatter(
+            gnss_E, gnss_N, c=gnss_t, cmap="Blues", s=20, alpha=0.9,
+            zorder=4, vmin=0, vmax=t_max, label="GNSS /fix (gated)",
         )
-        ax.add_patch(circle)
+        for i in range(0, len(gnss_E), max(1, len(gnss_E) // 20)):
+            circle = plt.Circle(
+                (gnss_E[i], gnss_N[i]), gnss_h[i],
+                fill=False, color="steelblue", linewidth=0.8, alpha=0.5, zorder=3,
+            )
+            ax.add_patch(circle)
 
     ax.scatter([datum.E0], [datum.N0], marker="*", s=200, c="gold",
                zorder=6, label=f"Datum (psi={math.degrees(datum.psi):.1f} deg)")
@@ -505,7 +506,7 @@ def plot_overlay(
     if _HAS_CONTEXTILY:
         try:
             ctx.add_basemap(ax, crs=f"EPSG:326{datum.zone_num:02d}", zoom="auto",
-                            source=ctx.providers.OpenStreetMap.Mapnik, alpha=0.6)
+                            source=ctx.providers.Esri.WorldImagery, alpha=0.6)
         except Exception as e:
             print(f"WARNING: contextily satellite tiles failed: {e}")
 
