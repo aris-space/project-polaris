@@ -541,7 +541,7 @@ def plot_drift(
         print(f"WARNING: only {len(gated_fixes)} GNSS fixes — skipping drift curve.")
         result = DriftResult(0.0, 0.0,
                              float(odom_track.dist[-1]),
-                             (odom_track.t_ns[-1] - odom_track.t_ns[0]) / 1e9,
+                             float((odom_track.t_ns[-1] - odom_track.t_ns[0]) / 1e9),
                              0, np.array([]), np.array([]))
         fig, ax = plt.subplots(figsize=(8, 5))
         ax.text(0.5, 0.5, "< 5 GNSS fixes\n(drift curve unavailable)",
@@ -584,7 +584,7 @@ def plot_drift(
         drift_rate_m_per_m=slope,
         drift_rate_pct=slope * 100.0,
         total_distance_m=float(odom_track.dist[-1]),
-        total_time_s=(odom_track.t_ns[-1] - odom_track.t_ns[0]) / 1e9,
+        total_time_s=float((odom_track.t_ns[-1] - odom_track.t_ns[0]) / 1e9),
         n_pairs=len(errors),
         errors_m=errors,
         distances_m=distances,
@@ -631,8 +631,12 @@ def save_dual_panel(
     """Combine overlay (left) and drift curve (right) into one figure using PIL."""
     try:
         from PIL import Image as PilImage
-        img_o = np.array(PilImage.open(overlay_png))
-        img_d = np.array(PilImage.open(drift_png))
+        if not overlay_png.exists() or not drift_png.exists():
+            raise FileNotFoundError("one or both panel images missing")
+        with PilImage.open(overlay_png) as im:
+            img_o = np.array(im)
+        with PilImage.open(drift_png) as im:
+            img_d = np.array(im)
         fig, axes = plt.subplots(1, 2, figsize=(20, 10),
                                  gridspec_kw={"wspace": 0.05})
         axes[0].imshow(img_o)
@@ -640,7 +644,7 @@ def save_dual_panel(
         axes[1].imshow(img_d)
         axes[1].axis("off")
         fig.suptitle(f"{bag_name} — Dead-reckoning evaluation", fontsize=11)
-    except ImportError:
+    except (ImportError, FileNotFoundError, OSError):
         fig = plt.figure(figsize=(10, 4))
         fig.text(0.5, 0.5,
                  "Install Pillow for dual-panel figure (pip install pillow)",
