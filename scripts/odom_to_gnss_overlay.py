@@ -111,7 +111,7 @@ def _quat_to_yaw(qx: float, qy: float, qz: float, qw: float) -> float:
 
 
 def _wrap_pi(angle: float) -> float:
-    """Wrap angle to (-π, π]."""
+    """Wrap angle to [-π, π)."""
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
