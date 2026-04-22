@@ -445,55 +445,29 @@ class MavlinkBridgeReceiver(Node):
         # Timestamp from message header in microseconds
         time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
 
-        # Raw Position: ENU -> NED
-        nx =  msg.pose.pose.position.y
-        ny =  msg.pose.pose.position.x
-        nz = -msg.pose.pose.position.z
+        # Position: ENU → NED
+        x_ned =  msg.pose.pose.position.y
+        y_ned =  msg.pose.pose.position.x
+        z_ned = -msg.pose.pose.position.z
 
-        # Raw Orientation: ENU/FLU -> NED/FRD
+        # Orientation: ENU/FLU → NED/FRD via 3-quaternion chain
+        #   q_ned_frd = q_ENU_to_NED ⊗ q_ros_flu ⊗ q_FLU_to_FRD
+        # q_ENU_to_NED = (0, √0.5, √0.5, 0), q_FLU_to_FRD = (0, 1, 0, 0)
         _s = math.sqrt(0.5)
         w2 = msg.pose.pose.orientation.w
         x2 = msg.pose.pose.orientation.x
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
-        
+
         # Step 1: q_tmp = q_ENU_to_NED ⊗ q_ros_flu
         w1, x1, y1, z1 = 0.0, _s, _s, 0.0
         wt = w1*w2 - x1*x2 - y1*y2 - z1*z2
         xt = w1*x2 + x1*w2 + y1*z2 - z1*y2
         yt = w1*y2 - x1*z2 + y1*w2 + z1*x2
         zt = w1*z2 + x1*y2 - y1*x2 + z1*w2
-        
-        # Step 2: q_ned_frd = q_tmp ⊗ (0, 1, 0, 0)
-        qw = -xt
-        qx =  wt
-        qy =  zt
-        qz = -yt
 
-        # Step 3: Extract ONLY the Yaw component from the NED quaternion
-        yaw = math.atan2(2.0 * (qw*qz + qx*qy), 1.0 - 2.0 * (qy*qy + qz*qz))
-
-        # Step 4: Rotate the Position into the FRD frame (strip the yaw)
-        cos_y = math.cos(yaw)
-        sin_y = math.sin(yaw)
-        x_lfrd =  nx * cos_y + ny * sin_y
-        y_lfrd = -nx * sin_y + ny * cos_y
-        z_lfrd =  nz
-
-        # Step 5: Create a 'Zero-Yaw' version of the orientation (strip the yaw)
-        half_yaw = -yaw / 2.0
-        cp = math.cos(half_yaw)
-        sp = math.sin(half_yaw)
-        
-        q_frd = [
-            cp*qw - sp*qz,
-            cp*qx - sp*qy,
-            cp*qy + sp*qx,
-            cp*qz + sp*qw
-        ]
-
-        norm = math.sqrt(sum(i**2 for i in q_frd))
-        q_frd = [i/norm for i in q_frd]
+        # Step 2: q_ned_frd = q_tmp ⊗ (0, 1, 0, 0)  [FLU→FRD: 180° around x]
+        q_frd = [-xt, wt, zt, -yt]
 
         # Linear velocity: body FLU -> body FRD
         vx =  msg.twist.twist.linear.x
@@ -536,10 +510,10 @@ class MavlinkBridgeReceiver(Node):
         m = mavutil.mavlink
         self.port.mav.odometry_send(
             time_usec,
-            m.MAV_FRAME_LOCAL_FRD,  # Back to LOCAL_FRD for the EKF bypass
+            m.MAV_FRAME_LOCAL_FRD,
             m.MAV_FRAME_BODY_FRD,
-            x_lfrd, y_lfrd, z_lfrd, # Send the yaw-stripped position
-            q_frd,                  # Send the yaw-stripped orientation
+            x_ned, y_ned, z_ned,
+            q_frd,
             vx, vy, vz,
             rollspeed, pitchspeed, yawspeed,
             pose_cov,
