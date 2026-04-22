@@ -571,6 +571,9 @@ def plot_drift(
     distances = np.array(distances)
     sigmas    = np.array(sigmas)
 
+    if len(distances) == 0:
+        print("WARNING: all GNSS fixes exceeded 0.5 s gap to odom — no pairs found, drift curve empty.")
+
     if len(distances) >= 2 and distances.max() > distances.min():
         coeffs = np.polyfit(distances, errors, 1)
         slope, intercept = float(coeffs[0]), float(coeffs[1])
@@ -596,8 +599,9 @@ def plot_drift(
         sort_idx = np.argsort(distances)
         ax.fill_between(
             distances[sort_idx],
-            sigmas[sort_idx],
-            alpha=0.25, color="orange", label="EKF sigma_pos = sqrt(P_xx+P_yy)",
+            (errors - sigmas)[sort_idx],
+            (errors + sigmas)[sort_idx],
+            alpha=0.25, color="orange", label="EKF +/-sigma_pos = sqrt(P_xx+P_yy)",
         )
         ax.plot(distances[sort_idx],
                 np.polyval([slope, intercept], distances[sort_idx]),
@@ -663,6 +667,7 @@ def main():
     print(f"  Total time       : {drift_result.total_time_s:.1f} s")
     print(f"  Drift rate       : {drift_result.drift_rate_pct:.2f} m per 100 m")
     print(f"  GNSS fixes used  : {len(gated)} / {len(bag_data.fix_msgs)}")
+    print(f"  Odom pairs matched: {drift_result.n_pairs} / {len(gated)}")
     print(f"  Output dir       : {out_dir}")
 
 
