@@ -163,44 +163,44 @@ def read_bag(bag_dir: Path) -> BagData:
         ros = msg.ros_msg
         try:
             t = _stamp_ns(ros.header.stamp)
+            if t == 0:
+                continue
+
+            if topic == _TOPIC_FIX:
+                data.fix_msgs.append(FixMsg(
+                    t_ns=t,
+                    lat=float(ros.latitude),
+                    lon=float(ros.longitude),
+                    status=int(ros.status.status),
+                    cov=list(ros.position_covariance),
+                    cov_type=int(ros.position_covariance_type),
+                ))
+
+            elif topic == _TOPIC_UBX:
+                data.ubx_hp_msgs.append(UbxHpMsg(
+                    t_ns=t,
+                    h_acc_raw=int(ros.h_acc),
+                ))
+
+            elif topic == _TOPIC_IMU:
+                q = ros.orientation
+                data.imu_msgs.append(ImuMsg(
+                    t_ns=t,
+                    qx=float(q.x), qy=float(q.y), qz=float(q.z), qw=float(q.w),
+                ))
+
+            elif topic == _TOPIC_ODOM:
+                p = ros.pose.pose.position
+                cov = ros.pose.covariance  # 36-element flat array
+                data.odom_msgs.append(OdomMsg(
+                    t_ns=t,
+                    x=float(p.x),
+                    y=float(p.y),
+                    cov_xx=float(cov[0]),
+                    cov_yy=float(cov[7]),
+                ))
         except AttributeError:
             continue
-        if t == 0:
-            continue
-
-        if topic == _TOPIC_FIX:
-            data.fix_msgs.append(FixMsg(
-                t_ns=t,
-                lat=float(ros.latitude),
-                lon=float(ros.longitude),
-                status=int(ros.status.status),
-                cov=list(ros.position_covariance),
-                cov_type=int(ros.position_covariance_type),
-            ))
-
-        elif topic == _TOPIC_UBX:
-            data.ubx_hp_msgs.append(UbxHpMsg(
-                t_ns=t,
-                h_acc_raw=int(ros.h_acc),
-            ))
-
-        elif topic == _TOPIC_IMU:
-            q = ros.orientation
-            data.imu_msgs.append(ImuMsg(
-                t_ns=t,
-                qx=float(q.x), qy=float(q.y), qz=float(q.z), qw=float(q.w),
-            ))
-
-        elif topic == _TOPIC_ODOM:
-            p = ros.pose.pose.position
-            cov = ros.pose.covariance  # 36-element flat array
-            data.odom_msgs.append(OdomMsg(
-                t_ns=t,
-                x=float(p.x),
-                y=float(p.y),
-                cov_xx=float(cov[0]),
-                cov_yy=float(cov[7]),
-            ))
 
     return data
 
