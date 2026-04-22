@@ -12,28 +12,17 @@ ekf_global_node:
     base_link_frame: base_link
     world_frame: map
 
-    # IMU (orientation + angular velocity)
-    imu0: /imu/data
-    imu0_config: [
-      false, false, false,
-      true,  true,  true,
-      false, false, false,
-      false, false, false,
-      false, false, false
-    ]
-    imu0_queue_size: 20
-    imu0_nodelay: false
-    imu0_differential: false
-    imu0_relative: false
-    imu0_remove_gravitational_acceleration: false
-
-    # Absolute position from navsat_transform_node
-    # navsat_transform_node default output: /odometry/gps
-    odom0: /odometry/gps
+    # Local EKF output — dead-reckoning source.
+    # Required so the global EKF knows the current odom-frame position and can
+    # correctly compute the map→odom correction from GPS.  Without this, the
+    # global EKF diverges: it uses the TF-tree odom→base_link (from local EKF)
+    # to compute map→odom while simultaneously updating its own position from GPS,
+    # creating a circular positive-feedback loop.
+    odom0: /odometry/filtered/local
     odom0_config: [
-      true,  true,  false,
-      false, false, false,
-      false, false, false,
+      true,  true,  true,    # x, y, z  — full position from local EKF
+      false, false, false,   # orientation already handled by local EKF
+      true,  true,  true,    # vx, vy, vz
       false, false, false,
       false, false, false
     ]
@@ -42,12 +31,13 @@ ekf_global_node:
     odom0_differential: false
     odom0_relative: false
 
-    # DVL velocity update
-    odom1: /sensors/dvl/odometry_cov
+    # Absolute GPS correction from navsat_transform_node.
+    # Only x, y — z comes from pressure via local EKF above.
+    odom1: /odometry/gps
     odom1_config: [
+      true,  true,  false,
       false, false, false,
       false, false, false,
-      true,  true,  true,
       false, false, false,
       false, false, false
     ]
@@ -55,20 +45,6 @@ ekf_global_node:
     odom1_nodelay: false
     odom1_differential: false
     odom1_relative: false
-
-    # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
-    pose0: /sensors/pressure/pose_enu
-    pose0_config: [
-      false, false, true,
-      false, false, false,
-      false, false, false,
-      false, false, false,
-      false, false, false
-    ]
-    pose0_queue_size: 20
-    pose0_nodelay: false
-    pose0_differential: false
-    pose0_relative: false
 
     process_noise_covariance: [
       0.12, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
