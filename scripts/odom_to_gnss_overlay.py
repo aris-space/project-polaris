@@ -131,6 +131,80 @@ def _odom_to_utm(x: float, y: float, E0: float, N0: float, psi: float) -> tuple[
     return E, N
 
 
+# ── bag reader ───────────────────────────────────────────────────────────────
+
+_TOPIC_FIX  = "/fix"
+_TOPIC_UBX  = "/ubx_nav_hp_pos_llh"
+_TOPIC_IMU  = "/imu/data"
+_TOPIC_ODOM = "/odometry/filtered/local"
+
+
+def _stamp_ns(stamp) -> int:
+    return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+
+
+def read_bag(bag_dir: Path) -> BagData:
+    """Read all relevant topics from the bag in a single pass."""
+    mcap_path = bag_dir / f"{bag_dir.name}_0.mcap"
+    if not mcap_path.exists():
+        candidates = list(bag_dir.glob("*_0.mcap"))
+        if not candidates:
+            print(f"ERROR: no *_0.mcap found in {bag_dir}", file=sys.stderr)
+            sys.exit(1)
+        mcap_path = candidates[0]
+
+    wanted = {_TOPIC_FIX, _TOPIC_UBX, _TOPIC_IMU, _TOPIC_ODOM}
+    data = BagData()
+
+    for msg in read_ros2_messages(str(mcap_path)):
+        topic = msg.channel.topic
+        if topic not in wanted:
+            continue
+        ros = msg.ros_msg
+        try:
+            t = _stamp_ns(ros.header.stamp)
+        except AttributeError:
+            continue
+        if t == 0:
+            continue
+
+        if topic == _TOPIC_FIX:
+            data.fix_msgs.append(FixMsg(
+                t_ns=t,
+                lat=float(ros.latitude),
+                lon=float(ros.longitude),
+                status=int(ros.status.status),
+                cov=list(ros.position_covariance),
+                cov_type=int(ros.position_covariance_type),
+            ))
+
+        elif topic == _TOPIC_UBX:
+            data.ubx_hp_msgs.append(UbxHpMsg(
+                t_ns=t,
+                h_acc_raw=int(ros.h_acc),
+            ))
+
+        elif topic == _TOPIC_IMU:
+            q = ros.orientation
+            data.imu_msgs.append(ImuMsg(
+                t_ns=t,
+                qx=float(q.x), qy=float(q.y), qz=float(q.z), qw=float(q.w),
+            ))
+
+        elif topic == _TOPIC_ODOM:
+            p = ros.pose.pose.position
+            cov = ros.pose.covariance  # 36-element flat array
+            data.odom_msgs.append(OdomMsg(
+                t_ns=t,
+                x=float(p.x),
+                y=float(p.y),
+                cov_xx=float(cov[0]),
+                cov_yy=float(cov[7]),
+            ))
+
+    return data
+
+
 def _parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag_dir", type=Path, help="Bag directory containing <name>_0.mcap")
