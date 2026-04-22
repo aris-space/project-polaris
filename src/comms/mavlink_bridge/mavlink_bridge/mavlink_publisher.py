@@ -139,6 +139,11 @@ class MavlinkBridgeSender(Node):
             Int16MultiArray, "/pixhawk/out/manual_control", 10
         )
 
+        # First 6 channels of SERVO_OUTPUT_RAW (servo1_raw..servo6_raw), units: microseconds.
+        self.servo_output_raw_publisher = self.create_publisher(
+            Int16MultiArray, "/pixhawk/servo_output_raw", 10
+        )
+
         self.diagnostic_publisher = self.create_publisher(
             DiagnosticArray, "/diagnostics", 10
         )
@@ -247,6 +252,19 @@ class MavlinkBridgeSender(Node):
             0, 0, 0, 0, 0,
         )
         self.logger.info(f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=100ms)")
+
+        # Request SERVO_OUTPUT_RAW messages at 20 Hz
+        self.logger.info("Requesting SERVO_OUTPUT_RAW message stream from Pixhawk...")
+        self.port.mav.command_long_send(
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            0,  # confirmation
+            mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,  # message ID = 36
+            50000,  # interval in microseconds (50ms = 20Hz)
+            0, 0, 0, 0, 0,
+        )
+        self.logger.info("SERVO_OUTPUT_RAW request sent (interval=50ms)")
 
         self.msg_type_counter = {
             # "HEARTBEAT": 0,
@@ -448,6 +466,8 @@ class MavlinkBridgeSender(Node):
                     self.handle_battery(msg)
                 elif mtype == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
+                elif mtype == "SERVO_OUTPUT_RAW":
+                    self.handle_servo_output_raw(msg)
                 elif mtype == "PARAM_VALUE":
                     try:
                         self._param_value_queue.put_nowait(msg)
@@ -669,6 +689,23 @@ class MavlinkBridgeSender(Node):
 
         self.scaled_pressure_publisher.publish(ros_msg)
         # self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+
+    def handle_servo_output_raw(self, msg):
+        """Publish the first 6 channels of SERVO_OUTPUT_RAW as Int16MultiArray.
+
+        MAVLink SERVO_OUTPUT_RAW.servoN_raw is a uint16 PWM in microseconds
+        (typical range ~1000..2000). ROS Int16 can hold that, so we just cast.
+        """
+        ros_msg = Int16MultiArray()
+        ros_msg.data = [
+            int(msg.servo1_raw),
+            int(msg.servo2_raw),
+            int(msg.servo3_raw),
+            int(msg.servo4_raw),
+            int(msg.servo5_raw),
+            int(msg.servo6_raw),
+        ]
+        self.servo_output_raw_publisher.publish(ros_msg)
 
     def handle_manual_control(self, msg):
         """Process MANUAL_CONTROL message and publish to ROS2"""
