@@ -330,13 +330,108 @@ def compute_datum(
     print(f"\nDatum:")
     print(f"  First qualified fix  : {first_fix.t_ns / 1e9:.3f} s  "
           f"lat={first_fix.lat:.7f}  lon={first_fix.lon:.7f}")
-    print(f"  UTM E₀={e0:.3f}  N₀={n0:.3f}  zone={zone_num}{zone_letter}")
-    print(f"  θ_imu  = {math.degrees(theta_imu):.2f}°  "
-          f"θ_base = {math.degrees(theta_base):.2f}°  ψ = {math.degrees(psi):.2f}°")
+    print(f"  UTM E0={e0:.3f}  N0={n0:.3f}  zone={zone_num}{zone_letter}")
+    print(f"  theta_imu  = {math.degrees(theta_imu):.2f} deg  "
+          f"theta_base = {math.degrees(theta_base):.2f} deg  psi = {math.degrees(psi):.2f} deg")
 
     return Datum(E0=e0, N0=n0, zone_num=zone_num, zone_letter=zone_letter,
                  t_ns=first_fix.t_ns, psi=psi,
                  theta_imu=theta_imu, theta_base=theta_base)
+
+
+# ── odom → lat/lon conversion ─────────────────────────────────────────────
+
+@dataclass
+class OdomTrack:
+    t_ns:    np.ndarray   # (N,) int64
+    lat:     np.ndarray   # (N,)
+    lon:     np.ndarray   # (N,)
+    E:       np.ndarray   # (N,) UTM easting
+    N_utm:   np.ndarray   # (N,) UTM northing
+    dist:    np.ndarray   # (N,) cumulative distance traveled (m)
+    sigma_p: np.ndarray   # (N,) sqrt(P_xx + P_yy) EKF self-reported uncertainty
+
+
+def convert_odom(bag_data: BagData, datum: Datum) -> OdomTrack:
+    """Convert /odometry/filtered/local messages to lat/lon using fixed T matrix."""
+    msgs = bag_data.odom_msgs
+    if not msgs:
+        print("ERROR: no /odometry/filtered/local in bag.", file=sys.stderr)
+        sys.exit(1)
+
+    t_ns = np.array([m.t_ns for m in msgs], dtype=np.int64)
+    xs   = np.array([m.x    for m in msgs])
+    ys   = np.array([m.y    for m in msgs])
+    cxx  = np.array([m.cov_xx for m in msgs])
+    cyy  = np.array([m.cov_yy for m in msgs])
+
+    E_arr = datum.E0 + np.cos(datum.psi) * xs - np.sin(datum.psi) * ys
+    N_arr = datum.N0 + np.sin(datum.psi) * xs + np.cos(datum.psi) * ys
+
+    lat_arr = np.empty(len(msgs))
+    lon_arr = np.empty(len(msgs))
+    for i in range(len(msgs)):
+        lat_arr[i], lon_arr[i] = utm.to_latlon(
+            E_arr[i], N_arr[i], datum.zone_num, datum.zone_letter
+        )
+
+    dE = np.diff(E_arr, prepend=E_arr[0])
+    dN = np.diff(N_arr, prepend=N_arr[0])
+    dist = np.cumsum(np.hypot(dE, dN))
+    sigma_p = np.sqrt(np.maximum(0.0, cxx + cyy))
+
+    print(f"\nOdom track: {len(msgs)} messages, "
+          f"total distance {dist[-1]:.2f} m, "
+          f"duration {(t_ns[-1] - t_ns[0]) / 1e9:.1f} s")
+    return OdomTrack(t_ns=t_ns, lat=lat_arr, lon=lon_arr,
+                     E=E_arr, N_utm=N_arr, dist=dist, sigma_p=sigma_p)
+
+
+# ── heading verification ───────────────────────────────────────────────────
+
+def verify_heading(
+    odom_track: OdomTrack,
+    gated_fixes: list,
+    datum: Datum,
+) -> None:
+    """Compare odom displacement bearing vs GNSS bearing over first 10 s."""
+    t0_ns = datum.t_ns
+    t10_ns = t0_ns + 10_000_000_000
+
+    mask_o = (odom_track.t_ns >= t0_ns) & (odom_track.t_ns <= t10_ns)
+    if mask_o.sum() < 2:
+        print("\nHeading verification: skipped (< 2 odom messages in first 10 s)")
+        return
+
+    dE_o = odom_track.E[mask_o][-1] - odom_track.E[mask_o][0]
+    dN_o = odom_track.N_utm[mask_o][-1] - odom_track.N_utm[mask_o][0]
+    if math.hypot(dE_o, dN_o) < 0.5:
+        print("\nHeading verification: skipped (vehicle moved < 0.5 m in first 10 s)")
+        return
+    bearing_odom = math.degrees(math.atan2(dE_o, dN_o))
+
+    gnss_in_window = [(f, h) for f, h in gated_fixes if t0_ns <= f.t_ns <= t10_ns]
+    if len(gnss_in_window) < 2:
+        print("\nHeading verification: skipped (< 2 GNSS fixes in first 10 s)")
+        return
+
+    first_g, last_g = gnss_in_window[0][0], gnss_in_window[-1][0]
+    e1, n1, _, _ = utm.from_latlon(first_g.lat, first_g.lon)
+    e2, n2, _, _ = utm.from_latlon(last_g.lat,  last_g.lon)
+    if math.hypot(e2 - e1, n2 - n1) < 0.5:
+        print("\nHeading verification: skipped (GNSS moved < 0.5 m in first 10 s)")
+        return
+    bearing_gnss = math.degrees(math.atan2(e2 - e1, n2 - n1))
+
+    diff_deg = abs(math.degrees(_wrap_pi(math.radians(bearing_odom - bearing_gnss))))
+    print(f"\nHeading verification (first 10 s):")
+    print(f"  Odom bearing : {bearing_odom:.1f}°")
+    print(f"  GNSS bearing : {bearing_gnss:.1f}°")
+    print(f"  Difference   : {diff_deg:.1f}°", end="")
+    if diff_deg > 5.0:
+        print(f"  *** WARNING: bearing mismatch > 5° — ψ may be wrong ***")
+    else:
+        print("  (OK)")
 
 
 def _parse_args(argv=None):
@@ -357,8 +452,27 @@ def main():
         sys.exit(1)
     out_dir = args.output_dir or (bag_dir / "odom_gnss_analysis")
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Bag: {bag_dir.name}")
-    print(f"Output: {out_dir}")
+
+    print(f"{'=' * 60}")
+    print(f"Bag      : {bag_dir.name}")
+    print(f"Max h_acc: {args.max_h_acc} m")
+    print(f"Output   : {out_dir}")
+    print(f"{'=' * 60}")
+
+    bag_data = read_bag(bag_dir)
+    print(f"\nMessages: /fix={len(bag_data.fix_msgs)}  "
+          f"/ubx_hp={len(bag_data.ubx_hp_msgs)}  "
+          f"/imu={len(bag_data.imu_msgs)}  "
+          f"/odom={len(bag_data.odom_msgs)}")
+    if not bag_data.odom_msgs:
+        print("ERROR: /odometry/filtered/local not found in bag.", file=sys.stderr)
+        sys.exit(1)
+
+    datum     = compute_datum(bag_data, args.max_h_acc)
+    odom      = convert_odom(bag_data, datum)
+    h_accs    = merge_h_acc(bag_data.fix_msgs, bag_data.ubx_hp_msgs)
+    gated     = gate_fixes(bag_data.fix_msgs, h_accs, args.max_h_acc)
+    verify_heading(odom, gated, datum)
 
 
 if __name__ == "__main__":
