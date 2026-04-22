@@ -1,0 +1,47 @@
+ice_touch_detection_node:
+  ros__parameters:
+
+    # ── physical geometry (metres) ────────────────────────────────────────────
+    # Tower top contact point relative to the ultrasonic sensor (body frame:
+    # X forward, Y left, Z up).
+    tower_height_m: 0.148              # tower top is this far above the sensor in body-Z
+    tower_horizontal_offset_m: 0.650   # tower top is this far behind the sensor in body-X
+    pressure_sensor_offset_m: 0.136    # pressure sensor is this far below the tower top
+
+    # ── geometric detection ───────────────────────────────────────────────────
+    touch_tolerance_m: 0.02            # extra margin added to tower height (m)
+    max_valid_angle_deg: 45.0          # skip geometric check beyond this roll/pitch (°)
+
+    # ── ultrasonic fault detection ────────────────────────────────────────────
+    # The sensor is considered faulty when ≥ zero_ratio_threshold fraction of
+    # the last zero_window readings are exactly 0.0.
+    ultrasonic_zero_window: 15
+    ultrasonic_zero_ratio_threshold: 0.8
+
+    # ── pressure ──────────────────────────────────────────────────────────────
+    # At contact the pressure sensor (136 mm below tower top) sits at ~0.136 m
+    # depth → ~1334 Pa gauge (freshwater).  The thresholds below add margin.
+    water_density_kgm3: 1000.0         # 1000 freshwater | 1025 seawater
+    pressure_near_surface_pa: 2000.0   # gate for IMU collision cross-check (Pa)
+    pressure_fallback_pa: 1800.0       # primary threshold when ultrasonic is invalid (Pa)
+
+    # ── IMU collision detection ───────────────────────────────────────────────
+    # A spike in total acceleration magnitude exceeding the rolling window mean
+    # by imu_collision_threshold_ms2, while pressure confirms near-surface,
+    # triggers a touch independently of the geometric check.
+    use_imu_collision: true
+    imu_collision_window: 30           # samples in the rolling window
+    imu_collision_min_samples: 10      # minimum samples before check fires
+    imu_collision_threshold_ms2: 3.5   # spike above baseline (m/s²)
+
+    # ── debounce ──────────────────────────────────────────────────────────────
+    confirm_count: 3                   # consecutive positive ticks to latch true
+    clear_count: 5                     # consecutive negative ticks to release
+    publish_rate_hz: 10.0
+
+    # ── topics ────────────────────────────────────────────────────────────────
+    ultrasonic_topic: /top/ultrasonic/distance
+    imu_topic: /imu/data
+    acceleration_topic: /imu/acceleration
+    pressure_topic: /sensors/keller26x/gauge_pressure
+    output_topic: /ice_touch_detection/touching
