@@ -17,3 +17,4 @@ def test_argparse_custom(tmp_path):
     from odom_to_gnss_overlay import _parse_args
     args = _parse_args([str(tmp_path), "--max-h-acc", "1.5", "--output-dir", str(tmp_path)])
     assert args.max_h_acc == 1.5
+    assert args.output_dir == tmp_path
