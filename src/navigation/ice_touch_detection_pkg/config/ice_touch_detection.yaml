@@ -41,7 +41,7 @@ ice_touch_detection_node:
 
     # ── topics ────────────────────────────────────────────────────────────────
     ultrasonic_topic: /top/ultrasonic/distance
-    imu_topic: /imu/data
+    odometry_topic: /odometry/filtered/local   # EKF local (base_link frame) — used for orientation
     acceleration_topic: /imu/acceleration
     pressure_topic: /sensors/keller26x/gauge_pressure
     output_topic: /ice_touch_detection/touching

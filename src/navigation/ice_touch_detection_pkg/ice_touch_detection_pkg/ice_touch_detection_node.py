@@ -20,8 +20,9 @@ from collections import deque
 
 import rclpy
 from geometry_msgs.msg import Vector3Stamped
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from sensor_msgs.msg import FluidPressure, Imu
+from sensor_msgs.msg import FluidPressure
 from std_msgs.msg import Bool, Float32
 
 _GRAVITY_MS2 = 9.81
@@ -71,14 +72,14 @@ class IceTouchDetectionNode(Node):
 
         # ── topics ────────────────────────────────────────────────────────────
         self.declare_parameter("ultrasonic_topic", "/top/ultrasonic/distance")
-        self.declare_parameter("imu_topic", "/imu/data")
+        self.declare_parameter("odometry_topic", "/odometry/filtered/local")
         self.declare_parameter("acceleration_topic", "/imu/acceleration")
         self.declare_parameter("pressure_topic", "/sensors/keller26x/gauge_pressure")
         self.declare_parameter("output_topic", "/ice_touch_detection/touching")
 
         # ── runtime state ─────────────────────────────────────────────────────
         self._latest_distance: float | None = None
-        self._latest_imu: Imu | None = None
+        self._latest_orientation: Odometry | None = None  # EKF local, base_link frame
         self._latest_pressure: float | None = None
 
         self._ultrasonic_window: deque[float] = deque(
@@ -94,13 +95,13 @@ class IceTouchDetectionNode(Node):
 
         # ── subscriptions ─────────────────────────────────────────────────────
         ultrasonic_topic = str(self.get_parameter("ultrasonic_topic").value)
-        imu_topic = str(self.get_parameter("imu_topic").value)
+        odometry_topic = str(self.get_parameter("odometry_topic").value)
         accel_topic = str(self.get_parameter("acceleration_topic").value)
         pressure_topic = str(self.get_parameter("pressure_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
 
         self.create_subscription(Float32, ultrasonic_topic, self._ultrasonic_cb, 10)
-        self.create_subscription(Imu, imu_topic, self._imu_cb, 10)
+        self.create_subscription(Odometry, odometry_topic, self._odometry_cb, 10)
         self.create_subscription(Vector3Stamped, accel_topic, self._accel_cb, 10)
         self.create_subscription(FluidPressure, pressure_topic, self._pressure_cb, 10)
 
@@ -112,7 +113,7 @@ class IceTouchDetectionNode(Node):
         self.get_logger().info(
             f"IceTouchDetectionNode started"
             f" | ultrasonic: {ultrasonic_topic}"
-            f" | imu: {imu_topic}"
+            f" | odometry: {odometry_topic}"
             f" | pressure: {pressure_topic}"
             f" | output: {output_topic}"
         )
@@ -123,8 +124,8 @@ class IceTouchDetectionNode(Node):
         self._latest_distance = float(msg.data)
         self._ultrasonic_window.append(self._latest_distance)
 
-    def _imu_cb(self, msg: Imu) -> None:
-        self._latest_imu = msg
+    def _odometry_cb(self, msg: Odometry) -> None:
+        self._latest_orientation = msg
 
     def _accel_cb(self, msg: Vector3Stamped) -> None:
         magnitude = math.sqrt(
@@ -228,18 +229,20 @@ class IceTouchDetectionNode(Node):
     def _compute_raw_touch(self) -> bool:
         """Return instantaneous (non-debounced) touching state."""
         distance = self._latest_distance
-        imu = self._latest_imu
+        odom = self._latest_orientation
         pressure = self._latest_pressure
 
-        if pressure is None and (distance is None or imu is None):
+        if pressure is None and (distance is None or odom is None):
             return False
 
         ultrasonic_valid = (distance is not None) and self._is_ultrasonic_valid()
         collision = self._imu_collision_detected()
 
-        # ── path 1: ultrasonic + IMU available ────────────────────────────────
-        if ultrasonic_valid and imu is not None and distance is not None:
-            q = imu.orientation
+        # ── path 1: ultrasonic + EKF orientation available ────────────────────
+        # Quaternion from /odometry/filtered/local is in base_link frame —
+        # no mounting-rotation correction needed.
+        if ultrasonic_valid and odom is not None and distance is not None:
+            q = odom.pose.pose.orientation
             norm_sq = q.x**2 + q.y**2 + q.z**2 + q.w**2
             if norm_sq < 0.5:
                 # Quaternion not initialised; treat as invalid orientation
