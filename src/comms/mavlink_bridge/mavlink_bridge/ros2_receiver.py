@@ -300,8 +300,6 @@ class MavlinkBridgeReceiver(Node):
                 0,
             )
             self.get_logger().info("SCALED_PRESSURE2 request sent (interval=20ms)")
-
-            self.pixhawk_mode = "ALT_HOLD"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent ALT_HOLD mode command")
             self._file_logger.info("Sent ALT_HOLD mode command")
         elif msg.data == "MANUAL":
@@ -311,7 +309,6 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
-            self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
             self._file_logger.info("Sent MANUAL mode command")
         elif msg.data == "STABILIZE":
@@ -321,7 +318,6 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
-            self.pixhawk_mode = "STABILIZE"
             self.get_logger().info("Sent STABILIZE mode command")
             self._file_logger.info("Sent STABILIZE mode command")
         elif msg.data == "GUIDED":
@@ -331,7 +327,6 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
-            self.pixhawk_mode = "GUIDED"
             self.get_logger().info("Sent GUIDED mode command")
             self._file_logger.info("Sent GUIDED mode command")
 
@@ -740,9 +735,7 @@ class MavlinkBridgeReceiver(Node):
         return SetParametersResult(successful=True)
 
     def _flush_mavlink_param_queue(self):
-        """Send each queued param_set and wait for FC confirmation (PARAM_VALUE echo).
-        If the FC does not echo within 2 s, the ROS param is reverted to its previous value.
-        """
+        """Send each queued param_set without blocking the spin thread."""
         if self._mavlink_defer_timer is not None:
             self._mavlink_defer_timer.cancel()
             self._mavlink_defer_timer = None
@@ -757,46 +750,7 @@ class MavlinkBridgeReceiver(Node):
                 new_val,
                 mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
             )
-            # Wait for FC echo confirming the write
-            confirmed = False
-            deadline = time.monotonic() + 2.0
-            while time.monotonic() < deadline:
-                msg = self.port.recv_match(
-                    type="PARAM_VALUE", blocking=True, timeout=0.1
-                )
-                if msg is None:
-                    continue
-                if (
-                    normalize_mavlink_param_id(msg.param_id).upper()
-                    == mav_param_id.upper()
-                ):
-                    confirmed = True
-                    self.get_logger().info(
-                        f"FC confirmed {mav_param_id} = {msg.param_value}"
-                    )
-                    break
-            if not confirmed:
-                self.get_logger().error(
-                    f"FC did not confirm {mav_param_id} within 2 s; "
-                    f"reverting {ros_name} to {old_val}"
-                )
-                self._reverting = True
-                try:
-                    self.set_parameters(
-                        [RclpyParameter(ros_name, RclpyParameter.Type.DOUBLE, old_val)]
-                    )
-                finally:
-                    self._reverting = False
-
-            ack = self.port.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
-            if ack is None:
-                self.get_logger().warn("Reboot: no ACK received from Pixhawk within 3s")
-                self._file_logger.warning("Reboot: no ACK received")
-            elif ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                self.get_logger().error(
-                    f"Reboot rejected by Pixhawk (MAV_RESULT={ack.result}). Is the vehicle disarmed?"
-                )
-                self._file_logger.error(f"Reboot rejected: MAV_RESULT={ack.result}")
+            self.get_logger().info(f"Queued ArduSub param write for {mav_param_id}")
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
