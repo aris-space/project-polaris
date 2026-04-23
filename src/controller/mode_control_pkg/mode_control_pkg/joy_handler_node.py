@@ -1,0 +1,263 @@
+"""
+Joy Handler Node - Fuses multiple joy input sources into a single /joy topic.
+
+Subscribes to:
+  - /joy_controller (sensor_msgs/Joy): PS4 controller input
+  - /joy_keyboard   (sensor_msgs/Joy): Keyboard movement input mapped as Joy
+  - /joy_mode       (sensor_msgs/Joy): Keyboard mode input mapped as Joy
+
+Publishes:
+  - /joy (sensor_msgs/Joy): Fused joy output consumed by downstream nodes
+
+Fusion priority logic:
+  1. Keyboard active                  -> keyboard + mode (if active), controller ignored
+  2. Mode active, keyboard inactive   -> mode + controller (mode buttons stripped from controller)
+  3. Neither keyboard nor mode active -> pass through controller as-is
+
+A source is considered "active" when its last received message has non-neutral
+content (any axis deviating from neutral, or any pressed button).  A source
+with a neutral last message stays active for DELTA_T seconds after reception
+(grace period for transitions).  This allows keyboard sources that only publish
+on key state changes (not continuously) to keep buttons held.
+Neutral values: 0.0 for stick axes, -1.0 for L2/R2 triggers.
+
+The output message always has exactly NUM_AXES axes and NUM_BUTTONS buttons,
+regardless of the source message sizes, so downstream nodes can safely index
+into the arrays.
+
+Foxglove controller layout (button IDs):
+  0  Mode switch safety   (X)          8  Share           16 PS (DO NOT USE)
+  1  -                     (O)          9  Options         17 Emergency Stop (Touchpad)
+  2  Settings safety       (Square)    10  L-stick press
+  3  -                     (Triangle)  11  R-stick press
+  4  Roll left             (L1)        12  D-pad up   (Mode: Alt Hold / Arm)
+  5  Roll right            (R1)        13  D-pad down
+  6  Z up                  (L2)        14  D-pad left (Mode: 6DOF / Stabilisation)
+  7  Z down                (R2)        15  D-pad right
+
+Foxglove controller layout (axis IDs):
+  0  Y left/right       (left stick)   3  Pitch (right stick vertical)
+  1  X forward/backward (left stick)   4  L2 trigger
+  2  Yaw (right stick horizontal)      5  R2 trigger
+"""
+
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Joy
+
+DELTA_T = 0.2
+PUBLISH_RATE_HZ = 20.0
+
+NUM_BUTTONS = 18  # indices 0..17 (highest: 17 = Touchpad / Emergency Stop)
+NUM_AXES = 6  # indices 0..5  (highest: 5 = R2 trigger axis)
+
+# Neutral (unpressed) value for each axis.  Sticks rest at 0.0; L2/R2 triggers rest at -1.0.
+NEUTRAL_AXES = [0.0, 0.0, 0.0, 0.0, -1.0, -1.0]
+AXIS_DEADZONE = 0.05
+
+# Foxglove layout: button indices that belong to the "mode" group
+MODE_BUTTON_INDICES = [
+    0,   # Mode switch safety button (X)
+    2,   # Settings safety button (Square)
+    11,  # Emergency Stop (R3)
+    12,  # D-pad up  - Mode: Manual Altitude Hold / Settings: Arm Pixhawk
+    13,  # D-pad down
+    14,  # D-pad left - Mode: Manual 6DOF / Setting: Toggle Stabilisation
+    15,  # D-pad right
+]
+
+
+class JoyHandlerNode(Node):
+    def __init__(self):
+        super().__init__("joy_handler_node")
+
+        # Tag outgoing /joy messages with the active source so downstream
+        # control nodes can apply source-specific behavior.
+        self.declare_parameter("keyboard_source_frame_id", "keyboard")
+        self.declare_parameter("controller_source_frame_id", "controller")
+        self.declare_parameter("mode_only_source_frame_id", "mode")
+
+        self.last_controller_msg = None
+        self.last_keyboard_msg = None
+        self.last_mode_msg = None
+
+        self.last_controller_time = None
+        self.last_keyboard_time = None
+        self.last_mode_time = None
+
+        self.create_subscription(Joy, "/joy_controller", self._controller_cb, 10)
+        self.create_subscription(Joy, "/joy_keyboard", self._keyboard_cb, 10)
+        self.create_subscription(Joy, "/joy_mode", self._mode_cb, 10)
+
+        self.joy_publisher = self.create_publisher(Joy, "/joy", 10)
+
+        self.timer = self.create_timer(1.0 / PUBLISH_RATE_HZ, self._publish_joy)
+
+        self.get_logger().info("JoyHandlerNode initialized")
+
+    # ---- Subscription callbacks ------------------------------------------------
+
+    def _controller_cb(self, msg):
+        self.last_controller_msg = msg
+        self.last_controller_time = self.get_clock().now()
+
+    def _keyboard_cb(self, msg):
+        self.last_keyboard_msg = msg
+        self.last_keyboard_time = self.get_clock().now()
+
+    def _mode_cb(self, msg):
+        self.last_mode_msg = msg
+        self.last_mode_time = self.get_clock().now()
+
+    # ---- Fusion / publish loop -------------------------------------------------
+
+    def _publish_joy(self):
+        now = self.get_clock().now()
+
+        keyboard_active = self._is_active(
+            self.last_keyboard_msg, self.last_keyboard_time
+        )
+        mode_active = self._is_active(self.last_mode_msg, self.last_mode_time)
+
+        output = None
+
+        if keyboard_active:
+            if mode_active:
+                output = self._fuse_keyboard_and_mode(
+                    self.last_keyboard_msg, self.last_mode_msg
+                )
+            else:
+                output = self._normalize(self.last_keyboard_msg)
+                self._zero_mode_buttons(output)
+            self._set_source_frame_id(output, "keyboard")
+        elif mode_active:
+            if self.last_controller_msg is not None:
+                output = self._fuse_mode_and_controller(
+                    self.last_mode_msg, self.last_controller_msg
+                )
+                self._set_source_frame_id(output, "controller")
+            else:
+                output = self._mode_only(self.last_mode_msg)
+                self._set_source_frame_id(output, "mode_only")
+        else:
+            if self.last_controller_msg is not None:
+                output = self._normalize(self.last_controller_msg)
+                self._set_source_frame_id(output, "controller")
+
+        if output is None:
+            return
+
+        output.header.stamp = now.to_msg()
+        self.joy_publisher.publish(output)
+
+    # ---- Activity detection ----------------------------------------------------
+
+    def _is_active(self, msg, timestamp):
+        """True when the last received message has non-neutral content, or a
+        message (even neutral) arrived within the last DELTA_T seconds.
+        This keeps a source active while a key/button is held, even if the
+        publisher only sends on state changes rather than continuously."""
+        if msg is None or timestamp is None:
+            return False
+        if self._has_nonzero(msg):
+            return True
+        elapsed = (self.get_clock().now() - timestamp).nanoseconds / 1e9
+        return elapsed <= DELTA_T
+
+    @staticmethod
+    def _has_nonzero(msg):
+        for i, val in enumerate(msg.axes):
+            if i >= NUM_AXES:
+                break
+            if abs(val - NEUTRAL_AXES[i]) > AXIS_DEADZONE:
+                return True
+        for val in msg.buttons:
+            if val != 0:
+                return True
+        return False
+
+    # ---- Fusion strategies -----------------------------------------------------
+
+    def _fuse_keyboard_and_mode(self, keyboard_msg, mode_msg):
+        """Keyboard provides axes, /joy_mode provides all buttons.
+        Non-zero mode buttons override keyboard buttons (e.g. L1/R1 from keyboard
+        are kept unless mode also sets them)."""
+        output = self._normalize(keyboard_msg)
+        for i in range(min(len(mode_msg.buttons), NUM_BUTTONS)):
+            if mode_msg.buttons[i] != 0:
+                output.buttons[i] = mode_msg.buttons[i]
+        return output
+
+    def _fuse_mode_and_controller(self, mode_msg, controller_msg):
+        """Controller provides axes and non-mode buttons, /joy_mode overlays
+        all its non-zero buttons on top (mode buttons from controller are
+        stripped first so /joy_mode always wins for those)."""
+        output = self._normalize(controller_msg)
+        self._zero_mode_buttons(output)
+        for i in range(min(len(mode_msg.buttons), NUM_BUTTONS)):
+            if mode_msg.buttons[i] != 0:
+                output.buttons[i] = mode_msg.buttons[i]
+        return output
+
+    # ---- Helpers ---------------------------------------------------------------
+
+    @staticmethod
+    def _zero_mode_buttons(msg):
+        for idx in MODE_BUTTON_INDICES:
+            msg.buttons[idx] = 0
+
+    @staticmethod
+    def _mode_only(mode_msg):
+        """Forward all buttons from the mode message; axes stay neutral (no controller for movement)."""
+        out = Joy()
+        out.header = mode_msg.header
+        out.axes = list(NEUTRAL_AXES)
+        out.buttons = [0] * NUM_BUTTONS
+        for i in range(min(len(mode_msg.buttons), NUM_BUTTONS)):
+            out.buttons[i] = mode_msg.buttons[i]
+        return out
+
+    @staticmethod
+    def _normalize(msg):
+        """Create a fixed-size Joy message from a potentially shorter source."""
+        out = Joy()
+        out.header = msg.header
+        out.axes = list(NEUTRAL_AXES)
+        out.buttons = [0] * NUM_BUTTONS
+        for i in range(min(len(msg.axes), NUM_AXES)):
+            out.axes[i] = msg.axes[i]
+        for i in range(min(len(msg.buttons), NUM_BUTTONS)):
+            out.buttons[i] = msg.buttons[i]
+        return out
+
+    def _set_source_frame_id(self, msg, source):
+        if source == "keyboard":
+            msg.header.frame_id = (
+                self.get_parameter("keyboard_source_frame_id")
+                .get_parameter_value()
+                .string_value
+            )
+        elif source == "controller":
+            msg.header.frame_id = (
+                self.get_parameter("controller_source_frame_id")
+                .get_parameter_value()
+                .string_value
+            )
+        else:
+            msg.header.frame_id = (
+                self.get_parameter("mode_only_source_frame_id")
+                .get_parameter_value()
+                .string_value
+            )
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = JoyHandlerNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
