@@ -7,7 +7,7 @@ from datetime import datetime
 from std_msgs.msg import Int16MultiArray, Float32
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from rcl_interfaces.msg import SetParametersResult
-from geometry_msgs.msg import Quaternion,Vector3
+from geometry_msgs.msg import Quaternion, Vector3
 from sensor_msgs.msg import (
     Imu,  # ATTITUDE
     BatteryState,  # BATTERY_STATUS
@@ -15,6 +15,7 @@ from sensor_msgs.msg import (
 )
 from config_pkg.constants import Comms
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
 os.makedirs(log_dir, exist_ok=True)
@@ -83,7 +84,7 @@ class MavlinkBridgeSender(Node):
 
         self.port.wait_heartbeat()
         self.logger.info(f"Heartbeat received from system {self.port.target_system}")
-        
+
         self.last_heartbeat_time = None
 
         self.heartbeat_publisher = self.create_publisher(
@@ -136,8 +137,12 @@ class MavlinkBridgeSender(Node):
         )
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
-        self.timer = self.create_timer(0.02, self.mavlink_callback)  # 50 Hz to avoid serial buffer overflow
-        self.create_timer(1.0, self.heartbeat_checker_cb)  # 1 Hz watchdog for Pixhawk heartbeat
+        self.timer = self.create_timer(
+            0.02, self.mavlink_callback
+        )  # 50 Hz to avoid serial buffer overflow
+        self.create_timer(
+            1.0, self.heartbeat_checker_cb
+        )  # 1 Hz watchdog for Pixhawk heartbeat
 
         # Request MANUAL_CONTROL messages at 10 Hz
         self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
@@ -167,7 +172,11 @@ class MavlinkBridgeSender(Node):
             0,  # confirmation
             mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2,  # message ID = 137
             20000,  # interval in microseconds (20ms = 50Hz)
-            0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
         )
         self.logger.info("SCALED_PRESSURE2 request sent (interval=20ms)")
 
@@ -183,7 +192,9 @@ class MavlinkBridgeSender(Node):
         #     0, 0, 0, 0, 0,
         # )
 
-        self.logger.info("Requesting ATTITUDE QUATERNION message stream from Pixhawk...")
+        self.logger.info(
+            "Requesting ATTITUDE QUATERNION message stream from Pixhawk..."
+        )
         self.port.mav.command_long_send(
             self.port.target_system,
             self.port.target_component,
@@ -191,7 +202,11 @@ class MavlinkBridgeSender(Node):
             0,  # confirmation
             mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE_QUATERNION,  # message ID = 31
             20000,  # interval in microseconds (20ms = 50Hz)
-            0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
         )
         self.logger.info("BOTH ATTITUDE request sent (interval=20ms)")
 
@@ -209,7 +224,7 @@ class MavlinkBridgeSender(Node):
 
 
         self.msg_type_counter = {
-            "HEARTBEAT": 0,
+            # "HEARTBEAT": 0,
             # "ATTITUDE": 0,
             "RC_CHANNELS": 0,
             "BATTERY_STATUS": 0,
@@ -267,7 +282,7 @@ class MavlinkBridgeSender(Node):
                 # elif msg.get_type() == "ATTITUDE":
                 #    self.handle_attitude_euler(msg)
                 elif msg.get_type() == "ATTITUDE_QUATERNION":
-                   self.handle_attitude_quaternion(msg)
+                    self.handle_attitude_quaternion(msg)
                 # elif msg.get_type() == "RC_CHANNELS":
                 #    self.handle_rc_channels(msg)
                 elif msg.get_type() == "BATTERY_STATUS":
@@ -297,8 +312,8 @@ class MavlinkBridgeSender(Node):
 
         self.last_heartbeat_time = self.get_clock().now()
 
-        if not self.message_counter("HEARTBEAT"):
-            return
+        # if not self.message_counter("HEARTBEAT"):
+        #     return
 
         ros_msg = State()
         # MAVLink system status (uint8)
@@ -315,9 +330,9 @@ class MavlinkBridgeSender(Node):
         ros_msg.armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
         self.heartbeat_publisher.publish(ros_msg)
-        self.logger.info(
-            f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
-        )
+        # self.logger.info(
+        #     f"Published Heartbeat: Status={ros_msg.system_status}, Mode={ros_msg.mode}, Armed={ros_msg.armed}"
+        # )
 
         self.flight_mode = mavutil.mode_string_v10(msg)
 
@@ -383,14 +398,15 @@ class MavlinkBridgeSender(Node):
             status.message = f"Heartbeat lost ({age_s:.1f}s)"
 
         status.values = [
-            KeyValue(key="age_s", value=f"{age_s:.2f}" if age_s != float("inf") else "never"),
+            KeyValue(
+                key="age_s", value=f"{age_s:.2f}" if age_s != float("inf") else "never"
+            ),
         ]
 
         diag_msg = DiagnosticArray()
         diag_msg.header.stamp = now.to_msg()
         diag_msg.status.append(status)
         self.diagnostic_publisher.publish(diag_msg)
-
 
     # def handle_attitude_euler(self, msg):
     #     """Process ATTITUDE_EULER message and publish to ROS2"""
@@ -404,14 +420,13 @@ class MavlinkBridgeSender(Node):
         """Process ATTITUDE_EULER message and publish to ROS2"""
         ros_msg = Quaternion()
 
-        #Convert Euler angles (radians) to Quaternion
+        # Convert Euler angles (radians) to Quaternion
         ros_msg.w = msg.q1
         ros_msg.x = msg.q2
         ros_msg.y = msg.q3
         ros_msg.z = msg.q4
 
         self.attitude_quaternion_publisher.publish(ros_msg)
-        
 
     # def handle_rc_channels(self, msg):
     #     """Process RC_CHANNELS message and publish to ROS2"""
@@ -436,35 +451,36 @@ class MavlinkBridgeSender(Node):
 
         ros_msg.voltage = float(msg.voltages[0]) / 1000.0
 
-        
         consumed_msg = Float32()
         consumed_msg.data = float(msg.current_consumed)  # raw mAh from Pixhawk
         self.battery_consumed_publisher.publish(consumed_msg)
 
         self.battery_publisher.publish(ros_msg)
-        self.logger.info(
-            f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
-        )
-    
+        # self.logger.info(
+        #     f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
+        # )
 
         diag_msg = DiagnosticArray()
         diag_msg.header.stamp = self.get_clock().now().to_msg()
 
-        # Battery current 
+        # Battery current
         status_current = DiagnosticStatus()
         status_current.name = "Battery: Current"
         status_current.level = DiagnosticStatus.OK
         status_current.message = f"{ros_msg.current:.2f}A"
-        status_current.values = [KeyValue(key="current_A", value=f"{ros_msg.current:.2f}")]
+        status_current.values = [
+            KeyValue(key="current_A", value=f"{ros_msg.current:.2f}")
+        ]
         diag_msg.status.append(status_current)
-        
 
         status_voltage = DiagnosticStatus()
         status_voltage.name = "Battery: Voltage"
         status_voltage.level = DiagnosticStatus.OK
         status_voltage.message = f"{ros_msg.voltage:.2f}V"
-        status_voltage.values = [KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")]
-        
+        status_voltage.values = [
+            KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")
+        ]
+
         if ros_msg.voltage < self.battery_min_voltage:
             status_voltage.level = DiagnosticStatus.ERROR
             status_voltage.message = "Voltage is critically low"
@@ -474,7 +490,7 @@ class MavlinkBridgeSender(Node):
         else:
             status_voltage.level = DiagnosticStatus.OK
             status_voltage.message = f"{ros_msg.voltage:.2f}V"
-        
+
         diag_msg.status.append(status_voltage)
 
         self.diagnostic_publisher.publish(diag_msg)
@@ -490,7 +506,7 @@ class MavlinkBridgeSender(Node):
         ros_msg.fluid_pressure = float(msg.press_abs) * 100.0
 
         self.scaled_pressure_publisher.publish(ros_msg)
-        #self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
+        # self.logger.info(f"Published Pressure: Diff={ros_msg.fluid_pressure} Pa")
 
     def handle_position_target_local_ned(self, msg):
         """Process POSITION_TARGET_LOCAL_NED message and publish x/y/z as Vector3 to ROS2.

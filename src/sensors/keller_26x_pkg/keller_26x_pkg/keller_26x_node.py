@@ -1,3 +1,5 @@
+import math
+
 import rclpy
 from rclpy.node import Node
 from rcl_interfaces.msg import SetParametersResult
@@ -13,8 +15,6 @@ from keller_protocol import keller_protocol as kp
 # https://github.com/KELLERAGfuerDruckmesstechnik/keller_protocol_python
 
 
-# TODO: Make the udev rule if not done just use: /dev/ttyUSB0 and to check ls /dev/ttyUSB*
-# On Windows it is like "COM3" e.g.
 class Keller26xNode(Node):
 
     def __init__(self):
@@ -55,6 +55,8 @@ class Keller26xNode(Node):
         self._gauge_offset_pa = 0.0
         self._latest_gauge_raw_pa = None
         self._pending_gauge_offset_capture = False
+        self._pressure_logged = False
+        self._temperature_logged = False
         self.f73_channels = {
             "CH0": 0,
             "P1": 1,
@@ -99,7 +101,7 @@ class Keller26xNode(Node):
         timer_period = 1.0 / self.publish_frequency_hz
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.water_temperature_timer = self.create_timer(
-            1.0 / 5.0,
+            1.0 / 2.0,
             self.water_temperature_timer_callback,
         )
         self.add_on_set_parameters_callback(self.on_parameter_change)
@@ -107,7 +109,7 @@ class Keller26xNode(Node):
         self.get_logger().info(
             f"Started Keller26x pressure node. Gauge topic: {gauge_pressure_topic}. "
             f"Absolute topic: {abs_pressure_topic}. Using default atmospheric pressure "
-            f"Water temperature topic: {water_temperature_topic} (5.0 Hz). "
+            f"Water temperature topic: {water_temperature_topic} (2.0 Hz). "
             f"{self._surface_pressure_pa:.2f} Pa until override on {surface_pressure_topic}. "
             f"Message frame_id={self.pressure_frame_id}. Publish frequency: {self.publish_frequency_hz} Hz. "
             f"Device port: {self.dev_port}."
@@ -123,7 +125,7 @@ class Keller26xNode(Node):
         self.bus = kp.KellerProtocol(
             port=port,
             baud_rate=9600,
-            timeout=0.3,
+            timeout=0.3, #put it up to 1 from 0.3 to try to fix the bug on l4t image
             echo=False,
         )
         self.init_f48()
@@ -191,8 +193,8 @@ class Keller26xNode(Node):
         return pressure
 
     def measure_water_temperature(self) -> float:
-        """Get water temperature from channel T in degC."""
-        return self.bus.f73(self.address, self.f73_channels["T"])
+        """Get water temperature from channel TOB1 in degC."""
+        return self.bus.f73(self.address, self.f73_channels["TOB1"])
 
     """
     calibration callback flow (surface_pressure_callback):
@@ -253,17 +255,33 @@ class Keller26xNode(Node):
         abs_msg.fluid_pressure = self.p1_Pa
         self.abs_pub.publish(abs_msg)
 
-        self.get_logger().info(
-            f"keller_gauge_pressure={self.p1_gauge_pa:.2f} Pa, "
-            f"keller_gauge_raw_pressure={self.p1_gauge_raw_pa:.2f} Pa, "
-            f"gauge_offset={self._gauge_offset_pa:.2f} Pa, "
-            f"keller_abs_pressure={self.p1_Pa:.2f} Pa, "
-            f"atm_source={self._surface_pressure_source}",
-            throttle_duration_sec=5.0,
-        )
+        if not self._pressure_logged:
+            self.get_logger().info(
+                f"First pressure reading — "
+                f"keller_gauge_pressure={self.p1_gauge_pa:.2f} Pa, "
+                f"keller_gauge_raw_pressure={self.p1_gauge_raw_pa:.2f} Pa, "
+                f"gauge_offset={self._gauge_offset_pa:.2f} Pa, "
+                f"keller_abs_pressure={self.p1_Pa:.2f} Pa, "
+                f"atm_source={self._surface_pressure_source}"
+            )
+            self._pressure_logged = True
 
     def water_temperature_timer_callback(self) -> None:
-        self.water_temperature_c = self.measure_water_temperature()
+        try:
+            reading = self.measure_water_temperature()
+            if not isinstance(reading, (int, float)):
+                self.get_logger().warning(
+                    f"Water temperature read returned unexpected type {type(reading).__name__} — skipping publish"
+                )
+                return
+            if math.isnan(reading):
+                self.get_logger().warning("Water temperature reading is NaN — skipping publish")
+                return
+        except Exception as exc:
+            self.get_logger().warning(f"Failed to read water temperature: {exc}")
+            return
+
+        self.water_temperature_c = reading
 
         temp_msg = Temperature()
         temp_msg.header.stamp = self.get_clock().now().to_msg()
@@ -271,6 +289,12 @@ class Keller26xNode(Node):
         temp_msg.temperature = self.water_temperature_c
         temp_msg.variance = 0.0
         self.water_temperature_pub.publish(temp_msg)
+
+        if not self._temperature_logged:
+            self.get_logger().info(
+                f"First temperature reading — keller_water_temperature={self.water_temperature_c:.2f} degC"
+            )
+            self._temperature_logged = True
 
 
 def main(args=None):

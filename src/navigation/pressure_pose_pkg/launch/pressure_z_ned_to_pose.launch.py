@@ -26,7 +26,7 @@ def generate_launch_description():
                         "input_topic": "/pixhawk/scaled_pressure",
                         "output_topic": "/sensors/pressure/pose_enu",
                         "output_frame_id": "odom",
-                        "z_variance": 0.04,
+                        "z_variance": 0.000004,
                         "unused_variance": 1000000.0,
                         "water_density_kg_m3": 1000.0,
                         "gravity_m_s2": 9.80665,

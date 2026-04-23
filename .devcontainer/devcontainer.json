@@ -50,6 +50,7 @@
                 "ms-python.black-formatter", // Black Formatter :contentReference[oaicite:15]{index=15}
                 // Claude Code
                 "anthropic.claude-code", // Claude Code :contentReference[oaicite:16]{index=16}
+                "andrepimenta.claude-code-chat", // Chat for Claude Code
             ],
             "settings": {
                 "[python]": {
