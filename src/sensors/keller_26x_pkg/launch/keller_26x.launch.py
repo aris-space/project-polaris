@@ -7,6 +7,7 @@ from launch_ros.actions import Node
 def _parse_bool(raw_value: str) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
+
 def _launch_setup(context, *args, **kwargs):
     respawn = _parse_bool(LaunchConfiguration("respawn").perform(context))
     respawn_delay = float(LaunchConfiguration("respawn_delay").perform(context))
@@ -26,14 +27,22 @@ def _launch_setup(context, *args, **kwargs):
             executable="static_transform_publisher",
             name="static_tf_base_to_keller_pressure",
             arguments=[
-                "--x", "0.0",
-                "--y", "0.0",
-                "--z", "0.0",
-                "--roll", "0.0",
-                "--pitch", "0.0",
-                "--yaw", "0.0",
-                "--frame-id", "base_link",
-                "--child-frame-id", "keller_pressure_link",
+                "--x",
+                "0.044",
+                "--y",
+                "0.0",
+                "--z",
+                "0.118",
+                "--roll",
+                "0.0",
+                "--pitch",
+                "0.0",
+                "--yaw",
+                "0.0",
+                "--frame-id",
+                "base_link",
+                "--child-frame-id",
+                "keller_pressure_link",
             ],
             output="screen",
             respawn=respawn,
