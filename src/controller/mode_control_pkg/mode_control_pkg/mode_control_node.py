@@ -25,14 +25,16 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from sensor_msgs.msg import Joy
+from mavros_msgs.msg import State
 from config_pkg.constants import JoyControlMapping, CONTROLLER_LAYOUT
 
 
 class ModeControlNode(Node):
     def __init__(self):
         super().__init__("mode_control_node")
-        self.mode = "MANUAL"
+        self.mode = "MANUAL"  # fallback until first heartbeat arrives
         self.prev_mode = None
+        self._mode_initialized = False
 
         # Debounce states for button presses
         self.prev_arm_button_state = False
@@ -50,8 +52,11 @@ class ModeControlNode(Node):
             Bool, "/collision_avoidance/checking", 10
         )
         self.joy_subscriber = self.create_subscription(Joy, "/joy", self.command_callback, 10)
+        self.heartbeat_subscriber = self.create_subscription(
+            State, "/pixhawk/heartbeat", self._heartbeat_cb, 10
+        )
 
-        self.get_logger().info("Mode Control Node started. Default mode: MANUAL")
+        self.get_logger().info("Mode Control Node started. Waiting for Pixhawk heartbeat to sync initial mode...")
 
     def command_callback(self, msg):
         buttons = msg.buttons
@@ -130,6 +135,17 @@ class ModeControlNode(Node):
             if cur_reboot and not self.prev_reboot_button_state:
                 self.publish_reboot_cmd()
             self.prev_reboot_button_state = cur_reboot
+
+    def _heartbeat_cb(self, msg: State):
+        if self._mode_initialized:
+            return
+        self.mode = msg.mode
+        self.prev_mode = msg.mode
+        self._mode_initialized = True
+        mode_msg = String()
+        mode_msg.data = msg.mode
+        self.mode_publisher.publish(mode_msg)
+        self.get_logger().info(f"Mode initialized from Pixhawk heartbeat: {msg.mode}")
 
     def _set_mode(self, mode: str):
         """Publish mode to /mode_control/current_mode and /pixhawk/mode_cmd together."""
