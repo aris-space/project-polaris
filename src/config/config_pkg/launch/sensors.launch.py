@@ -30,6 +30,9 @@ def generate_launch_description():
     jetson_temperature_respawn_arg_value = LaunchConfiguration(
         "jetson_temperature_respawn", default="true"
     )
+    water_sos_respawn_arg_value = LaunchConfiguration(
+        "water_sos_respawn", default="true"
+    )
     respawn_delay_arg_value = LaunchConfiguration("respawn_delay", default="2.0")
     use_ntrip_arg_value = LaunchConfiguration("use_ntrip")
     ntrip_use_https_arg_value = LaunchConfiguration("ntrip_use_https")
@@ -54,6 +57,7 @@ def generate_launch_description():
     keller_26x_pkg_dir = get_package_share_directory("keller_26x_pkg")
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
     uwgpsg2_translator_pkg_dir = get_package_share_directory("uwgpsg2_translator")
+    water_properties_pkg_dir = get_package_share_directory("water_properties_pkg")
 
     gnss_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -147,6 +151,16 @@ def generate_launch_description():
         }.items(),
     )
 
+    water_sos_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(water_properties_pkg_dir, "launch", "water_sos.launch.py")
+        ),
+        launch_arguments={
+            "respawn": water_sos_respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
+    )
+
     ping_sonar_node = Node(
         package="ping_sonar",
         executable="ice_measurement",
@@ -218,6 +232,11 @@ def generate_launch_description():
                 description="Respawn Jetson temperature node if it exits/crashes.",
             ),
             DeclareLaunchArgument(
+                "water_sos_respawn",
+                default_value="true",
+                description="Respawn water speed-of-sound node if it exits/crashes.",
+            ),
+            DeclareLaunchArgument(
                 "respawn_delay",
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed process.",
@@ -271,6 +290,7 @@ def generate_launch_description():
             keller_launch,
             usb_cam_launch,
             uwgpsg2_launch,
+            water_sos_launch,
             ping_sonar_node,
             jetson_temperature_node,
         ]

@@ -1,5 +1,8 @@
+import statistics
+
 from geometry_msgs.msg import PoseWithCovarianceStamped
 import rclpy
+from rclpy.parameter import Parameter
 from sensor_msgs.msg import FluidPressure
 from rclpy.node import Node
 from std_msgs.msg import Float64
@@ -13,6 +16,11 @@ class PressureZNedToPoseNode(Node):
     (P_abs - P_surface). Pixhawk sensor calibration corrects scale/offset of the sensor; it does
     not remove the need for a surface reference unless you interpret the stream as gauge pressure
     (see ``fluid_pressure_is_gauge``).
+
+    On startup (absolute mode only), unless ``skip_calibration`` is True the node collects pressure
+    samples for ``calibration_duration_s`` seconds, computes their median, and uses it as the
+    surface-pressure reference for the rest of the run. The calibrated value is published on
+    ``/sensors/pressure/p_surface_pa`` so the Keller node picks it up automatically.
     """
 
     def __init__(self) -> None:
@@ -34,6 +42,10 @@ class PressureZNedToPoseNode(Node):
         # If true, treat fluid_pressure as gauge (Pa) relative to surface (0 at surface) so
         # depth = p / (rho*g). Use only if your firmware publishes gauge pressure in this field.
         self.declare_parameter("fluid_pressure_is_gauge", False)
+        # Startup calibration: collect samples for this many seconds, then use median as p_surface_pa.
+        self.declare_parameter("calibration_duration_s", 10.0)
+        # Set True to skip auto-calibration and use p_surface_pa directly (legacy / sim behaviour).
+        self.declare_parameter("skip_calibration", False)
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
@@ -46,9 +58,49 @@ class PressureZNedToPoseNode(Node):
 
         gauge = bool(self.get_parameter("fluid_pressure_is_gauge").value)
         p_surf = float(self.get_parameter("p_surface_pa").value)
+        skip_cal = bool(self.get_parameter("skip_calibration").value)
+        cal_duration = float(self.get_parameter("calibration_duration_s").value)
+
+        self._calibration_samples: list = []
+        # Once calibrated (or skipped), _p_surface_pa holds the value to use.
+        self._p_surface_pa: float = p_surf
+        self._calibrated: bool = skip_cal or gauge
+
+        if not self._calibrated:
+            self.get_logger().info(
+                f"Surface-pressure calibration started: collecting {input_topic} samples "
+                f"for {cal_duration:.0f} s. Using p_surface_pa={p_surf:.1f} Pa in the meantime."
+            )
+            self._calibration_timer = self.create_timer(cal_duration, self._finish_calibration)
+        else:
+            self.get_logger().info(
+                f"Pressure adapter: {input_topic} -> {output_topic} (z_enu). "
+                f"{'Gauge mode: depth = p/(rho*g).' if gauge else f'Absolute mode: p_surface_pa={p_surf:.1f} Pa (calibration skipped).'}"
+            )
+
+    def _finish_calibration(self) -> None:
+        self._calibration_timer.cancel()
+        self._calibrated = True
+
+        if not self._calibration_samples:
+            self.get_logger().warning(
+                "Calibration window ended with no pressure samples. "
+                f"Keeping p_surface_pa={self._p_surface_pa:.2f} Pa."
+            )
+            return
+
+        median_pa = statistics.median(self._calibration_samples)
+        n = len(self._calibration_samples)
+        prev = self._p_surface_pa
+        self._p_surface_pa = median_pa
+        self._calibration_samples.clear()
+
+        # Reflect calibrated value in the ROS2 parameter so it's visible via ros2 param get.
+        self.set_parameters([Parameter("p_surface_pa", Parameter.Type.DOUBLE, median_pa)])
+
         self.get_logger().info(
-            f"Pressure adapter: {input_topic} -> {output_topic} (z_enu). "
-            f"{'Gauge mode: depth = p/(rho*g).' if gauge else f'Absolute mode: p_surface_pa={p_surf:.1f} Pa.'}"
+            f"Surface pressure calibrated: {median_pa:.2f} Pa "
+            f"(n={n} samples, was {prev:.2f} Pa)."
         )
 
     def callback(self, msg: FluidPressure) -> None:
@@ -58,11 +110,14 @@ class PressureZNedToPoseNode(Node):
         g = float(self.get_parameter("gravity_m_s2").value)
         sensor_z_offset_m = float(self.get_parameter("sensor_z_offset_m").value)
 
+        if not self._calibrated:
+            self._calibration_samples.append(p_pa)
+
         if gauge:
             p_surface_used = 0.0
             depth_sensor_m = p_pa / (rho * g)
         else:
-            p_surface_used = float(self.get_parameter("p_surface_pa").value)
+            p_surface_used = self._p_surface_pa
             depth_sensor_m = (p_pa - p_surface_used) / (rho * g)
 
         p_surface_msg = Float64()

@@ -288,7 +288,13 @@ def analyze_bag_dir(bag_dir: Path) -> dict[str, Any]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("root", type=Path, help="e.g. recordings/rosbags")
+    ap.add_argument(
+        "root",
+        type=Path,
+        nargs="?",
+        default=Path("recordings/rosbags"),
+        help="e.g. recordings/rosbags (default: recordings/rosbags)",
+    )
     ap.add_argument("--json", action="store_true", help="Print one JSON array")
     args = ap.parse_args()
     root = args.root.resolve()

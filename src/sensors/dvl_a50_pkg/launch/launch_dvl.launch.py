@@ -13,7 +13,7 @@ Published topics (under /sensors/dvl/):
   - dvl/velocity             (marine_acoustic_msgs/Dvl)
   - dvl/dead_reckoning       (geometry_msgs/PoseWithCovarianceStamped)
   - dvl/odometry             (nav_msgs/Odometry)          — raw from driver (``publish_odometry_on_dead_reckoning`` in dvl_a50.yaml)
-  - dvl/odometry_cov         (nav_msgs/Odometry)          — twist covariance (stationary TEP / lock inflation)
+  - dvl/odometry_cov         (nav_msgs/Odometry)          — twist covariance (stationary TEP)
 
 Frame convention (must stay consistent for TF + robot_localization):
   - Driver param ``frame`` sets ``Odometry.header.frame_id`` and
@@ -142,8 +142,6 @@ def _launch_setup(context, *args, **kwargs):
             "twist_linear_covariance_model": "stationary_tep",
             "dvl_variant": "performance",
             "no_lock_variance": 1.0e6,
-            # Widen lock-state cov slightly vs raw stationary_02 sample variances (see node doc).
-            "lock_linear_variance_bias_drift_inflation_factor": 1.15,
             "angular_covariance": 1000000.0,
             "velocity_stale_timeout_sec": 0.5,
         }],
