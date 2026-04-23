@@ -68,8 +68,6 @@ class OdomMsg:
     t_ns: int
     x: float
     y: float
-    cov_xx: float    # pose.covariance[0]  (x variance)
-    cov_yy: float    # pose.covariance[7]  (y variance)
 
 @dataclass
 class BagData:
@@ -191,13 +189,10 @@ def read_bag(bag_dir: Path) -> BagData:
 
             elif topic == _TOPIC_ODOM:
                 p = ros.pose.pose.position
-                cov = ros.pose.covariance  # 36-element flat array
                 data.odom_msgs.append(OdomMsg(
                     t_ns=t,
                     x=float(p.x),
                     y=float(p.y),
-                    cov_xx=float(cov[0]),
-                    cov_yy=float(cov[7]),
                 ))
         except AttributeError:
             continue
@@ -349,7 +344,6 @@ class OdomTrack:
     E:       np.ndarray   # (N,) UTM easting
     N_utm:   np.ndarray   # (N,) UTM northing
     dist:    np.ndarray   # (N,) cumulative distance traveled (m)
-    sigma_p: np.ndarray   # (N,) sqrt(P_xx + P_yy) EKF self-reported uncertainty
 
 
 @dataclass
@@ -373,9 +367,6 @@ def convert_odom(bag_data: BagData, datum: Datum) -> OdomTrack:
     t_ns = np.array([m.t_ns for m in msgs], dtype=np.int64)
     xs   = np.array([m.x    for m in msgs])
     ys   = np.array([m.y    for m in msgs])
-    cxx  = np.array([m.cov_xx for m in msgs])
-    cyy  = np.array([m.cov_yy for m in msgs])
-
     E_arr = datum.E0 + np.cos(datum.psi) * xs - np.sin(datum.psi) * ys
     N_arr = datum.N0 + np.sin(datum.psi) * xs + np.cos(datum.psi) * ys
 
@@ -389,13 +380,12 @@ def convert_odom(bag_data: BagData, datum: Datum) -> OdomTrack:
     dE = np.diff(E_arr, prepend=E_arr[0])
     dN = np.diff(N_arr, prepend=N_arr[0])
     dist = np.cumsum(np.hypot(dE, dN))
-    sigma_p = np.sqrt(np.maximum(0.0, cxx + cyy))
 
     print(f"\nOdom track: {len(msgs)} messages, "
           f"total distance {dist[-1]:.2f} m, "
           f"duration {(t_ns[-1] - t_ns[0]) / 1e9:.1f} s")
     return OdomTrack(t_ns=t_ns, lat=lat_arr, lon=lon_arr,
-                     E=E_arr, N_utm=N_arr, dist=dist, sigma_p=sigma_p)
+                     E=E_arr, N_utm=N_arr, dist=dist)
 
 
 # ── heading verification ───────────────────────────────────────────────────
@@ -552,7 +542,7 @@ def plot_drift(
         return fig, ax, result, out_path
 
     odom_t = odom_track.t_ns
-    errors, distances, sigmas = [], [], []
+    errors, distances = [], []
     for fix, _ in gated_fixes:
         idx = int(np.argmin(np.abs(odom_t - fix.t_ns)))
         gap_s = abs(int(odom_t[idx]) - fix.t_ns) / 1e9
@@ -565,11 +555,9 @@ def plot_drift(
         )
         errors.append(err)
         distances.append(float(odom_track.dist[idx]))
-        sigmas.append(float(odom_track.sigma_p[idx]))
 
     errors    = np.array(errors)
     distances = np.array(distances)
-    sigmas    = np.array(sigmas)
 
     if len(distances) == 0:
         print("WARNING: all GNSS fixes exceeded 0.5 s gap to odom — no pairs found, drift curve empty.")
@@ -597,12 +585,6 @@ def plot_drift(
                label="Dead-reckoning error (m)")
     if len(distances) > 0:
         sort_idx = np.argsort(distances)
-        ax.fill_between(
-            distances[sort_idx],
-            (errors - sigmas)[sort_idx],
-            (errors + sigmas)[sort_idx],
-            alpha=0.25, color="orange", label="EKF +/-sigma_pos = sqrt(P_xx+P_yy)",
-        )
         ax.plot(distances[sort_idx],
                 np.polyval([slope, intercept], distances[sort_idx]),
                 "--", color="crimson", lw=1.5,
