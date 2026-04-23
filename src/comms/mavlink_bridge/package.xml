@@ -21,7 +21,8 @@
   <depend>rcl_interfaces</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
-  
+  <depend>ublox_ubx_msgs</depend>
+
 
   <export>
     <build_type>ament_python</build_type>

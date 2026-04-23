@@ -13,7 +13,7 @@ from nav_msgs.msg import Odometry
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
-from sensor_msgs.msg import NavSatFix
+from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
 from mavlink_bridge.odom_mavlink import (
     nan_pose_covariance,
@@ -126,10 +126,10 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.gps_fix_subscriber = self.create_subscription(
-            NavSatFix, 
-            "/gps/filtered", 
-            self.gps_origin_cb, 
-            Comms.SUB_QOS_DEPTH
+            UBXNavHPPosLLH,
+            "/ubx_nav_hp_pos_llh",
+            self.gps_origin_cb,
+            Comms.SUB_QOS_DEPTH,
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
@@ -399,39 +399,50 @@ class MavlinkBridgeReceiver(Node):
             self.get_logger().info("Sent reboot command to Pixhawk")
             self._file_logger.info("Sent reboot command to Pixhawk")
 
-    def gps_origin_cb(self, msg: NavSatFix):
+    def gps_origin_cb(self, msg: UBXNavHPPosLLH):
         if self._gps_origin_sent:
             return
-        if msg.status.status < 0:
+        if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
             self._gps_origin_valid_count = 0
             return
         self._gps_origin_valid_count += 1
         if self._gps_origin_valid_count < 5:
             return
+
+        # UBX-NAV-HPPOSLLH units:
+        #   lat, lon:  deg * 1e7 (already MAVLink degE7 scale)
+        #   hmsl:      mm, height above mean sea level (already MAVLink altitude scale)
+        lat_e7 = int(msg.lat)
+        lon_e7 = int(msg.lon)
+        alt_mm = int(msg.hmsl)
+
         time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
         self.port.mav.set_gps_global_origin_send(
             self.port.target_system,
-            int(msg.latitude  * 1e7),
-            int(msg.longitude * 1e7),
-            int(msg.altitude  * 1e3),
+            lat_e7,
+            lon_e7,
+            alt_mm,
             time_usec,
         )
         self.port.mav.set_home_position_send(
             self.port.target_system,
-            int(msg.latitude * 1e7),
-            int(msg.longitude * 1e7),
-            int(msg.altitude * 1e3),
+            lat_e7,
+            lon_e7,
+            alt_mm,
             0.0, 0.0, 0.0,         # x, y, z local NED (unknown)
             [1.0, 0.0, 0.0, 0.0],  # quaternion
             0.0, 0.0, 0.0,         # approach_x, approach_y, approach_z
             time_usec,
         )
         self._gps_origin_sent = True
+        lat_deg = lat_e7 * 1e-7
+        lon_deg = lon_e7 * 1e-7
+        alt_m = alt_mm * 1e-3
         self.get_logger().info(
-            f"GPS_GLOBAL_ORIGIN sent: lat={msg.latitude:.7f}, lon={msg.longitude:.7f}, alt={msg.altitude:.2f}m"
+            f"GPS_GLOBAL_ORIGIN sent (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
         )
         self._file_logger.info(
-            f"GPS_GLOBAL_ORIGIN sent to Pixhawk: lat={msg.latitude:.7f}, lon={msg.longitude:.7f}, alt={msg.altitude:.2f}m"
+            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
         )
 
     # Currently sending position, velocity, attitude, rates. Later then seperated and different frequencies.
