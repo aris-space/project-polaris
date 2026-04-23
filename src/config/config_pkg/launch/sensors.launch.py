@@ -5,6 +5,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
@@ -30,6 +31,7 @@ def generate_launch_description():
     jetson_temperature_respawn_arg_value = LaunchConfiguration(
         "jetson_temperature_respawn", default="true"
     )
+    enable_water_sos_arg_value = LaunchConfiguration("enable_water_sos", default="false")
     water_sos_respawn_arg_value = LaunchConfiguration(
         "water_sos_respawn", default="true"
     )
@@ -155,6 +157,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(water_properties_pkg_dir, "launch", "water_sos.launch.py")
         ),
+        condition=IfCondition(enable_water_sos_arg_value),
         launch_arguments={
             "respawn": water_sos_respawn_arg_value,
             "respawn_delay": respawn_delay_arg_value,
@@ -230,6 +233,11 @@ def generate_launch_description():
                 "jetson_temperature_respawn",
                 default_value="true",
                 description="Respawn Jetson temperature node if it exits/crashes.",
+            ),
+            DeclareLaunchArgument(
+                "enable_water_sos",
+                default_value="false",
+                description="Launch the water speed-of-sound node.",
             ),
             DeclareLaunchArgument(
                 "water_sos_respawn",
