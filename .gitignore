@@ -23,6 +23,6 @@ coverage.xml
 /install/
 /log/
 
-/semira
+/semira/
 
 *.mcap
