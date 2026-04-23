@@ -1,6 +1,5 @@
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
 import logging, os
 import math
 from datetime import datetime
@@ -61,19 +60,11 @@ class MavlinkBridgeReceiver(Node):
         self.port = mavutil.mavlink_connection(
             Comms.MAVLINK_ROUTER_TCP
         )  # For sending commands to Pixhawk via mavlink-router
-        # self.port_in = mavutil.mavlink_connection(
-        #     "/dev/ttyTHS1", baud=115200
-        # )  # For receiving messages from Pixhawk (e.g., heartbeats, status)
 
         # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
         self.port.wait_heartbeat()
         self.get_logger().info(
             f"Heartbeat received from system {self.port.target_system}"
-        )
-        # Make companion telemetry appear under vehicle sysid in QGC tools.
-        self.port.mav.srcSystem = self.port.target_system
-        self.port.mav.srcComponent = (
-            mavutil.mavlink.MAV_COMP_ID_VISUAL_INERTIAL_ODOMETRY
         )
 
         self.declare_parameter("external_odom_quality", 100)
@@ -107,25 +98,39 @@ class MavlinkBridgeReceiver(Node):
 
         # subscribe to the pixhawk/mode_cmd topic and calls mode_selection_cb
         self.mode_selection_subscriber = self.create_subscription(
-            String, "/pixhawk/mode_cmd", self.mode_selection_cb, Comms.SUB_QOS_DEPTH
+            String, 
+            "/pixhawk/mode_cmd", 
+            self.mode_selection_cb, 
+            Comms.SUB_QOS_DEPTH
         )
 
         self.arm_disarm_subscriber = self.create_subscription(
-            Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, Comms.SUB_QOS_DEPTH
+            Bool, 
+            "/pixhawk/arm_cmd", 
+            self.arm_disarm_cb, 
+            Comms.SUB_QOS_DEPTH
         )
 
         self.pixhawk_reboot_subscriber = self.create_subscription(
-            Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
+            Bool, 
+            "/pixhawk/reboot_cmd", 
+            self.reboot_cb, 
+            Comms.SUB_QOS_DEPTH
         )
 
         self.external_odom_subscriber = self.create_subscription(
             Odometry,
             "/odometry/filtered/local",
             self.external_odom_cb,
-            qos_profile_sensor_data,
+            Comms.SUB_QOS_DEPTH,
         )
 
-        self.gps_fix_subscriber = self.create_subscription(NavSatFix,"/gps/filtered", self.gps_origin_cb, Comms.SUB_QOS_DEPTH)
+        self.gps_fix_subscriber = self.create_subscription(
+            NavSatFix, 
+            "/gps/filtered", 
+            self.gps_origin_cb, 
+            Comms.SUB_QOS_DEPTH
+        )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
 
@@ -302,9 +307,6 @@ class MavlinkBridgeReceiver(Node):
             self.get_logger().info("Sent STABILIZATION mode command")
             self._file_logger.info("Sent STABILIZATION mode command")
         elif msg.data == "GUIDED":
-            # ArduSub GUIDED requires an external position source (ExternalNav
-            # from our ODOMETRY stream, DVL, USBL, ...). Pre-arm will complain
-            # until EK3 has a valid position estimate.
             mode_id = 4
             self.port.mav.set_mode_send(
                 self.port.target_system,
@@ -529,6 +531,148 @@ class MavlinkBridgeReceiver(Node):
             m.MAV_ESTIMATOR_TYPE_VISION,
             qual,
         )
+
+    """ def _external_odom_cb_impl(self, msg):
+
+        Receives filtered odometry from /odometry/filtered/local (ENU/FLU, ROS convention)
+        and forwards as MAVLink ODOMETRY to Pixhawk (NED/FRD, MAVLink convention).
+
+        Frame conversions applied:
+          Position:      ENU→NED  x_NED=y_ENU,  y_NED=x_ENU,  z_NED=-z_ENU
+          Orientation:   q_NED = q_ENU_to_NED ⊗ q_ENU
+                         q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
+          Velocity:      body FLU→FRD  vx unchanged, vy=-vy, vz=-vz
+          Angular rates: body FLU→FRD  roll unchanged, pitch and yaw negated
+
+        # Limit send rate to avoid flooding the serial port.
+        now_ns = self.get_clock().now().nanoseconds
+        max_hz = (
+            self.get_parameter("external_odom_max_rate_hz")
+            .get_parameter_value()
+            .double_value
+        )
+        if max_hz > 0.0:
+            min_interval_ns = int(1e9 / max_hz)
+            if now_ns - self._external_odom_last_send_ns < min_interval_ns:
+                return
+        self._external_odom_last_send_ns = now_ns
+
+        # Timestamp from message header in microseconds
+        time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
+
+        # Position: ENU → NED
+        x = msg.pose.pose.position.y
+        y = msg.pose.pose.position.x
+        z = -msg.pose.pose.position.z
+
+        # Orientation: apply ENU→NED rotation then express in MAVLink [w,x,y,z] order
+        # q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
+        _s = math.sqrt(0.5)
+        w1, x1, y1, z1 = 0.0, _s, _s, 0.0  # q_ENU_to_NED
+        w2 = msg.pose.pose.orientation.w
+        x2 = msg.pose.pose.orientation.x
+        y2 = msg.pose.pose.orientation.y
+        z2 = msg.pose.pose.orientation.z
+        q = [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,  # z
+        ]
+
+        # Linear velocity: body FLU → body FRD (robot_localization outputs body-frame twist)
+        vx = msg.twist.twist.linear.x
+        vy = -msg.twist.twist.linear.y
+        vz = -msg.twist.twist.linear.z
+
+        # Angular rates: body FLU → body FRD (roll unchanged, pitch and yaw negated)
+        rollspeed = msg.twist.twist.angular.x
+        pitchspeed = -msg.twist.twist.angular.y
+        yawspeed = -msg.twist.twist.angular.z
+
+        # Pose covariance: ENU→NED, permutation p=[1,0,2,3,4,5], signs s=[1,1,-1,1,-1,-1]
+        # C_NED[i,j] = s[i]*s[j] * C_ENU[p[i]*6 + p[j]]
+        _POSE_COV_MAP = [
+            (7, 1),
+            (6, 1),
+            (8, -1),
+            (9, 1),
+            (10, -1),
+            (11, -1),  # row 0 (North)
+            (0, 1),
+            (2, -1),
+            (3, 1),
+            (4, -1),
+            (5, -1),  # row 1 (East)
+            (14, 1),
+            (15, -1),
+            (16, 1),
+            (17, 1),  # row 2 (Down)
+            (21, 1),
+            (22, -1),
+            (23, -1),  # row 3 (roll)
+            (28, 1),
+            (29, 1),  # row 4 (pitch)
+            (35, 1),  # row 5 (yaw)
+        ]
+
+        # Twist covariance: body FLU→FRD, permutation p=[0,1,2,3,4,5], signs s=[1,-1,-1,1,-1,-1]
+        # C_FRD[i,j] = s[i]*s[j] * C_FLU[i*6 + j]
+        _TWIST_COV_MAP = [
+            (0, 1),
+            (1, -1),
+            (2, -1),
+            (3, 1),
+            (4, -1),
+            (5, -1),  # row 0 (fwd)
+            (7, 1),
+            (8, 1),
+            (9, -1),
+            (10, 1),
+            (11, 1),  # row 1 (right)
+            (14, 1),
+            (15, -1),
+            (16, 1),
+            (17, 1),  # row 2 (down)
+            (21, 1),
+            (22, -1),
+            (23, -1),  # row 3 (roll)
+            (28, 1),
+            (29, 1),  # row 4 (pitch)
+            (35, 1),  # row 5 (yaw)
+        ]
+
+        pose_cov = [float(msg.pose.covariance[i]) * s for i, s in _POSE_COV_MAP]
+        twist_cov = [float(msg.twist.covariance[i]) * s for i, s in _TWIST_COV_MAP]
+
+        qual = (
+            self.get_parameter("external_odom_quality")
+            .get_parameter_value()
+            .integer_value
+        )
+        qual = max(-1, min(100, int(qual)))
+
+        m = mavutil.mavlink
+        self.port.mav.odometry_send(
+            time_usec,
+            m.MAV_FRAME_LOCAL_FRD,
+            m.MAV_FRAME_BODY_FRD,
+            x,
+            y,
+            z,
+            q,
+            vx,
+            vy,
+            vz,
+            rollspeed,
+            pitchspeed,
+            yawspeed,
+            pose_cov,
+            twist_cov,
+            self._odom_reset_counter,
+            m.MAV_ESTIMATOR_TYPE_VISION,
+            qual,
+        ) """
 
 
     """--------------------------------------------- main function ---------------------------------------------"""
