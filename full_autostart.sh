@@ -3,6 +3,7 @@ set -euo pipefail
 
 BUILD_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 docker compose down
+git checkout test/full_auto
 docker compose up -d
 
 echo "Waiting for build to complete... (if nothing prints check if container already running)"
