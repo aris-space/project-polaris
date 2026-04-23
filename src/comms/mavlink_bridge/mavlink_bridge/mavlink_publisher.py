@@ -102,13 +102,13 @@ class MavlinkBridgeSender(Node):
         #     RCIn, "/pixhawk/rc_channels", 10
         # )
 
-        self.battery_consumed_publisher = self.create_publisher(
-            Float32, "/pixhawk/battery_consumed", 10
-        )
+        # self.battery_consumed_publisher = self.create_publisher(
+        #     Float32, "/pixhawk/battery_consumed", 10
+        # )
 
-        self.battery_publisher = self.create_publisher(
-            BatteryState, "/pixhawk/battery", 10
-        )
+        # self.battery_publisher = self.create_publisher(
+        #     BatteryState, "/pixhawk/battery", 10
+        # )
 
         self.scaled_pressure_publisher = self.create_publisher(
             FluidPressure, "/pixhawk/scaled_pressure", 10
@@ -122,16 +122,16 @@ class MavlinkBridgeSender(Node):
             DiagnosticArray, "/diagnostics", 10
         )
 
-        # Dynamic battery diagnostic thresholds (can be changed at runtime via ros2 param set)
-        self.declare_parameter("battery_min_voltage", 12.0)
-        self.declare_parameter("battery_max_voltage", 16.8)
-        self.battery_min_voltage = float(
-            self.get_parameter("battery_min_voltage").value
-        )
-        self.battery_max_voltage = float(
-            self.get_parameter("battery_max_voltage").value
-        )
-        self.add_on_set_parameters_callback(self._on_set_parameters)
+        # # Dynamic battery diagnostic thresholds (can be changed at runtime via ros2 param set)
+        # self.declare_parameter("battery_min_voltage", 12.0)
+        # self.declare_parameter("battery_max_voltage", 16.8)
+        # self.battery_min_voltage = float(
+        #     self.get_parameter("battery_min_voltage").value
+        # )
+        # self.battery_max_voltage = float(
+        #     self.get_parameter("battery_max_voltage").value
+        # )
+        # self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self.timer = self.create_timer(
             0.02, self.mavlink_callback
@@ -216,30 +216,30 @@ class MavlinkBridgeSender(Node):
         }
         self.msg_type_counter_interval = 10
 
-    def _on_set_parameters(self, params):
-        """Validate and apply dynamic parameter updates at runtime."""
-        new_min = self.battery_min_voltage
-        new_max = self.battery_max_voltage
+    # def _on_set_parameters(self, params):
+    #     """Validate and apply dynamic parameter updates at runtime."""
+    #     new_min = self.battery_min_voltage
+    #     new_max = self.battery_max_voltage
 
-        for param in params:
-            if param.name == "battery_min_voltage":
-                new_min = float(param.value)
-            elif param.name == "battery_max_voltage":
-                new_max = float(param.value)
+    #     for param in params:
+    #         if param.name == "battery_min_voltage":
+    #             new_min = float(param.value)
+    #         elif param.name == "battery_max_voltage":
+    #             new_max = float(param.value)
 
-        if new_min >= new_max:
-            return SetParametersResult(
-                successful=False,
-                reason="battery_min_voltage must be smaller than battery_max_voltage",
-            )
+    #     if new_min >= new_max:
+    #         return SetParametersResult(
+    #             successful=False,
+    #             reason="battery_min_voltage must be smaller than battery_max_voltage",
+    #         )
 
-        self.battery_min_voltage = new_min
-        self.battery_max_voltage = new_max
-        self.logger.info(
-            f"Updated battery thresholds: min={self.battery_min_voltage:.2f}V, "
-            f"max={self.battery_max_voltage:.2f}V"
-        )
-        return SetParametersResult(successful=True)
+    #     self.battery_min_voltage = new_min
+    #     self.battery_max_voltage = new_max
+    #     self.logger.info(
+    #         f"Updated battery thresholds: min={self.battery_min_voltage:.2f}V, "
+    #         f"max={self.battery_max_voltage:.2f}V"
+    #     )
+    #     return SetParametersResult(successful=True)
 
     def mavlink_callback(self):
         """Timer callback - drains all buffered MAVLink messages and routes them"""
@@ -268,8 +268,8 @@ class MavlinkBridgeSender(Node):
                     self.handle_attitude_quaternion(msg)
                 # elif msg.get_type() == "RC_CHANNELS":
                 #    self.handle_rc_channels(msg)
-                elif msg.get_type() == "BATTERY_STATUS":
-                    self.handle_battery(msg)
+                # elif msg.get_type() == "BATTERY_STATUS":
+                #     self.handle_battery(msg)
                 elif msg.get_type() == "SCALED_PRESSURE2":
                     self.handle_scaled_pressure(msg)
 
@@ -418,63 +418,63 @@ class MavlinkBridgeSender(Node):
     #     self.rc_channel_publisher.publish(ros_msg)
     #     self.logger.info(f"Published RC: {ros_msg.channels}")
 
-    def handle_battery(self, msg):
-        """Process BATTERY_STATUS message and publish to ROS2"""
+    # def handle_battery(self, msg):
+    #     """Process BATTERY_STATUS message and publish to ROS2"""
 
-        if not self.message_counter("BATTERY_STATUS"):
-            return
+    #     if not self.message_counter("BATTERY_STATUS"):
+    #         return
 
-        ros_msg = BatteryState()
-        # current_battery is in 10*mA (centiamperes), divide by 100 to get Amperes
-        ros_msg.current = float(msg.current_battery) / 100.0
-        # battery_remaining is percentage (0-100), ROS2 expects 0.0-1.0
-        ros_msg.percentage = float(msg.battery_remaining) / 100.0
+    #     ros_msg = BatteryState()
+    #     # current_battery is in 10*mA (centiamperes), divide by 100 to get Amperes
+    #     ros_msg.current = float(msg.current_battery) / 100.0
+    #     # battery_remaining is percentage (0-100), ROS2 expects 0.0-1.0
+    #     ros_msg.percentage = float(msg.battery_remaining) / 100.0
 
-        ros_msg.voltage = float(msg.voltages[0]) / 1000.0
+    #     ros_msg.voltage = float(msg.voltages[0]) / 1000.0
 
-        consumed_msg = Float32()
-        consumed_msg.data = float(msg.current_consumed)  # raw mAh from Pixhawk
-        self.battery_consumed_publisher.publish(consumed_msg)
+    #     consumed_msg = Float32()
+    #     consumed_msg.data = float(msg.current_consumed)  # raw mAh from Pixhawk
+    #     self.battery_consumed_publisher.publish(consumed_msg)
 
-        self.battery_publisher.publish(ros_msg)
-        # self.logger.info(
-        #     f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
-        # )
+    #     self.battery_publisher.publish(ros_msg)
+    #     # self.logger.info(
+    #     #     f"Published Battery: Current={ros_msg.current:.2f}A, Voltage={ros_msg.voltage:.2f}V"
+    #     # )
 
-        diag_msg = DiagnosticArray()
-        diag_msg.header.stamp = self.get_clock().now().to_msg()
+    #     diag_msg = DiagnosticArray()
+    #     diag_msg.header.stamp = self.get_clock().now().to_msg()
 
-        # Battery current
-        status_current = DiagnosticStatus()
-        status_current.name = "Battery: Current"
-        status_current.level = DiagnosticStatus.OK
-        status_current.message = f"{ros_msg.current:.2f}A"
-        status_current.values = [
-            KeyValue(key="current_A", value=f"{ros_msg.current:.2f}")
-        ]
-        diag_msg.status.append(status_current)
+    #     # Battery current
+    #     status_current = DiagnosticStatus()
+    #     status_current.name = "Battery: Current"
+    #     status_current.level = DiagnosticStatus.OK
+    #     status_current.message = f"{ros_msg.current:.2f}A"
+    #     status_current.values = [
+    #         KeyValue(key="current_A", value=f"{ros_msg.current:.2f}")
+    #     ]
+    #     diag_msg.status.append(status_current)
 
-        status_voltage = DiagnosticStatus()
-        status_voltage.name = "Battery: Voltage"
-        status_voltage.level = DiagnosticStatus.OK
-        status_voltage.message = f"{ros_msg.voltage:.2f}V"
-        status_voltage.values = [
-            KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")
-        ]
+    #     status_voltage = DiagnosticStatus()
+    #     status_voltage.name = "Battery: Voltage"
+    #     status_voltage.level = DiagnosticStatus.OK
+    #     status_voltage.message = f"{ros_msg.voltage:.2f}V"
+    #     status_voltage.values = [
+    #         KeyValue(key="voltage", value=f"{ros_msg.voltage:.2f}V")
+    #     ]
 
-        if ros_msg.voltage < self.battery_min_voltage:
-            status_voltage.level = DiagnosticStatus.ERROR
-            status_voltage.message = "Voltage is critically low"
-        elif ros_msg.voltage < self.battery_min_voltage + 0.5:
-            status_voltage.level = DiagnosticStatus.WARN
-            status_voltage.message = "Voltage is close to minimum"
-        else:
-            status_voltage.level = DiagnosticStatus.OK
-            status_voltage.message = f"{ros_msg.voltage:.2f}V"
+    #     if ros_msg.voltage < self.battery_min_voltage:
+    #         status_voltage.level = DiagnosticStatus.ERROR
+    #         status_voltage.message = "Voltage is critically low"
+    #     elif ros_msg.voltage < self.battery_min_voltage + 0.5:
+    #         status_voltage.level = DiagnosticStatus.WARN
+    #         status_voltage.message = "Voltage is close to minimum"
+    #     else:
+    #         status_voltage.level = DiagnosticStatus.OK
+    #         status_voltage.message = f"{ros_msg.voltage:.2f}V"
 
-        diag_msg.status.append(status_voltage)
+    #     diag_msg.status.append(status_voltage)
 
-        self.diagnostic_publisher.publish(diag_msg)
+    #     self.diagnostic_publisher.publish(diag_msg)
 
     def handle_scaled_pressure(self, msg):
         """Process SCALED_PRESSURE2(this is the bluerobotics pressure sensor) message and publish to ROS2"""
