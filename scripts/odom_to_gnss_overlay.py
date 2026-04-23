@@ -463,18 +463,28 @@ def plot_overlay(
     odom_t_rel = (odom_track.t_ns - t0) / 1e9
     t_max = max(float(gnss_t.max()) if len(gnss_t) else 0.0, float(odom_t_rel.max()))
 
+    # Shift odom display so the odom point at the first gated fix aligns with that fix
+    if len(gnss_E) > 0:
+        first_idx = int(np.argmin(np.abs(odom_track.t_ns - gated_fixes[0][0].t_ns)))
+        shift_E = gnss_E[0] - odom_track.E[first_idx]
+        shift_N = gnss_N[0] - odom_track.N_utm[first_idx]
+    else:
+        shift_E, shift_N = 0.0, 0.0
+    odom_E_plot = odom_track.E + shift_E
+    odom_N_plot = odom_track.N_utm + shift_N
+
     sc_odom = ax.scatter(
-        odom_track.E, odom_track.N_utm,
+        odom_E_plot, odom_N_plot,
         c=odom_t_rel, cmap="Reds", s=6, alpha=0.7, zorder=3,
-        vmin=0, vmax=t_max, label="Odom (converted)",
+        vmin=0, vmax=t_max, label="Odom (converted, aligned)",
     )
-    step = max(1, len(odom_track.E) // 10)
-    for i in range(step, len(odom_track.E), step):
-        dE = odom_track.E[i] - odom_track.E[i - 1]
-        dN = odom_track.N_utm[i] - odom_track.N_utm[i - 1]
+    step = max(1, len(odom_E_plot) // 10)
+    for i in range(step, len(odom_E_plot), step):
+        dE = odom_E_plot[i] - odom_E_plot[i - 1]
+        dN = odom_N_plot[i] - odom_N_plot[i - 1]
         if math.hypot(dE, dN) > 0.05:
-            ax.annotate("", xy=(odom_track.E[i], odom_track.N_utm[i]),
-                        xytext=(odom_track.E[i - 1], odom_track.N_utm[i - 1]),
+            ax.annotate("", xy=(odom_E_plot[i], odom_N_plot[i]),
+                        xytext=(odom_E_plot[i - 1], odom_N_plot[i - 1]),
                         arrowprops=dict(arrowstyle="->", color="darkred", lw=1.0))
 
     if len(gnss_E) > 0:
@@ -482,7 +492,7 @@ def plot_overlay(
             gnss_E, gnss_N, c=gnss_t, cmap="Blues", s=20, alpha=0.9,
             zorder=4, vmin=0, vmax=t_max, label="GNSS /fix (gated)",
         )
-        for i in range(0, len(gnss_E), max(1, len(gnss_E) // 20)):
+        for i in range(0, len(gnss_E), max(1, len(gnss_E) // 10)):
             circle = plt.Circle(
                 (gnss_E[i], gnss_N[i]), gnss_h[i],
                 fill=False, color="steelblue", linewidth=0.8, alpha=0.5, zorder=3,
@@ -562,6 +572,10 @@ def plot_drift(
     if len(distances) == 0:
         print("WARNING: all GNSS fixes exceeded 0.5 s gap to odom — no pairs found, drift curve empty.")
 
+    # Subtract initial datum-alignment offset so curve starts at zero
+    if len(errors) > 0:
+        errors = errors - errors[0]
+
     if len(distances) >= 2 and distances.max() > distances.min():
         coeffs = np.polyfit(distances, errors, 1)
         slope, intercept = float(coeffs[0]), float(coeffs[1])
@@ -594,7 +608,8 @@ def plot_drift(
     ax.set_title(f"{bag_name} — Dead-reckoning drift", fontsize=9)
     ax.legend(fontsize=8)
     ax.grid(True, lw=0.3, alpha=0.5)
-    ax.set_ylim(bottom=0)
+    ax.axhline(0, color="gray", lw=0.6, ls=":")
+    ax.set_ylim(bottom=min(0, float(errors.min()) - 0.05) if len(errors) > 0 else 0)
 
     out_path = out_dir / f"{bag_name}_drift.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
