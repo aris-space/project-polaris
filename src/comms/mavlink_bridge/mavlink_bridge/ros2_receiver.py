@@ -82,6 +82,7 @@ class MavlinkBridgeReceiver(Node):
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
         self._gps_origin_sent = False
+        self._gps_origin_valid_count = 0
 
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
@@ -397,7 +398,13 @@ class MavlinkBridgeReceiver(Node):
             self._file_logger.info("Sent reboot command to Pixhawk")
 
     def gps_origin_cb(self, msg: NavSatFix):
-        if self._gps_origin_sent or msg.status.status < 0:
+        if self._gps_origin_sent:
+            return
+        if msg.status.status < 0:
+            self._gps_origin_valid_count = 0
+            return
+        self._gps_origin_valid_count += 1
+        if self._gps_origin_valid_count < 5:
             return
         time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
         self.port.mav.set_gps_global_origin_send(
