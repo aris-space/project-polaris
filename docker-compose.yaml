@@ -21,16 +21,12 @@ services:
       - ROSDEP_INSTALL=1
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - SSH_AUTH_SOCK=/run/host-ssh-agent
-    
     volumes:
       - .:/ros2_ws
       - ./recordings:/ros2_ws/recordings
       - /dev:/dev
       - ./mavlink_logs:/root/polaris_logs/
       - /home/polaris5:/home/polaris5
-      - ${SSH_AUTH_SOCK}:/run/host-ssh-agent
-    
     working_dir: /ros2_ws
     entrypoint: [ "/bin/bash", "/ros2_ws/entrypoint.sh" ]
     stdin_open: true
