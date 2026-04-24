@@ -1,0 +1,11 @@
+[package]
+name = "foxglove-data-loader"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1.0"
+foxglove_data_loader = "0.1.0"

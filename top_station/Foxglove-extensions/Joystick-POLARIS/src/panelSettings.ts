@@ -98,24 +98,39 @@ function parseSectionIndex(path: readonly string[]): number | undefined {
   return Number(sectionMatch[1]);
 }
 
+function extractTopicFromMessagePath(messagePath: string | undefined): string {
+  if (!messagePath || !messagePath.startsWith("/")) {
+    return "";
+  }
+
+  const dotIndex = messagePath.indexOf(".");
+  const bracketIndex = messagePath.indexOf("[");
+  const filterIndex = messagePath.indexOf("{");
+
+  let firstSeparator = -1;
+  for (const index of [dotIndex, bracketIndex, filterIndex]) {
+    if (index !== -1 && (firstSeparator === -1 || index < firstSeparator)) {
+      firstSeparator = index;
+    }
+  }
+
+  return firstSeparator === -1 ? messagePath : messagePath.slice(0, firstSeparator);
+}
+
 export function defaultButtonContent(): ButtonContent[] {
   return [
     {
       title: "Mode",
       buttons: [
-        { label: "Emergency Stop", primaryButton: 11, secondaryButton: -1 },
-        { label: "Active Stop", primaryButton: 0, secondaryButton: -1 },
-        { label: "Manual: 6_DOF", primaryButton: 3, secondaryButton: 14 },
-        { label: "Manual: altitude_hold", primaryButton: 3, secondaryButton: 12 },
+        { label: "6 DOF", primaryButton: 3, secondaryButton: 14 },
+        { label: "Depth hold", primaryButton: 3, secondaryButton: 12 },
       ],
     },
     {
       title: "Settings",
       buttons: [
-        { label: "Arm pixhawk", primaryButton: 2, secondaryButton: 12 },
-        { label: "Disarm pixhawk", primaryButton: 2, secondaryButton: 13 },
-        { label: "Toggle Stabilisation", primaryButton: 2, secondaryButton: 14 },
-        { label: "Toggle Collision", primaryButton: 2, secondaryButton: 15 },
+        { label: "Arm PX", primaryButton: 2, secondaryButton: 12 },
+        { label: "Disarm PX", primaryButton: 2, secondaryButton: 13 },
 
       ],
     },
@@ -176,6 +191,7 @@ export type Config = {
   keyboardMapping: string;
   uiScale: number;
   buttonContent: ButtonContent[];
+  inputEnabled: boolean;
 };
 
 export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAction): Config {
@@ -294,6 +310,12 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
       return;
     }
 
+    // Keep subscribe source as topic-only even if the messagepath picker returns a field path.
+    if (pathStr.includes("subJoyTopic")) {
+      draft.subJoyTopic = extractTopicFromMessagePath(String(value));
+      return;
+    }
+
     if (pathStr.includes("buttonsPreset")) {
       const preset = value === "empty" ? "empty" : "uuv-settings";
       draft.buttonsPreset = preset;
@@ -334,6 +356,12 @@ export function settingsActionReducer(prevConfig: Config, action: SettingsTreeAc
       }
     }
 
+    // Handle inputEnabled toggle
+    if (pathStr.includes("inputEnabled")) {
+      draft.inputEnabled = typeof value === "boolean" ? value : Boolean(value);
+      return;
+    }
+
     // Fallback for other updates
     if (
       pathStr.includes("gamepadId") ||
@@ -356,12 +384,12 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       help: "Select where joystick data comes from",
       options: [
         {
-          label: "Subscribed Joy Topic",
-          value: "sub-joy-topic",
-        },
-        {
           label: "Gamepad",
           value: "gamepad",
+        },
+        {
+          label: "Subscribed Joy Topic",
+          value: "sub-joy-topic",
         },
         {
           label: "Interactive",
@@ -382,15 +410,10 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
   if (config.dataSource === "sub-joy-topic") {
     dataSourceFields.subJoyTopic = {
       label: "Subsc. Joy Topic",
-      input: "select",
+      input: "messagepath",
       value: config.subJoyTopic,
       help: "Select ROS Joy topic to monitor",
-      options: (topics ?? [])
-        .filter((topic) => topic.datatype === "sensor_msgs/msg/Joy")
-        .map((topic) => ({
-          label: topic.name,
-          value: topic.name,
-        })),
+      validTypes: ["sensor_msgs/msg/Joy"],
     };
   }
 
@@ -533,15 +556,18 @@ export function buildSettingsTree(config: Config, topics?: readonly Topic[]): Se
       label: "Data Source",
       fields: dataSourceFields,
     },
-    publish: {
-      label: "Publish",
-      fields: publishFields,
-    },
     display: {
       label: "Display",
       fields: displayFields,
     },
   };
+
+  if (config.dataSource !== "sub-joy-topic") {
+    settings.publish = {
+      label: "Publish",
+      fields: publishFields,
+    };
+  }
 
   if (config.dataSource === "buttons") {
     settings.buttons = {

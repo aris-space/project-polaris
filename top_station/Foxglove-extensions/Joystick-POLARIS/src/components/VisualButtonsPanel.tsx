@@ -8,6 +8,7 @@ interface VisualButtonsPanelProps {
   activeIndices: Set<number>;
   onPress: (index: number) => void;
   onRelease: (index: number) => void;
+  inputEnabled?: boolean;
 }
 
 export function VisualButtonsPanel({
@@ -16,6 +17,7 @@ export function VisualButtonsPanel({
   activeIndices,
   onPress,
   onRelease,
+  inputEnabled = true,
 }: VisualButtonsPanelProps): JSX.Element {
   const buttonCount = mappings.length;
   const minButtonWidth = buttonCount > 10 ? 76 : 88;
@@ -58,21 +60,26 @@ export function VisualButtonsPanel({
                   variant={isActive ? "contained" : "outlined"}
                   color="primary"
                   size="small"
+                  disabled={!inputEnabled}
                   disableRipple
                   disableTouchRipple
                   onPointerDown={(e) => {
+                    if (!inputEnabled) return;
                     e.preventDefault();
                     onPress(btnIdx);
                   }}
                   onPointerUp={(e) => {
+                    if (!inputEnabled) return;
                     e.preventDefault();
                     onRelease(btnIdx);
                   }}
                   onPointerCancel={(e) => {
+                    if (!inputEnabled) return;
                     e.preventDefault();
                     onRelease(btnIdx);
                   }}
                   onPointerLeave={(e) => {
+                    if (!inputEnabled) return;
                     e.preventDefault();
                     onRelease(btnIdx);
                   }}
