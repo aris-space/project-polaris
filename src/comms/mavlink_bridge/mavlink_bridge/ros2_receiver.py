@@ -327,6 +327,7 @@ class MavlinkBridgeReceiver(Node):
                 0,
             )
             self.get_logger().info("SCALED_PRESSURE2 request sent (interval=20ms)")
+            self.pixhawk_mode = "ALT_HOLD"
             self.get_logger().info("Sent ALT_HOLD mode command")
             self._file_logger.info("Sent ALT_HOLD mode command")
         elif msg.data == "MANUAL":
@@ -336,6 +337,7 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
+            self.pixhawk_mode = "MANUAL"
             self.get_logger().info("Sent MANUAL mode command")
             self._file_logger.info("Sent MANUAL mode command")
         elif msg.data == "STABILIZE":
@@ -345,6 +347,7 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
+            self.pixhawk_mode = "STABILIZE"
             self.get_logger().info("Sent STABILIZE mode command")
             self._file_logger.info("Sent STABILIZE mode command")
         elif msg.data == "GUIDED":
@@ -354,6 +357,7 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
+            self.pixhawk_mode = "GUIDED"
             self.get_logger().info("Sent GUIDED mode command")
             self._file_logger.info("Sent GUIDED mode command")
 
