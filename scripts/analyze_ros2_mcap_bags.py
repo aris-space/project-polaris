@@ -38,6 +38,9 @@ REQUIRED_GROUPS = {
         "/odometry/gps",
     ],
 }
+DEFAULT_ROOTS: tuple[str, ...] = (
+    "recordings/rosbags",
+)
 
 # Minimum messages for "healthy" over typical pool test duration (>30s); scaled by duration.
 def imu_expected_min(duration_s: float) -> float:
@@ -54,9 +57,12 @@ def tf_expected_min(duration_s: float) -> float:
 
 
 def analyze_mcap(path: Path) -> dict:
-    with open(path, "rb") as f:
-        reader = make_reader(f)
-        summary = reader.get_summary()
+    try:
+        with open(path, "rb") as f:
+            reader = make_reader(f)
+            summary = reader.get_summary()
+    except Exception as e:
+        return {"error": str(e), "path": str(path)}
     if not summary or not summary.statistics:
         return {"error": "no_summary", "path": str(path)}
 
@@ -238,7 +244,7 @@ def main() -> int:
     ap.add_argument(
         "roots",
         nargs="*",
-        default=["recordings/rosbags"],
+        default=list(DEFAULT_ROOTS),
         help="Directories to search for *_0.mcap (default: recordings/rosbags)",
     )
     ap.add_argument("--json", action="store_true", help="Print JSON only")

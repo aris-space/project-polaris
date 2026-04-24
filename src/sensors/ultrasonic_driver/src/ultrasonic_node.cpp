@@ -170,7 +170,7 @@ private:
               msg.data = distance_m;
               publisher_->publish(msg);
               
-              RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
+              //RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
             }
           }
         }

@@ -80,6 +80,9 @@ LOCALIZATION_TOPICS: tuple[str, ...] = (
     "/tf",
     "/tf_static",
 )
+DEFAULT_ROOTS: tuple[str, ...] = (
+    "recordings/rosbags",
+)
 
 find_raw_bag_dirs = dvl_health.find_raw_bag_dirs
 
@@ -285,7 +288,7 @@ def main() -> int:
     ap.add_argument(
         "roots",
         nargs="*",
-        default=["recordings/rosbags"],
+        default=list(DEFAULT_ROOTS),
         help="Roots to scan for rosbag2 folders (default: recordings/rosbags)",
     )
     ap.add_argument("--json", action="store_true", help="Print JSON only")
@@ -299,7 +302,14 @@ def main() -> int:
         print("No raw rosbag dirs with MCAP under given roots.", file=sys.stderr)
         return 1
 
-    results = [analyze_bag_header_stamps(d) for d in bag_dirs]
+    results = []
+    for d in bag_dirs:
+        try:
+            results.append(analyze_bag_header_stamps(d))
+        except Exception as e:
+            print(f"WARNING: skipping {d.name} — {e}", file=sys.stderr)
+            mcap = next(d.glob("*_0.mcap"), None)
+            results.append({"bag_name": d.name, "bag_dir": str(d), "mcap_path": str(mcap) if mcap else "", "bag_suggestion": "unreadable", "flagged_topics": [], "topics": {}, "dvl_data_health": {}, "error": str(e)})
 
     if args.json:
         print(json.dumps(results, indent=2))
@@ -353,8 +363,8 @@ def main() -> int:
             mhz_s = f"{mhz:.4g}" if mhz is not None else "n/a"
             print(
                 f"  - **stamp_sorted**: {mhz_s} Hz mean, "
-                f"zero_dt={ss['n_zero_dt']}, neg_dt={ss['n_negative_dt']}, "
-                f"gaps={ss['n_gap']}, bursts={ss['n_burst']} → **{ss['suggestion']}**"
+                f"duplicate_stamp_pairs={ss['n_zero_dt']} (zero_dt), neg_dt={ss['n_negative_dt']}, "
+                f"gaps={ss['n_gap']}, bursts={ss['n_burst']} -> **{ss['suggestion']}**"
                 + (f"  | flags: {ss['flags']}" if ss.get("flags") else "")
             )
             if mo["n"] >= 2 and (

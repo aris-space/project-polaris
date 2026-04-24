@@ -11,7 +11,7 @@ Dependencies: pip install rosbags numpy
 
 Example:
   python scripts/validate_imu_rpy.py
-  python scripts/validate_imu_rpy.py --bag-dir recordings/rosbags/2026-03-26/yaw_turns_02_2026_03_26-12_25_25
+  python scripts/validate_imu_rpy.py --bag-dir recordings/rosbags/2026-04-19/yaw_turns_02_2026_04_19-11_56_59
 """
 from __future__ import annotations
 

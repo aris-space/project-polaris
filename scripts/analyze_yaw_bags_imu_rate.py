@@ -2,7 +2,7 @@
 """Summarize |angular_velocity.z| from /imu/data in yaw_turns* bags (offline).
 
 Usage:
-  python scripts/analyze_yaw_bags_imu_rate.py [recordings/rosbags/2026-03-26]
+  python scripts/analyze_yaw_bags_imu_rate.py [recordings/rosbags/2026-04-19]
 
 Dependencies: pip install rosbags numpy
 """
@@ -19,6 +19,19 @@ try:
 except ImportError:
     print("pip install rosbags numpy", file=sys.stderr)
     raise
+
+
+def _default_yaw_root() -> Path:
+    base = Path("recordings/rosbags")
+    if not base.is_dir():
+        return Path("recordings/rosbags/2026-04-19")
+
+    dated = sorted(
+        d for d in base.iterdir() if d.is_dir() and d.name[:4].isdigit() and d.name.count("-") == 2
+    )
+    if dated:
+        return dated[-1]
+    return Path("recordings/rosbags/2026-04-19")
 
 
 def load_abs_wz(bag_dir: Path) -> np.ndarray | None:
@@ -39,7 +52,7 @@ def main() -> int:
         "root",
         type=Path,
         nargs="?",
-        default=Path("recordings/rosbags/2026-03-26"),
+        default=_default_yaw_root(),
         help="Directory containing yaw_turns_* bag folders",
     )
     args = ap.parse_args()

@@ -395,7 +395,15 @@ def main() -> None:
         print("No raw MCAP bag directories found.", file=sys.stderr)
         sys.exit(1)
 
-    results = [analyze_bag(b) for b in bags]
+    results = []
+    for b in bags:
+        try:
+            results.append(analyze_bag(b))
+        except Exception as e:
+            print(f"WARNING: skipping {b.name} — {e}", file=sys.stderr)
+            r = BagDvlResult(bag_name=b.name, bag_path=str(b.resolve()))
+            r.flags.append(f"unreadable: {e}")
+            results.append(r)
 
     if args.json:
         print(json.dumps([result_to_dict(r) for r in results], indent=2))
