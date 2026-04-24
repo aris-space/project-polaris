@@ -182,5 +182,18 @@ if [ -f "${ROS_WS}/install/setup.bash" ]; then
   source_with_relaxed_nounset "${ROS_WS}/install/setup.bash"
 fi
 
-# 5) Hand off to the command specified in docker-compose (default: sleep infinity).
+# Enable Shared Memory for FastDDS to reduce CPU copy for camera streams overhead
+export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/shm_profile.xml
+
+# 5) Execute command passed by docker/compose.
+cat <<'NAUTICAL_ASCII'
+[entrypoint] ---------------------------------------------------------------
+  ____   ___  _        _    ____  ___ ____
+ |  _ \ / _ \| |      / \  |  _ \|_ _/ ___|
+ | |_) | | | | |     / _ \ | |_) || |\___ \
+ |  __/| |_| | |___ / ___ \|  _ < | | ___) |
+ |_|    \___/|_____/_/   \_\_| \_\___|____/
+[entrypoint] ---------------------------------------------------------------
+NAUTICAL_ASCII
+echo "[entrypoint] Initialization complete. Launching command: $*"
 exec "$@"
