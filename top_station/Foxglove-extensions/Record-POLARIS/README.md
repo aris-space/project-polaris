@@ -33,6 +33,10 @@ Recorder Controller (POLARIS)
 
 The matching ROS 2 node is in:
 
-RECORDER_ROS_NODE/recorder_controller_node
+src/config/config_pkg/config_pkg/recorder_controller.py
+
+Run it from the ROS package as:
+
+ros2 run config_pkg recorder_controller
 
 The panel-node contract is topic-based JSON, so your colleagues can import the node into their ROS 2 launch/code without refactoring the panel.

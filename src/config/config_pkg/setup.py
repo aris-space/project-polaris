@@ -26,6 +26,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'recorder_controller = config_pkg.recorder_controller:main',
         ],
     },
 )

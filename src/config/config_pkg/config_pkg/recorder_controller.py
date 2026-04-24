@@ -2,6 +2,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Any, Dict, Optional
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+
+from config_pkg.constants import Logs
 
 
 DEFAULT_OUTPUT_DIR_PLACEHOLDER = "__USE_NODE_DEFAULT_OUTPUT_DIR__"
@@ -35,8 +38,9 @@ class RecorderControllerNode(Node):
             "status_topic", "/polaris/recorder/status"
         ).value
         self.base_output_dir = Path(
-            self.declare_parameter("base_output_dir", "~/polaris_bags").value
+            self.declare_parameter("base_output_dir", Logs.ROSBAG_DIR).value
         ).expanduser()
+        self.storage_id = str(self.declare_parameter("storage_id", "mcap").value).strip() or "mcap"
 
         self.command_sub = self.create_subscription(String, self.command_topic, self.on_command, 20)
         self.status_pub = self.create_publisher(String, self.status_topic, 20)
@@ -129,6 +133,8 @@ class RecorderControllerNode(Node):
     def start_recording(self) -> None:
         if self.is_recording():
             raise RuntimeError("Recording already active")
+        if shutil.which("ros2") is None:
+            raise RuntimeError("Cannot start recording: 'ros2' CLI was not found in PATH")
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.recording_id = self.build_recording_id(stamp)
@@ -263,14 +269,14 @@ class RecorderControllerNode(Node):
         if mode == "selection":
             if not include_topics:
                 raise RuntimeError("Record selection mode requires at least one topic")
-            cmd = ["ros2", "bag", "record", *include_topics, "-o", output_bag_path]
+            cmd = ["ros2", "bag", "record", *include_topics, "-s", self.storage_id, "-o", output_bag_path]
         elif mode == "exclude_selection":
-            cmd = ["ros2", "bag", "record", "-a", "-o", output_bag_path]
+            cmd = ["ros2", "bag", "record", "-a", "-s", self.storage_id, "-o", output_bag_path]
             if exclude_topics:
                 exclude_pattern = "^(?:" + "|".join(re.escape(topic) for topic in exclude_topics) + ")$"
                 cmd.extend(["--exclude", exclude_pattern])
         else:
-            cmd = ["ros2", "bag", "record", "-a", "-o", output_bag_path]
+            cmd = ["ros2", "bag", "record", "-a", "-s", self.storage_id, "-o", output_bag_path]
 
         return cmd
 

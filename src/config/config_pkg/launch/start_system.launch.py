@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from config_pkg.constants import Comms
+from config_pkg.constants import Comms, Logs
 
 
 def generate_launch_description():
@@ -33,10 +33,21 @@ def generate_launch_description():
         ],
     )
 
+    recorder_controller_node = Node(
+        package="config_pkg",
+        executable="recorder_controller",
+        name="recorder_controller_node",
+        parameters=[
+            {"base_output_dir": Logs.ROSBAG_DIR},
+            {"storage_id": "mcap"},
+        ],
+    )
+
     return LaunchDescription(
         [
             manual_control_launch,
             sensors_launch,
             foxglove_node,
+            recorder_controller_node,
         ]
     )
