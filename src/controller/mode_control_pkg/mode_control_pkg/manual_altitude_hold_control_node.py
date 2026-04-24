@@ -181,10 +181,10 @@ class ManualAltitudeHoldControlNode(Node):
         if gain_prefix == "keyboard":
             gain_x = self._get_keyboard_x_gain(surge)
 
-        x = self._clamp_int(surge * gain_x, -1000, 1000)  # surge: forward/back
-        y = self._clamp_int(sway * gain_y, -1000, 1000)  # sway: lateral
+        x = self._clamp_int(surge * gain_x, -1000, 1000)   # surge: forward/back
+        y = self._clamp_int(-sway * gain_y, -1000, 1000)  # sway: lateral (negated to match MANUAL)
         z = self._clamp_int(500.0 + heave_net * gain_z, 0, 1000)  # heave: depth target
-        r = self._clamp_int(yaw * gain_r, -1000, 1000)  # yaw: rotation
+        r = self._clamp_int(-yaw * gain_r, -1000, 1000)   # yaw: rotation (negated to match MANUAL)
 
         self.get_logger().debug(
             f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}"
