@@ -6,7 +6,8 @@ set -euo pipefail
 
 # Returns 0 if a basic internet connection is available, 1 otherwise.
 has_internet() {
-  timeout 3 bash -c 'echo >/dev/tcp/8.8.8.8/53' 2>/dev/null
+  curl -s --max-time 3 https://8.8.8.8 > /dev/null 2>&1 || \
+  curl -s --max-time 3 https://google.com > /dev/null 2>&1
 }
 
 # Ensure we are in a git repository
