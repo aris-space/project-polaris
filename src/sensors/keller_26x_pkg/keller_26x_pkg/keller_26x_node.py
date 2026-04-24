@@ -125,7 +125,7 @@ class Keller26xNode(Node):
         self.bus = kp.KellerProtocol(
             port=port,
             baud_rate=9600,
-            timeout=0.3, #put it up to 1 from 0.3 to try to fix the bug on l4t image
+            timeout=1.0,
             echo=False,
         )
         self.init_f48()
