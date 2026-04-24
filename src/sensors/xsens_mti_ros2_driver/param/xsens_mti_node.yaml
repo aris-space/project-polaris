@@ -238,7 +238,7 @@
         # roll, pitch, yaw values
         # if your MTi-630 is installed upside-down(connector to the upside), then use 180deg for the roll.
         enable_rotsensor_frame_config: false
-        rotsensor_rotation_euler: [180.0, 0.0, 0.0]  #TODO: check how the imu is mounted and adapt this value
+        rotsensor_rotation_euler: [0.0, 0.0, 180.0]  #TODO: check how the imu is mounted and adapt this value
 
 
         # Sensor Standard Deviation (Optional)
