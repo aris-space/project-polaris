@@ -424,6 +424,16 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info("Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)")
             self._file_logger.info("Sent reboot command to Pixhawk")
+            
+            ack = self.port.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
+            if ack is None:
+                self.get_logger().warn("Reboot: no ACK received from Pixhawk within 3s")
+                self._file_logger.warning("Reboot: no ACK received")
+            elif ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                self.get_logger().error(
+                    f"Reboot rejected by Pixhawk (MAV_RESULT={ack.result}). Is the vehicle disarmed?"
+                )
+                self._file_logger.error(f"Reboot rejected: MAV_RESULT={ack.result}")
 
     def ekf_odom_cb(self, msg):
         """
