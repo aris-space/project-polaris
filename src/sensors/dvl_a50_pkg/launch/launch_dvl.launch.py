@@ -22,6 +22,7 @@ Frame convention (must stay consistent for TF + robot_localization):
     ``sensor_frame`` launch argument (default dvl_a50_link). Translation from
     CAD Aris DVL_LINK -> CENTER_OF_MASS_LINK (m); RPY extrinsic vs base_link.
 """
+
 import os
 
 import lifecycle_msgs.msg
@@ -118,14 +119,22 @@ def _launch_setup(context, *args, **kwargs):
         executable="static_transform_publisher",
         name="static_tf_base_to_dvl",
         arguments=[
-            "--x", "0.791618",
-            "--y", "-0.000336",
-            "--z", "-0.067891",
-            "--roll", "3.141592653589793",
-            "--pitch", "0.0",
-            "--yaw", "-0.7853981633974483",
-            "--frame-id", "base_link",
-            "--child-frame-id", sensor_frame,
+            "--x",
+            "0.7216",
+            "--y",
+            "-0.000243",
+            "--z",
+            "-0.075",
+            "--roll",
+            "3.141592653589793",
+            "--pitch",
+            "0.0",
+            "--yaw",
+            "-0.7853981633974483",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            sensor_frame,
         ],
         output="screen",
         respawn=respawn,
@@ -138,13 +147,15 @@ def _launch_setup(context, *args, **kwargs):
         executable="odometry_covariance_node",
         name="dvl_odometry_covariance",
         namespace="sensors",
-        parameters=[{
-            "twist_linear_covariance_model": "stationary_tep",
-            "dvl_variant": "performance",
-            "no_lock_variance": 1.0e6,
-            "angular_covariance": 1000000.0,
-            "velocity_stale_timeout_sec": 0.5,
-        }],
+        parameters=[
+            {
+                "twist_linear_covariance_model": "stationary_tep",
+                "dvl_variant": "performance",
+                "no_lock_variance": 1.0e6,
+                "angular_covariance": 1000000.0,
+                "velocity_stale_timeout_sec": 0.5,
+            }
+        ],
         output="screen",
         respawn=respawn,
         respawn_delay=respawn_delay,
@@ -192,11 +203,13 @@ def generate_launch_description():
         ),
     )
 
-    return LaunchDescription([
-        sensor_frame_arg,
-        range_mode_arg,
-        respawn_arg,
-        respawn_delay_arg,
-        configure_delay_arg,
-        OpaqueFunction(function=_launch_setup),
-    ])
+    return LaunchDescription(
+        [
+            sensor_frame_arg,
+            range_mode_arg,
+            respawn_arg,
+            respawn_delay_arg,
+            configure_delay_arg,
+            OpaqueFunction(function=_launch_setup),
+        ]
+    )

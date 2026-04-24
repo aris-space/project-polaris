@@ -3,6 +3,7 @@
 Static TF ``base_link`` -> ``sbl_link`` matches CAD (CENTER_OF_MASS_LINK -> SBL_LINK);
 assumes ``base_link`` coincides with center of mass (same as IMU/DVL/GNSS).
 """
+
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -65,11 +66,11 @@ def _build_nodes(context):
         name="static_tf_base_to_sbl",
         arguments=[
             "--x",
-            "-0.544225",
+            "-0.614",
             "--y",
             "-0.000086",
             "--z",
-            "0.203593",
+            "0.197",
             "--roll",
             "0.0",
             "--pitch",
