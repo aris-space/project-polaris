@@ -2,17 +2,18 @@
 Launch file for the mode control system.
 
 Starts all mode-related nodes:
-  - mode_control_node:                  Listens to joystick mode-switch inputs and publishes
-                                        the active mode on 'current_mode'. Also sends the
-                                        corresponding Pixhawk flight mode via 'pixhawk/mode_cmd'.
-  - manual_control_node:                6DOF joystick control (active in 'manual_control' mode).
-  - manual_altitude_hold_control_node:  4DOF joystick control with depth hold
-                                        (active in 'manual_depth_hold' mode).
-  - emergency_stop_mode_node:           Sends neutral commands to stop all thrusters
-                                        (active in 'emergency_stop' mode).
+  - mode_control_node:                  Translates joystick safety+button combos into mode
+                                        changes (MANUAL/ALT_HOLD/STABILIZE/GUIDED) and
+                                        arm/disarm commands. Publishes to both
+                                        /mode_control/current_mode and /pixhawk/mode_cmd.
+  - manual_control_node:                6DOF joystick control (active in MANUAL/STABILIZE).
+  - manual_altitude_hold_control_node:  4DOF joystick control with depth hold (active in ALT_HOLD).
+  - collision_avoidance_node:           Monitors front ultrasonic distance; disarms and resets to
+                                        MANUAL when too close.
 
-All mode nodes publish on the shared 'pixhawk/manual_control' topic, but only the
+All control nodes publish on the shared /pixhawk/manual_control topic, but only the
 node matching the current mode will actually send data at any given time.
+Emergency stop is handled by disarm (L3 or R3) — there is no dedicated emergency_stop mode.
 """
 
 from launch import LaunchDescription

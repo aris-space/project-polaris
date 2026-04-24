@@ -130,9 +130,7 @@ class MavlinkBridgeReceiver(Node):
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
         if (
-            self.pixhawk_mode == "MANUAL"
-            or self.pixhawk_mode == "STABILIZATION"
-            or self.pixhawk_mode == "ALT_HOLD"
+            self.pixhawk_mode in ("MANUAL", "STABILIZE", "ALT_HOLD")
         ) and len(msg.data) == 6:
             self.send_6dof_command(msg.data)
 
@@ -215,16 +213,26 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "MANUAL"  # Update the tracked Pixhawk mode
             self.get_logger().info("Sent MANUAL mode command")
             self._file_logger.info("Sent MANUAL mode command")
-        elif msg.data == "STABILIZATION":
+        elif msg.data == "STABILIZE":
             mode_id = 0
             self.port.mav.set_mode_send(
                 self.port.target_system,
                 mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
                 mode_id,
             )
-            self.pixhawk_mode = "STABILIZATION"  # Update the tracked Pixhawk mode
-            self.get_logger().info("Sent STABILIZATION mode command")
-            self._file_logger.info("Sent STABILIZATION mode command")
+            self.pixhawk_mode = "STABILIZE"
+            self.get_logger().info("Sent STABILIZE mode command")
+            self._file_logger.info("Sent STABILIZE mode command")
+        elif msg.data == "GUIDED":
+            mode_id = 4
+            self.port.mav.set_mode_send(
+                self.port.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id,
+            )
+            self.pixhawk_mode = "GUIDED"
+            self.get_logger().info("Sent GUIDED mode command")
+            self._file_logger.info("Sent GUIDED mode command")
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
@@ -290,6 +298,8 @@ class MavlinkBridgeReceiver(Node):
     def reboot_cb(self, msg):
         """
         Called when a message arrives in the pixhawk/reboot_cmd topic. The message should contain a Bool (True to reboot, False to do nothing).
+        NOTE: ArduSub rejects this command if the vehicle is armed (MAV_RESULT_DENIED).
+        Always disarm before rebooting.
         """
         if msg.data:
             self.port.mav.command_long_send(
@@ -297,7 +307,7 @@ class MavlinkBridgeReceiver(Node):
                 self.port.target_component,
                 mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
                 0,
-                1, #1 to reboot, 2 for shutdown
+                1,  # 1 to reboot, 2 for shutdown
                 0,
                 0,
                 0,
@@ -305,8 +315,18 @@ class MavlinkBridgeReceiver(Node):
                 0,
                 0,
             )
-            self.get_logger().info("Sent reboot command to Pixhawk")
+            self.get_logger().info("Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)")
             self._file_logger.info("Sent reboot command to Pixhawk")
+
+            ack = self.port.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
+            if ack is None:
+                self.get_logger().warn("Reboot: no ACK received from Pixhawk within 3s")
+                self._file_logger.warning("Reboot: no ACK received")
+            elif ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                self.get_logger().error(
+                    f"Reboot rejected by Pixhawk (MAV_RESULT={ack.result}). Is the vehicle disarmed?"
+                )
+                self._file_logger.error(f"Reboot rejected: MAV_RESULT={ack.result}")
 
     def _gcs_heartbeat_cb(self):
         """Send 1 Hz GCS heartbeat. ArduSub FS_GCS_ENABLE failsafes if these stop arriving."""

@@ -10,7 +10,7 @@ Publishes:
     by the mavlink_bridge ros2_receiver, which sends it as a MAVLink MANUAL_CONTROL
     message to the Pixhawk.
 
-Only processes joystick input when current_mode == 'manual_control'.
+Only processes joystick input when current_mode is 'MANUAL' or 'STABILIZE'.
 
 Int16MultiArray layout (6 values):
   data[0] = x   (surge:  forward/back,  -1000 to 1000)
@@ -141,7 +141,7 @@ class ManualControlNode(Node):
 
     def joy_callback(self, msg):
         """Called when a joystick message arrives from /joy. Updates stored values and timestamp."""
-        if self.current_mode != 'manual_control':
+        if self.current_mode not in ('MANUAL', 'STABILIZE'):
             return
 
         self.last_joy_time = self.get_clock().now()
@@ -149,7 +149,7 @@ class ManualControlNode(Node):
 
     def timer_callback(self):
         """Publishes at 20Hz. Falls back to neutral if /joy times out."""
-        if self.current_mode != 'manual_control':
+        if self.current_mode not in ('MANUAL', 'STABILIZE'):
             return
 
         elapsed = (self.get_clock().now() - self.last_joy_time).nanoseconds / 1e9
