@@ -140,12 +140,13 @@ export function quaternionToEuler(q: Quaternion): {
 }
 
 /**
- * Convert quaternion yaw (heading) to degrees.
+ * Convert quaternion yaw to compass heading degrees.
  * Returns a heading in [0, 360) range.
  */
 export function quaternionToHeadingDegrees(q: Quaternion): number {
   const euler = quaternionToEuler(q);
-  let headingDeg = (euler.yaw * 180) / Math.PI;
+  // Mathematical yaw increases counter-clockwise; compass heading increases clockwise.
+  let headingDeg = (-euler.yaw * 180) / Math.PI;
   // Normalize to [0, 360)
   headingDeg = ((headingDeg % 360) + 360) % 360;
   return headingDeg;

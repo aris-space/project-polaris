@@ -4,7 +4,7 @@
   "description": "Foxglove panel to control rosbag2 recording and event markers",
   "publisher": "Polaris",
   "homepage": "",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "license": "UNLICENSED",
   "main": "./dist/extension.js",
   "keywords": ["foxglove", "ros2", "rosbag2", "recording"],

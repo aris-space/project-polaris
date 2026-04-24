@@ -9,7 +9,7 @@
     "url": "https://github.com/BitCurious/project-polaris.git",
     "directory": "top_station/Foxglove-extensions/flight-indicators-POLARIS"
   },
-  "version": "4.0.0",
+  "version": "4.5.0",
   "license": "MIT",
   "main": "./dist/extension.js",
   "keywords": [
