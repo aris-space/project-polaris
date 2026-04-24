@@ -99,6 +99,9 @@ class MavlinkBridgeReceiver(Node):
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
 
+        self._gps_origin_sent = False
+        self._gps_origin_valid_count = 0
+
         # Depth monitoring state (populated by MAVLink drain loop)
         self._vfrhud_alt = float(
             "nan"
