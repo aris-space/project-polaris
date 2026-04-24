@@ -15,7 +15,10 @@ from std_msgs.msg import String
 from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
-
+#
+from geometry_msgs.msg import Twist
+from ublox_ubx_msgs.msg import UBXNavHPPosLLH
+#
 from rclpy.parameter import Parameter as RclpyParameter
 from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
 
@@ -190,6 +193,20 @@ class MavlinkBridgeReceiver(Node):
 
         self.pixhawk_reboot_subscriber = self.create_subscription(
             Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
+        )
+
+        self.guided_setpoint_subscriber = self.create_subscription(
+            Twist, # Depending on the msg type from imports
+            "/pixhawk/cmd_vel",
+            self.cmd_vel_cb,
+            Comms.SUB_QOS_DEPTH,
+        )
+
+        self.gps_fix_subscriber = self.create_subscription(
+            UBXNavHPPosLLH,
+            "/ubx_nav_hp_pos_llh",
+            self.gps_origin_cb,
+            Comms.SUB_QOS_DEPTH,
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
@@ -434,17 +451,23 @@ class MavlinkBridgeReceiver(Node):
         # Orientation: apply ENU→NED rotation then express in MAVLink [w,x,y,z] order
         # q_ENU_to_NED = (w=0, x=√0.5, y=√0.5, z=0)
         _s = math.sqrt(0.5)
-        w1, x1, y1, z1 = 0.0, _s, _s, 0.0  # q_ENU_to_NED
         w2 = msg.pose.pose.orientation.w
         x2 = msg.pose.pose.orientation.x
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
-        q = [
-            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,  # w
-            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,  # x
-            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,  # y
-            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,  # z
-        ]
+
+
+        w1, x1, y1, z1 = 0.0, _s, _s, 0.0
+        wt = w1*w2 - x1*x2 - y1*y2 - z1*z2
+        xt = w1*x2 + x1*w2 + y1*z2 - z1*y2
+        yt = w1*y2 - x1*z2 + y1*w2 + z1*x2
+        zt = w1*z2 + x1*y2 - y1*x2 + z1*w2
+
+        # Step 2: q_ned_frd = q_tmp (0, 1, 0, 0)  [FLU→FRD: 180° around x]
+        q = [-xt, wt, zt, -yt]
+
+        """OLD VERSION"""
+        # q = [wt, xt, yt, zt]
 
         # Linear velocity: body FLU → body FRD (robot_localization outputs body-frame twist)
         vx = msg.twist.twist.linear.x
@@ -751,6 +774,97 @@ class MavlinkBridgeReceiver(Node):
                 mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
             )
             self.get_logger().info(f"Queued ArduSub param write for {mav_param_id}")
+
+    def gps_origin_cb(self, msg: UBXNavHPPosLLH):
+        if self._gps_origin_sent:
+            return
+        if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
+            self._gps_origin_valid_count = 0
+            return
+        self._gps_origin_valid_count += 1
+        if self._gps_origin_valid_count < 5:
+            return
+
+        # UBX-NAV-HPPOSLLH units:
+        #   lat, lon:  deg * 1e7 (already MAVLink degE7 scale)
+        #   hmsl:      mm, height above mean sea level (already MAVLink altitude scale)
+        lat_e7 = int(msg.lat)
+        lon_e7 = int(msg.lon)
+        alt_mm = int(msg.hmsl)
+
+        time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
+        self.port.mav.set_gps_global_origin_send(
+            self.port.target_system,
+            lat_e7,
+            lon_e7,
+            alt_mm,
+            time_usec,
+        )
+        self.port.mav.set_home_position_send(
+            self.port.target_system,
+            lat_e7,
+            lon_e7,
+            alt_mm,
+            0.0, 0.0, 0.0,         # x, y, z local NED (unknown)
+            [1.0, 0.0, 0.0, 0.0],  # quaternion
+            0.0, 0.0, 0.0,         # approach_x, approach_y, approach_z
+            time_usec,
+        )
+        self._gps_origin_sent = True
+        lat_deg = lat_e7 * 1e-7
+        lon_deg = lon_e7 * 1e-7
+        alt_m = alt_mm * 1e-3
+        self.get_logger().info(
+            f"GPS_GLOBAL_ORIGIN sent (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
+        )
+        self._file_logger.info(
+            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
+        )
+
+    def cmd_vel_cb(self, msg):
+        # msg is geometry_msgs.msg.Twist        
+        # ArduSub needs GUIDED mode for velocity setpoints
+        if self.pixhawk_mode != "GUIDED":
+            return
+
+        # 1. Map ROS ENU (Body) to ArduSub NED (Body)
+        # ROS X (Forward) -> NED X (Surge)
+        # ROS Y (Left)    -> NED Y (Sway) - We set this to 0 if not used
+        # ROS Z (Up)      -> NED Z (Heave) - Flip sign because Z is down in NED
+        surge = float(msg.linear.x)
+        heave = -float(msg.linear.z) 
+        
+        # ROS Angular Z (CCW) -> NED Yaw Rate (CW) - Flip sign
+        yaw_rate = -float(msg.angular.z)
+
+        # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
+        # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
+        # set VY_IGNORE when commanding vx,vz; otherwise guided_set_velocity() is skipped.
+        m = mavutil.mavlink
+        type_mask = (
+            m.POSITION_TARGET_TYPEMASK_X_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+        )
+
+        # 3. Send to Pixhawk
+        # Using MAV_FRAME_BODY_OFFSET_NED so "Forward" is relative to the sub's nose
+        self.port.mav.set_position_target_local_ned_send(
+            0,                                              # time_boot_ms
+            self.port.target_system,
+            self.port.target_component,
+            mavutil.mavlink.MAV_FRAME_BODY_FRD,      # Frame: Body-Relative
+            type_mask,
+            0.0, 0.0, 0.0,                                  # Position (ignored)
+            surge, 0.0, heave,                              # Velocities (m/s)
+            0.0, 0.0, 0.0,                                  # Acceleration (ignored)
+            0.0,                                            # Yaw Angle (ignored)
+            yaw_rate                                        # Yaw Rate (rad/s)
+        )
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
