@@ -1,0 +1,56 @@
+ice_touch_detection_node:
+  ros__parameters:
+
+    # ── physical geometry (metres) ────────────────────────────────────────────
+    # Tower top contact point relative to the ultrasonic sensor (body frame:
+    # X forward, Y left, Z up).
+    tower_height_m: 0.148              # tower top is this far above the sensor in body-Z
+    tower_horizontal_offset_m: 0.490   # tower top is this far behind the sensor in body-X
+    pressure_sensor_offset_m: 0.136    # pressure sensor is this far below the tower top
+
+    # ── geometric detection ───────────────────────────────────────────────────
+    touch_tolerance_m: 0.02            # extra margin added to tower height (m)
+    max_valid_angle_deg: 45.0          # skip geometric check beyond this roll/pitch (°)
+
+    # ── ultrasonic fault detection ────────────────────────────────────────────
+    # The sensor is considered faulty when ≥ zero_ratio_threshold fraction of
+    # the last zero_window readings are exactly 0.0.
+    ultrasonic_zero_window: 15
+    ultrasonic_zero_ratio_threshold: 0.8
+
+    # ── pressure ──────────────────────────────────────────────────────────────
+    # The gauge pressure sensor reads relative to the air above the ice, so the
+    # ice column itself adds a constant baseline pressure at the ice ceiling:
+    #   P_baseline = water_density_kgm3 * 9.81 * ice_thickness_m
+    # Both thresholds below are interpreted as "Pa above that baseline", so set
+    # ice_thickness_m to the known/estimated ice thickness and leave the
+    # thresholds as physically meaningful margins above the contact point.
+    #
+    # At contact the pressure sensor (136 mm below tower top) sits at ~0.136 m
+    # water depth → ~1334 Pa above the baseline (freshwater). The thresholds
+    # below add margin on top of that.
+    water_density_kgm3: 1000.0         # 1000 freshwater | 1025 seawater
+    ice_thickness_m: 0.0               # set to measured ice thickness (m) to shift pressure baseline
+    pressure_near_surface_pa: 3000.0   # gate for IMU collision cross-check, above baseline (Pa)
+    pressure_fallback_pa: 1800.0       # primary threshold when ultrasonic is invalid, above baseline (Pa)
+
+    # ── IMU collision detection ───────────────────────────────────────────────
+    # A spike in total acceleration magnitude exceeding the rolling window mean
+    # by imu_collision_threshold_ms2, while pressure confirms near-surface,
+    # triggers a touch independently of the geometric check.
+    use_imu_collision: true
+    imu_collision_window: 30           # samples in the rolling window
+    imu_collision_min_samples: 10      # minimum samples before check fires
+    imu_collision_threshold_ms2: 3.5   # spike above baseline (m/s²)
+
+    # ── debounce ──────────────────────────────────────────────────────────────
+    confirm_count: 3                   # consecutive positive ticks to latch true
+    clear_count: 5                     # consecutive negative ticks to release
+    publish_rate_hz: 10.0
+
+    # ── topics ────────────────────────────────────────────────────────────────
+    ultrasonic_topic: /top/ultrasonic/distance
+    odometry_topic: /odometry/filtered/local   # EKF local (base_link frame) — used for orientation
+    acceleration_topic: /imu/acceleration
+    pressure_topic: /sensors/keller26x/gauge_pressure
+    output_topic: /ice_touch_detection/touching
