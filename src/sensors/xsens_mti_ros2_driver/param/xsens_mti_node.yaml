@@ -204,7 +204,7 @@
 
         # Other option flags:
         # valid for MTi-2/3/7/8/20/30/620/630/670/680/200/300/710/Sirius/Avior
-        enable_inrun_compass_calibration: false  # TODO: try true if yaw drifts in clean magnetic environment
+        enable_inrun_compass_calibration: true  # TODO: try true if yaw drifts in clean magnetic environment
 
         #TODO: if there is a problem with the baudrate, increase the output_data_rate and baudrate if needed
         # Set baudrate (TODO: check if this is needed and adapt if needed)
