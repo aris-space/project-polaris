@@ -155,7 +155,8 @@ class RecorderControllerNode(Node):
             )
         )
 
-        cmd = self.build_record_command(str(self.output_path / "bag"))
+        bag_name = self.build_bag_name(stamp)
+        cmd = self.build_record_command(str(self.output_path / bag_name))
         self.record_process = subprocess.Popen(  # noqa: S603
             cmd,
             stdout=subprocess.DEVNULL,
@@ -200,6 +201,8 @@ class RecorderControllerNode(Node):
             self.record_process = None
 
     def add_instant_event(self, event_name: str) -> None:
+        if not self.is_recording():
+            raise RuntimeError("No active recording")
         event: Dict[str, Any] = {"type": "instant", "timestamp": iso_now()}
         if event_name:
             event["Event"] = event_name
@@ -210,6 +213,8 @@ class RecorderControllerNode(Node):
             self.get_logger().info("Instant event")
 
     def start_event(self, event_name: str) -> None:
+        if not self.is_recording():
+            raise RuntimeError("No active recording")
         if self.active_event is not None:
             raise RuntimeError(f"Event already active: {self.active_event}")
 
@@ -224,6 +229,8 @@ class RecorderControllerNode(Node):
             self.get_logger().info("Started long event")
 
     def stop_event(self, event_name: str) -> None:
+        if not self.is_recording():
+            raise RuntimeError("No active recording")
         if self.active_event is None:
             raise RuntimeError("No active event to stop")
         if event_name and event_name != self.active_event:
@@ -283,8 +290,16 @@ class RecorderControllerNode(Node):
     def build_recording_id(self, stamp: str) -> str:
         parts = [
             sanitize_name(self.metadata.get("name", "")),
-            sanitize_name(self.metadata.get("testname", "")),
             sanitize_name(self.metadata.get("location", "")),
+            stamp,
+        ]
+        return "__".join(parts)
+
+    def build_bag_name(self, stamp: str) -> str:
+        parts = [
+            sanitize_name(self.metadata.get("name", "")),
+            sanitize_name(self.metadata.get("location", "")),
+            sanitize_name(self.metadata.get("testname", "")),
             stamp,
         ]
         return "__".join(parts)
