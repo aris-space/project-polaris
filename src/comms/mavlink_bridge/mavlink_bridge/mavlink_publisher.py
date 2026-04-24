@@ -425,10 +425,6 @@ class MavlinkBridgeSender(Node):
                 self.logger.warning(f"Some PID parameters in chunk rejected: {failed}")
         self._push_next_pid_chunk()
 
-    def _on_set_parameters(self, params):
-        """Validate and apply dynamic parameter updates at runtime."""
-        new_min = self.battery_min_voltage
-        new_max = self.battery_max_voltage
     # def _on_set_parameters(self, params):
     #     """Validate and apply dynamic parameter updates at runtime."""
     #     new_min = self.battery_min_voltage
