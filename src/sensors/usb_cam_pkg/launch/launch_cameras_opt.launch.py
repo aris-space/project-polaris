@@ -20,8 +20,9 @@ def generate_launch_description():
     def get_gst_config_front(device_path):
         return (
             f"v4l2src device={device_path} do-timestamp=true ! "
-            "image/jpeg, width=1920, height=1080 ! "
+            "image/jpeg, width=1920, height=1080, framerate=30/1 ! "
             "nvv4l2decoder mjpeg=1 ! "
+            "queue max-size-buffers=2 leaky=downstream ! "
             "nvvidconv ! "
             "video/x-raw, format=BGRx ! "
             "videoconvert ! "
