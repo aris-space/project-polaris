@@ -59,6 +59,16 @@ class MavlinkBridgeReceiver(Node):
             f"Heartbeat received from system {self.port.target_system}"
         )
 
+        # Dedicated GCS heartbeat connection — separate from self.port so sysid=255
+        # does not contaminate odometry/command messages.
+        # ArduSub FS_GCS_ENABLE watches for MAV_TYPE_GCS heartbeats; if they stop
+        # (e.g. Jetson crashes), ArduSub triggers its GCS failsafe automatically.
+        self._gcs_port = mavutil.mavlink_connection(Comms.MAVLINK_ROUTER_TCP)
+        self._gcs_port.mav.srcSystem = 255
+        self._gcs_port.mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
+        self.create_timer(1.0, self._gcs_heartbeat_cb)
+        self.get_logger().info("GCS heartbeat sender active (sysid=255, 1 Hz) — FS_GCS_ENABLE failsafe armed")
+
         # Subscribe to RC override messages from ROS2 topic "pixhawk/rc_override" and then calls the rc_override_cb (translator) function when a message arrives. Accepts only RCIn messages
         self.rc_override_subscriber = self.create_subscription(
             OverrideRCIn,
@@ -297,6 +307,16 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info("Sent reboot command to Pixhawk")
             self._file_logger.info("Sent reboot command to Pixhawk")
+
+    def _gcs_heartbeat_cb(self):
+        """Send 1 Hz GCS heartbeat. ArduSub FS_GCS_ENABLE failsafes if these stop arriving."""
+        self._gcs_port.mav.heartbeat_send(
+            mavutil.mavlink.MAV_TYPE_GCS,
+            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+            0,  # base_mode
+            0,  # custom_mode
+            mavutil.mavlink.MAV_STATE_ACTIVE,
+        )
 
     """--------------------------------------------- main function ---------------------------------------------"""
 
