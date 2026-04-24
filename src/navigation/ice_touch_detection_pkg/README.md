@@ -79,20 +79,36 @@ If roll or pitch exceeds `max_valid_angle_deg` (default 45°) the check is skipp
 ### 2. Pressure fallback (ultrasonic fault)
 
 If ≥ 80 % of the last 15 ultrasonic readings are exactly `0.0` the sensor is declared faulty.  
-The node then falls back to the pressure sensor:
+The node then falls back to the pressure sensor.
+
+#### Ice thickness compensation
+
+The gauge pressure sensor reads relative to the air pressure **above the ice**, not at the water surface.  
+This means even at 0 m water depth (touching the ice ceiling) the reading is non-zero when ice is present:
 
 ```
-touching  ⟺  gauge_pressure < pressure_fallback_pa   (default 1800 Pa ≈ 0.18 m depth)
+P_baseline = ρ · g · ice_thickness_m
+```
+
+For example, 1 m of freshwater ice → baseline ≈ 9810 Pa.  
+Both pressure thresholds are automatically shifted up by this baseline, so
+`pressure_near_surface_pa` and `pressure_fallback_pa` remain interpretable as
+"Pa above the ice-contact baseline" regardless of ice thickness:
+
+```
+touching  ⟺  gauge_pressure < P_baseline + pressure_fallback_pa
+near      ⟺  gauge_pressure < P_baseline + pressure_near_surface_pa
 ```
 
 At the moment of contact the pressure sensor (136 mm below the tower top) sits at  
-≈ 0.136 m depth → ≈ 1334 Pa gauge (freshwater). The 1800 Pa default adds a ~34 % margin.
+≈ 0.136 m water depth → ≈ 1334 Pa above the baseline (freshwater).  
+The default `pressure_fallback_pa = 1800 Pa` adds a ~34 % margin above that.
 
 ### 3. IMU impact detection (enhancement)
 
 A spike in total acceleration magnitude that exceeds the rolling window mean by  
 `imu_collision_threshold_ms2` (default 3.5 m/s²) *while the pressure sensor confirms  
-near-surface* (`< pressure_near_surface_pa`, default 2000 Pa) triggers a touch  
+near-surface* (`< P_baseline + pressure_near_surface_pa`) triggers a touch  
 independently of the two paths above.
 
 ### Debounce
@@ -114,8 +130,9 @@ latch `touching = true`, and `false` for `clear_count` (default 5) ticks to rele
 | `ultrasonic_zero_window` | `15` | Rolling window size for fault detection |
 | `ultrasonic_zero_ratio_threshold` | `0.8` | Fraction of zeros that declare sensor faulty |
 | `water_density_kgm3` | `1000.0` | Water density — 1000 freshwater, 1025 seawater |
-| `pressure_near_surface_pa` | `2000.0` | Near-surface gate for IMU collision check (Pa) |
-| `pressure_fallback_pa` | `1800.0` | Touch threshold when ultrasonic is invalid (Pa) |
+| `ice_thickness_m` | `0.0` | Known/estimated ice thickness (m). Sets the gauge-pressure baseline at the ice ceiling (`ρ·g·ice_thickness_m`). Both pressure thresholds are shifted up by this amount automatically. |
+| `pressure_near_surface_pa` | `3000.0` | Near-surface gate for IMU collision check, relative to ice baseline (Pa) |
+| `pressure_fallback_pa` | `1800.0` | Touch threshold when ultrasonic is invalid, relative to ice baseline (Pa) |
 | `use_imu_collision` | `true` | Enable/disable IMU impact detection |
 | `imu_collision_window` | `30` | Samples in the acceleration rolling window |
 | `imu_collision_min_samples` | `10` | Minimum samples before collision check fires |

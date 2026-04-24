@@ -51,10 +51,20 @@ class IceTouchDetectionNode(Node):
 
         # ── pressure ──────────────────────────────────────────────────────────
         # water_density_kgm3: use 1000 for freshwater, 1025 for seawater.
-        # pressure_near_surface_pa: used as cross-check when ultrasonic is valid.
-        # pressure_fallback_pa: primary threshold when ultrasonic is invalid.
+        # ice_thickness_m: known/estimated ice thickness. The gauge pressure
+        #   sensor reads relative to air above the ice, so the ice column adds
+        #   a constant baseline of ρ*g*ice_thickness_m at 0 m water depth
+        #   (i.e. touching the ice ceiling). Both pressure thresholds are
+        #   shifted up by this amount automatically so that the values you set
+        #   for pressure_near_surface_pa / pressure_fallback_pa remain
+        #   interpretable as "Pa above the ice-contact baseline".
+        # pressure_near_surface_pa: cross-check margin above the ice-adjusted
+        #   baseline; used when ultrasonic is valid.
+        # pressure_fallback_pa: primary touch threshold when ultrasonic is
+        #   invalid; relative to the ice-adjusted baseline.
         self.declare_parameter("water_density_kgm3", 1000.0)
-        self.declare_parameter("pressure_near_surface_pa", 2000.0)
+        self.declare_parameter("ice_thickness_m", 0.0)
+        self.declare_parameter("pressure_near_surface_pa", 3000.0)
         self.declare_parameter("pressure_fallback_pa", 1800.0)
 
         # ── IMU collision detection ───────────────────────────────────────────
@@ -197,17 +207,31 @@ class IceTouchDetectionNode(Node):
 
     # ── pressure helpers ───────────────────────────────────────────────────────
 
-    def _pressure_depth_m(self, gauge_pa: float) -> float:
+    def _ice_pressure_baseline_pa(self) -> float:
+        """Gauge pressure at the ice ceiling: ρ * g * ice_thickness_m.
+
+        The sensor reads relative to air above the ice, so even at 0 m water
+        depth the reading is non-zero when ice is present.
+        """
         density = float(self.get_parameter("water_density_kgm3").value)
-        return gauge_pa / (density * _GRAVITY_MS2)
+        ice_thickness = float(self.get_parameter("ice_thickness_m").value)
+        return density * _GRAVITY_MS2 * ice_thickness
+
+    def _pressure_depth_m(self, gauge_pa: float) -> float:
+        """Water depth below the ice ceiling in metres."""
+        density = float(self.get_parameter("water_density_kgm3").value)
+        water_pa = gauge_pa - self._ice_pressure_baseline_pa()
+        return water_pa / (density * _GRAVITY_MS2)
 
     def _pressure_near_surface(self, gauge_pa: float) -> bool:
+        baseline = self._ice_pressure_baseline_pa()
         threshold = float(self.get_parameter("pressure_near_surface_pa").value)
-        return gauge_pa < threshold
+        return gauge_pa < (baseline + threshold)
 
     def _pressure_fallback_touching(self, gauge_pa: float) -> bool:
+        baseline = self._ice_pressure_baseline_pa()
         threshold = float(self.get_parameter("pressure_fallback_pa").value)
-        return gauge_pa < threshold
+        return gauge_pa < (baseline + threshold)
 
     # ── IMU collision detection ────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ ice_touch_detection_node:
     # Tower top contact point relative to the ultrasonic sensor (body frame:
     # X forward, Y left, Z up).
     tower_height_m: 0.148              # tower top is this far above the sensor in body-Z
-    tower_horizontal_offset_m: 0.650   # tower top is this far behind the sensor in body-X
+    tower_horizontal_offset_m: 0.490   # tower top is this far behind the sensor in body-X
     pressure_sensor_offset_m: 0.136    # pressure sensor is this far below the tower top
 
     # ── geometric detection ───────────────────────────────────────────────────
@@ -19,11 +19,20 @@ ice_touch_detection_node:
     ultrasonic_zero_ratio_threshold: 0.8
 
     # ── pressure ──────────────────────────────────────────────────────────────
+    # The gauge pressure sensor reads relative to the air above the ice, so the
+    # ice column itself adds a constant baseline pressure at the ice ceiling:
+    #   P_baseline = water_density_kgm3 * 9.81 * ice_thickness_m
+    # Both thresholds below are interpreted as "Pa above that baseline", so set
+    # ice_thickness_m to the known/estimated ice thickness and leave the
+    # thresholds as physically meaningful margins above the contact point.
+    #
     # At contact the pressure sensor (136 mm below tower top) sits at ~0.136 m
-    # depth → ~1334 Pa gauge (freshwater).  The thresholds below add margin.
+    # water depth → ~1334 Pa above the baseline (freshwater). The thresholds
+    # below add margin on top of that.
     water_density_kgm3: 1000.0         # 1000 freshwater | 1025 seawater
-    pressure_near_surface_pa: 2000.0   # gate for IMU collision cross-check (Pa)
-    pressure_fallback_pa: 1800.0       # primary threshold when ultrasonic is invalid (Pa)
+    ice_thickness_m: 0.0               # set to measured ice thickness (m) to shift pressure baseline
+    pressure_near_surface_pa: 3000.0   # gate for IMU collision cross-check, above baseline (Pa)
+    pressure_fallback_pa: 1800.0       # primary threshold when ultrasonic is invalid, above baseline (Pa)
 
     # ── IMU collision detection ───────────────────────────────────────────────
     # A spike in total acceleration magnitude exceeding the rolling window mean
