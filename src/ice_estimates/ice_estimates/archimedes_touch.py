@@ -33,7 +33,7 @@ class ArchimedesTesting(Node):
 
         # GPS Position
         self.gps_sub = self.create_subscription(
-            NavSatFix, "/gps/filtered", self.gps_callback, 10
+            NavSatFix, "/gps/filtered/global", self.gps_callback, 10
         )
 
         # Odometrie (Tiefe & Lage) - FIX: odom_callback statt gps_callback
