@@ -9,6 +9,7 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/launch", ["launch/launch_archimedes_measurement.launch.py"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -31,6 +32,7 @@ setup(
             "ultrasonic_node = ice_estimates.ultrasonic_node:main",
             "pool_testing_icethickness = ice_estimates.pool_testing_icethickness:main",
             "fixed_pool_testing = ice_estimates.fixed_pool_testing:main",
+            "archimedes_touch = ice_estimates.archimedes_touch:main",
         ],
     },
 )
