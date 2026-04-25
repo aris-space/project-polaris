@@ -35,6 +35,7 @@ def generate_launch_description():
     water_sos_respawn_arg_value = LaunchConfiguration(
         "water_sos_respawn", default="true"
     )
+    bms_respawn_arg_value = LaunchConfiguration("bms_respawn", default="true")
     respawn_delay_arg_value = LaunchConfiguration("respawn_delay", default="2.0")
     use_ntrip_arg_value = LaunchConfiguration("use_ntrip")
     ntrip_use_https_arg_value = LaunchConfiguration("ntrip_use_https")
@@ -60,6 +61,7 @@ def generate_launch_description():
     usb_cam_pkg_dir = get_package_share_directory("usb_cam_pkg")
     uwgpsg2_translator_pkg_dir = get_package_share_directory("uwgpsg2_translator")
     water_properties_pkg_dir = get_package_share_directory("water_properties_pkg")
+    bms_pkg_dir = get_package_share_directory("bms_pkg")
 
     gnss_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -164,6 +166,16 @@ def generate_launch_description():
         }.items(),
     )
 
+    bms_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(bms_pkg_dir, "launch", "launch_bms.launch.py")
+        ),
+        launch_arguments={
+            "respawn": bms_respawn_arg_value,
+            "respawn_delay": respawn_delay_arg_value,
+        }.items(),
+    )
+
     ping_sonar_node = Node(
         package="ping_sonar",
         executable="ice_measurement",
@@ -245,6 +257,11 @@ def generate_launch_description():
                 description="Respawn water speed-of-sound node if it exits/crashes.",
             ),
             DeclareLaunchArgument(
+                "bms_respawn",
+                default_value="true",
+                description="Respawn BMS nodes if they exit/crash.",
+            ),
+            DeclareLaunchArgument(
                 "respawn_delay",
                 default_value="2.0",
                 description="Seconds to wait before restarting a crashed process.",
@@ -301,5 +318,6 @@ def generate_launch_description():
             water_sos_launch,
             ping_sonar_node,
             jetson_temperature_node,
+            bms_launch,
         ]
     )
