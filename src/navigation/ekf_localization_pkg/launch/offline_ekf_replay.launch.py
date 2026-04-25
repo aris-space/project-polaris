@@ -48,27 +48,36 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_navsat_transform",
                 default_value="true",
-                description="Enable navsat_transform_node (set false to match old vehicle config).",
+                description="Enable gnss_datum_watchdog (which spawns navsat_transform + global EKF).",
             ),
             DeclareLaunchArgument(
                 "use_global_ekf",
                 default_value="true",
-                description="Enable ekf_global_node (map-frame output).",
+                description="Whether the watchdog should also launch ekf_global_node.",
             ),
             DeclareLaunchArgument(
                 "gps_fix_topic",
                 default_value="/gps/selected",
-                description="NavSatFix topic remapped to navsat_transform gps/fix.",
+                description="NavSatFix topic for gnss_datum_watchdog.",
+            ),
+            DeclareLaunchArgument(
+                "h_acc_topic",
+                default_value="",
+                description=(
+                    "UBX-NAV-HPPOSLLH topic for the h_acc quality gate. "
+                    "Empty (default) disables the gate for offline replay — "
+                    "GPS status + coordinate check is sufficient for bags."
+                ),
             ),
             DeclareLaunchArgument(
                 "imu_topic",
                 default_value="/imu/data",
-                description="IMU topic for navsat_transform.",
+                description="IMU topic forwarded to navsat_transform.",
             ),
             DeclareLaunchArgument(
                 "odom_topic",
                 default_value="/odometry/filtered/local",
-                description="Local filtered odometry topic for navsat_transform.",
+                description="Local odometry topic forwarded to navsat_transform.",
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([str(ekf_launch)]),
@@ -76,6 +85,7 @@ def generate_launch_description():
                     "use_navsat_transform": LaunchConfiguration("use_navsat_transform"),
                     "use_global_ekf": LaunchConfiguration("use_global_ekf"),
                     "gps_fix_topic": LaunchConfiguration("gps_fix_topic"),
+                    "h_acc_topic": LaunchConfiguration("h_acc_topic"),
                     "imu_topic": LaunchConfiguration("imu_topic"),
                     "odom_topic": LaunchConfiguration("odom_topic"),
                 }.items(),
