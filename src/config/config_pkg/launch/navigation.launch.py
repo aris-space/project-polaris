@@ -16,6 +16,7 @@ def generate_launch_description():
 
     ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
     pressure_pose_pkg_dir = get_package_share_directory("pressure_pose_pkg")
+    measurement_points_pkg_dir = get_package_share_directory("measurement_points_pkg")
 
     localization_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -38,6 +39,18 @@ def generate_launch_description():
         ),
         launch_arguments={
             "p_surface_pa": p_surface_pa_arg_value,
+        }.items(),
+    )
+
+    measurement_points_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                measurement_points_pkg_dir, "launch", "launch_measurement_points.launch.py"
+            )
+        ),
+        launch_arguments={
+            "respawn": LaunchConfiguration("measurement_points_respawn"),
+            "respawn_delay": LaunchConfiguration("respawn_delay"),
         }.items(),
     )
 
@@ -109,8 +122,19 @@ def generate_launch_description():
                     "Override with the value read in BlueOS/QGC at the surface (1 hPa = 100 Pa)."
                 ),
             ),
+            DeclareLaunchArgument(
+                "measurement_points_respawn",
+                default_value="true",
+                description="Respawn measurement points node if it exits/crashes.",
+            ),
+            DeclareLaunchArgument(
+                "respawn_delay",
+                default_value="2.0",
+                description="Seconds to wait before restarting a crashed process.",
+            ),
             localization_launch,
             pressure_launch,
+            measurement_points_launch,
             ice_touch_detection_node,
         ]
     )
