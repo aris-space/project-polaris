@@ -1,13 +1,18 @@
+# IMU: Xsens Sirius (MTi 600-series AHRS). Per Xsens MTi family reference manual, default
+# local frame is ENU; in ENU, yaw is 0° with sensor x toward East and 90° with x toward North
+# (Table 7 — body S to local L). `yaw_offset` is not a Sirius setting; it is robot_localization’s
+# extra heading rotation so the IMU yaw matches what navsat_transform expects for GNSS projection.
 navsat_transform_node:
   ros__parameters:
     frequency: 10.0
     delay: 0.0
-    magnetic_declination_radians: 0.0623
-    yaw_offset: 1.57079632679
+    # East-positive declination (WMM), ~47.318°N 8.583°E, ~410 m MSL, 2026-04 (geomag / NOAA WMM coeffs)
+    magnetic_declination_radians: 0.0586912
+    yaw_offset: 0.0
     zero_altitude: false
     publish_filtered_gps: true
     use_odometry_yaw: false
-    wait_for_datum: false
+    wait_for_datum: true
     broadcast_utm_transform: false
     broadcast_utm_transform_as_parent_frame: false
 

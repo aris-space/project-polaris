@@ -25,4 +25,10 @@ setup(
             "pytest",
         ],
     },
+    entry_points={
+        "console_scripts": [
+            "gnss_datum_watchdog = ekf_localization_pkg.gnss_datum_watchdog:main",
+            "global_ekf_to_navsatfix = ekf_localization_pkg.global_ekf_to_navsatfix:main",
+        ],
+    },
 )
