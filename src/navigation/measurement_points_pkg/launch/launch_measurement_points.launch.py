@@ -5,10 +5,6 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-
-    respawn = True
-    respawn_delay = 2.0
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -26,8 +22,8 @@ def generate_launch_description():
                 executable="points_publisher",
                 name="points_publisher",
                 output="screen",
-                respawn=respawn,
-                respawn_delay=respawn_delay,
+                respawn=LaunchConfiguration("respawn"),
+                respawn_delay=LaunchConfiguration("respawn_delay"),
             ),
         ]
     )
