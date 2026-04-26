@@ -11,6 +11,7 @@ from config_pkg.constants import Comms, Logs
 
 def generate_launch_description():
     config_pkg_dir = get_package_share_directory("config_pkg")
+    ice_estimates_pkg_dir = get_package_share_directory("ice_estimates")
 
     use_navsat_transform_arg_value = LaunchConfiguration("use_navsat_transform")
     use_global_ekf_arg_value = LaunchConfiguration("use_global_ekf")
@@ -39,6 +40,12 @@ def generate_launch_description():
             "gps_fix_topic": gps_fix_topic_arg_value,
             "p_surface_pa": p_surface_pa_arg_value,
         }.items(),
+    )
+
+    archimedes_measurement_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ice_estimates_pkg_dir, "launch", "launch_archimedes_measurement.launch.py")
+        )
     )
 
     foxglove_node = Node(
@@ -103,6 +110,7 @@ def generate_launch_description():
             manual_control_launch,
             sensors_launch,
             navigation_launch,
+            archimedes_measurement_launch,
             foxglove_node,
             recorder_controller_node,
         ]
