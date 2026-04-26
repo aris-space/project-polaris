@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px"
+    y="0px" width="400px" height="400px" viewBox="0 0 400 400" enable-background="new 0 0 400 400" xml:space="preserve">
+    <defs>
+        <filter filterUnits="objectBoundingBox" id="filter-mask">
+            <feGaussianBlur stdDeviation="3.5" result="blur" in="SourceAlpha"></feGaussianBlur>
+            <feOffset dy="0" dx="0" result="offsetBlurredAlpha" in="blur"></feOffset>
+            <feMerge>
+                <feMergeNode in="offsetBlurredAlpha"></feMergeNode>
+                <feMergeNode in="SourceGraphic"></feMergeNode>
+            </feMerge>
+        </filter>
+    </defs>
+
+    <!-- Clear front marker -->
+    <polygon fill="#FF2A00" points="200,58 207,72 193,72" />
+
+    <!-- Torpedo/UUV outline in the same visual family as the old airplane symbol -->
+    <g filter="url(#filter-mask)" fill="none" stroke="#FF2A00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Main capsule body (rounded front and rear) -->
+        <path d="M200 84 C176 84 158 104 158 128 L158 248 C158 284 176 314 200 332 C224 314 242 284 242 248 L242 128 C242 104 224 84 200 84 Z" />
+
+        <!-- Rear fins (small, rounded) -->
+        <path d="M158 222 Q132 242 158 262" />
+        <path d="M242 222 Q268 242 242 262" />
+
+        <!-- Rear propeller hint -->
+        <circle cx="200" cy="344" r="8" />
+        <path d="M200 334 L200 354" />
+        <path d="M190 344 L210 344" />
+    </g>
+
+    <!-- Solid red front cap for unmistakable heading direction -->
+    <path fill="#FF2A00" stroke="none" d="M158 128 A42 42 0 0 1 242 128 L242 146 L158 146 Z" />
+</svg>

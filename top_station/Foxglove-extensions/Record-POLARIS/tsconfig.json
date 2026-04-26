@@ -1,0 +1,13 @@
+{
+  "include": ["./src/index.ts", "./src/RecorderPanel.tsx"],
+  "compilerOptions": {
+    "lib": ["dom", "es2020"],
+    "jsx": "react-jsx",
+    "target": "es2020",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "declaration": false,
+    "sourceMap": true
+  }
+}

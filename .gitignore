@@ -29,8 +29,6 @@ settings.json
 /recordings/
 # VS Code extension artifact
 .vscode/settings.json
+mavlink_logs/
+CLAUDE.md
 
-# Temporary .docx unzip / scratch (not part of the repo)
-.tmp_tep*
-
-GEMINI.md

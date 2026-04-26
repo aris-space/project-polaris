@@ -1,0 +1,65 @@
+ekf_global_node:
+  ros__parameters:
+    frequency: 10.0
+    sensor_timeout: 0.2
+    two_d_mode: false
+    print_diagnostics: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: map
+
+    # Local EKF output — dead-reckoning source.
+    # Required so the global EKF knows the current odom-frame position and can
+    # correctly compute the map→odom correction from GPS.  Without this, the
+    # global EKF diverges: it uses the TF-tree odom→base_link (from local EKF)
+    # to compute map→odom while simultaneously updating its own position from GPS,
+    # creating a circular positive-feedback loop.
+    odom0: /odometry/filtered/local
+    odom0_config: [
+      true,  true,  true,    # x, y, z  — full position from local EKF
+      false, false, false,   # orientation already handled by local EKF
+      true,  true,  true,    # vx, vy, vz
+      false, false, false,
+      false, false, false
+    ]
+    odom0_queue_size: 10
+    odom0_nodelay: false
+    odom0_differential: false
+    odom0_relative: false
+
+    # Absolute GPS correction from navsat_transform_node.
+    # Only x, y — z comes from pressure via local EKF above.
+    odom1: /odometry/gps
+    odom1_config: [
+      true,  true,  false,
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    odom1_queue_size: 10
+    odom1_nodelay: false
+    odom1_differential: false
+    odom1_relative: false
+
+    process_noise_covariance: [
+      0.12, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.12, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.09, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.06, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005
+    ]
