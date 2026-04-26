@@ -10,13 +10,21 @@ import os
 from datetime import datetime
 
 
+_REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+
+_CSV_FIELDS = [
+    'timestamp_s', 'latitude', 'longitude',
+    'pressure_pa', 'depth_m', 'roll_deg', 'pitch_deg', 'ice_thickness_m',
+]
+
+
 class ArchimedesTesting(Node):
 
     def __init__(self):
         super().__init__("ice_estimation")
 
         # --- Initialisierung ---
-        self.omega = 0.05  # Versatz/Abstand zum Eis
+        self.omega = 0.138  # Versatz/Abstand zum Eis (m)
         self.pressure = None
         self.roll = None
         self.pitch = None
@@ -24,24 +32,33 @@ class ArchimedesTesting(Node):
         self.longitude = 0.0
         self.depth = 0.0
         self.is_touching = False
+        self._was_touching = False
+        self._touch_buffer = []
+
+        # --- CSV Setup ---
+        start_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        folder = os.path.join(_REPO_ROOT, 'measurements', start_str)
+        os.makedirs(folder, exist_ok=True)
+
+        self._raw_file = open(os.path.join(folder, f'measurements_raw_{start_str}.csv'), 'w', newline='')
+        self._av_file  = open(os.path.join(folder, f'measurements_av_{start_str}.csv'),  'w', newline='')
+        self._raw_writer = csv.DictWriter(self._raw_file, fieldnames=_CSV_FIELDS)
+        self._av_writer  = csv.DictWriter(self._av_file,  fieldnames=_CSV_FIELDS)
+        self._raw_writer.writeheader()
+        self._av_writer.writeheader()
+
+        self.get_logger().info(f"Messdaten werden gespeichert in: {folder}")
 
         # --- Subscriptions ---
-        # Keller Drucksensor
         self.pressure_sub = self.create_subscription(
-            FluidPressure, "/sensors/keller26x/abs_pressure", self.pressure_callback, 10
+            FluidPressure, "/sensors/keller26x/gauge_pressure", self.pressure_callback, 10
         )
-
-        # GPS Position
         self.gps_sub = self.create_subscription(
             NavSatFix, "/gps/filtered/global", self.gps_callback, 10
         )
-
-        # Odometrie (Tiefe & Lage) - FIX: odom_callback statt gps_callback
         self.odom_sub = self.create_subscription(
             Odometry, "/odometry/filtered/local", self.odom_callback, 10
         )
-
-        # Touch Detection
         self.touch_sub = self.create_subscription(
             Bool, "/ice_touch_detection/touching", self.touch_callback, 10
         )
@@ -72,12 +89,11 @@ class ArchimedesTesting(Node):
 
     def ice_thickness(self, pressure, pitch, roll):
         rho_water, rho_ice, g = 1000.0, 917.0, 9.81
-        p_surface = 95903.0
 
-        # Tiefe aus Druck
-        v_druck = ((pressure - p_surface) / (rho_water * g)) - 0.05
-        # Neigungskorrektur
-        omega_corr = self.omega * np.cos(np.deg2rad(pitch)) * np.cos(np.deg2rad(roll))
+        # Tiefe aus Druck (gauge pressure, already relative to atmosphere)
+        v_druck = (pressure / (rho_water * g)) - 0.05
+
+        omega_corr = self.omega
 
         if abs(pitch) > 25 or abs(roll) > 10:
             return float("nan")
@@ -85,30 +101,53 @@ class ArchimedesTesting(Node):
         T = (1.0 / rho_ice) * ((v_druck - omega_corr) * rho_water)
         return float(T)
 
+    def _flush_average(self):
+        if not self._touch_buffer:
+            return
+        avg_row = {k: float(np.mean([r[k] for r in self._touch_buffer])) for k in _CSV_FIELDS}
+        self._av_writer.writerow(avg_row)
+        self._av_file.flush()
+        self._touch_buffer.clear()
+
     def listener_callback(self):
-        # 1. PRÜFUNG: Berühren wir überhaupt das Eis?
         if not self.is_touching:
-            # Optional: Logge alle 5 Sekunden, dass wir noch suchen
-            self.get_logger().info(
-                "Kein Eiskontakt... Suche läuft.", throttle_duration_sec=5.0
-            )
+            # Transition: touching ended → write averaged row
+            if self._was_touching:
+                self._flush_average()
+            self._was_touching = False
             return
 
-        # 2. PRÜFUNG: Sind alle Sensordaten da?
         if any(val is None for val in [self.pressure, self.roll, self.pitch]):
-            self.get_logger().warn(
-                "Warte auf Druck/Odom Daten...", throttle_duration_sec=2.0
-            )
             return
 
         thickness = self.ice_thickness(self.pressure, self.pitch, self.roll)
 
         if np.isnan(thickness) or thickness < 0:
+            self._was_touching = True
             return
 
         current_time = self.get_clock().now().nanoseconds * 1e-9
 
-        # Nachricht publishen
+        row = {
+            'timestamp_s':    current_time,
+            'latitude':        self.latitude,
+            'longitude':       self.longitude,
+            'pressure_pa':     self.pressure,
+            'depth_m':         self.depth,
+            'roll_deg':        self.roll,
+            'pitch_deg':       self.pitch,
+            'ice_thickness_m': thickness,
+        }
+
+        # Write raw measurement immediately
+        self._raw_writer.writerow(row)
+        self._raw_file.flush()
+
+        # Accumulate for session average
+        self._touch_buffer.append(row)
+        self._was_touching = True
+
+        # Publish
         msg = Float64MultiArray()
         msg.data = [
             current_time,
@@ -120,15 +159,12 @@ class ArchimedesTesting(Node):
         ]
         self.publisher_.publish(msg)
 
-        # LOG-OUTPUT (Genau wie gewünscht)
-        self.get_logger().info(
-            f"Zeit: {current_time:.2f}s | "
-            f"Eisdicke: {thickness:.3f}m | "
-            f"Druck: {self.pressure:.1f}Pa | "
-            f"Tiefe: {self.depth:.2f}m | "
-            f"Lat: {self.latitude:.6f} | "
-            f"Lon: {self.longitude:.6f}"
-        )
+    def destroy_node(self):
+        # Flush any remaining touch session on shutdown
+        self._flush_average()
+        self._raw_file.close()
+        self._av_file.close()
+        super().destroy_node()
 
 
 def main(args=None):
@@ -140,6 +176,3 @@ def main(args=None):
         pass
     node.destroy_node()
     rclpy.shutdown()
-
-
-# TODO: Messungen in ein csv schreiben und im Ordner measurements abspeichern
