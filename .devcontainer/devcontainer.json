@@ -2,7 +2,7 @@
 {
     "name": "Polaris ROS2",
     // Use your full-dev image with Gazebo
-    "image": "ghcr.io/aris-space/project-polaris-docker:x64-dev",
+    "image": "ghcr.io/aris-space/project-polaris-docker:dev",
     // Where the workspace lives *inside* the container
     "workspaceFolder": "/ros2_ws",
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
