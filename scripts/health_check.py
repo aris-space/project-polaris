@@ -3,19 +3,24 @@
 
 Run after start_system.launch to verify all sensors are operational.
 Reports device presence (udev symlinks) and ROS topic health (rates and field values).
-Exits 0 if all checks pass, 1 otherwise.
+After the sensor checks, prompts to optionally cycle each thruster with a low PWM
+(verifiable on /pixhawk/servo_output_raw). Exits 0 if all checks pass, 1 otherwise.
 
 Usage:
     python3 scripts/health_check.py
     python3 scripts/health_check.py --no-delay
     python3 scripts/health_check.py --delay 30 --window 10
+    python3 scripts/health_check.py --skip-thruster-test
+    python3 scripts/health_check.py --thruster-pwm 1600 --thruster-duration 3
 """
 
 import argparse
 import os
 import stat
 import sys
+import termios
 import time
+import tty
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -39,6 +44,10 @@ from custom_msgs.msg import Distance
 from rcl_interfaces.srv import SetParameters
 from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
+os.environ.setdefault("MAVLINK20", "1")
+from pymavlink import mavutil
+from config_pkg.constants import Comms
+
 
 # ============================================================
 # Configuration
@@ -46,6 +55,12 @@ from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
 DEFAULT_STARTUP_DELAY_SEC = 10
 DEFAULT_MEASUREMENT_SEC = 5
+
+# Thruster test defaults (MAV_CMD_DO_MOTOR_TEST, throttle_type=PWM)
+DEFAULT_NUM_THRUSTERS = 6
+DEFAULT_THRUSTER_PWM = 1600
+DEFAULT_THRUSTER_DURATION_SEC = 3.0
+DEFAULT_THRUSTER_BREAK_SEC = 1.0
 
 # h_acc field is uint32 in 0.1 mm units. 10 m == 100_000 raw.
 H_ACC_MAX_RAW = 100_000
@@ -333,6 +348,99 @@ def print_topic_results(results, window_sec: float) -> Tuple[int, int]:
 
 
 # ============================================================
+# Phase 3 — interactive thruster test
+# ============================================================
+
+def prompt_thruster_test() -> bool:
+    """Block until the user presses ENTER (run) or ESC (skip).
+
+    Falls back to skipping the test if stdin is not a TTY.
+    """
+    if not sys.stdin.isatty():
+        print(f"\n  {DIM}Skipping thruster test (non-interactive stdin).{RESET}")
+        return False
+
+    print()
+    print(f"{BOLD}{CYAN}Press ENTER to run thruster test, ESC to exit.{RESET}")
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch in ("\r", "\n"):
+                return True
+            if ch == "\x1b":
+                return False
+            # ignore other keys; keep waiting
+    finally:
+        termios.tcsetattr(fd, old, termios.TCSADRAIN)
+
+
+def run_thruster_test(
+    num_thrusters: int,
+    pwm: int,
+    duration: float,
+    break_sec: float,
+) -> Tuple[int, int]:
+    """Drive each thruster individually via MAV_CMD_DO_MOTOR_TEST.
+
+    Returns (fails, warns) for inclusion in the overall summary.
+    """
+    section("THRUSTER TEST")
+    fails = warns = 0
+
+    print(f"  {DIM}Connecting to mavlink-router at {Comms.MAVLINK_ROUTER_TCP} ...{RESET}")
+    try:
+        port = mavutil.mavlink_connection(Comms.MAVLINK_ROUTER_TCP)
+        if port.wait_heartbeat(timeout=5) is None:
+            print(f" {FAIL}  no heartbeat from Pixhawk within 5 s")
+            return 1, 0
+    except Exception as exc:
+        print(f" {FAIL}  could not connect: {exc}")
+        return 1, 0
+
+    print(f"  {DIM}Heartbeat received from system {port.target_system}.{RESET}")
+    print(f"  {DIM}PWM={pwm}us, {duration:g}s on, {break_sec:g}s break — "
+          f"watch /pixhawk/servo_output_raw to verify.{RESET}\n")
+
+    name_w = len(f"Thruster {num_thrusters}") + 2
+    for motor in range(1, num_thrusters + 1):
+        label = f"Thruster {motor}"
+        print(f" {CYAN}->{RESET} {label:<{name_w}} PWM={pwm}us for {duration:g}s ... ",
+              end="", flush=True)
+        port.mav.command_long_send(
+            port.target_system,
+            port.target_component,
+            mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
+            0,                  # confirmation
+            float(motor),       # param1: motor instance (1-based)
+            1.0,                # param2: throttle_type (1 = PWM in microseconds)
+            float(pwm),         # param3: throttle value
+            float(duration),    # param4: timeout (seconds)
+            0.0,                # param5: motor count (0 → just this one)
+            0.0,                # param6: test order (default)
+            0.0,                # param7: unused
+        )
+
+        ack = port.recv_match(type="COMMAND_ACK", blocking=True, timeout=2.0)
+        if ack is None:
+            print(f"{WARN}  no COMMAND_ACK")
+            warns += 1
+        elif ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            print(f"{FAIL}  rejected (MAV_RESULT={ack.result})")
+            fails += 1
+        else:
+            print(f"{OK}  accepted")
+
+        # Wait for the motor test to finish, then pause between thrusters.
+        time.sleep(duration + break_sec)
+
+    print(f"\n  {DIM}Thruster test complete.{RESET}")
+    return fails, warns
+
+
+# ============================================================
 # Main flow
 # ============================================================
 
@@ -362,6 +470,16 @@ def main(argv=None) -> int:
                         help="skip the startup delay")
     parser.add_argument("--window", type=float, default=DEFAULT_MEASUREMENT_SEC,
                         help="topic measurement window in seconds (default: %(default)s)")
+    parser.add_argument("--skip-thruster-test", action="store_true",
+                        help="skip the interactive thruster test prompt")
+    parser.add_argument("--num-thrusters", type=int, default=DEFAULT_NUM_THRUSTERS,
+                        help="number of thrusters to cycle through (default: %(default)s)")
+    parser.add_argument("--thruster-pwm", type=int, default=DEFAULT_THRUSTER_PWM,
+                        help="PWM (us) sent to each thruster (default: %(default)s)")
+    parser.add_argument("--thruster-duration", type=float, default=DEFAULT_THRUSTER_DURATION_SEC,
+                        help="seconds each thruster runs (default: %(default)s)")
+    parser.add_argument("--thruster-break", type=float, default=DEFAULT_THRUSTER_BREAK_SEC,
+                        help="seconds of pause between thrusters (default: %(default)s)")
     args = parser.parse_args(argv)
 
     delay = 0 if args.no_delay else max(0, args.delay)
@@ -416,9 +534,19 @@ def main(argv=None) -> int:
     node.destroy_node()
     rclpy.shutdown()
 
+    # Phase 3 — optional thruster test
+    thr_fails = thr_warns = 0
+    if not args.skip_thruster_test and prompt_thruster_test():
+        thr_fails, thr_warns = run_thruster_test(
+            num_thrusters=max(1, args.num_thrusters),
+            pwm=args.thruster_pwm,
+            duration=max(0.1, args.thruster_duration),
+            break_sec=max(0.0, args.thruster_break),
+        )
+
     # Summary
-    fails = dev_fails + topic_fails
-    warns = dev_warns + topic_warns
+    fails = dev_fails + topic_fails + thr_fails
+    warns = dev_warns + topic_warns + thr_warns
 
     print()
     print(f"{BOLD}{CYAN}{'=' * 72}{RESET}")
