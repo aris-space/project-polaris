@@ -42,7 +42,7 @@ from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 # Configuration
 # ============================================================
 
-DEFAULT_STARTUP_DELAY_SEC = 20
+DEFAULT_STARTUP_DELAY_SEC = 10
 DEFAULT_MEASUREMENT_SEC = 5
 
 # h_acc field is uint32 in 0.1 mm units. 10 m == 100_000 raw.
