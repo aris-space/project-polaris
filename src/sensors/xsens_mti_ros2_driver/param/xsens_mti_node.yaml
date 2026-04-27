@@ -84,9 +84,14 @@
 
         # For MTi-620(R)/MTi-630(R), and Sirius/Avior VRU/AHRS models:  roll pitch options: "Responsive", "General", "Robust"
         filter_label_rollpitch: "Robust"
-        # MTI-620(R) and Sirius/Avior VRU models, yaw has 2 options: "VRU", "VRUAHS" 
-        # MTI-630(R) and Sirius/Avior AHRS models, yaw has 3 options: "FixedMagRef", "NorthReference", "VRU", "VRUAHS" 
-        filter_label_yaw: "NorthReference" #TODO: check how bad interference is and adapt if needed
+        # MTI-620(R) and Sirius/Avior VRU models, yaw has 2 options: "VRU", "VRUAHS"
+        # MTI-630(R) and Sirius/Avior AHRS models, yaw has 3 options: "FixedMagRef", "NorthReference", "VRU", "VRUAHS"
+        # On-vehicle magnetometer is unreliable (motors/Pixhawk EM interference): stationary IMU yaw drifts
+        # 11-29 deg in 7 s on the boat vs 0.07 deg in 30 s on a desk (stationary_11 reference). Switching
+        # to gyro-only "VRU" mode. The starting yaw is arbitrary and the global frame from /gps/filtered
+        # is therefore rotated by an unknown offset; absolute heading is recovered offline by rotating the
+        # DR track using a compass reading taken at mission start.
+        filter_label_yaw: "VRU"
 
 
         # MTi-2/320/200: filter only has VRU, you could enable the AHS options:
