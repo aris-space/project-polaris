@@ -62,8 +62,13 @@ def generate_launch_description():
     )
     odom_topic_arg = DeclareLaunchArgument(
         "odom_topic",
-        default_value="/odometry/filtered/local",
-        description="Local EKF odometry forwarded to navsat_transform.",
+        default_value="/odometry/filtered/local_validated",
+        description=(
+            "Local EKF odometry forwarded to navsat_transform and the global EKF. "
+            "Defaults to the *_validated topic so consumers receive the validated "
+            "stream from odometry_validator (filters out stamp anomalies during "
+            "offline replay)."
+        ),
     )
 
     # Local EKF: fuses IMU + DVL + pressure. Starts immediately, no GPS needed.
@@ -74,6 +79,26 @@ def generate_launch_description():
         output="screen",
         parameters=[LaunchConfiguration("params_file")],
         remappings=[("odometry/filtered", "/odometry/filtered/local")],
+    )
+
+    # Validator: forwards /odometry/filtered/local → /odometry/filtered/local_validated
+    # while dropping any message whose header.stamp jumps forward by more than
+    # 60 s relative to the last accepted message. Workaround for a robot_localization
+    # behaviour observed during offline replay where, when /clock is briefly
+    # unavailable, the EKF publishes a single message with a wall-clock stamp
+    # instead of sim-time, which produces a multi-day dt downstream and blows
+    # up the global EKF's predict step.
+    odometry_validator_node = Node(
+        package="ekf_localization_pkg",
+        executable="odometry_validator",
+        name="odometry_validator",
+        output="screen",
+        parameters=[{
+            "input_topic": "/odometry/filtered/local",
+            "output_topic": "/odometry/filtered/local_validated",
+            "max_forward_jump_s": 60.0,
+            "max_backward_jump_s": 1.0,
+        }],
     )
 
     # Watchdog: waits for a quality GNSS fix, then spawns navsat_transform_node
@@ -107,6 +132,7 @@ def generate_launch_description():
             imu_topic_arg,
             odom_topic_arg,
             ekf_local_node,
+            odometry_validator_node,
             datum_watchdog_node,
         ]
     )

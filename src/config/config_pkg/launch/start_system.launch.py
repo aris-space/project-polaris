@@ -15,6 +15,7 @@ def generate_launch_description():
     use_global_ekf_arg_value = LaunchConfiguration("use_global_ekf")
     gps_fix_topic_arg_value = LaunchConfiguration("gps_fix_topic")
     p_surface_pa_arg_value = LaunchConfiguration("p_surface_pa")
+    start_ekf_arg_value = LaunchConfiguration("start_ekf")
 
     manual_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -37,6 +38,7 @@ def generate_launch_description():
             "use_global_ekf": use_global_ekf_arg_value,
             "gps_fix_topic": gps_fix_topic_arg_value,
             "p_surface_pa": p_surface_pa_arg_value,
+            "start_ekf": start_ekf_arg_value,
         }.items(),
     )
 
@@ -77,6 +79,18 @@ def generate_launch_description():
                 description=(
                     "Surface reference pressure (Pa) for depth from absolute pressure. "
                     "Override with the value read in BlueOS/QGC at the surface (1 hPa = 100 Pa)."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "start_ekf",
+                default_value="false",
+                description=(
+                    "Launch the localization EKF stack with the rest of the system. "
+                    "Default false so the IMU (VRU mode) and pressure can settle on land with "
+                    "the boat aligned to true East before the EKF starts in water. "
+                    "Launch the EKF separately once in water with: "
+                    "`ros2 launch ekf_localization_pkg ekf_localization.launch.py "
+                    "gps_fix_topic:=/gps/selected`."
                 ),
             ),
             manual_control_launch,

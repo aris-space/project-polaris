@@ -4,12 +4,12 @@
 #
 # Usage: bash scripts/replay_ekf_bag.sh <bag_dir> [rate]
 #   bag_dir  path to bag directory (contains metadata.yaml + *.mcap)
-#   rate     playback multiplier, default 3.0
+#   rate     playback multiplier, default 2.0
 
 set -eo pipefail
 
 BAG_DIR="${1:?Usage: $0 <bag_dir> [rate]}"
-RATE="${2:-3.0}"
+RATE="${2:-2.0}"
 
 # Strip trailing slash for consistent basename
 BAG_DIR="${BAG_DIR%/}"
@@ -37,6 +37,7 @@ EKF_EXCLUDE = {
     "/odometry/gps",
     "/gps/filtered",
     "/gps/filtered/global",
+    "/gps/validated",
     "/filter/euler",
     "/filter/free_acceleration",
     "/filter/quaternion",
@@ -105,15 +106,24 @@ sleep 1
 # generated EKF topics. TOPICS_RAW is already (all_bag_topics - EKF_EXCLUDE),
 # so appending the EKF output topics produces no duplicates.
 mkdir -p "$(dirname "$OUT_DIR")"
+if [ -d "$OUT_DIR" ]; then
+    echo "[replay_ekf_bag] Removing previous output: $OUT_DIR"
+    rm -rf "$OUT_DIR"
+fi
 # shellcheck disable=SC2086
+# -s mcap: match the storage of the input bags so all downstream analysis
+# scripts (which use mcap-ros2-support / rosbags-reading-mcap) work out of
+# the box without a sqlite3 conversion step.
 ros2 bag record \
     -o "$OUT_DIR" \
+    -s mcap \
     $TOPICS_RAW \
     /odometry/filtered/local \
     /odometry/filtered/global \
     /odometry/gps \
     /gps/filtered \
     /gps/filtered/global \
+    /gps/validated \
     /filter/euler \
     /filter/free_acceleration \
     /filter/quaternion \
@@ -152,22 +162,54 @@ sleep 3
 
 # --- Launch EKF ---------------------------------------------------------------
 # /clock is now at the bag timestamp; EKF initialises with a realistic dt.
+EKF_LOG="${OUT_DIR}/../ekf_replay.log"
 ros2 launch ekf_localization_pkg offline_ekf_replay.launch.py \
-    gps_fix_topic:="$GPS_TOPIC" &
+    gps_fix_topic:="$GPS_TOPIC" >"$EKF_LOG" 2>&1 &
 EKF_PID=$!
-echo "[replay_ekf_bag] EKF PID: $EKF_PID"
+echo "[replay_ekf_bag] EKF PID: $EKF_PID — logging to $EKF_LOG"
 
 wait "$BAG_PID"
-echo "[replay_ekf_bag] Playback complete — flushing 2s..."
-sleep 2
+echo "[replay_ekf_bag] Playback complete — killing EKF stack before /clock dies..."
 
 # --- Teardown -----------------------------------------------------------------
-# Kill publishers first so no new messages arrive after the recorder closes.
+# CRITICAL ORDER: kill publishers (EKF + navsat) IMMEDIATELY after bag ends,
+# BEFORE any flush sleep.
+#
+# When `ros2 bag play` exits, /clock stops being published. Any node still
+# running with `use_sim_time=true` then falls back to wall-clock for
+# `ros::Time::now()`. For the EKF that means the next 30 Hz periodic predict
+# computes `dt = wall_clock_now - last_sim_time` ≈ 3 days for offline replay
+# of a recent bag, integrates velocity over that bogus dt, blows up its
+# state to millions of metres, and publishes that garbage out — which the
+# recorder happily captures and the diagnostic summary then reports as a
+# `[DIAG] >10 km divergence` at the very end of every run.
+# (Confirmed via debug log: a single predict-step delta of 315 544 s carrying
+# an `odom0_twist` measurement with today's wall-clock stamp instead of bag
+# sim-time.)
+#
+# Killing publishers first stops the bad messages at the source. Recorder
+# then drains its buffer with the last in-bag (good) messages only.
 kill "$EKF_PID" 2>/dev/null || true
 pkill -f "navsat_global_ekf.launch" 2>/dev/null || true
 wait "$EKF_PID" 2>/dev/null || true
-sleep 1   # let the last in-flight messages reach the recorder
+sleep 2   # recorder drains in-flight buffered messages — none from EKF after this point
 kill "$REC_PID" 2>/dev/null || true
 wait "$REC_PID" 2>/dev/null || true
 
+# --- Diagnostic summary -------------------------------------------------------
+echo ""
+echo "[replay_ekf_bag] === Diagnostic summary ==="
+grep -m1 "local EKF odom at datum-set" "$EKF_LOG" 2>/dev/null \
+    || echo "  WARNING: no datum-set line found (no GPS fix?)"
+echo "  navsat_transform /odometry/gps samples:"
+grep "\[GPS odom\]" "$EKF_LOG" 2>/dev/null | head -4 | sed 's/^/    /' \
+    || echo "    (none — navsat_transform may not have published)"
+echo "  [DIAG-onset] crossings (first time global EKF crosses 100 m / 1 km / 10 km):"
+grep "\[DIAG-onset\]" "$EKF_LOG" 2>/dev/null | sed 's/^/    /' \
+    || echo "    (none — global EKF stayed within 100 m of map origin)"
+echo "  [DIAG] late-stage warnings (>10 km divergence):"
+grep "\[DIAG\] " "$EKF_LOG" 2>/dev/null | tail -3 | sed 's/^/    /' \
+    || echo "    (none)"
+echo "[replay_ekf_bag] Full EKF log: $EKF_LOG"
+echo ""
 echo "[replay_ekf_bag] Done. Output: $OUT_DIR"

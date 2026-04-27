@@ -2,7 +2,8 @@
 """
 Check IMU heading stability at the time navsat_transform latches its datum.
 
-navsat_transform (use_odometry_yaw=false, wait_for_datum=false) captures the
+navsat_transform (use_odometry_yaw=false) uses /imu/data together with /fix;
+this script captures the
 IMU orientation from the first /fix that has status >= STATUS_FIX (0). This
 script replicates that logic and reports:
 
@@ -13,9 +14,9 @@ script replicates that logic and reports:
 
 navsat_transform.yaml relevant settings:
   use_odometry_yaw: false
-  yaw_offset: 1.57079632679   (pi/2 — ENU convention offset)
-  magnetic_declination_radians: 0.0623
-  wait_for_datum: false
+  yaw_offset: 0.0
+  magnetic_declination_radians: 0.0586912
+  wait_for_datum: true
 
 Usage:
   python scripts/analyze_navsat_imu_heading_at_first_fix.py [root_dir]
@@ -44,8 +45,8 @@ TOPIC_IMU = "/imu/data"
 STATUS_FIX = 0
 
 # navsat_transform.yaml
-YAW_OFFSET = math.pi / 2.0          # radians
-MAGNETIC_DECL = 0.0623              # radians
+YAW_OFFSET = 0.0                     # radians — Xsens ENU, TF handles π mount offset
+MAGNETIC_DECL = 0.0586912           # radians (Küsnacht ZH, WMM / geomag Apr 2026)
 
 # Warn if first fix arrives within this many seconds of bag start
 CONVERGENCE_WINDOW_S = 300.0        # 5 minutes
@@ -69,9 +70,11 @@ def _quat_to_yaw(x: float, y: float, z: float, w: float) -> float:
 
 
 def _yaw_to_enu_deg(raw_yaw_rad: float) -> float:
-    """Apply navsat_transform's yaw_offset + magnetic declination and convert to degrees."""
-    # navsat_transform: yaw_enu = raw_imu_yaw + yaw_offset + magnetic_decl
-    return math.degrees(raw_yaw_rad + YAW_OFFSET + MAGNETIC_DECL)
+    """Convert raw imu_link yaw to true-north base_link heading in degrees.
+
+    Chain mirrors navsat_transform: +π (base_link←imu_link TF) + yaw_offset (0) + mag_decl.
+    """
+    return math.degrees(raw_yaw_rad + math.pi + YAW_OFFSET + MAGNETIC_DECL)
 
 
 def analyze_bag(bag_dir: Path) -> dict | None:

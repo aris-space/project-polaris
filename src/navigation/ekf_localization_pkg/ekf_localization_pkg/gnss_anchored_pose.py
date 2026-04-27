@@ -1,0 +1,317 @@
+"""
+Anchors the local EKF output (in odom frame) to a GPS-derived map frame and
+republishes as /odometry/filtered/global. A simpler alternative to a Kalman
+global EKF that fuses GPS+local-EKF: dead-reckoning quality matches the local
+EKF exactly (it IS the local EKF), absolute accuracy is ~the GPS accuracy at
+the moment of the most recent re-anchor.
+
+How it works
+------------
+1. On the first valid GPS fix (status>=0, |lat|>0.1°, |lon|>0.1°), record the
+   local EKF position at that instant: (Lx0, Ly0, Lz0). Project the GPS fix
+   to UTM and treat it as the datum (lat/lon/alt that defines map frame
+   origin). Compute fixed offset so the snapshot moment maps to (0,0,0) in
+   map frame: offset = -(Lx0, Ly0, Lz0).
+
+2. For every subsequent local-odom message, publish global odom with:
+       map_position = local_position + offset
+   Orientation/velocity/covariance pass through unchanged (orientation is
+   identical in odom and map for ENU-aligned frames; velocity is in
+   child_frame_id and is origin-independent).
+
+3. On each subsequent valid GPS fix (if reanchor_on_each_fix is true),
+   re-compute offset so the current local position maps to that fix's
+   map-frame position: offset = (gx, gy, gz) - (lx, ly, lz). Datum stays
+   fixed across re-anchors so the map frame is stable. Re-anchors cause a
+   discrete jump in the published position; controllers using map-frame
+   pose must tolerate this. Default reanchor_on_each_fix=false matches the
+   "set origin once on first fix, dead-reckon afterwards" intent.
+
+Design tradeoffs vs a Kalman global EKF
+---------------------------------------
++ No tuning required (Q matrices, R covariances, K stability concerns).
++ Robust to the upstream heading bias: heading errors integrate within odom,
+  and a re-anchor (when one happens) snaps absolute position back to GPS
+  truth in one step regardless of integration direction.
++ Drop-in TF replacement: this node publishes map→odom.
+- No fusion of intermediate GPS measurements between anchors. Drift between
+  anchors equals the local EKF's dead-reckoning drift (~1% of distance).
+- Position jumps when re-anchored. Controllers must handle that.
+- No proper map-frame covariance produced (orientation/velocity covariances
+  pass through; position covariance is heuristic — see code).
+
+Anchor quality gate
+-------------------
+The first /fix is only accepted as the datum if it passes:
+  - status >= 0 (NavSatFix valid)
+  - |lat| > 0.1° AND |lon| > 0.1° (not null-island)
+  - h_acc <= h_acc_max_m (only when h_acc_topic is set and ublox_ubx_msgs
+    is available — otherwise this part of the gate is skipped)
+
+This matches the gnss_datum_watchdog logic so the anchor is set from the same
+quality-gated fix the watchdog would pick.
+
+Parameters
+----------
+local_odom_topic        Local EKF output  (default /odometry/filtered/local)
+gps_topic               NavSatFix source  (default /gps/validated)
+global_odom_topic       Output topic       (default /odometry/filtered/global)
+h_acc_topic             UBXNavHPPosLLH topic for h_acc gate (default '' = disabled)
+h_acc_max_m             Max h_acc for anchor fix (default 0.5 m)
+reanchor_on_each_fix    Re-anchor on every valid fix (default false)
+publish_tf              Broadcast map→odom TF        (default true)
+map_frame               Map frame name               (default 'map')
+odom_frame              Odom frame name              (default 'odom')
+"""
+from __future__ import annotations
+
+import math
+
+import rclpy
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
+from pyproj import Transformer
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import NavSatFix
+from tf2_ros import TransformBroadcaster
+
+try:
+    from ublox_ubx_msgs.msg import UBXNavHPPosLLH as _UBXNavHPPosLLH
+    _HPPOSLLH_AVAILABLE = True
+except ImportError:
+    _UBXNavHPPosLLH = None
+    _HPPOSLLH_AVAILABLE = False
+
+# UBX-NAV-HPPOSLLH h_acc field is in 0.1 mm units
+_HPPOSLLH_H_ACC_TO_M = 1e-4
+
+
+def _utm_epsg(lat: float, lon: float) -> str:
+    zone = int((lon + 180.0) / 6.0) + 1
+    hemisphere = "6" if lat >= 0.0 else "7"
+    return f"EPSG:32{hemisphere}{zone:02d}"
+
+
+class GnssAnchoredPose(Node):
+
+    def __init__(self) -> None:
+        super().__init__("gnss_anchored_pose")
+
+        self.declare_parameter("local_odom_topic", "/odometry/filtered/local")
+        self.declare_parameter("gps_topic", "/gps/validated")
+        self.declare_parameter("global_odom_topic", "/odometry/filtered/global")
+        self.declare_parameter("h_acc_topic", "")
+        self.declare_parameter("h_acc_max_m", 0.5)
+        self.declare_parameter("reanchor_on_each_fix", False)
+        self.declare_parameter("publish_tf", True)
+        self.declare_parameter("map_frame", "map")
+        self.declare_parameter("odom_frame", "odom")
+
+        local_odom_topic: str = self.get_parameter("local_odom_topic").value
+        gps_topic: str = self.get_parameter("gps_topic").value
+        global_odom_topic: str = self.get_parameter("global_odom_topic").value
+        h_acc_topic: str = self.get_parameter("h_acc_topic").value
+        self._h_acc_max_m: float = float(self.get_parameter("h_acc_max_m").value)
+        self._reanchor: bool = bool(self.get_parameter("reanchor_on_each_fix").value)
+        self._publish_tf: bool = bool(self.get_parameter("publish_tf").value)
+        self._map_frame: str = self.get_parameter("map_frame").value
+        self._odom_frame: str = self.get_parameter("odom_frame").value
+
+        self._anchored: bool = False
+        self._offset_x: float = 0.0
+        self._offset_y: float = 0.0
+        self._offset_z: float = 0.0
+
+        self._datum_set: bool = False
+        self._datum_e: float = 0.0
+        self._datum_n: float = 0.0
+        self._datum_alt: float = 0.0
+        self._to_utm: Transformer | None = None
+
+        self._latest_local: Odometry | None = None
+        self._latest_h_acc_m: float | None = None
+        self._latest_fix: NavSatFix | None = None
+
+        self._global_pub = self.create_publisher(Odometry, global_odom_topic, 10)
+        self._tf_broadcaster = TransformBroadcaster(self) if self._publish_tf else None
+
+        self.create_subscription(
+            NavSatFix, gps_topic, self._on_gps, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            Odometry, local_odom_topic, self._on_local_odom, qos_profile_sensor_data
+        )
+
+        self._h_acc_enabled = bool(h_acc_topic) and _HPPOSLLH_AVAILABLE
+        if self._h_acc_enabled:
+            self.create_subscription(
+                _UBXNavHPPosLLH, h_acc_topic, self._on_hp_pos, qos_profile_sensor_data
+            )
+        elif h_acc_topic and not _HPPOSLLH_AVAILABLE:
+            self.get_logger().warn(
+                "ublox_ubx_msgs not available — h_acc gate disabled, falling "
+                "back to status + null-island check only."
+            )
+
+        gate_str = (
+            f"h_acc<={self._h_acc_max_m * 100:.0f} cm via '{h_acc_topic}'"
+            if self._h_acc_enabled
+            else "status>=0 + null-island check only"
+        )
+        self.get_logger().info(
+            f"GnssAnchoredPose: local={local_odom_topic}  gps={gps_topic}  "
+            f"out={global_odom_topic}  reanchor={self._reanchor}  "
+            f"map={self._map_frame}  odom={self._odom_frame}"
+        )
+        self.get_logger().info(f"Anchor gate: {gate_str}")
+
+    # ------------------------------------------------------------------
+
+    def _on_local_odom(self, msg: Odometry) -> None:
+        self._latest_local = msg
+        if not self._anchored:
+            return
+
+        out = Odometry()
+        out.header.stamp = msg.header.stamp
+        out.header.frame_id = self._map_frame
+        out.child_frame_id = msg.child_frame_id
+        out.pose = msg.pose
+        out.twist = msg.twist
+
+        out.pose.pose.position.x = msg.pose.pose.position.x + self._offset_x
+        out.pose.pose.position.y = msg.pose.pose.position.y + self._offset_y
+        out.pose.pose.position.z = msg.pose.pose.position.z + self._offset_z
+
+        self._global_pub.publish(out)
+
+        if self._tf_broadcaster is not None:
+            tf = TransformStamped()
+            tf.header.stamp = msg.header.stamp
+            tf.header.frame_id = self._map_frame
+            tf.child_frame_id = self._odom_frame
+            tf.transform.translation.x = self._offset_x
+            tf.transform.translation.y = self._offset_y
+            tf.transform.translation.z = self._offset_z
+            tf.transform.rotation.w = 1.0
+            self._tf_broadcaster.sendTransform(tf)
+
+    def _on_hp_pos(self, msg) -> None:
+        self._latest_h_acc_m = msg.h_acc * _HPPOSLLH_H_ACC_TO_M
+        # Late-arriving h_acc can unblock anchoring if a fix was already cached.
+        if not self._anchored and self._latest_fix is not None:
+            self._try_anchor(self._latest_fix)
+
+    def _on_gps(self, msg: NavSatFix) -> None:
+        # Basic sanity (cheap, applies to all fixes for both anchor and re-anchor).
+        if msg.status.status < 0:
+            return
+        if abs(msg.latitude) < 0.1 and abs(msg.longitude) < 0.1:
+            return
+
+        self._latest_fix = msg
+
+        if not self._anchored:
+            self._try_anchor(msg)
+            return
+
+        if not self._reanchor:
+            return
+        if self._latest_local is None:
+            return
+
+        lx = self._latest_local.pose.pose.position.x
+        ly = self._latest_local.pose.pose.position.y
+        lz = self._latest_local.pose.pose.position.z
+        gx, gy, gz = self._fix_to_map(msg)
+        new_off_x = gx - lx
+        new_off_y = gy - ly
+        new_off_z = gz - lz
+        jump = math.hypot(new_off_x - self._offset_x, new_off_y - self._offset_y)
+        self._offset_x = new_off_x
+        self._offset_y = new_off_y
+        self._offset_z = new_off_z
+        self.get_logger().info(
+            f"Re-anchored: jumped {jump:.2f} m → "
+            f"offset=({self._offset_x:.2f}, {self._offset_y:.2f}, {self._offset_z:.2f})"
+        )
+
+    def _try_anchor(self, fix: NavSatFix) -> None:
+        """Anchor only when local odom AND quality gate are both satisfied."""
+        if self._latest_local is None:
+            self.get_logger().info(
+                "[anchor wait] /fix received but local EKF has not produced odometry yet",
+                throttle_duration_sec=5.0,
+            )
+            return
+
+        if self._h_acc_enabled:
+            if self._latest_h_acc_m is None:
+                self.get_logger().warn(
+                    "[anchor wait] /fix received but no h_acc message yet on the "
+                    "configured h_acc_topic — bag may not contain it. Pass "
+                    "h_acc_topic:='' to disable the gate.",
+                    throttle_duration_sec=5.0,
+                )
+                return
+            if self._latest_h_acc_m <= 0.0 or self._latest_h_acc_m > self._h_acc_max_m:
+                self.get_logger().info(
+                    f"[anchor wait] fix lat={fix.latitude:.6f}° lon={fix.longitude:.6f}° "
+                    f"rejected: h_acc={self._latest_h_acc_m * 100:.1f} cm "
+                    f"> {self._h_acc_max_m * 100:.0f} cm",
+                    throttle_duration_sec=5.0,
+                )
+                return
+
+        lx = self._latest_local.pose.pose.position.x
+        ly = self._latest_local.pose.pose.position.y
+        lz = self._latest_local.pose.pose.position.z
+
+        self._set_datum_from_fix(fix)
+        self._offset_x = -lx
+        self._offset_y = -ly
+        self._offset_z = -lz
+        self._anchored = True
+        h_acc_str = (
+            f", h_acc={self._latest_h_acc_m * 100:.1f} cm"
+            if self._latest_h_acc_m is not None
+            else ""
+        )
+        self.get_logger().info(
+            f"Anchored: datum lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° "
+            f"alt={fix.altitude:.2f} m{h_acc_str} | "
+            f"local at anchor=({lx:.2f}, {ly:.2f}, {lz:.2f}) | "
+            f"offset=({self._offset_x:.2f}, {self._offset_y:.2f}, {self._offset_z:.2f})"
+        )
+
+    # ------------------------------------------------------------------
+
+    def _set_datum_from_fix(self, msg: NavSatFix) -> None:
+        epsg = _utm_epsg(msg.latitude, msg.longitude)
+        self._to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+        self._datum_e, self._datum_n = self._to_utm.transform(
+            msg.longitude, msg.latitude
+        )
+        self._datum_alt = msg.altitude
+        self._datum_set = True
+        self.get_logger().info(
+            f"Datum set → {epsg}  E={self._datum_e:.3f}  N={self._datum_n:.3f}  "
+            f"alt={self._datum_alt:.2f} m"
+        )
+
+    def _fix_to_map(self, msg: NavSatFix) -> tuple[float, float, float]:
+        e, n = self._to_utm.transform(msg.longitude, msg.latitude)
+        return (e - self._datum_e, n - self._datum_n, msg.altitude - self._datum_alt)
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = GnssAnchoredPose()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,34 +1,61 @@
 #!/usr/bin/env bash
-# Replay all 2026-04-23 bags sequentially with a fresh EKF.
+# Replay the 16 "good bags" (reliable IMU+DVL+pressure) from the patched
+# 2026-04-23 set with a fresh EKF and record the output.
 # Run INSIDE the Docker container: docker exec -it jetson-container bash
 #
-# Set BAG_ROOT to the directory that contains the bag folders.
+# Good-bag selection: recordings/rosbags/2026-04-23/ekf_residual_analysis_good_bags/
+# Patched source:     recordings/rosbags/2026-04-23_patched/
+# See POLARIS/research/EKF_RESEARCH_NOTES.md §3.3 for selection criteria.
 
 set -eo pipefail
 
-BAG_ROOT="/ros2_ws/recordings/rosbags/2026-04-23"
-PATTERN="2026_04_23"
-RATE="${1:-3.0}"
+BAG_ROOT="/ros2_ws/recordings/rosbags/2026-04-23_patched"
+RATE="${1:-2.0}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-shopt -s nullglob
-BAGS=( "$BAG_ROOT"/*"$PATTERN"*/ )
-shopt -u nullglob
+# 16 bags with reliable IMU + DVL + pressure (from ekf_residual_analysis_good_bags/)
+GOOD_BAGS=(
+    depth_hold_02_2026_04_23-19_53_12
+    depth_hold_2026_04_23-19_05_38
+    stationary_01_2026_04_23-14_19_03
+    stationary_02_2026_04_23-12_57_41
+    straight_surge_02_2026_04_23-13_35_18
+    straight_surge_03_2026_04_23-13_37_29
+    straight_surge_04_2026_04_23-13_40_15
+    straight_surge_06_2026_04_23-13_45_45
+    straight_surge_07_2026_04_23-13_49_11
+    straight_surge_09_2026_04_23-13_52_13
+    straight_surge_10_2026_04_23-13_56_09
+    vertical_05_2026_04_23-15_21_15
+    vertical_06_2026_04_23-15_21_49
+    yaw_turns_01_2026_04_23-13_11_12
+    yaw_turns_02_2026_04_23-13_13_52
+    yaw_turns_03_2026_04_23-13_17_48
+)
 
-if [ "${#BAGS[@]}" -eq 0 ]; then
-    echo "[replay_all_bags] No bags matching *${PATTERN}* found in $BAG_ROOT" >&2
+echo "[replay_all_bags] Source: $BAG_ROOT"
+echo "[replay_all_bags] Rate:   ${RATE}x"
+echo "[replay_all_bags] Bags:   ${#GOOD_BAGS[@]}"
+echo ""
+
+missing=0
+for name in "${GOOD_BAGS[@]}"; do
+    if [ ! -d "$BAG_ROOT/$name" ]; then
+        echo "[replay_all_bags] MISSING: $BAG_ROOT/$name" >&2
+        missing=$((missing + 1))
+    fi
+done
+if [ "$missing" -gt 0 ]; then
+    echo "[replay_all_bags] ERROR: $missing bag(s) not found in $BAG_ROOT" >&2
     exit 1
 fi
 
-echo "[replay_all_bags] Found ${#BAGS[@]} bags — rate ${RATE}x"
-echo ""
-
-for bag_dir in "${BAGS[@]}"; do
+for name in "${GOOD_BAGS[@]}"; do
     echo "========================================================"
-    echo "[replay_all_bags] Processing: $bag_dir"
+    echo "[replay_all_bags] Processing: $name"
     echo "========================================================"
-    bash "$SCRIPT_DIR/replay_ekf_bag.sh" "$bag_dir" "$RATE"
+    bash "$SCRIPT_DIR/replay_ekf_bag.sh" "$BAG_ROOT/$name" "$RATE"
     echo ""
 done
 

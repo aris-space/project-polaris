@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -82,49 +82,77 @@ def generate_launch_description():
                 "datum_alt",
                 description="Datum altitude (meters) — forwarded from gnss_datum_watchdog.",
             ),
-            Node(
-                package="robot_localization",
-                executable="navsat_transform_node",
-                name="navsat_transform_node",
-                output="screen",
-                # Base config loaded first; datum_yaml loaded second so its
-                # datum: [lat, lon, alt] entry overrides any placeholder in the base.
-                parameters=[
-                    LaunchConfiguration("navsat_params_file"),
-                    LaunchConfiguration("datum_yaml"),
-                    {"use_sim_time": LaunchConfiguration("use_sim_time")},
+            # /clock-propagation grace period.
+            #
+            # This launch file is spawned as a fresh subprocess by
+            # gnss_datum_watchdog._spawn_navsat_and_global once a valid GNSS fix
+            # arrives. The new process re-discovers topics and re-subscribes to
+            # /clock from scratch. Between subprocess start and the first /clock
+            # message arriving, rclcpp::Time::now() returns wall-clock even
+            # though use_sim_time=true is set. Any node that publishes during
+            # that window stamps its first message(s) with wall-clock, and the
+            # global EKF then processes those messages with dt = wall_clock −
+            # sim_time ≈ 3 days for offline-replay of recent bags — its predict
+            # step integrates velocity over the bogus dt and position explodes.
+            #
+            # ALL three nodes (navsat_transform, ekf_global, global_ekf_to_navsatfix)
+            # must be inside the timer. Earlier we left navsat_transform_node at
+            # top level "because it has no integrated state" — but its first
+            # /odometry/gps message inherits the wall-clock stamp, the EKF
+            # consumes it later, and the dt blow-up still happens. Confirmed
+            # in the debug log: the largest predict-step delta in a run was
+            # 298 174 s, exactly matching wall-clock − bag-time, and that
+            # single bad measurement produced a state jump from <1 km to 49 km
+            # of horizontal position and 263 km of z (z is unsensored, so it
+            # could only have grown from vz × dt integration).
+            TimerAction(
+                period=10.0,
+                actions=[
+                    Node(
+                        package="robot_localization",
+                        executable="navsat_transform_node",
+                        name="navsat_transform_node",
+                        output="screen",
+                        # Base config loaded first; datum_yaml loaded second so its
+                        # datum: [lat, lon, alt] entry overrides any placeholder in the base.
+                        parameters=[
+                            LaunchConfiguration("navsat_params_file"),
+                            LaunchConfiguration("datum_yaml"),
+                            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+                        ],
+                        remappings=[
+                            ("gps/fix", LaunchConfiguration("gps_fix_topic")),
+                            ("imu", LaunchConfiguration("imu_topic")),
+                            ("odometry/filtered", LaunchConfiguration("odom_topic")),
+                        ],
+                    ),
+                    Node(
+                        package="robot_localization",
+                        executable="ekf_node",
+                        name="ekf_global_node",
+                        output="screen",
+                        parameters=[
+                            LaunchConfiguration("global_ekf_params_file"),
+                            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+                        ],
+                        remappings=[("odometry/filtered", "/odometry/filtered/global")],
+                        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+                    ),
+                    Node(
+                        package="ekf_localization_pkg",
+                        executable="global_ekf_to_navsatfix",
+                        name="global_ekf_to_navsatfix_node",
+                        output="screen",
+                        parameters=[{
+                            "datum_lat": LaunchConfiguration("datum_lat"),
+                            "datum_lon": LaunchConfiguration("datum_lon"),
+                            "datum_alt": LaunchConfiguration("datum_alt"),
+                            "global_odom_topic": LaunchConfiguration("global_odom_topic"),
+                            "use_sim_time": LaunchConfiguration("use_sim_time"),
+                        }],
+                        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+                    ),
                 ],
-                remappings=[
-                    ("gps/fix", LaunchConfiguration("gps_fix_topic")),
-                    ("imu", LaunchConfiguration("imu_topic")),
-                    ("odometry/filtered", LaunchConfiguration("odom_topic")),
-                ],
-            ),
-            Node(
-                package="robot_localization",
-                executable="ekf_node",
-                name="ekf_global_node",
-                output="screen",
-                parameters=[
-                    LaunchConfiguration("global_ekf_params_file"),
-                    {"use_sim_time": LaunchConfiguration("use_sim_time")},
-                ],
-                remappings=[("odometry/filtered", "/odometry/filtered/global")],
-                condition=IfCondition(LaunchConfiguration("use_global_ekf")),
-            ),
-            Node(
-                package="ekf_localization_pkg",
-                executable="global_ekf_to_navsatfix",
-                name="global_ekf_to_navsatfix_node",
-                output="screen",
-                parameters=[{
-                    "datum_lat": LaunchConfiguration("datum_lat"),
-                    "datum_lon": LaunchConfiguration("datum_lon"),
-                    "datum_alt": LaunchConfiguration("datum_alt"),
-                    "global_odom_topic": LaunchConfiguration("global_odom_topic"),
-                    "use_sim_time": LaunchConfiguration("use_sim_time"),
-                }],
-                condition=IfCondition(LaunchConfiguration("use_global_ekf")),
             ),
         ]
     )
