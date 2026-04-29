@@ -82,6 +82,7 @@ import rclpy
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from pyproj import Transformer
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
@@ -132,12 +133,13 @@ class GnssAnchoredPose(Node):
         self._map_frame: str = self.get_parameter("map_frame").value
         self._odom_frame: str = self.get_parameter("odom_frame").value
         yaw_offset_deg: float = float(self.get_parameter("yaw_offset_deg").value)
-        self._yaw_offset_rad: float = math.radians(yaw_offset_deg)
-        self._cos_yaw: float = math.cos(self._yaw_offset_rad)
-        self._sin_yaw: float = math.sin(self._yaw_offset_rad)
+        self._yaw_offset_rad: float = 0.0
+        self._cos_yaw: float = 1.0
+        self._sin_yaw: float = 0.0
         # Half-angle quaternion for orientation rotation about +Z.
-        self._q_yaw_w: float = math.cos(self._yaw_offset_rad / 2.0)
-        self._q_yaw_z: float = math.sin(self._yaw_offset_rad / 2.0)
+        self._q_yaw_w: float = 1.0
+        self._q_yaw_z: float = 0.0
+        self._update_yaw_cache(yaw_offset_deg)
 
         self._anchored: bool = False
         self._offset_x: float = 0.0
@@ -201,7 +203,40 @@ class GnssAnchoredPose(Node):
                 "(CCW about +Z) — TF tree NOT rotated"
             )
 
+        # Live tunability: react to runtime updates of yaw_offset_deg
+        # (`ros2 param set /gnss_anchored_pose yaw_offset_deg <value>` or via
+        # the Foxglove Parameters panel). Other parameters require a relaunch.
+        self.add_on_set_parameters_callback(self._on_param_change)
+
     # ------------------------------------------------------------------
+
+    def _update_yaw_cache(self, yaw_offset_deg: float) -> None:
+        """Recompute cos/sin and the half-angle quaternion used for the
+        constant rotation applied to position and orientation."""
+        self._yaw_offset_rad = math.radians(yaw_offset_deg)
+        self._cos_yaw = math.cos(self._yaw_offset_rad)
+        self._sin_yaw = math.sin(self._yaw_offset_rad)
+        self._q_yaw_w = math.cos(self._yaw_offset_rad / 2.0)
+        self._q_yaw_z = math.sin(self._yaw_offset_rad / 2.0)
+
+    def _on_param_change(self, params) -> SetParametersResult:
+        """Apply runtime parameter updates. Currently only yaw_offset_deg is
+        live-tunable; everything else still requires a relaunch."""
+        for p in params:
+            if p.name == "yaw_offset_deg":
+                try:
+                    new_val = float(p.value)
+                except (TypeError, ValueError):
+                    return SetParametersResult(
+                        successful=False,
+                        reason="yaw_offset_deg must be a number",
+                    )
+                self._update_yaw_cache(new_val)
+                self.get_logger().info(
+                    f"Yaw correction updated → {new_val:+.3f}° "
+                    "(applies to next published Odometry/NavSatFix)"
+                )
+        return SetParametersResult(successful=True)
 
     def _on_local_odom(self, msg: Odometry) -> None:
         self._latest_local = msg
