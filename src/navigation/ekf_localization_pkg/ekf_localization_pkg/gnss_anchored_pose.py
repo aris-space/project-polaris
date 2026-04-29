@@ -55,7 +55,9 @@ Parameters
 ----------
 local_odom_topic        Local EKF output  (default /odometry/filtered/local)
 gps_topic               NavSatFix source  (default /gps/validated)
-global_odom_topic       Output topic       (default /odometry/filtered/global)
+global_odom_topic       Odometry output topic        (default /odometry/filtered/global)
+global_navsatfix_topic  NavSatFix output topic       (default /gps/filtered/global)
+                        Empty string disables the NavSatFix output.
 h_acc_topic             UBXNavHPPosLLH topic for h_acc gate (default '' = disabled)
 h_acc_max_m             Max h_acc for anchor fix (default 0.5 m)
 reanchor_on_each_fix    Re-anchor on every valid fix (default false)
@@ -73,7 +75,7 @@ from nav_msgs.msg import Odometry
 from pyproj import Transformer
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import NavSatFix
+from sensor_msgs.msg import NavSatFix, NavSatStatus
 from tf2_ros import TransformBroadcaster
 
 try:
@@ -101,6 +103,7 @@ class GnssAnchoredPose(Node):
         self.declare_parameter("local_odom_topic", "/odometry/filtered/local")
         self.declare_parameter("gps_topic", "/gps/validated")
         self.declare_parameter("global_odom_topic", "/odometry/filtered/global")
+        self.declare_parameter("global_navsatfix_topic", "/gps/filtered/global")
         self.declare_parameter("h_acc_topic", "")
         self.declare_parameter("h_acc_max_m", 0.5)
         self.declare_parameter("reanchor_on_each_fix", False)
@@ -111,6 +114,7 @@ class GnssAnchoredPose(Node):
         local_odom_topic: str = self.get_parameter("local_odom_topic").value
         gps_topic: str = self.get_parameter("gps_topic").value
         global_odom_topic: str = self.get_parameter("global_odom_topic").value
+        global_navsatfix_topic: str = self.get_parameter("global_navsatfix_topic").value
         h_acc_topic: str = self.get_parameter("h_acc_topic").value
         self._h_acc_max_m: float = float(self.get_parameter("h_acc_max_m").value)
         self._reanchor: bool = bool(self.get_parameter("reanchor_on_each_fix").value)
@@ -128,12 +132,18 @@ class GnssAnchoredPose(Node):
         self._datum_n: float = 0.0
         self._datum_alt: float = 0.0
         self._to_utm: Transformer | None = None
+        self._from_utm: Transformer | None = None
 
         self._latest_local: Odometry | None = None
         self._latest_h_acc_m: float | None = None
         self._latest_fix: NavSatFix | None = None
 
         self._global_pub = self.create_publisher(Odometry, global_odom_topic, 10)
+        self._navsatfix_pub = (
+            self.create_publisher(NavSatFix, global_navsatfix_topic, 10)
+            if global_navsatfix_topic
+            else None
+        )
         self._tf_broadcaster = TransformBroadcaster(self) if self._publish_tf else None
 
         self.create_subscription(
@@ -159,9 +169,12 @@ class GnssAnchoredPose(Node):
             if self._h_acc_enabled
             else "status>=0 + null-island check only"
         )
+        navsatfix_str = (
+            f"navsatfix={global_navsatfix_topic}" if self._navsatfix_pub is not None else "navsatfix=disabled"
+        )
         self.get_logger().info(
             f"GnssAnchoredPose: local={local_odom_topic}  gps={gps_topic}  "
-            f"out={global_odom_topic}  reanchor={self._reanchor}  "
+            f"out={global_odom_topic}  {navsatfix_str}  reanchor={self._reanchor}  "
             f"map={self._map_frame}  odom={self._odom_frame}"
         )
         self.get_logger().info(f"Anchor gate: {gate_str}")
@@ -180,11 +193,39 @@ class GnssAnchoredPose(Node):
         out.pose = msg.pose
         out.twist = msg.twist
 
-        out.pose.pose.position.x = msg.pose.pose.position.x + self._offset_x
-        out.pose.pose.position.y = msg.pose.pose.position.y + self._offset_y
-        out.pose.pose.position.z = msg.pose.pose.position.z + self._offset_z
+        map_x = msg.pose.pose.position.x + self._offset_x
+        map_y = msg.pose.pose.position.y + self._offset_y
+        map_z = msg.pose.pose.position.z + self._offset_z
+
+        out.pose.pose.position.x = map_x
+        out.pose.pose.position.y = map_y
+        out.pose.pose.position.z = map_z
 
         self._global_pub.publish(out)
+
+        if self._navsatfix_pub is not None and self._from_utm is not None:
+            lon, lat = self._from_utm.transform(
+                self._datum_e + map_x, self._datum_n + map_y
+            )
+            cov = msg.pose.covariance
+            cov_e   = max(0.0, float(cov[0]))
+            cov_n   = max(0.0, float(cov[7]))
+            cov_alt = max(0.0, float(cov[14]))
+            fix = NavSatFix()
+            fix.header.stamp = msg.header.stamp
+            fix.header.frame_id = self._map_frame
+            fix.status.status   = NavSatStatus.STATUS_FIX
+            fix.status.service  = NavSatStatus.SERVICE_GPS
+            fix.latitude        = lat
+            fix.longitude       = lon
+            fix.altitude        = self._datum_alt + map_z
+            fix.position_covariance = [
+                cov_e, 0.0,   0.0,
+                0.0,   cov_n, 0.0,
+                0.0,   0.0,   cov_alt,
+            ]
+            fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
+            self._navsatfix_pub.publish(fix)
 
         if self._tf_broadcaster is not None:
             tf = TransformStamped()
@@ -290,6 +331,7 @@ class GnssAnchoredPose(Node):
     def _set_datum_from_fix(self, msg: NavSatFix) -> None:
         epsg = _utm_epsg(msg.latitude, msg.longitude)
         self._to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+        self._from_utm = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
         self._datum_e, self._datum_n = self._to_utm.transform(
             msg.longitude, msg.latitude
         )
