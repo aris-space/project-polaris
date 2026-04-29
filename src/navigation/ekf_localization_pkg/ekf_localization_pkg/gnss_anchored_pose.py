@@ -73,6 +73,15 @@ yaw_offset_deg          Constant yaw correction applied to position AND orientat
                         value. Does NOT affect the map→odom TF (only the published
                         topics) so downstream consumers using TF lookups are not
                         silently corrected.
+gps_antenna_offset_xyz  Body-frame [x, y, z] (metres) of the GPS antenna relative
+                        to the AUV reference frame the local EKF tracks (default
+                        [0, 0, 0]). When non-zero, the node compensates for the
+                        antenna arcing around the centre during yaw rotations: the
+                        published Odometry and NavSatFix represent the *antenna*
+                        position, matching what raw /fix reports. Without this
+                        compensation, on-the-spot yaw rotations produce a constant
+                        map-frame translation error of magnitude up to
+                        2 · |offset_xy| once the AUV has rotated 180°.
 """
 from __future__ import annotations
 
@@ -121,6 +130,7 @@ class GnssAnchoredPose(Node):
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("odom_frame", "odom")
         self.declare_parameter("yaw_offset_deg", 0.0)
+        self.declare_parameter("gps_antenna_offset_xyz", [0.0, 0.0, 0.0])
 
         local_odom_topic: str = self.get_parameter("local_odom_topic").value
         gps_topic: str = self.get_parameter("gps_topic").value
@@ -140,6 +150,20 @@ class GnssAnchoredPose(Node):
         self._q_yaw_w: float = 1.0
         self._q_yaw_z: float = 0.0
         self._update_yaw_cache(yaw_offset_deg)
+
+        # GPS antenna body-frame offset (lever-arm). When non-zero, on-the-spot
+        # yaw rotations would otherwise show up as a constant translation error
+        # in the published track because /fix reports antenna position while the
+        # local EKF tracks the AUV reference point.
+        ant = self.get_parameter("gps_antenna_offset_xyz").value
+        if not isinstance(ant, (list, tuple)) or len(ant) != 3:
+            self.get_logger().warn(
+                f"gps_antenna_offset_xyz must be a 3-element list; got {ant!r} — using [0,0,0]"
+            )
+            ant = [0.0, 0.0, 0.0]
+        self._antenna_offset = (float(ant[0]), float(ant[1]), float(ant[2]))
+        self._antenna_offset_used = any(abs(v) > 1e-6 for v in self._antenna_offset)
+        self._yaw_at_anchor: float | None = None
 
         self._anchored: bool = False
         self._offset_x: float = 0.0
@@ -202,6 +226,12 @@ class GnssAnchoredPose(Node):
                 f"Yaw correction: rotating Odometry+NavSatFix by {yaw_offset_deg:+.3f}° "
                 "(CCW about +Z) — TF tree NOT rotated"
             )
+        if self._antenna_offset_used:
+            self.get_logger().info(
+                f"GPS antenna body offset: ({self._antenna_offset[0]:+.3f}, "
+                f"{self._antenna_offset[1]:+.3f}, {self._antenna_offset[2]:+.3f}) m — "
+                "rotation-difference correction will be applied to published track"
+            )
 
         # Live tunability: react to runtime updates of yaw_offset_deg
         # (`ros2 param set /gnss_anchored_pose yaw_offset_deg <value>` or via
@@ -218,6 +248,14 @@ class GnssAnchoredPose(Node):
         self._sin_yaw = math.sin(self._yaw_offset_rad)
         self._q_yaw_w = math.cos(self._yaw_offset_rad / 2.0)
         self._q_yaw_z = math.sin(self._yaw_offset_rad / 2.0)
+
+    @staticmethod
+    def _yaw_from_quat(qx: float, qy: float, qz: float, qw: float) -> float:
+        """Yaw angle (radians) from a quaternion (z-axis ENU convention)."""
+        return math.atan2(
+            2.0 * (qw * qz + qx * qy),
+            1.0 - 2.0 * (qy * qy + qz * qz),
+        )
 
     def _on_param_change(self, params) -> SetParametersResult:
         """Apply runtime parameter updates. Currently only yaw_offset_deg is
@@ -250,12 +288,28 @@ class GnssAnchoredPose(Node):
         out.pose = msg.pose
         out.twist = msg.twist
 
-        # Translate to ENU offset from datum.
+        # Translate to ENU offset from datum (centre of the AUV reference frame).
         raw_x = msg.pose.pose.position.x + self._offset_x
         raw_y = msg.pose.pose.position.y + self._offset_y
         raw_z = msg.pose.pose.position.z + self._offset_z
 
-        # Apply yaw correction (rotation about +Z around the anchor at origin).
+        # GPS antenna lever-arm correction:
+        # /fix represents the ANTENNA position; the local EKF tracks the AUV
+        # reference. Without this correction, on-the-spot yaw rotations produce
+        # a translation error of (R(yaw_now) - R(yaw_anchor)) · antenna_offset.
+        if self._antenna_offset_used and self._yaw_at_anchor is not None:
+            oq = msg.pose.pose.orientation
+            yaw_now = self._yaw_from_quat(oq.x, oq.y, oq.z, oq.w)
+            d_cos = math.cos(yaw_now)    - math.cos(self._yaw_at_anchor)
+            d_sin = math.sin(yaw_now)    - math.sin(self._yaw_at_anchor)
+            ax, ay, _az = self._antenna_offset
+            raw_x += d_cos * ax - d_sin * ay
+            raw_y += d_sin * ax + d_cos * ay
+            # az currently ignored — pitch/roll lever-arm coupling is small for
+            # an AUV that operates near level. Add full quaternion rotation if
+            # this becomes important.
+
+        # Apply user yaw correction (rotation about +Z around the anchor at origin).
         map_x = self._cos_yaw * raw_x - self._sin_yaw * raw_y
         map_y = self._sin_yaw * raw_x + self._cos_yaw * raw_y
         map_z = raw_z
@@ -383,6 +437,10 @@ class GnssAnchoredPose(Node):
         lx = self._latest_local.pose.pose.position.x
         ly = self._latest_local.pose.pose.position.y
         lz = self._latest_local.pose.pose.position.z
+
+        # Capture yaw at anchor moment for the antenna lever-arm correction.
+        oq = self._latest_local.pose.pose.orientation
+        self._yaw_at_anchor = self._yaw_from_quat(oq.x, oq.y, oq.z, oq.w)
 
         self._set_datum_from_fix(fix)
         self._offset_x = -lx

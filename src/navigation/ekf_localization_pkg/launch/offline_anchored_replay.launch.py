@@ -73,6 +73,14 @@ def generate_launch_description():
             "Manual yaw correction (deg, CCW about +Z) applied to Odometry+NavSatFix."
         ),
     )
+    antenna_offset_arg = DeclareLaunchArgument(
+        "gps_antenna_offset_xyz",
+        default_value="[0.0, 0.0, 0.0]",
+        description=(
+            "GPS antenna body-frame [x, y, z] (m). Compensates for lever-arm "
+            "translation that appears when the AUV yaws on the spot."
+        ),
+    )
 
     ekf_local_node = Node(
         package="robot_localization",
@@ -109,6 +117,7 @@ def generate_launch_description():
             "h_acc_max_m": LaunchConfiguration("h_acc_max_m"),
             "reanchor_on_each_fix": LaunchConfiguration("reanchor_on_each_fix"),
             "yaw_offset_deg": LaunchConfiguration("yaw_offset_deg"),
+            "gps_antenna_offset_xyz": LaunchConfiguration("gps_antenna_offset_xyz"),
             "publish_tf": True,
             "map_frame": "map",
             "odom_frame": "odom",
@@ -123,6 +132,7 @@ def generate_launch_description():
         h_acc_max_arg,
         reanchor_arg,
         yaw_offset_arg,
+        antenna_offset_arg,
         ekf_local_node,
         odometry_validator_node,
         anchored_pose_node,

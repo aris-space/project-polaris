@@ -69,6 +69,16 @@ def generate_launch_description():
             "rotated."
         ),
     )
+    antenna_offset_arg = DeclareLaunchArgument(
+        "gps_antenna_offset_xyz",
+        default_value="[0.0, 0.0, 0.0]",
+        description=(
+            "GPS antenna body-frame [x, y, z] in metres relative to the AUV "
+            "reference frame the local EKF tracks. When non-zero, the node "
+            "compensates for the antenna arcing around the AUV centre during "
+            "yaw rotations so /gps/filtered/global stays aligned with raw /fix."
+        ),
+    )
 
     ekf_local_node = Node(
         package="robot_localization",
@@ -105,6 +115,7 @@ def generate_launch_description():
             "h_acc_max_m": LaunchConfiguration("h_acc_max_m"),
             "reanchor_on_each_fix": LaunchConfiguration("reanchor_on_each_fix"),
             "yaw_offset_deg": LaunchConfiguration("yaw_offset_deg"),
+            "gps_antenna_offset_xyz": LaunchConfiguration("gps_antenna_offset_xyz"),
             "publish_tf": True,
             "map_frame": "map",
             "odom_frame": "odom",
@@ -118,6 +129,7 @@ def generate_launch_description():
         h_acc_max_arg,
         reanchor_arg,
         yaw_offset_arg,
+        antenna_offset_arg,
         ekf_local_node,
         odometry_validator_node,
         anchored_pose_node,
