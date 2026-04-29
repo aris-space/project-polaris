@@ -59,6 +59,16 @@ def generate_launch_description():
             "'set origin once on first fix, dead-reckon afterwards' intent."
         ),
     )
+    yaw_offset_arg = DeclareLaunchArgument(
+        "yaw_offset_deg",
+        default_value="0.0",
+        description=(
+            "Manual yaw correction (degrees, CCW about +Z) applied to the "
+            "Odometry+NavSatFix output to cancel a constant IMU heading bias. "
+            "Positive rotates the dead-reckoning track CCW. TF tree is not "
+            "rotated."
+        ),
+    )
 
     ekf_local_node = Node(
         package="robot_localization",
@@ -94,6 +104,7 @@ def generate_launch_description():
             "h_acc_topic": LaunchConfiguration("h_acc_topic"),
             "h_acc_max_m": LaunchConfiguration("h_acc_max_m"),
             "reanchor_on_each_fix": LaunchConfiguration("reanchor_on_each_fix"),
+            "yaw_offset_deg": LaunchConfiguration("yaw_offset_deg"),
             "publish_tf": True,
             "map_frame": "map",
             "odom_frame": "odom",
@@ -106,6 +117,7 @@ def generate_launch_description():
         h_acc_topic_arg,
         h_acc_max_arg,
         reanchor_arg,
+        yaw_offset_arg,
         ekf_local_node,
         odometry_validator_node,
         anchored_pose_node,

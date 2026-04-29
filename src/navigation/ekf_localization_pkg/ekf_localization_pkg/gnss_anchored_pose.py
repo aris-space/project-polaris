@@ -64,6 +64,15 @@ reanchor_on_each_fix    Re-anchor on every valid fix (default false)
 publish_tf              Broadcast map→odom TF        (default true)
 map_frame               Map frame name               (default 'map')
 odom_frame              Odom frame name              (default 'odom')
+yaw_offset_deg          Constant yaw correction applied to position AND orientation
+                        of the published Odometry / NavSatFix (degrees, default 0).
+                        Positive = rotate counter-clockwise (right-hand-rule about
+                        +Z, ENU convention). Use to cancel a constant IMU heading
+                        bias: if the dead-reckoning track appears rotated
+                        clockwise relative to GNSS truth, set this to a positive
+                        value. Does NOT affect the map→odom TF (only the published
+                        topics) so downstream consumers using TF lookups are not
+                        silently corrected.
 """
 from __future__ import annotations
 
@@ -110,6 +119,7 @@ class GnssAnchoredPose(Node):
         self.declare_parameter("publish_tf", True)
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("odom_frame", "odom")
+        self.declare_parameter("yaw_offset_deg", 0.0)
 
         local_odom_topic: str = self.get_parameter("local_odom_topic").value
         gps_topic: str = self.get_parameter("gps_topic").value
@@ -121,6 +131,13 @@ class GnssAnchoredPose(Node):
         self._publish_tf: bool = bool(self.get_parameter("publish_tf").value)
         self._map_frame: str = self.get_parameter("map_frame").value
         self._odom_frame: str = self.get_parameter("odom_frame").value
+        yaw_offset_deg: float = float(self.get_parameter("yaw_offset_deg").value)
+        self._yaw_offset_rad: float = math.radians(yaw_offset_deg)
+        self._cos_yaw: float = math.cos(self._yaw_offset_rad)
+        self._sin_yaw: float = math.sin(self._yaw_offset_rad)
+        # Half-angle quaternion for orientation rotation about +Z.
+        self._q_yaw_w: float = math.cos(self._yaw_offset_rad / 2.0)
+        self._q_yaw_z: float = math.sin(self._yaw_offset_rad / 2.0)
 
         self._anchored: bool = False
         self._offset_x: float = 0.0
@@ -178,6 +195,11 @@ class GnssAnchoredPose(Node):
             f"map={self._map_frame}  odom={self._odom_frame}"
         )
         self.get_logger().info(f"Anchor gate: {gate_str}")
+        if abs(yaw_offset_deg) > 1e-6:
+            self.get_logger().info(
+                f"Yaw correction: rotating Odometry+NavSatFix by {yaw_offset_deg:+.3f}° "
+                "(CCW about +Z) — TF tree NOT rotated"
+            )
 
     # ------------------------------------------------------------------
 
@@ -193,13 +215,31 @@ class GnssAnchoredPose(Node):
         out.pose = msg.pose
         out.twist = msg.twist
 
-        map_x = msg.pose.pose.position.x + self._offset_x
-        map_y = msg.pose.pose.position.y + self._offset_y
-        map_z = msg.pose.pose.position.z + self._offset_z
+        # Translate to ENU offset from datum.
+        raw_x = msg.pose.pose.position.x + self._offset_x
+        raw_y = msg.pose.pose.position.y + self._offset_y
+        raw_z = msg.pose.pose.position.z + self._offset_z
+
+        # Apply yaw correction (rotation about +Z around the anchor at origin).
+        map_x = self._cos_yaw * raw_x - self._sin_yaw * raw_y
+        map_y = self._sin_yaw * raw_x + self._cos_yaw * raw_y
+        map_z = raw_z
 
         out.pose.pose.position.x = map_x
         out.pose.pose.position.y = map_y
         out.pose.pose.position.z = map_z
+
+        # Apply same yaw correction to orientation: q_corrected = q_yaw ⊗ q_local
+        if self._q_yaw_z != 0.0:
+            qx = msg.pose.pose.orientation.x
+            qy = msg.pose.pose.orientation.y
+            qz = msg.pose.pose.orientation.z
+            qw = msg.pose.pose.orientation.w
+            cz, sz = self._q_yaw_w, self._q_yaw_z
+            out.pose.pose.orientation.w = cz * qw - sz * qz
+            out.pose.pose.orientation.x = cz * qx - sz * qy
+            out.pose.pose.orientation.y = cz * qy + sz * qx
+            out.pose.pose.orientation.z = cz * qz + sz * qw
 
         self._global_pub.publish(out)
 
