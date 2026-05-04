@@ -79,13 +79,53 @@ def generate_launch_description():
             "yaw rotations so /gps/filtered/global stays aligned with raw /fix."
         ),
     )
+    imu_yaw_offset_arg = DeclareLaunchArgument(
+        "imu_yaw_offset_deg",
+        default_value="0.0",
+        description=(
+            "Pre-EKF yaw correction (deg, CCW about +Z) applied by "
+            "imu_yaw_correction to /imu/data before the local EKF sees it. "
+            "Trigger /imu_yaw_correction/calibrate_yaw_offset to set this "
+            "automatically from GNSS heading after a forward-driving maneuver."
+        ),
+    )
+    ubx_pvt_topic_arg = DeclareLaunchArgument(
+        "ubx_pvt_topic",
+        default_value="/ubx_nav_pvt",
+        description=(
+            "UBX-NAV-PVT topic for head_mot-based yaw calibration. Empty "
+            "string disables the head_mot path; only two-fix bearing fallback."
+        ),
+    )
+
+    # Pre-EKF: rotate /imu/data by yaw_offset_deg, republish on /imu/data_corrected.
+    # The local EKF then sees the calibrated heading directly, so /odometry/filtered/local
+    # and the local TF tree are correct without any post-EKF fix-up.
+    imu_yaw_correction_node = Node(
+        package="ekf_localization_pkg",
+        executable="imu_yaw_correction",
+        name="imu_yaw_correction",
+        output="screen",
+        parameters=[{
+            "yaw_offset_deg": LaunchConfiguration("imu_yaw_offset_deg"),
+            "input_topic": "/imu/data",
+            "output_topic": "/imu/data_corrected",
+            "gps_topic": LaunchConfiguration("gps_fix_topic"),
+            "ubx_pvt_topic": LaunchConfiguration("ubx_pvt_topic"),
+        }],
+    )
 
     ekf_local_node = Node(
         package="robot_localization",
         executable="ekf_node",
         name="ekf_local_node",
         output="screen",
-        parameters=[LaunchConfiguration("params_file")],
+        parameters=[
+            LaunchConfiguration("params_file"),
+            # Override imu0 so the EKF reads the corrected stream produced by
+            # imu_yaw_correction instead of raw /imu/data.
+            {"imu0": "/imu/data_corrected"},
+        ],
         remappings=[("odometry/filtered", "/odometry/filtered/local")],
     )
 
@@ -130,6 +170,9 @@ def generate_launch_description():
         reanchor_arg,
         yaw_offset_arg,
         antenna_offset_arg,
+        imu_yaw_offset_arg,
+        ubx_pvt_topic_arg,
+        imu_yaw_correction_node,
         ekf_local_node,
         odometry_validator_node,
         anchored_pose_node,

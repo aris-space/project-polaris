@@ -32,6 +32,7 @@ setup(
             "odometry_validator = ekf_localization_pkg.odometry_validator:main",
             "gnss_anchored_pose = ekf_localization_pkg.gnss_anchored_pose:main",
             "navsatfix_marker = ekf_localization_pkg.navsatfix_marker:main",
+            "imu_yaw_correction = ekf_localization_pkg.imu_yaw_correction:main",
         ],
     },
 )
