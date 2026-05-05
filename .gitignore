@@ -26,7 +26,9 @@ settings.json
 **/build/
 **/install/
 **/log/
+
 /recordings/
+/measurements/
 # VS Code extension artifact
 .vscode/settings.json
 mavlink_logs/

@@ -1,0 +1,127 @@
+# ============================================================
+# extract_zermatt_measurements.py  —  configuration file
+# ============================================================
+# Pass this file to the script with:
+#   python3 extract_zermatt_measurements.py --config config.yaml
+#
+# CLI flags always override values set here.
+# ============================================================
+
+
+# ------------------------------------------------------------
+# Input bags (MCAP rosbag2 directories)
+# ------------------------------------------------------------
+bags:
+  - /ros2_ws/recordings/zermatt_grid_01_2026_04_30-12_04_16
+  - /ros2_ws/recordings/zermatt_grid_02_2026_04_30-13_00_44
+
+
+# ------------------------------------------------------------
+# Output
+# ------------------------------------------------------------
+out: /ros2_ws/measurements
+
+
+# ------------------------------------------------------------
+# Physics constants  (Archimedes thickness formula)
+#
+#   gauge_pressure = pressure_pa - surface_pressure_pa
+#   depth_sensor   = gauge_pressure / (rho_water * g)
+#
+#   The sensor is not at the ice contact point. It sits below
+#   and forward of it, so the effective vertical offset changes
+#   with pitch (and slightly with roll):
+#
+#   omega_corr = sensor_x_offset_m * sin(pitch)
+#              + sensor_z_offset_m * cos(pitch) * cos(roll)
+#
+#   depth_contact = depth_sensor - omega_corr
+#   T             = depth_contact * rho_water / rho_ice
+#
+#   At pitch = 0, roll = 0:  omega_corr = sensor_z_offset_m (= 0.210 m)
+# ------------------------------------------------------------
+
+# Vertical distance from the BlueRobotics pressure sensor to the
+# ice contact point on the tower tip. The pressure sensor sits
+# this many metres BELOW the contact point in the body z-axis.
+# Note: this is distinct from the ultrasonic distance sensor
+# offsets used by the touch detection node.
+pressure_to_contact_z_m: 0.210
+
+# Horizontal distance from the BlueRobotics pressure sensor to
+# the ice contact point along the AUV body x-axis. The pressure
+# sensor sits this many metres FORWARD of the contact point.
+# When the AUV pitches, this offset changes the effective
+# vertical distance to the ice (see formula above).
+pressure_to_contact_x_m: 0.515
+
+# Fresh water density (kg/m3). Adjust for saline or brackish water.
+rho_water: 1000.0
+
+# Ice density (kg/m3). Standard for fresh-water ice.
+# Sea ice is typically 720-940 kg/m3 depending on salinity and porosity.
+rho_ice: 887.0
+
+# Gravitational acceleration (m/s2).
+g: 9.81
+
+
+# ------------------------------------------------------------
+# Sample validity filters
+# Individual sensor samples that fail these checks are silently
+# dropped and never written to any CSV.
+# ------------------------------------------------------------
+
+# Maximum absolute pitch angle accepted for a valid sample (degrees).
+# High pitch means the tower is not perpendicular to the ice,
+# biasing the contact depth and therefore the thickness estimate.
+max_pitch_deg: 25.0
+
+# Maximum absolute roll angle accepted for a valid sample (degrees).
+max_roll_deg: 10.0
+
+# Maximum horizontal 1-sigma GNSS accuracy accepted from the
+# waterlinked uGPS navsatfix topic: sqrt(position_covariance[0]).
+# Samples with a less reliable position fix are discarded.
+gnss_max_accuracy_m: 4.0
+
+
+# ------------------------------------------------------------
+# Session filtering
+# Applied to whole touch sessions before the depth-stability filter.
+# ------------------------------------------------------------
+
+# Drop any touch session whose duration (first valid sample to
+# last valid sample) is shorter than this many seconds.
+# Removes approach bumps and brief accidental contacts.
+min_duration_s: 10.0
+
+# If two consecutive sessions at the same grid point are
+# separated by less than this many seconds, merge them into
+# one. Handles brief contact losses at the same measurement
+# spot without creating duplicate averaged rows.
+max_gap_s: 60.0
+
+# Drop sessions whose mean depth is shallower than this (metres).
+# Filters out surface-contact calibration touches (depth ~0.19 m)
+# where the AUV was not yet submerged under the ice.
+min_depth_m: 0.5
+
+
+# ------------------------------------------------------------
+# Depth stability filter
+# Removes individual samples within a valid session where the
+# AUV oscillated away from the ice (touching flag stayed True
+# but the AUV drifted a few centimetres downward).
+# ------------------------------------------------------------
+
+# Size of the centred rolling window used to compute the local
+# minimum depth (= the "true contact" reference depth) in seconds.
+# A wider window tolerates gradual depth drift across a session;
+# a narrower window is more sensitive to short oscillation bursts.
+depth_window_s: 30.0
+
+# Maximum allowable depth above the local rolling minimum (metres).
+# Samples deeper than (local_min + max_depth_dev_m) are dropped.
+# 0.01 m = 1 cm — keeps only moments of firm ice contact.
+max_depth_dev_m: 0.01
