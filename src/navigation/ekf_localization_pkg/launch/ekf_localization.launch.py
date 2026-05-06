@@ -115,6 +115,15 @@ def generate_launch_description():
         }],
     )
 
+    # Thruster fallback: estimates surge velocity from PWM when DVL is absent.
+    # Silent during normal DVL operation; activates after dvl_timeout_s (default 3 s).
+    thruster_fallback_node = Node(
+        package="ekf_localization_pkg",
+        executable="thruster_velocity_estimator",
+        name="thruster_velocity_estimator",
+        output="screen",
+    )
+
     # Watchdog: waits for a quality GNSS fix, then spawns navsat_transform_node
     # and ekf_global_node via navsat_global_ekf.launch.py with the fix as datum.
     datum_watchdog_node = Node(
@@ -148,6 +157,7 @@ def generate_launch_description():
             odom_topic_arg,
             ekf_local_node,
             odometry_validator_node,
+            thruster_fallback_node,
             datum_watchdog_node,
         ]
     )

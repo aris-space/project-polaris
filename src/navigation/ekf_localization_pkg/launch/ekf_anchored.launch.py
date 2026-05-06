@@ -142,6 +142,15 @@ def generate_launch_description():
         }],
     )
 
+    # Thruster fallback: estimates surge velocity from PWM when DVL is absent.
+    # Silent during normal DVL operation; activates after dvl_timeout_s (default 3 s).
+    thruster_fallback_node = Node(
+        package="ekf_localization_pkg",
+        executable="thruster_velocity_estimator",
+        name="thruster_velocity_estimator",
+        output="screen",
+    )
+
     anchored_pose_node = Node(
         package="ekf_localization_pkg",
         executable="gnss_anchored_pose",
@@ -175,5 +184,6 @@ def generate_launch_description():
         imu_yaw_correction_node,
         ekf_local_node,
         odometry_validator_node,
+        thruster_fallback_node,
         anchored_pose_node,
     ])

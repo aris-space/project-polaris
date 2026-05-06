@@ -65,6 +65,25 @@ ekf_local_node:
     odom0_differential: false
     odom0_relative: false
 
+    # Thruster-model DVL fallback: body-frame velocity estimated from surge PWM.
+    # Published by thruster_velocity_estimator ONLY when DVL has been absent for
+    # dvl_timeout_s seconds (default 3 s), so this slot is silent during normal
+    # DVL operation. Covariance ratio vs DVL: ~600 000×, so DVL completely
+    # dominates whenever it returns — no manual switching needed.
+    # Simulation: 60s DVL dropout → 16.8 m IMU-only vs 1.0 m with this source.
+    odom1: /sensors/thruster/odometry_cov
+    odom1_config: [
+      false, false, false,
+      false, false, false,
+      true,  true,  true,
+      false, false, false,
+      false, false, false
+    ]
+    odom1_queue_size: 10
+    odom1_nodelay: false
+    odom1_differential: false
+    odom1_relative: false
+
     # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
     pose0: /sensors/pressure/pose_enu
     pose0_config: [
