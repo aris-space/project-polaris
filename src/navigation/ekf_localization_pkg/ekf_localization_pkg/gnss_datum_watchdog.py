@@ -1,4 +1,5 @@
 import math
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -100,6 +101,17 @@ class GnssDatumWatchdog(Node):
         # threshold so we can pin down when divergence starts (and what local
         # EKF reported at that moment).
         self._diag_levels_hit: dict[float, bool] = {}
+        # Onset-tracking: stamp at first crossing for the [DIAG-summary] report.
+        self._diag_levels_t: dict[float, float] = {}
+
+        # Counters for the [DIAG-summary] log line.
+        self._n_gps_received = 0
+        self._n_gps_validated = 0
+        self._n_gps_rejected_status = 0
+        self._n_gps_rejected_null = 0
+        self._n_gps_rejected_haversine = 0
+        self._t_node_start: float = self.get_clock().now().nanoseconds * 1e-9
+        self._t_lock_s: float | None = None
 
         # Validated GPS fixes forwarded to navsat_transform (replaces raw topic).
         self._validated_pub = self.create_publisher(
@@ -147,13 +159,19 @@ class GnssDatumWatchdog(Node):
             f"before launching navsat_transform + global EKF"
         )
 
+        # Periodic [DIAG-summary] every 60 s so a long replay log has periodic
+        # checkpoints, not just an end-of-run summary.
+        self._summary_timer = self.create_timer(60.0, self._log_diag_summary)
+
     # ------------------------------------------------------------------
 
     def _on_fix(self, msg: NavSatFix) -> None:
+        self._n_gps_received += 1
         if self._launched:
             self._validate_and_republish(msg)
             return
         if msg.status.status < 0:
+            self._n_gps_rejected_status += 1
             return
         self._latest_fix = msg
         self._check_and_launch()
@@ -190,12 +208,14 @@ class GnssDatumWatchdog(Node):
             throttle_duration_sec=5.0,
         )
         if msg.status.status < 0:
+            self._n_gps_rejected_status += 1
             self.get_logger().warn(
                 f"[GPS reject] status={msg.status.status} "
                 f"lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° — bad fix status"
             )
             return
         if abs(msg.latitude) < 0.1 and abs(msg.longitude) < 0.1:
+            self._n_gps_rejected_null += 1
             self.get_logger().warn(
                 f"[GPS reject] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° — null island"
             )
@@ -205,6 +225,7 @@ class GnssDatumWatchdog(Node):
                 self._datum_lat, self._datum_lon, msg.latitude, msg.longitude
             )
             if dist > self._max_fix_distance_m:
+                self._n_gps_rejected_haversine += 1
                 self.get_logger().warn(
                     f"[GPS reject] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
                     f"dist={dist / 1000.0:.1f} km from datum "
@@ -217,6 +238,7 @@ class GnssDatumWatchdog(Node):
                 f"dist={dist:.0f} m from datum — forwarding to navsat_transform",
                 throttle_duration_sec=10.0,
             )
+        self._n_gps_validated += 1
         self._validated_pub.publish(msg)
 
     def _on_local_odom(self, msg: Odometry) -> None:
@@ -244,6 +266,8 @@ class GnssDatumWatchdog(Node):
         for level in (100.0, 1_000.0, 10_000.0):
             if r >= level and not self._diag_levels_hit.get(level, False):
                 self._diag_levels_hit[level] = True
+                t_now = self.get_clock().now().nanoseconds * 1e-9
+                self._diag_levels_t[level] = t_now - self._t_node_start
                 lx, ly = (None, None)
                 if self._latest_local_odom is not None:
                     lx = self._latest_local_odom.pose.pose.position.x
@@ -263,9 +287,42 @@ class GnssDatumWatchdog(Node):
 
     # ------------------------------------------------------------------
 
+    def _log_diag_summary(self) -> None:
+        t_now = self.get_clock().now().nanoseconds * 1e-9
+        elapsed = t_now - self._t_node_start
+        datum = (
+            f"({self._datum_lat:.7f}, {self._datum_lon:.7f})"
+            if self._datum_lat is not None
+            else "unset"
+        )
+        time_to_lock = (
+            f"{self._t_lock_s:.1f}s" if self._t_lock_s is not None else "not yet"
+        )
+        thresholds = (
+            ", ".join(
+                f"{int(level)}m@{self._diag_levels_t[level]:.1f}s"
+                for level in sorted(self._diag_levels_hit)
+                if self._diag_levels_hit.get(level)
+            )
+            or "none"
+        )
+        self.get_logger().info(
+            f"[DIAG-summary] elapsed={elapsed:.1f}s "
+            f"datum={datum} time_to_lock={time_to_lock} "
+            f"gps received={self._n_gps_received} "
+            f"validated={self._n_gps_validated} "
+            f"rejected(status/null/haversine)="
+            f"{self._n_gps_rejected_status}/"
+            f"{self._n_gps_rejected_null}/"
+            f"{self._n_gps_rejected_haversine} "
+            f"diag_thresholds_hit=[{thresholds}]"
+        )
+
     def _spawn_navsat_and_global(self, fix: NavSatFix) -> None:
         self._datum_lat = fix.latitude
         self._datum_lon = fix.longitude
+        t_now = self.get_clock().now().nanoseconds * 1e-9
+        self._t_lock_s = t_now - self._t_node_start
 
         h_acc_str = (
             f", h_acc={self._latest_h_acc_m * 100:.1f} cm"
@@ -318,10 +375,27 @@ class GnssDatumWatchdog(Node):
             "navsat_transform_node + ekf_global_node launched with precise datum."
         )
 
+    def destroy_node(self) -> bool:
+        try:
+            self._log_diag_summary()
+        except Exception:
+            pass
+        return super().destroy_node()
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = GnssDatumWatchdog()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+
+    def _on_sigterm(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()

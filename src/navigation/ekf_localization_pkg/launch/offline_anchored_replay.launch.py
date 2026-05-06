@@ -151,6 +151,45 @@ def generate_launch_description():
         }],
     )
 
+    diag_output_dir_arg = DeclareLaunchArgument(
+        "diag_output_dir",
+        default_value="/tmp/ekf_diag",
+        description=(
+            "Directory for ekf_offline_diagnostic CSV. Use a per-run subdir "
+            "(e.g. diagnosis/global_ekf_residual/anchored_rate_2.0/) so "
+            "compare_diag_runs.py can plot multiple runs side by side."
+        ),
+    )
+
+    # gnss_anchored_pose does not produce /odometry/gps; the node leaves the
+    # corresponding columns empty. SBL comparison via /waterlinked_ugps/navsatfix
+    # still works, and the parity test against the live recording's
+    # /gps/filtered/global drives the output of this run.
+    #
+    # Datum source: gnss_anchored_pose publishes /gps/filtered/global as
+    # NavSatFix. Its first message lat/lon equals the anchor datum by
+    # construction (map-frame origin = datum). Using this as the diagnostic
+    # datum guarantees that SBL is projected with the SAME datum the
+    # algorithm anchored on — without this, the diagnostic locks at the
+    # first /gps/selected (no h_acc gate) while gnss_anchored_pose waits
+    # for h_acc<=0.5m, the AUV moves between those two moments, and the
+    # whole SBL track is offset by that displacement (~9 m on rect_01).
+    diagnostic_node = Node(
+        package="ekf_localization_pkg",
+        executable="ekf_offline_diagnostic",
+        name="ekf_offline_diagnostic",
+        output="screen",
+        parameters=[{
+            "output_dir": LaunchConfiguration("diag_output_dir"),
+            "global_odom_topic": "/odometry/filtered/global",
+            "local_odom_topic": "/odometry/filtered/local_validated",
+            "gps_odom_topic": "/odometry/gps_unused",
+            "sbl_topic": "/waterlinked_ugps/navsatfix",
+            "datum_navsatfix_topic": "/gps/filtered/global",
+            "datum_topic_fallback": LaunchConfiguration("gps_fix_topic"),
+        }],
+    )
+
     return LaunchDescription([
         SetUseSimTime(True),
         params_file_arg,
@@ -162,8 +201,10 @@ def generate_launch_description():
         antenna_offset_arg,
         imu_yaw_offset_arg,
         ubx_pvt_topic_arg,
+        diag_output_dir_arg,
         imu_yaw_correction_node,
         ekf_local_node,
         odometry_validator_node,
         anchored_pose_node,
+        diagnostic_node,
     ])
