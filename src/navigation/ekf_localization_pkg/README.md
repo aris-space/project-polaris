@@ -145,9 +145,14 @@ visualisation and logging.
 
 ### `thruster_velocity_estimator`
 
-**DVL fallback.** Estimates body-frame surge velocity from the Pixhawk servo
-PWM command and publishes it as Odometry on `/sensors/thruster/odometry_cov`.
-The local EKF fuses this as `odom1` — see [DVL Fallback](#dvl-fallback-thruster-velocity-model).
+**DVL fallback (static model).** Estimates body-frame surge velocity from the
+Pixhawk servo PWM command using fixed parameters (`k=0.780`, `b=0.964`) fitted
+on Zermatt 2026-04-29 data. Publishes on `/sensors/thruster/odometry_cov` only
+when DVL has been absent for `dvl_timeout_s` (default 3 s). The local EKF fuses
+this as `odom1` — see [DVL Fallback](#dvl-fallback-thruster-velocity-model).
+
+For a version that learns `k` and `b` online from DVL data, see
+[adaptive_thruster_estimator](../adaptive_thruster_estimator/README.md).
 
 ---
 
