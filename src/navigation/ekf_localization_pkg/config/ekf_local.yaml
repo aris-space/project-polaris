@@ -37,7 +37,7 @@ ekf_local_node:
     # so feeding it gives the EKF a usable starting reference even if it
     # drifts slowly. Empirically this works better than the canonical
     # recommendation for our stack.
-    imu0: /imu/data
+    imu0: /imu/data_corrected
     imu0_config: [
       false, false, false,
       true,  true,  true,     # roll, pitch, yaw — fuse all (see above)
