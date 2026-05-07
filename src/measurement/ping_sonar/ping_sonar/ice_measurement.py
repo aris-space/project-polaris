@@ -8,7 +8,7 @@ from std_msgs.msg import String
 from config_pkg.constants import Logs, Comms, Ports
 from rcl_interfaces.msg import SetParametersResult
 import time
-from custom_msgs.msg import Distance, Profile #custom messages 
+from custom_msgs.msg import Distance, Profile  # custom messages
 
 try:
     from brping import Ping1D, definitions
@@ -37,7 +37,7 @@ class Ice_Measurement(Node):
 
         # self.recording = False
         # --- Parameter-controlled recording ---
-        self.declare_parameter("recording", False)
+        self.declare_parameter("recording", True)
         self.recording = bool(self.get_parameter("recording").value)
         self.declare_parameter("speed_of_sound", 1500000)
         self.speed_of_sound = int(self.get_parameter("speed_of_sound").value)
@@ -72,7 +72,6 @@ class Ice_Measurement(Node):
         self.ping.set_speed_of_sound(self.speed_of_sound, verify=False)
         self.get_logger().info("Range set")
 
-        
         self.add_on_set_parameters_callback(self.params_cb)
 
         self.mode_sub = self.create_subscription(
@@ -164,7 +163,7 @@ class Ice_Measurement(Node):
             self.csv_writer.writerow([f"{timestamp:.6f}", ping_num, i, intensity])
 
         self.csv_file.flush()
-        #self.get_logger().info(f"Ping {ping_num}")
+        # self.get_logger().info(f"Ping {ping_num}")
 
     def params_cb(self, params):
         for param in params:
@@ -196,9 +195,7 @@ class Ice_Measurement(Node):
                     self.number_bins * self.speed_of_sound
                 )
                 self.ping.set_speed_of_sound(self.speed_of_sound, verify=False)
-                self.get_logger().info(
-                    f"speed_of_sound set to {self.speed_of_sound}"
-                )
+                self.get_logger().info(f"speed_of_sound set to {self.speed_of_sound}")
                 return SetParametersResult(successful=True)
 
 

@@ -41,8 +41,6 @@ from std_msgs.msg import Float32
 from mavros_msgs.msg import State
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 from custom_msgs.msg import Distance
-from rcl_interfaces.srv import SetParameters
-from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
 os.environ.setdefault("MAVLINK20", "1")
 from pymavlink import mavutil
@@ -73,9 +71,6 @@ DEVICE_CHECKS: List[Tuple[str, str]] = [
     ("Camera tube",   "/dev/cam_tube"),
 ]
 
-# Parameter toggle for the ice measurement publisher
-ICE_MEASUREMENT_NODE = "/ice_measurement_publisher"
-ICE_MEASUREMENT_PARAM = "recording"
 ICE_MEASUREMENT_TOPIC = "/ping_sonar/distance"
 
 # Topic checks: (display, topic, msg_type, kind, threshold)
@@ -231,40 +226,6 @@ class HealthCheckNode(Node):
                 mon.last_diag_statuses = matching
         return cb
 
-
-def set_ice_recording(node: Node, value: bool, timeout_sec: float = 3.0) -> Optional[str]:
-    """Toggle the `recording` parameter on the ice measurement publisher.
-
-    Returns None on success, or an error string on failure.
-    """
-    service_name = f"{ICE_MEASUREMENT_NODE}/set_parameters"
-    client = node.create_client(SetParameters, service_name)
-    try:
-        if not client.wait_for_service(timeout_sec=timeout_sec):
-            return f"service {service_name} not available"
-        req = SetParameters.Request()
-        req.parameters = [
-            Parameter(
-                name=ICE_MEASUREMENT_PARAM,
-                value=ParameterValue(
-                    type=ParameterType.PARAMETER_BOOL,
-                    bool_value=value,
-                ),
-            )
-        ]
-        future = client.call_async(req)
-        rclpy.spin_until_future_complete(node, future, timeout_sec=timeout_sec)
-        if not future.done():
-            return "service call timed out"
-        result = future.result()
-        if result is None or not result.results:
-            return "no result returned"
-        for r in result.results:
-            if not r.successful:
-                return r.reason or "rejected by node"
-        return None
-    finally:
-        node.destroy_client(client)
 
 
 def evaluate(mon: TopicMonitor, window_sec: float) -> Tuple[str, str]:
@@ -503,30 +464,16 @@ def main(argv=None) -> int:
     ]
     node = HealthCheckNode(monitors)
 
-    ice_set_err: Optional[str] = None
-    ice_recording_enabled = False
-
     try:
-        ice_set_err = set_ice_recording(node, True)
-        if ice_set_err is None:
-            ice_recording_enabled = True
-
         print(f"\n  {DIM}Sampling topics for {window:g}s ...{RESET}")
         sample_topics(node, window)
     except KeyboardInterrupt:
         print(f"\n  {YELLOW}Interrupted by user{RESET}")
-    finally:
-        if ice_recording_enabled:
-            set_ice_recording(node, False)
 
     # Evaluate
     topic_results = []
     for mon in monitors:
-        if mon.topic == ICE_MEASUREMENT_TOPIC and ice_set_err is not None:
-            status = FAIL
-            detail = f"could not enable recording: {ice_set_err}"
-        else:
-            status, detail = evaluate(mon, window)
+        status, detail = evaluate(mon, window)
         topic_results.append((mon.display_name, mon.topic, status, detail))
 
     topic_fails, topic_warns = print_topic_results(topic_results, window)
