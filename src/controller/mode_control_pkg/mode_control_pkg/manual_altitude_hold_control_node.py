@@ -15,7 +15,7 @@ Publishes:
     by the mavlink_bridge ros2_receiver, which sends it as a MAVLink MANUAL_CONTROL
     message to the Pixhawk.
 
-Only processes joystick input when current_mode == 'manual_depth_hold'.
+Only processes joystick input when current_mode == 'ALT_HOLD'.
 
 Int16MultiArray layout (6 values, roll and pitch fixed at 0):
   data[0] = x   (surge:  forward/back,  -1000 to 1000)
@@ -121,7 +121,7 @@ class ManualAltitudeHoldControlNode(Node):
 
     def joy_callback(self, msg):
         """Called when a joystick message arrives from /joy. Updates stored values and timestamp."""
-        if self.current_mode != "manual_depth_hold":
+        if self.current_mode != "ALT_HOLD":
             return
 
         self.last_joy_time = self.get_clock().now()
@@ -129,7 +129,7 @@ class ManualAltitudeHoldControlNode(Node):
 
     def timer_callback(self):
         """Publishes at 20Hz. Falls back to neutral if /joy times out."""
-        if self.current_mode != "manual_depth_hold":
+        if self.current_mode != "ALT_HOLD":
             return
 
         elapsed = (self.get_clock().now() - self.last_joy_time).nanoseconds / 1e9
@@ -181,10 +181,10 @@ class ManualAltitudeHoldControlNode(Node):
         if gain_prefix == "keyboard":
             gain_x = self._get_keyboard_x_gain(surge)
 
-        x = self._clamp_int(surge * gain_x, -1000, 1000)  # surge: forward/back
-        y = self._clamp_int(sway * gain_y, -1000, 1000)  # sway: lateral
+        x = self._clamp_int(surge * gain_x, -1000, 1000)   # surge: forward/back
+        y = self._clamp_int(-sway * gain_y, -1000, 1000)  # sway: lateral (negated to match MANUAL)
         z = self._clamp_int(500.0 + heave_net * gain_z, 0, 1000)  # heave: depth target
-        r = self._clamp_int(yaw * gain_r, -1000, 1000)  # yaw: rotation
+        r = self._clamp_int(-yaw * gain_r, -1000, 1000)   # yaw: rotation (negated to match MANUAL)
 
         self.get_logger().debug(
             f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}"

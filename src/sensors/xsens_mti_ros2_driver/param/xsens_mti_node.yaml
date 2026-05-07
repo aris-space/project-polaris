@@ -45,12 +45,12 @@
         # 3) 2: Use UTCTime from the host device.
         # Note: Ensure "UTC Time" or "Sample Time Fine" is selected in MT Manager under Device Settings > Output Configurations, 
         # or you could also set 'enable_deviceConfig: true' for once to configure output.
-        time_option: 0
+        time_option: 2
 
         # Logging Configuration
         # ---------------------
         # Enable or disable logging of sensor data into .mtb file. If enabled, logs are stored in /home/[user_name]/Documents/xsens_log.
-        enable_logging: true
+        enable_logging: false
 
         # Transform Frame ID
         # ------------------
@@ -84,9 +84,14 @@
 
         # For MTi-620(R)/MTi-630(R), and Sirius/Avior VRU/AHRS models:  roll pitch options: "Responsive", "General", "Robust"
         filter_label_rollpitch: "Robust"
-        # MTI-620(R) and Sirius/Avior VRU models, yaw has 2 options: "VRU", "VRUAHS" 
-        # MTI-630(R) and Sirius/Avior AHRS models, yaw has 3 options: "FixedMagRef", "NorthReference", "VRU", "VRUAHS" 
-        filter_label_yaw: "NorthReference" #TODO: check how bad interference is and adapt if needed
+        # MTI-620(R) and Sirius/Avior VRU models, yaw has 2 options: "VRU", "VRUAHS"
+        # MTI-630(R) and Sirius/Avior AHRS models, yaw has 3 options: "FixedMagRef", "NorthReference", "VRU", "VRUAHS"
+        # On-vehicle magnetometer is unreliable (motors/Pixhawk EM interference): stationary IMU yaw drifts
+        # 11-29 deg in 7 s on the boat vs 0.07 deg in 30 s on a desk (stationary_11 reference). Switching
+        # to gyro-only "VRU" mode. The starting yaw is arbitrary and the global frame from /gps/filtered
+        # is therefore rotated by an unknown offset; absolute heading is recovered offline by rotating the
+        # DR track using a compass reading taken at mission start.
+        filter_label_yaw: "VRU"
 
 
         # MTi-2/320/200: filter only has VRU, you could enable the AHS options:
@@ -144,7 +149,9 @@
         pub_pressure: false
         pub_accelerationhr: false      #High Rate Data Acceleration, when this is true, set enable_high_rate to true as well
         pub_angular_velocity_hr: false #High Rate Data Angular Velocity,  when this is true, set enable_high_rate to true as well
-        pub_transform: true
+        # false: driver must NOT publish world->imu_link; that conflicts with static base_link->imu_link
+        # in xsens_mti_node.launch.py (robot_localization / tf2 need one tree).
+        pub_transform: false
         pub_status: true
         pub_twist: false         # For GNSS/INS Version of MTI only
         pub_gnss: false          # For GNSS/INS Version of MTI only
@@ -202,7 +209,7 @@
 
         # Other option flags:
         # valid for MTi-2/3/7/8/20/30/620/630/670/680/200/300/710/Sirius/Avior
-        enable_inrun_compass_calibration: false  # TODO: try true if yaw drifts in clean magnetic environment
+        enable_inrun_compass_calibration: true  # TODO: try true if yaw drifts in clean magnetic environment
 
         #TODO: if there is a problem with the baudrate, increase the output_data_rate and baudrate if needed
         # Set baudrate (TODO: check if this is needed and adapt if needed)
@@ -220,7 +227,7 @@
 
         # Enable or disable manual gyro bias estimation.
         # If enabled, specify the 'event_interval' and 'duration' in 'manual_gyro_bias_param'.
-        enable_manual_gyro_bias: true  # TODO: try true if IMU has frequent stationary periods (e.g. docked), monitor /status
+        enable_manual_gyro_bias: false  # TODO: try true if IMU has frequent stationary periods (e.g. docked), monitor /status
 
         # Parameters for manual gyro bias estimation:
         # - 'event_interval': Time in seconds between two consecutive invocations.
@@ -235,15 +242,19 @@
         # RotSensor Frame changes
         # roll, pitch, yaw values
         # if your MTi-630 is installed upside-down(connector to the upside), then use 180deg for the roll.
-        enable_rotsensor_frame_config: false
-        rotsensor_rotation_euler: [180.0, 0.0, 0.0]  #TODO: check how the imu is mounted and adapt this value
+        enable_rotsensor_frame_config: true
+        rotsensor_rotation_euler: [0.0, 0.0, 180.0]  #TODO: check how the imu is mounted and adapt this value
 
 
         # Sensor Standard Deviation (Optional)
         # ------------------------------------
         # Override the covariance matrix in sensor_msgs/Imu and sensor_msgs/MagneticField messages:
-        linear_acceleration_stddev: [1.05e-3, 1.05e-3, 1.05e-3] # [m/s^2] Standard deviation for linear acceleration
-        angular_velocity_stddev: [3.19e-3, 3.19e-3, 3.19e-3]   # [rad/s] Standard deviation for angular velocity
+        # Gyro std: sqrt(sample variance) stationary_02 lock-masked (header.stamp) — see
+        # dvl_a50_pkg/measurement_noise_constants.py (IMU block) / recordings/stationary_tep_stats.json.
+        # Local EKF fuses angular velocity only (ekf_local.yaml imu0_config).
+        # Accel: same run; not fused in local EKF but kept for REP-145 / downstream.
+        linear_acceleration_stddev: [1.4372e-2, 4.9542e-3, 7.1293e-3] # [m/s^2]
+        angular_velocity_stddev: [1.4395e-3, 1.4831e-3, 1.4506e-3]   # [rad/s]
         magnetic_field_stddev: [1e-7, 1e-7, 1e-7]     # [Tesla] Standard deviation for magnetic field
         # [rad]   Standard deviation for orientation,  
         # for Sirius/Avior, if the pub_euler_stddev is true, will use that value from the sensor and igore this value.

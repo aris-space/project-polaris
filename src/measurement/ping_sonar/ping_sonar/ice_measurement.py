@@ -8,9 +8,11 @@ from std_msgs.msg import String
 from config_pkg.constants import Logs, Comms, Ports
 from rcl_interfaces.msg import SetParametersResult
 import time
+from custom_msgs.msg import Distance, Profile #custom messages 
 
 try:
     from brping import Ping1D, definitions
+
     _BRPING_IMPORT_ERROR = None
 except Exception as exc:
     Ping1D = None
@@ -33,6 +35,12 @@ class Ice_Measurement(Node):
             )
             raise RuntimeError("brping import failed")
 
+        # self.recording = False
+        # --- Parameter-controlled recording ---
+        self.declare_parameter("recording", False)
+        self.recording = bool(self.get_parameter("recording").value)
+        self.declare_parameter("speed_of_sound", 1500000)
+        self.speed_of_sound = int(self.get_parameter("speed_of_sound").value)
         self.ping = Ping1D()  # initializes object
         self.ping.connect_serial(
             Ports.PING_SONAR_PORT, 115200
@@ -53,7 +61,6 @@ class Ice_Measurement(Node):
         self.scan_start = 0
         self.scan_length = 1000
         self.number_bins = 200
-        self.speed_of_sound = 1500000
         self.ping_interval = 0.05
 
         self.bin_time = (2 * self.scan_length) / (
@@ -62,13 +69,10 @@ class Ice_Measurement(Node):
 
         # set functions based on the config factors
         self.ping.set_range(self.scan_start, self.scan_length, verify=False)
+        self.ping.set_speed_of_sound(self.speed_of_sound, verify=False)
         self.get_logger().info("Range set")
 
-        # self.recording = False
-        # --- Parameter-controlled recording ---
-        self.declare_parameter("recording", False)
-        self.recording = bool(self.get_parameter("recording").value)
-
+        
         self.add_on_set_parameters_callback(self.params_cb)
 
         self.mode_sub = self.create_subscription(
@@ -89,10 +93,10 @@ class Ice_Measurement(Node):
         self.timer = self.create_timer(self.ping_interval, self.logging_cb)
 
         self.distance_publisher = self.create_publisher(
-            String, "/ping_sonar/distance", 10
+            Distance, "/ping_sonar/distance", 10
         )
         self.profile_publisher = self.create_publisher(
-            String, "/ping_sonar/profile", 10
+            Profile, "/ping_sonar/profile", 10
         )
 
     def mode_callback(self, msg):
@@ -115,23 +119,32 @@ class Ice_Measurement(Node):
         if distance is None:
             return
 
-        msg_distance = String()
-        msg_distance.data = json.dumps(
-            {
-                "distance": distance["distance"],
-                "confidence": distance["confidence"],
-            }
-        )
+        # msg_distance = String()
+        # msg_distance.data = json.dumps(
+        #     {
+        #         "distance": distance["distance"],
+        #         "confidence": distance["confidence"],
+        #     }
+        # )
 
-        msg_profile = String()
-        msg_profile.data = json.dumps(
-            {
-                "scan_start": profile["scan_start"],
-                "scan_length": profile["scan_length"],
-                "ping_number": profile["ping_number"],
-                "profile_data": list(profile["profile_data"]),
-            }
-        )
+        msg_distance = Distance()
+        msg_distance.distance = float(distance["distance"])
+        msg_distance.confidence = float(distance["confidence"])
+
+        # msg_profile = String()
+        # msg_profile.data = json.dumps(
+        #     {
+        #         "scan_start": profile["scan_start"],
+        #         "scan_length": profile["scan_length"],
+        #         "ping_number": profile["ping_number"],
+        #         "profile_data": list(profile["profile_data"]),
+        #     }
+        # )
+        msg_profile = Profile()
+        msg_profile.scan_start = float(profile["scan_start"])
+        msg_profile.scan_length = float(profile["scan_length"])
+        msg_profile.ping_number = int(profile["ping_number"])
+        msg_profile.profile_data = list(float(x) for x in profile["profile_data"])
 
         self.distance_publisher.publish(msg_distance)
         self.profile_publisher.publish(msg_profile)
@@ -151,7 +164,7 @@ class Ice_Measurement(Node):
             self.csv_writer.writerow([f"{timestamp:.6f}", ping_num, i, intensity])
 
         self.csv_file.flush()
-        self.get_logger().info(f"Ping {ping_num}")
+        #self.get_logger().info(f"Ping {ping_num}")
 
     def params_cb(self, params):
         for param in params:
@@ -166,6 +179,27 @@ class Ice_Measurement(Node):
                         successful=False,
                         reason="recording must be a boolean",
                     )
+            if param.name == "speed_of_sound":
+                if param.type_ not in (param.Type.INTEGER, param.Type.DOUBLE):
+                    return SetParametersResult(
+                        successful=False,
+                        reason="speed_of_sound must be a number",
+                    )
+                new_speed = int(param.value)
+                if new_speed <= 0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason="speed_of_sound must be > 0",
+                    )
+                self.speed_of_sound = new_speed
+                self.bin_time = (2 * self.scan_length) / (
+                    self.number_bins * self.speed_of_sound
+                )
+                self.ping.set_speed_of_sound(self.speed_of_sound, verify=False)
+                self.get_logger().info(
+                    f"speed_of_sound set to {self.speed_of_sound}"
+                )
+                return SetParametersResult(successful=True)
 
 
 def main(args=None):

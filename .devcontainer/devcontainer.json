@@ -2,24 +2,27 @@
 {
     "name": "Polaris ROS2",
     // Use your full-dev image with Gazebo
-    "image": "ghcr.io/aris-space/project-polaris-docker:full-dev",
+    "image": "ghcr.io/aris-space/project-polaris-docker:dev",
     // Where the workspace lives *inside* the container
     "workspaceFolder": "/ros2_ws",
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
     // Extra docker run args you normally pass
     "runArgs": [
+        "--pull=always",
         "--network=host",
         "--privileged",
         "-e",
-        "ROS_DOMAIN_ID=0",
+        "ROS_DOMAIN_ID=37",
         "--env=DISPLAY",
         "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
         "-e",
-        "CLEAN_BUILD=1"
+        "CLEAN_BUILD=0",
+        "-e",
+        "ROSDEP_INSTALL=1"
         // add --device=/dev/ttyUSB0 etc. here if needed
     ],
     // VS Code will run this once after the container is created
-    "postCreateCommand": "cd /ros2_ws && colcon build --symlink-install --executor sequential || true",
+    "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
     // You’re using root in the image
     "remoteUser": "root",
     "customizations": {
@@ -45,8 +48,9 @@
                 "ms-python.debugpy", // Python Debugger :contentReference[oaicite:13]{index=13}
                 "ms-python.vscode-python-envs", // Python Environments :contentReference[oaicite:14]{index=14}
                 "ms-python.black-formatter", // Black Formatter :contentReference[oaicite:15]{index=15}
-                // PlatformIO
-                "platformio.platformio-ide" // PlatformIO IDE :contentReference[oaicite:16]{index=16}
+                // Claude Code
+                "anthropic.claude-code", // Claude Code :contentReference[oaicite:16]{index=16}
+                "andrepimenta.claude-code-chat", // Chat for Claude Code
             ],
             "settings": {
                 "[python]": {

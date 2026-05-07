@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" id="Layer_2" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px"
+    y="0px" width="400px" height="400px" viewBox="0 0 400 400" enable-background="new 0 0 400 400" xml:space="preserve">
+    <defs>
+        <style type="text/css">
+            @import url('http://fonts.googleapis.com/css?family=Noto+Sans+KR|Nanum+Gothic+Coding');
+        </style>
+    </defs>
+    <style>
+        .color-marks .level {
+            --level-color: green;
+            fill: none;
+            stroke: var(--level-color);
+            stroke-width: 10;
+            stroke-miterlimit: 10;
+        }
+
+        .color-marks .level.high {
+            --level-color: yellow;
+        }
+
+        .color-marks .level.critical {
+            --level-color: red;
+        }
+
+        .marks {
+            transform: translate(50%, 50%);
+        }
+
+        .marks line {
+            --base-angle: 270deg;
+            --base-stroke-width: 2;
+            transform: rotate(var(--base-angle));
+            stroke-width: var(--base-stroke-width);
+            fill: none;
+            stroke: white;
+            stroke-miterlimit: 10;
+        }
+
+        .marks .wide-ticks .tick {
+            --base-stroke-width: 4;
+        }
+
+        .marks .wide-ticks .tick:nth-child(2) { --base-angle: 310deg; }
+        .marks .wide-ticks .tick:nth-child(3) { --base-angle: 350deg; }
+        .marks .wide-ticks .tick:nth-child(4) { --base-angle: 30deg; }
+        .marks .wide-ticks .tick:nth-child(5) { --base-angle: 70deg; }
+        .marks .wide-ticks .tick:nth-child(6) { --base-angle: 110deg; }
+        .marks .wide-ticks .tick:nth-child(7) { --base-angle: 150deg; }
+        .marks .wide-ticks .tick:nth-child(8) { --base-angle: 190deg; }
+        .marks .wide-ticks .tick:nth-child(9) { --base-angle: 230deg; }
+
+        .marks .short-ticks .tick:nth-child(1)  { --base-angle: 280deg; }
+        .marks .short-ticks .tick:nth-child(2)  { --base-angle: 300deg; }
+        .marks .short-ticks .tick:nth-child(3)  { --base-angle: 320deg; }
+        .marks .short-ticks .tick:nth-child(4)  { --base-angle: 340deg; }
+        .marks .short-ticks .tick:nth-child(5)  { --base-angle: 0deg; }
+        .marks .short-ticks .tick:nth-child(6)  { --base-angle: 20deg; }
+        .marks .short-ticks .tick:nth-child(7)  { --base-angle: 40deg; }
+        .marks .short-ticks .tick:nth-child(8)  { --base-angle: 60deg; }
+        .marks .short-ticks .tick:nth-child(9)  { --base-angle: 80deg; }
+        .marks .short-ticks .tick:nth-child(10) { --base-angle: 100deg; }
+        .marks .short-ticks .tick:nth-child(11) { --base-angle: 120deg; }
+        .marks .short-ticks .tick:nth-child(12) { --base-angle: 140deg; }
+        .marks .short-ticks .tick:nth-child(13) { --base-angle: 160deg; }
+        .marks .short-ticks .tick:nth-child(14) { --base-angle: 180deg; }
+        .marks .short-ticks .tick:nth-child(15) { --base-angle: 200deg; }
+        .marks .short-ticks .tick:nth-child(16) { --base-angle: 220deg; }
+
+        .marks .long-ticks .tick:nth-child(1) { --base-angle: 290deg; }
+        .marks .long-ticks .tick:nth-child(2) { --base-angle: 330deg; }
+        .marks .long-ticks .tick:nth-child(3) { --base-angle: 10deg; }
+        .marks .long-ticks .tick:nth-child(4) { --base-angle: 50deg; }
+        .marks .long-ticks .tick:nth-child(5) { --base-angle: 90deg; }
+        .marks .long-ticks .tick:nth-child(6) { --base-angle: 130deg; }
+        .marks .long-ticks .tick:nth-child(7) { --base-angle: 170deg; }
+        .marks .long-ticks .tick:nth-child(8) { --base-angle: 210deg; }
+
+        .mark-labels {
+            transform: translate(50%, 50%);
+        }
+
+        .mark-labels > text {
+            fill: white;
+            font-family: Noto Sans KR, sans-serif;
+            font-size: 22px;
+            font-weight: bold;
+            dominant-baseline: middle;
+            text-anchor: middle;
+        }
+
+        .mark-labels .numerical {
+            --base-x: 0%;
+            --base-y: 0%;
+            transform: translate(var(--base-x), var(--base-y));
+        }
+
+        .mark-labels .numerical:nth-child(1) { --base-x: 0;    --base-y: -28%; }
+        .mark-labels .numerical:nth-child(2) { --base-x: 16%;  --base-y: -22%; }
+        .mark-labels .numerical:nth-child(3) { --base-x: -15%; --base-y: -22%; }
+        .mark-labels .numerical:nth-child(4) { --base-x: 27%;  --base-y: -5%;  }
+        .mark-labels .numerical:nth-child(5) { --base-x: -26%; --base-y: -5%;  }
+        .mark-labels .numerical:nth-child(6) { --base-x: 24%;  --base-y: 14%;  }
+        .mark-labels .numerical:nth-child(7) { --base-x: -23%; --base-y: 14%;  }
+        .mark-labels .numerical:nth-child(8) { --base-x: 10%;  --base-y: 27%;  }
+        .mark-labels .numerical:nth-child(9) { --base-x: -11%; --base-y: 27%;  }
+    </style>
+
+    <circle fill="#232323" cx="200" cy="200" r="160" />
+
+    <!-- Color arcs: green 0-6000 RPM, yellow 6000-7000, red 7000-8000 -->
+    <g class="color-marks">
+        <path class="level normal"   d="M 200 55 A 145 145 0 1 1 74 273" />
+        <path class="level high"     d="M 74 273 A 145 145 0 0 1 57 175" />
+        <path class="level critical" d="M 57 175 A 145 145 0 0 1 107 89" />
+    </g>
+
+    <g class="marks">
+        <!-- Major ticks: 0,1,2,3,4,5,6,7,8 (×1000 RPM) -->
+        <g class="wide-ticks">
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="130" y1="0" x2="150" y2="0" />
+        </g>
+
+        <!-- Minor ticks: 200 RPM intervals -->
+        <g class="short-ticks">
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="140" y1="0" x2="150" y2="0" />
+        </g>
+
+        <!-- Mid ticks: 500 RPM intervals -->
+        <g class="long-ticks">
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+            <line class="tick" x1="135" y1="0" x2="150" y2="0" />
+        </g>
+    </g>
+
+    <g class="mark-labels">
+        <!-- Numbers ordered to match nth-child label positions (same angles as airspeed) -->
+        <text class="numerical" x="0" y="0">0</text>
+        <text class="numerical" x="0" y="0">1</text>
+        <text class="numerical" x="0" y="0">8</text>
+        <text class="numerical" x="0" y="0">2</text>
+        <text class="numerical" x="0" y="0">7</text>
+        <text class="numerical" x="0" y="0">3</text>
+        <text class="numerical" x="0" y="0">6</text>
+        <text class="numerical" x="0" y="0">4</text>
+        <text class="numerical" x="0" y="0">5</text>
+
+        <text x="0" y="-10%">RPM</text>
+        <text x="0" y="10%">× 1000</text>
+    </g>
+</svg>

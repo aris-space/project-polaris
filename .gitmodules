@@ -1,3 +1,13 @@
 [submodule "src/sensors/dvl_a50"]
 	path = src/sensors/dvl_a50
-	url = https://github.com/ndahn/dvl_a50.git
+	url = https://github.com/glebplatonov04/dvl_a50.git
+[submodule "src/comms/foxglove_bridge"]
+	path = src/comms/foxglove_bridge
+	url = https://github.com/foxglove/foxglove-sdk.git
+[submodule "src/sensors/uwgpsg2_ros2_interface/uwgpsg2_ros2_interface/examples"]
+	path = src/sensors/uwgpsg2_ros2_interface/uwgpsg2_ros2_interface/examples
+	url = https://github.com/waterlinked/examples.git
+[submodule "src/sensors/auv_msgs"]
+	path = src/sensors/auv_msgs
+	url = https://github.com/oceansystemslab/auv_msgs.git
+	branch = ros2-master

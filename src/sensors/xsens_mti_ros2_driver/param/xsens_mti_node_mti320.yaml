@@ -144,7 +144,8 @@
         pub_pressure: false
         pub_accelerationhr: true #High Rate Data Acceleration, when this is true, set enable_high_rate to true as well
         pub_angular_velocity_hr: true #High Rate Data Angular Velocity,  when this is true, set enable_high_rate to true as well
-        pub_transform: true
+        # false: see xsens_mti_node.yaml — avoids world->imu_link vs static base_link->imu_link conflict.
+        pub_transform: false
         pub_status: true
         pub_twist: true          # For GNSS/INS Version of MTI only
         pub_gnss: false          # For GNSS/INS Version of MTI only
@@ -242,8 +243,9 @@
         # Sensor Standard Deviation (Optional)
         # ------------------------------------
         # Override the covariance matrix in sensor_msgs/Imu and sensor_msgs/MagneticField messages:
-        linear_acceleration_stddev: [0.0, 0.0, 0.0] # [m/s^2] Standard deviation for linear acceleration
-        angular_velocity_stddev: [0.0, 0.0, 0.0]   # [rad/s] Standard deviation for angular velocity
+        # Match xsens_mti_node.yaml stationary-derived stddevs (zeros -> invalid variances on /imu/data).
+        linear_acceleration_stddev: [1.4372e-2, 4.9542e-3, 7.1293e-3] # [m/s^2]
+        angular_velocity_stddev: [1.4395e-3, 1.4831e-3, 1.4506e-3]   # [rad/s]
         magnetic_field_stddev: [0.0, 0.0, 0.0]     # [Tesla] Standard deviation for magnetic field
         # [rad]   Standard deviation for orientation,  
         # for Sirius/Avior, if the pub_euler_stddev is true, will use that value from the sensor and igore this value.

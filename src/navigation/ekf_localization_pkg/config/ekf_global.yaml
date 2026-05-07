@@ -1,0 +1,197 @@
+ekf_global_node:
+  ros__parameters:
+    frequency: 10.0
+    # sensor_timeout: when no measurement has been processed for this long, the
+    # filter falls back to predicting to ros::Time::now(). During offline replay
+    # /clock occasionally has gaps longer than any sane finite threshold (5 s
+    # was observed firing 6 times in one run), and in those gaps now() returns
+    # wall-clock instead of sim-time, producing dt = wall_clock − last_sim_time
+    # ≈ 3 days and a state explosion. The predict-to-now() behaviour itself is
+    # what's broken under sim-time gaps — not the threshold value. Set the
+    # timeout effectively to infinity so it never fires; the EKF then advances
+    # only when a real measurement arrives, which is what we want.
+    sensor_timeout: 999999.0
+    two_d_mode: false
+    print_diagnostics: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: map
+
+    # ── Transform lookup timeout ─────────────────────────────────────────────
+    # Default is 0 (don't wait). Without this, the very first odom0_pose
+    # callback for orientation hits a window where map→odom is not yet
+    # published (the EKF itself publishes it, but only after a measurement
+    # initialises state — chicken and egg). Confirmed in the debug log:
+    # "Could not transform measurement into map. Ignoring..." for every
+    # /odometry/filtered/local pose update. The result: orientation is
+    # never fused, yaw stays at 0, body velocity gets rotated through the
+    # identity matrix into world frame, position drifts in the wrong
+    # direction, and GPS fights against it forever. With a positive
+    # timeout, robot_localization waits up to this many seconds for the
+    # transform to appear (or falls back to the latest available transform
+    # within the cache), so the orientation gets fused once the EKF has
+    # published its first map→odom.
+    transform_timeout: 0.5
+
+    # ── Debug log ────────────────────────────────────────────────────────────
+    # robot_localization's built-in deep-trace dump (per-step state, P matrix,
+    # measurement, innovation, K matrix). Re-enabled while diagnosing the
+    # remaining single-step jump from <1 km to >10 km. Disable after.
+    debug: true
+    debug_out_file: /tmp/ekf_global_debug.log
+
+    # Local EKF output — dead-reckoning source.
+    # Required so the global EKF knows the current odom-frame position and can
+    # correctly compute the map→odom correction from GPS.  Without this, the
+    # global EKF diverges: it uses the TF-tree odom→base_link (from local EKF)
+    # to compute map→odom while simultaneously updating its own position from GPS,
+    # creating a circular positive-feedback loop.
+    odom0: /odometry/filtered/local_validated
+    odom0_config: [
+      false, false, false,   # x, y, z — odom-frame origin ≠ map-frame origin; don't fuse as absolute
+      true,  true,  true,    # orientation — same in ENU-aligned odom and map frames; safe to fuse
+      true,  true,  true,    # vx, vy, vz — velocity is origin-independent; dead-reckoning
+      false, false, false,   # vroll, vpitch, vyaw — REMOVED. Adding these (originally to fix an
+                             # unsensored-state divergence theory) was paired with simultaneously
+                             # fusing orientation (rows 3-5). With both active, orientation and
+                             # angular velocity become tightly coupled, and innovations on
+                             # orientation can bleed into velocity rotation through cross-cov,
+                             # producing the divergence pattern we kept seeing in offline replay.
+                             # Orientation alone is a sufficient attitude constraint for the
+                             # global EKF; angular velocity will be predicted from Q (1e-9) and
+                             # cross-coupling, which is fine as long as orientation is sensored.
+      false, false, false    # ax, ay, az — unsensored; locked tight via initial_estimate_covariance
+    ]
+    odom0_queue_size: 10
+    odom0_nodelay: false
+    odom0_differential: false
+    odom0_relative: false
+
+    # Absolute GPS correction from navsat_transform_node.
+    # Only x, y — z comes from pressure via local EKF above.
+    odom1: /odometry/gps
+    odom1_config: [
+      true,  true,  false,
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    odom1_queue_size: 10
+    odom1_nodelay: false
+    odom1_differential: false
+    odom1_relative: false
+
+    # ── Initial state covariance ─────────────────────────────────────────────
+    # Default in robot_localization is 1e-9*I — falsely confident, locks the
+    # filter to its initial guess so first measurements barely move the state.
+    # We override per-state, generously *only* for the states that need to
+    # converge from arbitrary initial values; the unsensored acceleration
+    # states are locked tight at 0 (their reality on this AUV).
+    #   x,y      : 1.0   m²        (datum = current GPS, expected error ~1 m)
+    #   z        : 0.5   m²        (pressure depth at start, ~0.7 m std)
+    #   roll,pitch : 0.01 rad²     (~6° std, IMU is good)
+    #   yaw      : 0.1   rad²      (~18° std — magnetic heading uncertainty)
+    #   vx,vy,vz : 1.0   (m/s)²    (AUV may already be moving when global EKF spawns)
+    #   vroll,vpitch,vyaw : 0.1 (rad/s)²
+    #   ax,ay,az : 1e-9  (m/s²)²   ← deliberately tight: ax/ay/az are unsensored
+    #     (no IMU lin-accel fusion, no DVL accel) and fed only by cross-
+    #     covariance from velocity measurements. With initial P=0.1 we
+    #     observed accumulating ax-bias on the order of 5e-3→4e-2 m/s² over
+    #     ~750 s in offline replay (Run 4: 100 m @ 222 s, 1 km @ 625 s,
+    #     10 km @ 748 s, then exponential blow-up). Locking them at 0 with
+    #     P_init = 1e-9 makes K[ax]≈P[vx,ax]/R[vx] negligible, so the velocity
+    #     measurement updates can't bleed bias into ax. The AUV's true linear
+    #     acceleration is on the order of cm/s² and is *not* required by any
+    #     downstream consumer of /odometry/filtered/global, so this is a
+    #     correct model simplification, not a hack.
+    initial_estimate_covariance: [
+      1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  1.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.5,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.1,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0,         0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0,         0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.000000001, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.000000001
+    ]
+
+    # ── Time-handling: deliberately use robot_localization defaults ──────────
+    # Earlier we tried `predict_to_current_time: true` and `reset_on_time_jump:
+    # true`. Both made the filter MORE fragile under offline replay, not less:
+    # the global EKF is spawned by gnss_datum_watchdog *after* GPS arrives, so
+    # it bypasses the /clock-wait that protects the local EKF in
+    # `scripts/replay_ekf_bag.sh`. With predict_to_current_time=true and the
+    # filter's `last_update_time_` left at 0 (initial value, or after a reset),
+    # the first periodic predict integrates `dt = now() − 0 ≈ 1.77e9 s` of
+    # whatever velocity has just been absorbed into state — producing position
+    # excursions on the order of (vx · 1.77e9) ≈ 1e9 m. Exactly matched what
+    # we observed: state at (1.244e9, 1.299e9) m on the first /odometry/
+    # filtered/global publish, with vx ≈ 0.7 m/s, vy ≈ 0.74 m/s.
+    # Defaults (predict_to_current_time=false, reset_on_time_jump=false) make
+    # the filter predict only when a measurement arrives, anchoring dt to
+    # measurement timestamps.
+
+    # ── Outlier rejection: deliberately left at the robot_localization default
+    # (numeric_limits<double>::max(), effectively disabled). A finite threshold
+    # creates a knife-edge during the initial-convergence transient: with
+    # P_init[x,y]=1.0 and R_gps≈0.1, the innovation σ is ≈1.05 m; a real GPS
+    # innovation of ~5 m (vehicle moves a few metres before global EKF spawns)
+    # already sits at 5σ. A single rejection lets the filter dead-reckon away
+    # from GPS, the *next* innovation grows larger, gets rejected harder, and
+    # the filter is permanently disconnected from GPS within ~40 s. Observed
+    # in Run 3 of the smoke test: gradual drift to 100 m at t=39s, 1 km at
+    # t=49s, then exponential blowup to 5×10¹⁰ m at t=63s once cross-
+    # covariance feedback through unsensored ax/ay took over.
+    # Bad-GPS protection is already provided upstream by
+    # `gnss_datum_watchdog._validate_and_republish` (haversine + null-island
+    # + status gate writing to `/gps/validated`); per-sensor Mahalanobis on
+    # top of that is redundant *and* destabilising.
+
+    # Q[x,x] = Q[y,y] = 1.0 (offline-replay tuning).
+    #
+    # Diagnostic on a smoke-test bag: K[x via GPS x] median 0.032, K[y via GPS y]
+    # median 0.0003 (occasionally negative). With R_gps ≈ 2 m² (median σ_x of
+    # /odometry/gps ≈ 1.4 m, sane), the only way K can stay that small is for
+    # P[x,x] and P[y,y] to collapse to <0.1 m² in steady state. That happened
+    # because Q[x,x] = Q[y,y] = 0.001 was too tight — the EKF declared near-
+    # certain knowledge of position, GPS innovations weren't applied, and any
+    # velocity bias (e.g. from the known heading error) drove the state off
+    # without GPS pulling it back. The resulting drift was bounded by no
+    # corrective force and grew unboundedly to 10 km on a 20-min replay.
+    #
+    # Q = 1.0 puts P_ss ≈ R = 2 m² and K ≈ 0.5, so each GPS update strongly
+    # corrects position. Tradeoff: σ_x underwater grows as sqrt(Q·t) ≈
+    # 1 m / √s — ~24 m σ after 10 min, ~42 m after 30 min, ~60 m after 1 h.
+    # That overstates the AUV's actual dead-reckoning drift (~1% of distance,
+    # ~18 m / hour at 0.5 m/s) but the σ is honest about uncertainty in the
+    # presence of the upstream heading bias. Once heading is fixed, this Q can
+    # be reduced.
+    process_noise_covariance: [
+      1.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  1.0,   0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0005, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0001, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0001, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.000000001, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00000000001, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00000000001, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.00000000001
+    ]

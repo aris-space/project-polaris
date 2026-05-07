@@ -82,6 +82,36 @@ def generate_launch_description():
         ],
     )
 
+    # Static base_link -> gnss_link (must match FRAME_ID in gnss_config, e.g. ublox_x20p_rover.yaml).
+    # CAD: translation CENTER_OF_MASS_LINK -> GNSS_LINK, no rotation (meters, vehicle frame).
+    # Assumes base_link coincides with center-of-mass (same convention as IMU/DVL static TFs).
+    static_tf_base_to_gnss = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="static_tf_base_to_gnss",
+        arguments=[
+            "--x",
+            "-0.0057",
+            "--y",
+            "-0.00024",
+            "--z",
+            "0.174",
+            "--roll",
+            "0.0",
+            "--pitch",
+            "0.0",
+            "--yaw",
+            "0.0",
+            "--frame-id",
+            "base_link",
+            "--child-frame-id",
+            "gnss_link",
+        ],
+        output="screen",
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+
     # Use LORD ntrip_client here because it can consume /fix and generate/sent GGA
     # upstream to VRS casters such as SWIPOS.
     ntrip_node = GroupAction(
@@ -116,7 +146,7 @@ def generate_launch_description():
                         "rtcm_message_package": "rtcm_msgs",
                     }
                 ],
-            )
+            ),
         ],
     )
 
@@ -161,17 +191,14 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "ntrip_username",
-                default_value=EnvironmentVariable(
-                    "NTRIP_USERNAME", default_value=""
-                ),
+                default_value=EnvironmentVariable("NTRIP_USERNAME", default_value=""),
             ),
             DeclareLaunchArgument(
                 "ntrip_password",
-                default_value=EnvironmentVariable(
-                    "NTRIP_PASSWORD", default_value=""
-                ),
+                default_value=EnvironmentVariable("NTRIP_PASSWORD", default_value=""),
             ),
             gnss_container,
+            static_tf_base_to_gnss,
             ntrip_node,
         ]
     )

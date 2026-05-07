@@ -141,42 +141,49 @@ private:
   {
     float distance_m = -1.0f; // Declared ONCE
 
-    if (serial_port_ >= 0) {
+    if (serial_port_ >= 0)
+    {
       uint8_t trigger_byte = 0x55;
-      if (write(serial_port_, &trigger_byte, 1) >= 0) {
+      if (write(serial_port_, &trigger_byte, 1) >= 0)
+      {
         std::this_thread::sleep_for(70ms);
 
         uint8_t header = 0;
         bool found_header = false;
-        for (int i = 0; i < 32; ++i) { 
-          if (read(serial_port_, &header, 1) > 0 && header == 0xFF) {
+        for (int i = 0; i < 32; ++i)
+        {
+          if (read(serial_port_, &header, 1) > 0 && header == 0xFF)
+          {
             found_header = true;
             break;
           }
         }
 
-        if (found_header) {
-          uint8_t data[3]; 
-          if (read(serial_port_, data, 3) == 3) {
+        if (found_header)
+        {
+          uint8_t data[3];
+          if (read(serial_port_, data, 3) == 3)
+          {
             uint8_t high = data[0];
-            uint8_t low  = data[1];
-            uint8_t sum  = data[2];
+            uint8_t low = data[1];
+            uint8_t sum = data[2];
 
-            if (((0xFF + high + low) & 0xFF) == sum) {
+            if (((0xFF + high + low) & 0xFF) == sum)
+            {
               // Update the outer variable (no 'float' keyword here)
               distance_m = static_cast<float>((high << 8) | low) / 1000.0f;
-              
+
               auto msg = std_msgs::msg::Float32();
               msg.data = distance_m;
               publisher_->publish(msg);
-              
-              RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
+
+              // RCLCPP_INFO(this->get_logger(), "Distance: %.3f m", distance_m);
             }
           }
         }
       }
     }
-      
+
     // --- DIAGNOSTICS ---
     auto diag_msg = diagnostic_msgs::msg::DiagnosticArray();
     rclcpp::Time now = this->get_clock()->now();
@@ -185,19 +192,24 @@ private:
 
     auto status = diagnostic_msgs::msg::DiagnosticStatus();
     status.name = this->get_name();
-    
+
     auto kv = diagnostic_msgs::msg::KeyValue();
     kv.key = "distance";
 
-    if (distance_m < 0.0f) {
+    if (distance_m < 0.0f)
+    {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
       status.message = "Sensor not connected / no data";
       kv.value = "N/A";
-    } else if (distance_m < 0.03f) {
+    }
+    else if (distance_m < 0.03f)
+    {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
       status.message = "Not publishing valid data";
       kv.value = std::to_string(distance_m);
-    } else {
+    }
+    else
+    {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
       status.message = "OK";
       kv.value = std::to_string(distance_m);

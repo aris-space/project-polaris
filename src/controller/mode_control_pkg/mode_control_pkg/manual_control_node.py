@@ -10,7 +10,7 @@ Publishes:
     by the mavlink_bridge ros2_receiver, which sends it as a MAVLink MANUAL_CONTROL
     message to the Pixhawk.
 
-Only processes joystick input when current_mode == 'manual_control'.
+Only processes joystick input when current_mode is 'MANUAL' or 'STABILIZE'.
 
 Int16MultiArray layout (6 values):
   data[0] = x   (surge:  forward/back,  -1000 to 1000)
@@ -27,6 +27,7 @@ from std_msgs.msg import String
 from std_msgs.msg import Int16MultiArray
 from sensor_msgs.msg import Joy
 from config_pkg.constants import JoyControlMapping
+from rcl_interfaces.msg import SetParametersResult
 
 # If no /joy message is received for this duration (seconds), send neutral values
 JOY_TIMEOUT = 0.2
@@ -59,6 +60,7 @@ class ManualControlNode(Node):
         self.declare_parameter('keyboard_x_single_press_gain', 500.0)
         self.declare_parameter('keyboard_x_double_press_gain', 1000.0)
         self.declare_parameter('keyboard_x_double_press_window_s', 0.2)
+        self.add_on_set_parameters_callback(self.on_set_parameters)
 
         self.current_mode = ''
         self.keyboard_x_prev_pressed = False
@@ -115,6 +117,23 @@ class ManualControlNode(Node):
 
         self.get_logger().info('ManualControlNode: Node has been initialized')
 
+    _KNOWN_PARAMS = {
+        'controller_axis_deadzone',
+        'controller_gain_x', 'controller_gain_y', 'controller_gain_z',
+        'controller_gain_r', 'controller_gain_s', 'controller_gain_t',
+        'keyboard_gain_x',   'keyboard_gain_y',   'keyboard_gain_z',
+        'keyboard_gain_r',   'keyboard_gain_s',   'keyboard_gain_t',
+        'keyboard_x_single_press_gain', 'keyboard_x_double_press_gain',
+        'keyboard_x_double_press_window_s',
+        'keyboard_source_frame_id', 'controller_source_frame_id',
+    }
+
+    def on_set_parameters(self, params):
+        for param in params:
+            if param.name not in self._KNOWN_PARAMS:
+                return SetParametersResult(successful=False, reason=f'Unknown parameter: {param.name}')
+        return SetParametersResult(successful=True)
+
     def mode_callback(self, msg):
         """Called when a new mode is published by mode_control_node."""
         self.current_mode = msg.data
@@ -122,7 +141,7 @@ class ManualControlNode(Node):
 
     def joy_callback(self, msg):
         """Called when a joystick message arrives from /joy. Updates stored values and timestamp."""
-        if self.current_mode != 'manual_control':
+        if self.current_mode not in ('MANUAL', 'STABILIZE'):
             return
 
         self.last_joy_time = self.get_clock().now()
@@ -130,7 +149,7 @@ class ManualControlNode(Node):
 
     def timer_callback(self):
         """Publishes at 20Hz. Falls back to neutral if /joy times out."""
-        if self.current_mode != 'manual_control':
+        if self.current_mode not in ('MANUAL', 'STABILIZE'):
             return
 
         elapsed = (self.get_clock().now() - self.last_joy_time).nanoseconds / 1e9

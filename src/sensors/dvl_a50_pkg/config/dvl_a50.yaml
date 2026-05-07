@@ -1,11 +1,14 @@
-sensors:
-  dvl_a50:
-    ros__parameters:
-      ip_address: "192.168.194.95"   # Change to your DVL's IP
-      frame: "dvl_a50_link"
-      rate: 30.0
-      enable_on_activate: true      # Set true to auto-ping on activation
-      #speed_of_sound: 1500
-      #led_enabled: true
-      #mounting_rotation_offset: 0
-      #range_mode: "auto"
+# Parameters for lifecycle node /sensors/dvl_a50 (explicit FQN avoids nesting ambiguity).
+/sensors/dvl_a50:
+  ros__parameters:
+    ip_address: "192.168.194.95"   # Change to your DVL's IP
+    frame: "dvl_a50_link"
+    rate: 30.0
+    # After lifecycle ACTIVATE: turn on continuous acoustic pings (API acoustic_enabled).
+    enable_on_activate: true
+    # One dvl/odometry per velocity report (robot_localization twist-only; avoids ts vs TOV interleave).
+    publish_odometry_on_dead_reckoning: false
+    #speed_of_sound: 1500
+    #led_enabled: true
+    #mounting_rotation_offset: 0
+    #range_mode: "auto"

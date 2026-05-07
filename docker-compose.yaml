@@ -1,7 +1,7 @@
 services:
   jetson-container:
-    image: ghcr.io/aris-space/project-polaris-docker:runtime
-    container_name: jetson-container
+    image: ghcr.io/aris-space/project-polaris-docker:dev-arm64
+    container_name: ${CONTAINER_NAME:-jetson-container}
     privileged: true
     network_mode: host
     # 1. Use the explicit NVIDIA runtime (crucial for Jetson)
@@ -9,6 +9,7 @@ services:
     environment:
       - ROS_DOMAIN_ID=37
       - ROS_WS=/ros2_ws
+      - CONTAINER_NAME=${CONTAINER_NAME:-jetson-container}
       - NTRIP_HOST=${NTRIP_HOST:-www.swipos.ch}
       - NTRIP_PORT=${NTRIP_PORT:-2101}
       - NTRIP_MOUNTPOINT=${NTRIP_MOUNTPOINT:-MSM_GISGEO_LV95LHN95}
@@ -27,6 +28,7 @@ services:
       - ./recordings:/ros2_ws/recordings
       - /dev:/dev
       - ./mavlink_logs:/root/polaris_logs/
+      - /home/polaris5:/home/polaris5
     working_dir: /ros2_ws
     entrypoint: [ "/bin/bash", "/ros2_ws/entrypoint.sh" ]
     stdin_open: true

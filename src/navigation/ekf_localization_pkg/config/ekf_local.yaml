@@ -1,0 +1,86 @@
+ekf_local_node:
+  ros__parameters:
+    frequency: 30.0
+    # sensor_timeout: see ekf_global.yaml for full rationale. Disabled (very
+    # large value) so the EKF never falls back to predict-to-now() during a
+    # /clock gap — that's the path that produced multi-day dt and state blow-up.
+    # The EKF advances only on real measurements; the downstream
+    # odometry_validator stays as defence-in-depth.
+    sensor_timeout: 999999.0
+    two_d_mode: false
+    print_diagnostics: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # IMU (XSens)
+    # Uses orientation + angular velocity + linear acceleration.
+    # Pre-EKF stationary variance hints: recordings/stationary_tep_stats.json (TEP Section 6 offline).
+    imu0: /imu/data
+    imu0_config: [
+      false, false, false,
+      true,  true,  true,
+      false, false, false,
+      true,  true,  true,
+      false, false, false
+    ]
+    imu0_queue_size: 20
+    imu0_nodelay: false
+    imu0_differential: false
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: false
+
+    # DVL velocity update (from covariance-injected odometry)
+    odom0: /sensors/dvl/odometry_cov
+    odom0_config: [
+      false, false, false,
+      false, false, false,
+      true,  true,  true,
+      false, false, false,
+      false, false, false
+    ]
+    odom0_queue_size: 10
+    odom0_nodelay: false
+    odom0_differential: false
+    odom0_relative: false
+
+    # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
+    pose0: /sensors/pressure/pose_enu
+    pose0_config: [
+      false, false, true,
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    pose0_queue_size: 20
+    pose0_nodelay: false
+    pose0_differential: false
+    pose0_relative: false
+
+    # Process noise covariance (15x15, row-major)
+    process_noise_covariance: [
+      0.00001, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.00001, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0005, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.001, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.001, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001
+    ]
+
+    # Pressure source notes:
+    # pressure_z_ned_to_pose_node uses p_surface_pa (default ~101325 Pa) or gauge mode; see
+    # pressure_pose_pkg. depth = (p_abs - p_surface)/(rho*g), z_enu = -depth, publishes pose0.
