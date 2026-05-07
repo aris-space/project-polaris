@@ -880,9 +880,10 @@ class MavlinkBridgeReceiver(Node):
         # x axis is empirically inverted (forward needs negative vx). Verified
         # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
         # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
-        surge = -float(msg.linear.x)  # FLU forward -> negative vx
-        heave = -float(msg.linear.z)  # FLU up      -> -down (FRD spec)
-        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
+        # Now yaw aloso for now just hardcoded corect!
+        surge    = -float(msg.linear.x)   # FLU forward -> negative vx
+        heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
+        yaw_rate = float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not

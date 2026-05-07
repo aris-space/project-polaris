@@ -23,6 +23,8 @@ practice and a high signal in offline replay diagnostics.
 """
 from __future__ import annotations
 
+import signal
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -98,12 +100,31 @@ class OdometryValidator(Node):
         self._n_accepted += 1
         self._pub.publish(msg)
 
+    def destroy_node(self) -> bool:
+        try:
+            self.get_logger().info(
+                f"[odom_validator] final: accepted={self._n_accepted} "
+                f"dropped_forward={self._n_dropped_forward} "
+                f"dropped_backward={self._n_dropped_backward}"
+            )
+        except Exception:
+            pass
+        return super().destroy_node()
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = OdometryValidator()
+
+    def _on_sigterm(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

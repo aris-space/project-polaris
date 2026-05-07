@@ -82,6 +82,23 @@ gps_antenna_offset_xyz  Body-frame [x, y, z] (metres) of the GPS antenna relativ
                         compensation, on-the-spot yaw rotations produce a constant
                         map-frame translation error of magnitude up to
                         2 · |offset_xy| once the AUV has rotated 180°.
+yaw_calibration_duration_s    Window length for service-triggered yaw
+                              calibration (default 10 s).
+yaw_calibration_min_distance_m  Minimum distance (m) the AUV must travel during
+                                the calibration window for the result to be
+                                accepted (default 3 m).
+
+Service
+-------
+~/calibrate_yaw_offset (std_srvs/Trigger):
+    Triggers a yaw-offset calibration. After the call returns, drive the AUV
+    forward in a straight line. After yaw_calibration_duration_s, the node
+    computes the GNSS bearing from the start fix to the latest fix, takes the
+    circular average of the EKF yaw samples during the window, and applies
+        yaw_offset_deg = bearing_GNSS - avg_yaw_EKF
+    via the live parameter callback, so it takes effect on the next published
+    message. Aborts (with a warn log) if the AUV moved less than
+    yaw_calibration_min_distance_m.
 """
 from __future__ import annotations
 
@@ -93,8 +110,10 @@ from nav_msgs.msg import Odometry
 from pyproj import Transformer
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
+from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 
 try:
@@ -114,6 +133,32 @@ def _utm_epsg(lat: float, lon: float) -> str:
     return f"EPSG:32{hemisphere}{zone:02d}"
 
 
+_EARTH_R_M = 6_371_000.0
+
+
+def _gnss_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine distance between two lat/lon points, in metres."""
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlon / 2.0) ** 2
+    return 2.0 * _EARTH_R_M * math.asin(math.sqrt(a))
+
+
+def _gnss_bearing_enu_rad(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Initial bearing from (lat1,lon1) to (lat2,lon2) in ENU yaw convention:
+    0 rad = +x = East, +π/2 rad = +y = North, CCW positive."""
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    y = math.sin(dlon) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dlon)
+    bearing_ned = math.atan2(y, x)              # 0 = N, +π/2 = E (CW from N)
+    yaw_enu = math.pi / 2.0 - bearing_ned       # convert to ENU yaw
+    return math.atan2(math.sin(yaw_enu), math.cos(yaw_enu))
+
+
 class GnssAnchoredPose(Node):
 
     def __init__(self) -> None:
@@ -131,6 +176,8 @@ class GnssAnchoredPose(Node):
         self.declare_parameter("odom_frame", "odom")
         self.declare_parameter("yaw_offset_deg", 0.0)
         self.declare_parameter("gps_antenna_offset_xyz", [0.0, 0.0, 0.0])
+        self.declare_parameter("yaw_calibration_duration_s", 10.0)
+        self.declare_parameter("yaw_calibration_min_distance_m", 3.0)
 
         local_odom_topic: str = self.get_parameter("local_odom_topic").value
         gps_topic: str = self.get_parameter("gps_topic").value
@@ -238,6 +285,21 @@ class GnssAnchoredPose(Node):
         # the Foxglove Parameters panel). Other parameters require a relaunch.
         self.add_on_set_parameters_callback(self._on_param_change)
 
+        # Service-triggered yaw calibration via a forward-driving maneuver.
+        self._cal_active: bool = False
+        self._cal_start_time = None
+        self._cal_start_fix: NavSatFix | None = None
+        self._cal_yaw_samples: list[float] = []
+        self._cal_timer = None
+        self.create_service(
+            Trigger, "~/calibrate_yaw_offset", self._on_calibrate_request
+        )
+        self.get_logger().info(
+            "Yaw calibration service: ~/calibrate_yaw_offset "
+            f"(duration {float(self.get_parameter('yaw_calibration_duration_s').value):.1f}s, "
+            f"min distance {float(self.get_parameter('yaw_calibration_min_distance_m').value):.2f}m)"
+        )
+
     # ------------------------------------------------------------------
 
     def _update_yaw_cache(self, yaw_offset_deg: float) -> None:
@@ -275,6 +337,106 @@ class GnssAnchoredPose(Node):
                     "(applies to next published Odometry/NavSatFix)"
                 )
         return SetParametersResult(successful=True)
+
+    # ------------------------------------------------------------------
+    # Service-triggered yaw calibration
+
+    def _on_calibrate_request(self, request, response):
+        duration = float(self.get_parameter("yaw_calibration_duration_s").value)
+        if self._cal_active:
+            response.success = False
+            response.message = "Yaw calibration already in progress"
+            return response
+        if self._latest_fix is None:
+            response.success = False
+            response.message = "No /fix received yet"
+            return response
+        if self._latest_local is None:
+            response.success = False
+            response.message = "No local EKF odometry received yet"
+            return response
+
+        self._cal_active = True
+        self._cal_start_time = self.get_clock().now()
+        self._cal_start_fix = self._latest_fix
+        self._cal_yaw_samples = []
+        # Sample IMU yaw at 10 Hz throughout the window.
+        self._cal_timer = self.create_timer(0.1, self._on_calibration_tick)
+
+        response.success = True
+        response.message = (
+            f"Yaw calibration started — drive forward in a straight line for "
+            f"{duration:.0f} s. New yaw_offset_deg will be applied automatically."
+        )
+        self.get_logger().info(response.message)
+        return response
+
+    def _on_calibration_tick(self) -> None:
+        if not self._cal_active or self._cal_start_time is None:
+            return
+        duration = float(self.get_parameter("yaw_calibration_duration_s").value)
+        elapsed_ns = (self.get_clock().now() - self._cal_start_time).nanoseconds
+        elapsed_s = elapsed_ns / 1e9
+
+        if self._latest_local is not None:
+            oq = self._latest_local.pose.pose.orientation
+            self._cal_yaw_samples.append(self._yaw_from_quat(oq.x, oq.y, oq.z, oq.w))
+
+        if elapsed_s >= duration:
+            self._finish_calibration()
+
+    def _finish_calibration(self) -> None:
+        if self._cal_timer is not None:
+            self._cal_timer.cancel()
+            self._cal_timer = None
+        self._cal_active = False
+
+        if self._cal_start_fix is None or self._latest_fix is None:
+            self.get_logger().warn("Yaw calibration aborted — missing fixes")
+            return
+        if not self._cal_yaw_samples:
+            self.get_logger().warn("Yaw calibration aborted — no IMU yaw samples")
+            return
+
+        end_fix = self._latest_fix
+        distance = _gnss_distance_m(
+            self._cal_start_fix.latitude, self._cal_start_fix.longitude,
+            end_fix.latitude,             end_fix.longitude,
+        )
+        min_dist = float(self.get_parameter("yaw_calibration_min_distance_m").value)
+        if distance < min_dist:
+            self.get_logger().warn(
+                f"Yaw calibration aborted — only moved {distance:.2f} m "
+                f"(need ≥ {min_dist:.2f} m). Drive further next time."
+            )
+            return
+
+        bearing = _gnss_bearing_enu_rad(
+            self._cal_start_fix.latitude, self._cal_start_fix.longitude,
+            end_fix.latitude,             end_fix.longitude,
+        )
+        # Circular average of the IMU yaw samples (handles wrap-around).
+        sx = sum(math.sin(y) for y in self._cal_yaw_samples)
+        cx = sum(math.cos(y) for y in self._cal_yaw_samples)
+        avg_yaw = math.atan2(sx, cx)
+
+        diff = bearing - avg_yaw
+        diff_wrapped = math.atan2(math.sin(diff), math.cos(diff))
+        new_offset_deg = math.degrees(diff_wrapped)
+
+        # Apply via the parameter system; the on-set callback updates the cache.
+        self.set_parameters([
+            Parameter("yaw_offset_deg", Parameter.Type.DOUBLE, new_offset_deg)
+        ])
+
+        self.get_logger().info(
+            f"Yaw calibration complete: distance={distance:.2f} m, "
+            f"GNSS bearing(ENU)={math.degrees(bearing):+.3f}°, "
+            f"avg IMU yaw={math.degrees(avg_yaw):+.3f}°  →  "
+            f"yaw_offset_deg={new_offset_deg:+.3f}° (applied)"
+        )
+
+    # ------------------------------------------------------------------
 
     def _on_local_odom(self, msg: Odometry) -> None:
         self._latest_local = msg

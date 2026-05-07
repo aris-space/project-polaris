@@ -79,7 +79,6 @@ def generate_launch_description():
             "yaw rotations so /gps/filtered/global stays aligned with raw /fix."
         ),
     )
-
     ekf_local_node = Node(
         package="robot_localization",
         executable="ekf_node",

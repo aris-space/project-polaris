@@ -17,15 +17,32 @@ ekf_local_node:
     base_link_frame: base_link
     world_frame: odom
 
-    # IMU (XSens)
-    # Uses orientation + angular velocity + linear acceleration.
-    # Pre-EKF stationary variance hints: recordings/stationary_tep_stats.json (TEP Section 6 offline).
-    imu0: /imu/data
+    # IMU (XSens) — VRU mode (gyro-only yaw, no magnetometer reference).
+    #
+    # imu0_config: fuse absolute yaw. The canonical robot_localization
+    # `dual_ekf_navsat_example` recommends NOT fusing absolute yaw for IMUs
+    # without magnetometer reference, on the theory that the gyro-integrated
+    # absolute yaw isn't truly absolute and fusing it would lock P[yaw] tight
+    # so GPS can't correct heading via cross-covariance during motion. We
+    # tested that recommendation directly: removing absolute-yaw fusion made
+    # divergence WORSE on both bags we tried (depth_hold ~10→20 km;
+    # zermatt_rectangle_01 diverged to ~90 km in 2 minutes vs the original
+    # config's slower drift). The reason: without an initial absolute-yaw
+    # measurement, the EKF starts at the default initial yaw (0) and needs
+    # time + motion + cross-covariance updates to converge to the actual
+    # heading — and during that convergence window, body velocity gets
+    # rotated through the wrong yaw and position runs away faster than GPS
+    # can pull it back. The IMU's gyro-integrated yaw is wrong in absolute
+    # terms but is *internally consistent* with the IMU's own time evolution,
+    # so feeding it gives the EKF a usable starting reference even if it
+    # drifts slowly. Empirically this works better than the canonical
+    # recommendation for our stack.
+    imu0: /imu/data_corrected
     imu0_config: [
       false, false, false,
-      true,  true,  true,
+      true,  true,  true,     # roll, pitch, yaw — fuse all (see above)
       false, false, false,
-      true,  true,  true,
+      true,  true,  true,     # vroll, vpitch, vyaw
       false, false, false
     ]
     imu0_queue_size: 20

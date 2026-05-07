@@ -35,7 +35,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import SetUseSimTime
+from launch_ros.actions import Node, SetUseSimTime
 
 
 def generate_launch_description():
@@ -79,6 +79,50 @@ def generate_launch_description():
                 default_value="/odometry/filtered/local",
                 description="Local odometry topic forwarded to navsat_transform.",
             ),
+            DeclareLaunchArgument(
+                "diag_output_dir",
+                default_value="/tmp/ekf_diag",
+                description=(
+                    "Directory for ekf_offline_diagnostic CSV. Use a per-run "
+                    "subdir (e.g. diagnosis/global_ekf_residual/rate_2.0/) so "
+                    "compare_diag_runs.py can plot multiple runs side by side."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "imu_yaw_offset_deg",
+                default_value="0.0",
+                description=(
+                    "Pre-EKF yaw correction (deg, CCW about +Z) applied by "
+                    "imu_yaw_correction before the local EKF consumes IMU. "
+                    "Use a non-zero value to compensate the boat's IMU heading "
+                    "bias on a recorded bag (e.g. -140 for "
+                    "zermatt_rectangle_01_2026_04_29). 0 = passthrough."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "ubx_pvt_topic",
+                default_value="/ubx_nav_pvt",
+                description="UBX-NAV-PVT topic for head_mot-based yaw calibration.",
+            ),
+            # Pre-EKF heading correction. Subscribes to /imu/data (raw, from
+            # bag), applies the constant yaw_offset_deg, republishes on
+            # /imu/data_corrected. The local EKF (via imu0_topic override
+            # below) consumes the corrected stream so the entire global-EKF
+            # stack — local EKF, navsat_transform with use_odometry_yaw,
+            # and ekf_global_node — sees a heading aligned with actual ENU.
+            Node(
+                package="ekf_localization_pkg",
+                executable="imu_yaw_correction",
+                name="imu_yaw_correction",
+                output="screen",
+                parameters=[{
+                    "yaw_offset_deg": LaunchConfiguration("imu_yaw_offset_deg"),
+                    "input_topic": "/imu/data",
+                    "output_topic": "/imu/data_corrected",
+                    "gps_topic": LaunchConfiguration("gps_fix_topic"),
+                    "ubx_pvt_topic": LaunchConfiguration("ubx_pvt_topic"),
+                }],
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([str(ekf_launch)]),
                 launch_arguments={
@@ -86,9 +130,35 @@ def generate_launch_description():
                     "use_global_ekf": LaunchConfiguration("use_global_ekf"),
                     "gps_fix_topic": LaunchConfiguration("gps_fix_topic"),
                     "h_acc_topic": LaunchConfiguration("h_acc_topic"),
+                    # navsat_transform_node still wants raw /imu/data — its
+                    # use_odometry_yaw=true mode pulls yaw from the local
+                    # EKF's filtered odometry, not directly from the IMU
+                    # topic, so the corrected stream isn't needed here.
                     "imu_topic": LaunchConfiguration("imu_topic"),
+                    # Local EKF MUST see the corrected stream so the rest of
+                    # the stack inherits the calibrated heading.
+                    "imu0_topic": "/imu/data_corrected",
                     "odom_topic": LaunchConfiguration("odom_topic"),
                 }.items(),
+            ),
+            Node(
+                package="ekf_localization_pkg",
+                executable="ekf_offline_diagnostic",
+                name="ekf_offline_diagnostic",
+                output="screen",
+                parameters=[{
+                    "output_dir": LaunchConfiguration("diag_output_dir"),
+                    "global_odom_topic": "/odometry/filtered/global",
+                    "local_odom_topic": "/odometry/filtered/local_validated",
+                    "gps_odom_topic": "/odometry/gps",
+                    "sbl_topic": "/waterlinked_ugps/navsatfix",
+                    # Use the global track's own NavSatFix as the diagnostic
+                    # datum so SBL is projected with the same lat/lon the
+                    # algorithm anchored on. Falls back to /gps/validated if
+                    # no NavSatFix has appeared within ~5 s.
+                    "datum_navsatfix_topic": "/gps/filtered",
+                    "datum_topic_fallback": "/gps/validated",
+                }],
             ),
         ]
     )

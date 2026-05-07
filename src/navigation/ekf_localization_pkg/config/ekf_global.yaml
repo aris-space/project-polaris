@@ -39,31 +39,25 @@ ekf_global_node:
 
     # ── Debug log ────────────────────────────────────────────────────────────
     # robot_localization's built-in deep-trace dump (per-step state, P matrix,
-    # measurement, innovation, K matrix). Re-enabled while diagnosing the
-    # remaining single-step jump from <1 km to >10 km. Disable after.
-    debug: true
-    debug_out_file: /tmp/ekf_global_debug.log
+    # measurement, innovation, K matrix). ~1 GB per 20-min replay — only turn
+    # on while diagnosing.
+    # debug: true
+    # debug_out_file: /tmp/ekf_global_debug.log
 
-    # Local EKF output — dead-reckoning source.
-    # Required so the global EKF knows the current odom-frame position and can
-    # correctly compute the map→odom correction from GPS.  Without this, the
-    # global EKF diverges: it uses the TF-tree odom→base_link (from local EKF)
-    # to compute map→odom while simultaneously updating its own position from GPS,
-    # creating a circular positive-feedback loop.
+    # ── Reverted to dual-EKF "stacked" pattern: global fuses local EKF output
+    # We tried the canonical robot_localization pattern (global subscribes to
+    # the same raw sensors as local + GPS) — divergence got *worse* (~135 km
+    # vs ~10 km in the stacked setup). So the correlated-input theory wasn't
+    # the dominant issue, and the stacked pattern is actually less broken on
+    # this dataset. Keeping the stacked setup as the working baseline.
     odom0: /odometry/filtered/local_validated
     odom0_config: [
       false, false, false,   # x, y, z — odom-frame origin ≠ map-frame origin; don't fuse as absolute
-      true,  true,  true,    # orientation — same in ENU-aligned odom and map frames; safe to fuse
+      true,  true,  true,    # roll, pitch, yaw — fuse all (see ekf_local.yaml comment block —
+                             # canonical "no absolute yaw" recommendation tested empirically and
+                             # made divergence worse, so we keep absolute yaw fusion)
       true,  true,  true,    # vx, vy, vz — velocity is origin-independent; dead-reckoning
-      false, false, false,   # vroll, vpitch, vyaw — REMOVED. Adding these (originally to fix an
-                             # unsensored-state divergence theory) was paired with simultaneously
-                             # fusing orientation (rows 3-5). With both active, orientation and
-                             # angular velocity become tightly coupled, and innovations on
-                             # orientation can bleed into velocity rotation through cross-cov,
-                             # producing the divergence pattern we kept seeing in offline replay.
-                             # Orientation alone is a sufficient attitude constraint for the
-                             # global EKF; angular velocity will be predicted from Q (1e-9) and
-                             # cross-coupling, which is fine as long as orientation is sensored.
+      true,  true,  true,    # vroll, vpitch, vyaw — angular velocity from local-EKF IMU fusion
       false, false, false    # ax, ay, az — unsensored; locked tight via initial_estimate_covariance
     ]
     odom0_queue_size: 10
@@ -110,8 +104,8 @@ ekf_global_node:
     #     downstream consumer of /odometry/filtered/global, so this is a
     #     correct model simplification, not a hack.
     initial_estimate_covariance: [
-      1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
-      0.0,  1.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      100.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
+      0.0,  100.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
       0.0,  0.0,  0.5,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
       0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,
       0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.0,

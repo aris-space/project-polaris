@@ -60,6 +60,17 @@ def generate_launch_description():
         default_value="/imu/data",
         description="IMU topic forwarded to navsat_transform.",
     )
+    imu0_topic_arg = DeclareLaunchArgument(
+        "imu0_topic",
+        default_value="/imu/data",
+        description=(
+            "IMU topic the local EKF actually fuses. Defaults to /imu/data "
+            "(raw). Override to /imu/data_corrected if imu_yaw_correction is "
+            "running upstream so the local EKF sees the heading-calibrated "
+            "stream. Sets ekf_local_node's imu0 parameter directly, "
+            "overriding the value in ekf_local.yaml."
+        ),
+    )
     odom_topic_arg = DeclareLaunchArgument(
         "odom_topic",
         default_value="/odometry/filtered/local_validated",
@@ -77,7 +88,10 @@ def generate_launch_description():
         executable="ekf_node",
         name="ekf_local_node",
         output="screen",
-        parameters=[LaunchConfiguration("params_file")],
+        parameters=[
+            LaunchConfiguration("params_file"),
+            {"imu0": LaunchConfiguration("imu0_topic")},
+        ],
         remappings=[("odometry/filtered", "/odometry/filtered/local")],
     )
 
@@ -130,6 +144,7 @@ def generate_launch_description():
             gps_fix_topic_arg,
             h_acc_topic_arg,
             imu_topic_arg,
+            imu0_topic_arg,
             odom_topic_arg,
             ekf_local_node,
             odometry_validator_node,
