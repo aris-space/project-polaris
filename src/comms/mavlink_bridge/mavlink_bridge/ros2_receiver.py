@@ -924,19 +924,20 @@ class MavlinkBridgeReceiver(Node):
             return
         m = mavutil.mavlink
         type_mask = (
-            m.POSITION_TARGET_TYPEMASK_X_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
+            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
         )
         self.port.mav.set_position_target_local_ned_send(
             0,
             self.port.target_system,
             self.port.target_component,
-            m.MAV_FRAME_BODY_FRD,
+            m.MAV_FRAME_BODY_OFFSET_NED,
             type_mask,
             0.0, 0.0, 0.0,
             0.0, 0.0, 0.0,
