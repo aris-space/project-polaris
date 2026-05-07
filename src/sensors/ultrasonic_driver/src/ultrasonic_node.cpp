@@ -189,25 +189,18 @@ private:
     auto kv = diagnostic_msgs::msg::KeyValue();
     kv.key = "distance";
 
-    if (distance_m < 0.0f) { 
+    if (distance_m < 0.0f) {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
       status.message = "Sensor not connected / no data";
       kv.value = "N/A";
-    } else {
+    } else if (distance_m < 0.03f) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      status.message = "Not publishing valid data";
       kv.value = std::to_string(distance_m);
+    } else {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
       status.message = "OK";
-
-      if (distance_m < 0.03f) {
-        status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-        status.message = "Not publishing valid data";
-      } else if (distance_m < 1.0f) {
-        status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
-        status.message = "Obstacle very close, check collision avoidance";
-      } else if (distance_m < 1.5f) {
-        status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
-        status.message = "Approaching obstacle";
-      }
+      kv.value = std::to_string(distance_m);
     }
 
     status.values = {kv};
