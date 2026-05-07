@@ -84,13 +84,33 @@
 
         # For MTi-620(R)/MTi-630(R), and Sirius/Avior VRU/AHRS models:  roll pitch options: "Responsive", "General", "Robust"
         filter_label_rollpitch: "Robust"
-        # MTI-620(R) and Sirius/Avior VRU models, yaw has 2 options: "VRU", "VRUAHS" 
-        # MTI-630(R) and Sirius/Avior AHRS models, yaw has 3 options: "FixedMagRef", "NorthReference", "VRU", "VRUAHS" 
-        filter_label_yaw: "NorthReference" #TODO: check how bad interference is and adapt if needed
+        # MTI-620(R) and Sirius/Avior VRU models, yaw has 2 options: "VRU", "VRUAHS"
+        # MTI-630(R) and Sirius/Avior AHRS models, yaw has 3 options: "FixedMagRef", "NorthReference", "VRU", "VRUAHS"
+        #
+        # On-vehicle magnetometer is unreliable on this platform (motors / Pixhawk
+        # EM interference): stationary IMU yaw drifted 11-29 deg in 7 s on the
+        # boat vs 0.07 deg in 30 s on a desk (stationary_11 reference). We
+        # therefore do NOT use the magnetometer for heading.
+        #
+        # "VRU"    : gyro-only, no heading reference; yaw is open-loop integration
+        #            of the gyro and drifts unbounded over the mission.
+        # "VRUAHS" : gyro-only + Active Heading Stabilization. Same gyro-only
+        #            heading source (no magnetometer), but during rotational
+        #            stationary periods (yaw rate near zero) the filter locks the
+        #            heading state so gyro bias does not integrate into yaw.
+        #            Designed for exactly the boat-with-EM-interference case:
+        #            magnetometer-free, but yaw is bounded for typical AUV duty
+        #            cycles that include moments of yaw-rate-near-zero. Initial
+        #            yaw is still arbitrary (boot-frame), and absolute heading is
+        #            recovered by yaw_offset_deg in imu_yaw_correction or the
+        #            equivalent post-EKF yaw_offset_deg in gnss_anchored_pose.
+        filter_label_yaw: "VRUAHS"
 
 
         # MTi-2/320/200: filter only has VRU, you could enable the AHS options:
         # valid for MTI-2/3/320, MTi-20/30, MTI-200/300 when using the VRU filter options.
+        # NOT applicable to Sirius/Avior — for those models AHS is selected via
+        # filter_label_yaw: "VRUAHS" above. Keep this flag false on Sirius.
         enable_active_heading_stabilization: false
 
 
@@ -204,7 +224,12 @@
 
         # Other option flags:
         # valid for MTi-2/3/7/8/20/30/620/630/670/680/200/300/710/Sirius/Avior
-        enable_inrun_compass_calibration: true  # TODO: try true if yaw drifts in clean magnetic environment
+        # In-Run Compass Calibration (ICC) is a magnetometer-based feature.
+        # We use VRUAHS (gyro-only, no magnetometer) on this platform because
+        # on-vehicle magnetic interference is severe; running ICC in that
+        # environment trains the calibration on bad data and is worse than
+        # leaving it off. Disabled.
+        enable_inrun_compass_calibration: false
 
         #TODO: if there is a problem with the baudrate, increase the output_data_rate and baudrate if needed
         # Set baudrate (TODO: check if this is needed and adapt if needed)

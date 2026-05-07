@@ -25,4 +25,15 @@ setup(
             "pytest",
         ],
     },
+    entry_points={
+        "console_scripts": [
+            "gnss_datum_watchdog = ekf_localization_pkg.gnss_datum_watchdog:main",
+            "global_ekf_to_navsatfix = ekf_localization_pkg.global_ekf_to_navsatfix:main",
+            "odometry_validator = ekf_localization_pkg.odometry_validator:main",
+            "gnss_anchored_pose = ekf_localization_pkg.gnss_anchored_pose:main",
+            "navsatfix_marker = ekf_localization_pkg.navsatfix_marker:main",
+            "imu_yaw_correction = ekf_localization_pkg.imu_yaw_correction:main",
+            "ekf_offline_diagnostic = ekf_localization_pkg.ekf_offline_diagnostic:main",
+        ],
+    },
 )
