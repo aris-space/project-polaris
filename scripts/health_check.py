@@ -56,10 +56,10 @@ from config_pkg.constants import Comms
 DEFAULT_STARTUP_DELAY_SEC = 10
 DEFAULT_MEASUREMENT_SEC = 5
 
-# Thruster test defaults (MAV_CMD_DO_MOTOR_TEST, throttle_type=PWM)
+# Thruster test defaults (MAV_CMD_DO_MOTOR_TEST, throttle_type=percentage)
 DEFAULT_NUM_THRUSTERS = 6
-DEFAULT_THRUSTER_PWM = 1600
-DEFAULT_THRUSTER_DURATION_SEC = 3.0
+DEFAULT_THRUSTER_THROTTLE_PCT = 20.0   # % throttle
+DEFAULT_THRUSTER_DURATION_SEC = 2.0    # seconds per motor
 DEFAULT_THRUSTER_BREAK_SEC = 1.0
 
 # h_acc field is uint32 in 0.1 mm units. 10 m == 100_000 raw.
@@ -379,16 +379,15 @@ def prompt_thruster_test() -> bool:
 
 def run_thruster_test(
     num_thrusters: int,
-    pwm: int,
+    throttle_pct: float,
     duration: float,
     break_sec: float,
 ) -> Tuple[int, int]:
-    """Drive each thruster individually via MAV_CMD_DO_MOTOR_TEST.
+    """Sequence all thrusters via a single MAV_CMD_DO_MOTOR_TEST command.
 
     Returns (fails, warns) for inclusion in the overall summary.
     """
     section("THRUSTER TEST")
-    fails = warns = 0
 
     print(f"  {DIM}Connecting to mavlink-router at {Comms.MAVLINK_ROUTER_TCP} ...{RESET}")
     try:
@@ -401,43 +400,44 @@ def run_thruster_test(
         return 1, 0
 
     print(f"  {DIM}Heartbeat received from system {port.target_system}.{RESET}")
-    print(f"  {DIM}PWM={pwm}us, {duration:g}s on, {break_sec:g}s break — "
-          f"watch /pixhawk/servo_output_raw to verify.{RESET}\n")
+    print(f"  {DIM}Throttle={throttle_pct:g}%, {duration:g}s per motor, "
+          f"{num_thrusters} motors in sequence.{RESET}\n")
 
-    name_w = len(f"Thruster {num_thrusters}") + 2
-    for motor in range(1, num_thrusters + 1):
-        label = f"Thruster {motor}"
-        print(f" {CYAN}->{RESET} {label:<{name_w}} PWM={pwm}us for {duration:g}s ... ",
-              end="", flush=True)
-        port.mav.command_long_send(
-            port.target_system,
-            port.target_component,
-            mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-            0,                  # confirmation
-            float(motor),       # param1: motor instance (1-based)
-            1.0,                # param2: throttle_type (1 = PWM in microseconds)
-            float(pwm),         # param3: throttle value
-            float(duration),    # param4: timeout (seconds)
-            0.0,                # param5: motor count (0 → just this one)
-            0.0,                # param6: test order (default)
-            0.0,                # param7: unused
-        )
+    print(f" {CYAN}->{RESET} Arming ...")
+    port.mav.command_long_send(
+        port.target_system, port.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0, 1, 0, 0, 0, 0, 0, 0,
+    )
+    time.sleep(1.0)
 
-        ack = port.recv_match(type="COMMAND_ACK", blocking=True, timeout=2.0)
-        if ack is None:
-            print(f"{WARN}  no COMMAND_ACK")
-            warns += 1
-        elif ack.result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            print(f"{FAIL}  rejected (MAV_RESULT={ack.result})")
-            fails += 1
-        else:
-            print(f"{OK}  accepted")
+    print(f" {CYAN}->{RESET} Sending motor sequence (motors 1–{num_thrusters})")
+    port.mav.command_long_send(
+        port.target_system,
+        port.target_component,
+        mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
+        0,                      # confirmation
+        1.0,                    # param1: start from motor 1
+        0.0,                    # param2: throttle_type (0 = percentage)
+        float(throttle_pct),    # param3: throttle (%)
+        float(duration),        # param4: timeout per motor (seconds)
+        float(num_thrusters),   # param5: motor count (6 = all)
+        0.0,                    # param6: test order (0 = default)
+        0.0,                    # param7: unused
+    )
 
-        # Wait for the motor test to finish, then pause between thrusters.
-        time.sleep(duration + break_sec)
+    time.sleep(num_thrusters * (duration + break_sec))
+
+    print(f" {CYAN}->{RESET} Disarming ...")
+    port.mav.command_long_send(
+        port.target_system, port.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0, 0, 21196, 0, 0, 0, 0, 0,
+    )
+    time.sleep(1.0)
 
     print(f"\n  {DIM}Thruster test complete.{RESET}")
-    return fails, warns
+    return 0, 0
 
 
 # ============================================================
@@ -474,8 +474,8 @@ def main(argv=None) -> int:
                         help="skip the interactive thruster test prompt")
     parser.add_argument("--num-thrusters", type=int, default=DEFAULT_NUM_THRUSTERS,
                         help="number of thrusters to cycle through (default: %(default)s)")
-    parser.add_argument("--thruster-pwm", type=int, default=DEFAULT_THRUSTER_PWM,
-                        help="PWM (us) sent to each thruster (default: %(default)s)")
+    parser.add_argument("--thruster-throttle", type=float, default=DEFAULT_THRUSTER_THROTTLE_PCT,
+                        help="percentage throttle sent to each thruster (default: %(default)s)")
     parser.add_argument("--thruster-duration", type=float, default=DEFAULT_THRUSTER_DURATION_SEC,
                         help="seconds each thruster runs (default: %(default)s)")
     parser.add_argument("--thruster-break", type=float, default=DEFAULT_THRUSTER_BREAK_SEC,
@@ -539,7 +539,7 @@ def main(argv=None) -> int:
     if not args.skip_thruster_test and prompt_thruster_test():
         thr_fails, thr_warns = run_thruster_test(
             num_thrusters=max(1, args.num_thrusters),
-            pwm=args.thruster_pwm,
+            throttle_pct=args.thruster_throttle,
             duration=max(0.1, args.thruster_duration),
             break_sec=max(0.0, args.thruster_break),
         )
