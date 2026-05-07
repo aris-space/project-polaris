@@ -15,13 +15,14 @@ from std_msgs.msg import String
 from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
+
 #
 from geometry_msgs.msg import Twist
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
+
 #
 from rclpy.parameter import Parameter as RclpyParameter
 from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
-
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
 os.makedirs(log_dir, exist_ok=True)
@@ -76,7 +77,9 @@ class MavlinkBridgeReceiver(Node):
         self._gcs_port.mav.srcSystem = 255
         self._gcs_port.mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
         self.create_timer(1.0, self._gcs_heartbeat_cb)
-        self.get_logger().info("GCS heartbeat sender active (sysid=255, 1 Hz) — FS_GCS_ENABLE failsafe armed")
+        self.get_logger().info(
+            "GCS heartbeat sender active (sysid=255, 1 Hz) — FS_GCS_ENABLE failsafe armed"
+        )
 
         self.declare_parameter("external_odom_quality", 100)
         self.declare_parameter("external_odom_max_rate_hz", 30.0)
@@ -209,7 +212,7 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.guided_setpoint_subscriber = self.create_subscription(
-            Twist, # Depending on the msg type from imports
+            Twist,  # Depending on the msg type from imports
             "/pixhawk/cmd_vel",
             self.cmd_vel_cb,
             Comms.SUB_QOS_DEPTH,
@@ -263,9 +266,9 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        if (
-            self.pixhawk_mode in ("MANUAL", "STABILIZE", "ALT_HOLD")
-        ) and len(msg.data) == 6:
+        if (self.pixhawk_mode in ("MANUAL", "STABILIZE", "ALT_HOLD")) and len(
+            msg.data
+        ) == 6:
             self.send_6dof_command(msg.data)
 
         elif len(msg.data) == 4:
@@ -438,9 +441,11 @@ class MavlinkBridgeReceiver(Node):
                 0,
                 0,
             )
-            self.get_logger().info("Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)")
+            self.get_logger().info(
+                "Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)"
+            )
             self._file_logger.info("Sent reboot command to Pixhawk")
-            
+
             ack = self.port.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
             if ack is None:
                 self.get_logger().warn("Reboot: no ACK received from Pixhawk within 3s")
@@ -492,12 +497,11 @@ class MavlinkBridgeReceiver(Node):
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
 
-
         w1, x1, y1, z1 = 0.0, _s, _s, 0.0
-        wt = w1*w2 - x1*x2 - y1*y2 - z1*z2
-        xt = w1*x2 + x1*w2 + y1*z2 - z1*y2
-        yt = w1*y2 - x1*z2 + y1*w2 + z1*x2
-        zt = w1*z2 + x1*y2 - y1*x2 + z1*w2
+        wt = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        xt = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+        yt = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+        zt = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
 
         # Step 2: q_ned_frd = q_tmp (0, 1, 0, 0)  [FLU→FRD: 180° around x]
         q = [-xt, wt, zt, -yt]
@@ -841,9 +845,13 @@ class MavlinkBridgeReceiver(Node):
             lat_e7,
             lon_e7,
             alt_mm,
-            0.0, 0.0, 0.0,         # x, y, z local NED (unknown)
+            0.0,
+            0.0,
+            0.0,  # x, y, z local NED (unknown)
             [1.0, 0.0, 0.0, 0.0],  # quaternion
-            0.0, 0.0, 0.0,         # approach_x, approach_y, approach_z
+            0.0,
+            0.0,
+            0.0,  # approach_x, approach_y, approach_z
             time_usec,
         )
         self._gps_origin_sent = True
@@ -858,7 +866,7 @@ class MavlinkBridgeReceiver(Node):
         )
 
     def cmd_vel_cb(self, msg):
-        # msg is geometry_msgs.msg.Twist        
+        # msg is geometry_msgs.msg.Twist
         # ArduSub needs GUIDED mode for velocity setpoints
         if self.pixhawk_mode != "GUIDED":
             return
@@ -872,8 +880,8 @@ class MavlinkBridgeReceiver(Node):
         # x axis is empirically inverted (forward needs negative vx). Verified
         # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
         # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
-        surge    = -float(msg.linear.x)   # FLU forward -> negative vx
-        heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
+        surge = -float(msg.linear.x)  # FLU forward -> negative vx
+        heave = -float(msg.linear.z)  # FLU up      -> -down (FRD spec)
         yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
@@ -892,16 +900,22 @@ class MavlinkBridgeReceiver(Node):
 
         # 3. Send to Pixhawk in MAV_FRAME_BODY_FRD ("Forward" relative to nose).
         self.port.mav.set_position_target_local_ned_send(
-            0,                                              # time_boot_ms
+            0,  # time_boot_ms
             self.port.target_system,
             self.port.target_component,
-            mavutil.mavlink.MAV_FRAME_BODY_FRD,      # Frame: Body-Relative
+            mavutil.mavlink.MAV_FRAME_BODY_FRD,  # Frame: Body-Relative
             type_mask,
-            0.0, 0.0, 0.0,                                  # Position (ignored)
-            surge, 0.0, heave,                              # Velocities (m/s)
-            0.0, 0.0, 0.0,                                  # Acceleration (ignored)
-            0.0,                                            # Yaw Angle (ignored)
-            yaw_rate                                        # Yaw Rate (rad/s)
+            0.0,
+            0.0,
+            0.0,  # Position (ignored)
+            surge,
+            0.0,
+            heave,  # Velocities (m/s)
+            0.0,
+            0.0,
+            0.0,  # Acceleration (ignored)
+            0.0,  # Yaw Angle (ignored)
+            yaw_rate,  # Yaw Rate (rad/s)
         )
 
         # Refresh watchdog: arms the timeout zero-send when cmd_vel goes silent.
@@ -938,9 +952,15 @@ class MavlinkBridgeReceiver(Node):
             self.port.target_component,
             m.MAV_FRAME_BODY_FRD,
             type_mask,
-            0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
             0.0,
             0.0,
         )
@@ -957,11 +977,39 @@ class MavlinkBridgeReceiver(Node):
             mavutil.mavlink.MAV_STATE_ACTIVE,
         )
 
+    def _send_disarm(self):
+        """Send a disarm command to the Pixhawk. Called on node shutdown."""
+        try:
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0,
+                0,  # 0 = disarm
+                21196,  # force disarm, bypasses safety checks
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            self.get_logger().info("Shutdown disarm command sent to Pixhawk")
+            self._file_logger.info("Shutdown disarm command sent to Pixhawk")
+        except Exception as e:
+            self._file_logger.error(f"Shutdown disarm failed: {e}")
+
+    def destroy_node(self):
+        self._send_disarm()
+        super().destroy_node()
+
     """--------------------------------------------- main function ---------------------------------------------"""
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeReceiver()
-    rclpy.spin(node)  # Keeps the node running and processing callbacks
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
