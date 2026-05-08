@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cmath>
 #include <vector>
+#include <rcl_interfaces/msg/set_parameters_result.hpp>
 
 using std::placeholders::_1;
 using namespace std::chrono_literals;
@@ -68,6 +69,7 @@ AdaptiveThrusterEstimator::AdaptiveThrusterEstimator(
   // Prior from Zermatt 2026-04-29 recordings (zero-current, depth-hold survey)
   declare_parameter("init_k",          0.780);
   declare_parameter("init_b",          0.964);
+  declare_parameter("force_publish",   false);
 
   surge_channel_   = get_parameter("surge_channel").as_int();
   pwm_neutral_     = get_parameter("pwm_neutral").as_int();
@@ -83,6 +85,7 @@ AdaptiveThrusterEstimator::AdaptiveThrusterEstimator(
 
   const double init_k = get_parameter("init_k").as_double();
   const double init_b = get_parameter("init_b").as_double();
+  force_publish_      = get_parameter("force_publish").as_bool();
 
   theta_ << std::log(init_k), init_b;
 
@@ -114,9 +117,13 @@ AdaptiveThrusterEstimator::AdaptiveThrusterEstimator(
   diag_timer_ = create_wall_timer(1000ms,
     std::bind(&AdaptiveThrusterEstimator::onDiagTimer, this));
 
+  param_cb_handle_ = add_on_set_parameters_callback(
+    std::bind(&AdaptiveThrusterEstimator::onParamChange, this, _1));
+
   RCLCPP_INFO(get_logger(),
-    "init k=%.3f b=%.3f  lambda=%.4f  u_min=%.2f  accel_thresh=%.3f m/s²",
-    init_k, init_b, lambda_, u_min_, accel_thresh_);
+    "init k=%.3f b=%.3f  lambda=%.4f  u_min=%.2f  accel_thresh=%.3f m/s²%s",
+    init_k, init_b, lambda_, u_min_, accel_thresh_,
+    force_publish_ ? "  [force_publish=true]" : "");
 }
 
 // ── Servo callback ────────────────────────────────────────────────────────────
@@ -171,7 +178,7 @@ void AdaptiveThrusterEstimator::onTimer()
   const double dvl_age_s  = wallNow() - last_dvl_wall_s_;
   const bool   dvl_present = (last_dvl_wall_s_ > 0.0) && (dvl_age_s < dvl_timeout_s_);
 
-  if (dvl_present) {
+  if (dvl_present && !force_publish_) {
     if (fallback_active_) {
       const double k = std::exp(theta_(0));
       RCLCPP_INFO(get_logger(),
@@ -275,6 +282,23 @@ void AdaptiveThrusterEstimator::publishEstimate(
   odom.twist.covariance[35] = 99999.0;
 
   pub_->publish(odom);
+}
+
+// ── Live parameter update ─────────────────────────────────────────────────────
+rcl_interfaces::msg::SetParametersResult
+AdaptiveThrusterEstimator::onParamChange(
+  const std::vector<rclcpp::Parameter> & params)
+{
+  for (const auto & p : params) {
+    if (p.get_name() == "force_publish") {
+      force_publish_ = p.as_bool();
+      RCLCPP_INFO(get_logger(), "force_publish set to %s",
+        force_publish_ ? "true" : "false");
+    }
+  }
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+  return result;
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

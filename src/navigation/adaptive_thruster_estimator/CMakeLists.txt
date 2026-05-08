@@ -32,4 +32,7 @@ ament_target_dependencies(adaptive_thruster_estimator
 install(TARGETS adaptive_thruster_estimator
   DESTINATION lib/${PROJECT_NAME})
 
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME})
+
 ament_package()

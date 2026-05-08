@@ -19,6 +19,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -97,6 +98,14 @@ def generate_launch_description():
             "string disables the head_mot path; only two-fix bearing fallback."
         ),
     )
+    use_thruster_fallback_arg = DeclareLaunchArgument(
+        "use_thruster_fallback",
+        default_value="true",
+        description=(
+            "Launch thruster_velocity_estimator. Activates only when DVL has "
+            "been absent for dvl_timeout_s (default 3 s)."
+        ),
+    )
 
     # Pre-EKF: rotate /imu/data by yaw_offset_deg, republish on /imu/data_corrected.
     # The local EKF then sees the calibrated heading directly, so /odometry/filtered/local
@@ -149,6 +158,7 @@ def generate_launch_description():
         executable="thruster_velocity_estimator",
         name="thruster_velocity_estimator",
         output="screen",
+        condition=IfCondition(LaunchConfiguration("use_thruster_fallback")),
     )
 
     anchored_pose_node = Node(
@@ -181,6 +191,7 @@ def generate_launch_description():
         antenna_offset_arg,
         imu_yaw_offset_arg,
         ubx_pvt_topic_arg,
+        use_thruster_fallback_arg,
         imu_yaw_correction_node,
         ekf_local_node,
         odometry_validator_node,

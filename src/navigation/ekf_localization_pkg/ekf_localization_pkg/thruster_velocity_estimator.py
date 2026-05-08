@@ -81,6 +81,7 @@ class ThrusterVelocityEstimator(Node):
         self.declare_parameter("surge_b", 0.964)
         self.declare_parameter("surge_deadzone", 0.01)
         self.declare_parameter("dvl_timeout_s", 3.0)
+        self.declare_parameter("force_publish", False)
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("cov_vx", 0.0057)
         self.declare_parameter("cov_vy", 0.0027)
@@ -98,6 +99,7 @@ class ThrusterVelocityEstimator(Node):
         self._surge_b: float = self.get_parameter("surge_b").value
         self._surge_deadzone: float = self.get_parameter("surge_deadzone").value
         self._dvl_timeout_s: float = self.get_parameter("dvl_timeout_s").value
+        self._force_publish: bool = bool(self.get_parameter("force_publish").value)
         self._publish_rate_hz: float = self.get_parameter("publish_rate_hz").value
         self._cov_vx: float = self.get_parameter("cov_vx").value
         self._cov_vy: float = self.get_parameter("cov_vy").value
@@ -149,11 +151,12 @@ class ThrusterVelocityEstimator(Node):
 
         self._timer = self.create_timer(1.0 / self._publish_rate_hz, self._on_timer)
 
+        mode_str = "ALWAYS PUBLISHING (force_publish=True)" if self._force_publish else f"activates after {self._dvl_timeout_s:.1f}s DVL absence"
         self.get_logger().info(
             f"thruster_velocity_estimator ready — model: "
             f"vx = {self._surge_a:.3f}·sign(u)·|u|^{self._surge_b:.3f}  "
             f"(ch{self._surge_ch}, neutral={self._pwm_neutral}, range=±{int(self._pwm_range)} µs)  "
-            f"activates after {self._dvl_timeout_s:.1f}s DVL absence"
+            f"{mode_str}"
         )
 
     # ── Callbacks ────────────────────────────────────────────────────────────
@@ -179,7 +182,7 @@ class ThrusterVelocityEstimator(Node):
         dvl_age_s = now - self._last_dvl_wall_s
         dvl_present = dvl_age_s < self._dvl_timeout_s
 
-        if dvl_present:
+        if dvl_present and not self._force_publish:
             if self._node_active:
                 self._node_active = False
                 self.get_logger().info(

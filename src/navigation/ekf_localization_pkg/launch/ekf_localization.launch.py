@@ -3,7 +3,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition  # noqa: F401
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -81,6 +81,15 @@ def generate_launch_description():
             "offline replay)."
         ),
     )
+    use_thruster_fallback_arg = DeclareLaunchArgument(
+        "use_thruster_fallback",
+        default_value="true",
+        description=(
+            "Launch thruster_velocity_estimator. Publishes body-frame velocity from "
+            "surge PWM when DVL lock is absent, giving the local EKF a velocity "
+            "anchor instead of IMU-only dead-reckoning."
+        ),
+    )
 
     # Local EKF: fuses IMU + DVL + pressure. Starts immediately, no GPS needed.
     ekf_local_node = Node(
@@ -122,6 +131,7 @@ def generate_launch_description():
         executable="thruster_velocity_estimator",
         name="thruster_velocity_estimator",
         output="screen",
+        condition=IfCondition(LaunchConfiguration("use_thruster_fallback")),
     )
 
     # Watchdog: waits for a quality GNSS fix, then spawns navsat_transform_node
@@ -155,6 +165,7 @@ def generate_launch_description():
             imu_topic_arg,
             imu0_topic_arg,
             odom_topic_arg,
+            use_thruster_fallback_arg,
             ekf_local_node,
             odometry_validator_node,
             thruster_fallback_node,

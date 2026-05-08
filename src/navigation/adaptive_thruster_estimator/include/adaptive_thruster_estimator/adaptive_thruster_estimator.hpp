@@ -35,6 +35,11 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr     diag_pub_;
   rclcpp::TimerBase::SharedPtr                                       timer_;
   rclcpp::TimerBase::SharedPtr                                       diag_timer_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr  param_cb_handle_;
+
+  // ── Parameter callback ────────────────────────────────────────────────────
+  rcl_interfaces::msg::SetParametersResult onParamChange(
+    const std::vector<rclcpp::Parameter> & params);
 
   // ── Parameters (set once at startup) ─────────────────────────────────────
   int    surge_channel_;
@@ -62,5 +67,6 @@ private:
   double last_vx_{0.0};            // vx from last accepted DVL message
   double last_dvl_wall_s_{-1.0};   // steady_clock seconds of last DVL msg
   bool   fallback_active_{false};
+  bool   force_publish_{false};     // publish even while DVL is present (testing)
   rclcpp::Time last_dvl_stamp_{0, 0, RCL_ROS_TIME};
 };
