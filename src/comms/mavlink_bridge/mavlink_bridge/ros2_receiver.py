@@ -872,15 +872,7 @@ class MavlinkBridgeReceiver(Node):
             return
 
         # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
-        # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
-        #   +linear.x = forward, +linear.y = left, +linear.z = up,
-        #   +angular.z = yaw CCW (left).
-        # ArduSub 4.5.7 interprets SET_POSITION_TARGET_LOCAL_NED with BODY_FRD
-        # spec-correctly for z (down positive) and yaw (CW positive), but the
-        # x axis is empirically inverted (forward needs negative vx). Verified
-        # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
-        # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
-        # Now yaw aloso for now just hardcoded corect!
+
         surge    = float(msg.linear.x)   # FLU forward -> negative vx (masks downstream surge inversion)
         sway     = -float(msg.linear.y)   # FLU left    -> -right (FRD spec) — starting sign, verify with §5 of CHECK_AXIS.md
         heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
