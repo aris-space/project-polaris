@@ -3,24 +3,19 @@
 
 Run after start_system.launch to verify all sensors are operational.
 Reports device presence (udev symlinks) and ROS topic health (rates and field values).
-After the sensor checks, prompts to optionally cycle each thruster with a low PWM
-(verifiable on /pixhawk/servo_output_raw). Exits 0 if all checks pass, 1 otherwise.
+Exits 0 if all checks pass, 1 otherwise.
 
 Usage:
     python3 scripts/health_check.py
     python3 scripts/health_check.py --no-delay
     python3 scripts/health_check.py --delay 30 --window 10
-    python3 scripts/health_check.py --skip-thruster-test
-    python3 scripts/health_check.py --thruster-pwm 1600 --thruster-duration 3
 """
 
 import argparse
 import os
 import stat
 import sys
-import termios
 import time
-import tty
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -28,8 +23,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
-from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus as DiagStatus
-from nav_msgs.msg import Odometry
 from sensor_msgs.msg import (
     CameraInfo,
     CompressedImage,
@@ -44,16 +37,12 @@ from custom_msgs.msg import Distance
 from rcl_interfaces.srv import SetParameters
 from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
-os.environ.setdefault("MAVLINK20", "1")
-from pymavlink import mavutil
-from config_pkg.constants import Comms
-
 
 # ============================================================
 # Configuration
 # ============================================================
 
-DEFAULT_STARTUP_DELAY_SEC = 10
+DEFAULT_STARTUP_DELAY_SEC = 20
 DEFAULT_MEASUREMENT_SEC = 5
 
 # Thruster test defaults (MAV_CMD_DO_MOTOR_TEST, throttle_type=percentage)
@@ -83,13 +72,10 @@ ICE_MEASUREMENT_TOPIC = "/ping_sonar/distance"
 #   kind = "rate_band"  -> threshold is (lo, hi) tuple in Hz
 #   kind = "received"   -> threshold ignored, just need >=1 msg
 #   kind = "h_acc"      -> threshold is max raw h_acc value
-#   kind = "diag_ok"    -> threshold is DiagnosticStatus name prefix string;
-#                          filters a DiagnosticArray by that prefix and maps
-#                          the worst status level to OK / WARN / FAIL
 TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
     ("IMU",                "/imu/data",                       Imu,             "min_rate",  50.0),
     ("Pixhawk heartbeat",  "/pixhawk/heartbeat",              State,           "rate_band", (0.5, 2.0)),
-    ("BlueRobotics press", "/pixhawk/scaled_pressure",        FluidPressure,   "min_rate",  30.0),
+    ("BlueRobotics press", "/pixhawk/scaled_pressure",        FluidPressure,   "min_rate",  40.0),
     ("Keller pressure",    "/sensors/keller26x/abs_pressure", FluidPressure,   "min_rate",  10.0),
     ("SBL waterlinked",    "/waterlinked_ugps/navsatfix",     NavSatFix,       "min_rate",   1.0),
     ("Ultrasonic front",   "/front/ultrasonic/distance",      Float32,         "min_rate",   5.0),
@@ -98,8 +84,6 @@ TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
     ("Camera front image", "/front/camera/image_raw/compressed",     CompressedImage, "received",  None),
     ("Camera tube info",   "/tube/camera/camera_info",               CameraInfo,      "received",  None),
     ("Camera tube image",  "/tube/camera/image_raw/compressed",      CompressedImage, "received",  None),
-    ("BMS",                "/diagnostics",                    DiagnosticArray, "diag_ok",   "Battery:"),
-    ("DVL A50",            "/sensors/dvl/odometry",           Odometry,        "min_rate",   8.0),
     ("Ice measurement",    ICE_MEASUREMENT_TOPIC,             Distance,        "min_rate",   2.0),
     ("ublox DGNSS h_acc",  "/ubx_nav_hp_pos_llh",             UBXNavHPPosLLH,  "h_acc",     H_ACC_MAX_RAW),
 ]
@@ -193,7 +177,6 @@ class TopicMonitor:
     threshold: Any
     timestamps: List[float] = field(default_factory=list)
     last_msg: Optional[Any] = None
-    last_diag_statuses: List[Any] = field(default_factory=list)
 
 
 class HealthCheckNode(Node):
@@ -202,14 +185,10 @@ class HealthCheckNode(Node):
         self.monitors = monitors
         self._subs = []
         for mon in monitors:
-            if mon.check_kind == "diag_ok":
-                cb = self._make_diag_callback(mon, mon.threshold)
-            else:
-                cb = self._make_callback(mon)
             sub = self.create_subscription(
                 mon.msg_type,
                 mon.topic,
-                cb,
+                self._make_callback(mon),
                 qos_profile_sensor_data,
             )
             self._subs.append(sub)
@@ -219,16 +198,6 @@ class HealthCheckNode(Node):
         def cb(msg):
             mon.timestamps.append(time.monotonic())
             mon.last_msg = msg
-        return cb
-
-    @staticmethod
-    def _make_diag_callback(mon: TopicMonitor, name_prefix: str) -> Callable:
-        def cb(msg):
-            mon.timestamps.append(time.monotonic())
-            mon.last_msg = msg
-            matching = [s for s in msg.status if s.name.startswith(name_prefix)]
-            if matching:
-                mon.last_diag_statuses = matching
         return cb
 
 
@@ -292,32 +261,6 @@ def evaluate(mon: TopicMonitor, window_sec: float) -> Tuple[str, str]:
         if lo <= rate <= hi:
             return OK, f"{rate:5.1f} Hz   ({lo}-{hi})"
         return WARN, f"{rate:5.1f} Hz   ({lo}-{hi})"
-
-    if mon.check_kind == "diag_ok":
-        prefix = mon.threshold
-        if not mon.last_diag_statuses:
-            n = len(mon.timestamps)
-            if n == 0:
-                return FAIL, f"no messages on {mon.topic}"
-            return FAIL, f"no '{prefix}' statuses in {n} received messages"
-        worst = max(s.level for s in mon.last_diag_statuses)
-        if worst == DiagStatus.OK:
-            names = ", ".join(s.name for s in mon.last_diag_statuses)
-            return OK, f"all OK  ({names})"
-        elif worst == DiagStatus.WARN:
-            msgs = "; ".join(
-                f"{s.name}: {s.message}"
-                for s in mon.last_diag_statuses
-                if s.level >= DiagStatus.WARN
-            )
-            return WARN, msgs
-        else:
-            msgs = "; ".join(
-                f"{s.name}: {s.message}"
-                for s in mon.last_diag_statuses
-                if s.level >= DiagStatus.ERROR
-            )
-            return FAIL, msgs
 
     if mon.check_kind == "h_acc":
         if mon.last_msg is None:
@@ -545,8 +488,8 @@ def main(argv=None) -> int:
         )
 
     # Summary
-    fails = dev_fails + topic_fails + thr_fails
-    warns = dev_warns + topic_warns + thr_warns
+    fails = dev_fails + topic_fails
+    warns = dev_warns + topic_warns
 
     print()
     print(f"{BOLD}{CYAN}{'=' * 72}{RESET}")

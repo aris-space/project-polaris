@@ -18,7 +18,6 @@ env/
 .coverage
 coverage.xml
 ping-python/
-*.o
 
 settings.json
 .env
