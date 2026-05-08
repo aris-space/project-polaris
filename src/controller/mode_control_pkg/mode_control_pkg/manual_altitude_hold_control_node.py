@@ -181,10 +181,17 @@ class ManualAltitudeHoldControlNode(Node):
         if gain_prefix == "keyboard":
             gain_x = self._get_keyboard_x_gain(surge)
 
-        x = self._clamp_int(surge * gain_x, -1000, 1000)   # surge: forward/back
-        y = self._clamp_int(-sway * gain_y, -1000, 1000)  # sway: lateral (negated to match MANUAL)
+        # Joystick raw → MANUAL_CONTROL (MAVLink FRD: +x fwd, +y right, +r CW).
+        # Operator intent: stick UP = forward, stick LEFT = left, RIGHT-stick LEFT = yaw CCW.
+        # Joystick raw is -1 when sticks are pushed up/left.
+        #   surge: stick up (raw -1) → want x=+1000           → NEGATE surge
+        #   sway:  stick left (raw -1) → want y=-1000 (left)  → NO flip
+        #   yaw:   stick left (raw -1) → want r=-1000 (CCW)   → NO flip
+        #   z:     R2→up via 500-offset (no flip)
+        x = self._clamp_int(-surge * gain_x, -1000, 1000)  # surge: forward/back
+        y = self._clamp_int(sway * gain_y, -1000, 1000)    # sway:  lateral
         z = self._clamp_int(500.0 + heave_net * gain_z, 0, 1000)  # heave: depth target
-        r = self._clamp_int(-yaw * gain_r, -1000, 1000)   # yaw: rotation (negated to match MANUAL)
+        r = self._clamp_int(yaw * gain_r, -1000, 1000)     # yaw:   rotation
 
         self.get_logger().debug(
             f"Mapped joy axes to manual control: surge={surge:.2f}, sway={sway:.2f}, yaw={yaw:.2f}, l2={l2:.2f}, r2={r2:.2f} -> x={x}, y={y}, z={z}, r={r}"

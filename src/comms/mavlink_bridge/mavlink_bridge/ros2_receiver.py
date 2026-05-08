@@ -394,28 +394,42 @@ class MavlinkBridgeReceiver(Node):
 
     def send_6dof_command(self, control_input):
         """
-        Note: Extension fields (s, t) are usually enabled in
-        newer MAVLink 2.0 implementations. This has to be tested!
-        Input values: -1000 to 1000 (except heave, see below)
+        Forwards a 6-tuple to MAVLink MANUAL_CONTROL (transport only, no frame
+        conversion happens here).
+
+        Input convention — the caller (manual_control_node /
+        manual_altitude_hold_control_node) must already have converted from
+        ROS-FLU to MANUAL_CONTROL FRD before calling this:
+            control_input[0] = surge   in [-1000, +1000], + = forward
+            control_input[1] = sway    in [-1000, +1000], + = right (FRD)
+            control_input[2] = heave   in [    0,  1000], 500 = neutral, > 500 = up
+            control_input[3] = yaw     in [-1000, +1000], + = CW from above (FRD)
+            control_input[4] = roll    in [-1000, +1000], + = roll right
+            control_input[5] = pitch   in [-1000, +1000], + = nose up
+
+        MAVLink MANUAL_CONTROL field meanings as ArduSub interprets them:
+            x = surge, y = sway, z = heave, r = yaw,
+            s = PITCH (extension 1), t = ROLL (extension 2)
+
+        Note that MANUAL_CONTROL.s carries pitch and .t carries roll — so this
+        function maps control_input[5] (pitch) → s and control_input[4] (roll)
+        → t. Intentional and correct; do not "fix" by reordering.
         """
-        # self.get_logger().info(
-        #     f"Sending 6DOF command with control input: {control_input}"
-        # )
         self._file_logger.info(
             f"Sending 6DOF command with control input: {control_input}"
         )
         surge, sway, heave, yaw, roll, pitch = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
-            int(surge),  # x
-            int(sway),  # y
-            int(heave),  # z (0-1000)
-            int(yaw),  # r
-            0,  # buttons
-            0,  # buttons 2
-            3,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
-            int(pitch),  # s (Extension 1)
-            int(roll),  # t (Extension 2)
+            int(surge),  # x  = surge
+            int(sway),   # y  = sway
+            int(heave),  # z  = heave (0-1000, 500 = neutral)
+            int(yaw),    # r  = yaw
+            0,           # buttons
+            0,           # buttons2
+            3,           # enabled_extensions = 0b11 → enable s and t fields
+            int(pitch),  # s  = pitch  (MANUAL_CONTROL.s carries pitch in ArduSub)
+            int(roll),   # t  = roll   (MANUAL_CONTROL.t carries roll  in ArduSub)
         )
 
     def reboot_cb(self, msg):
