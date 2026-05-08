@@ -6,21 +6,82 @@ Companion to `ice_estimates/archimedes_touch.py`, which runs the same thickness 
 
 ---
 
+## Setup (devcontainer — run once)
+
+The devcontainer's default `python3` resolves to `/ros2_ws/.venv/bin/python3`, which does not have the required packages. Use the **system Python** (`/usr/bin/python3`) instead for this script.
+
+The system `transforms3d` (v0.3.1, shipped with ROS 2 Humble) is incompatible with NumPy 2.0 and must be upgraded. The visualization script also requires several packages not present in the devcontainer. Install everything in one step:
+
+```bash
+cd /ros2_ws/src/ice_estimates/scripts
+pip install --upgrade --ignore-installed \
+    transforms3d \
+    contextily pyproj scipy matplotlib pillow
+```
+
+Verify everything works:
+
+```bash
+/usr/bin/python3 -c "from tf_transformations import euler_from_quaternion; print('extraction OK')"
+/usr/bin/python3 -c "import contextily, pyproj, scipy, matplotlib; print('visualization OK')"
+```
+
+All subsequent commands in this README use `/usr/bin/python3` explicitly.
+
+---
+
 ## Quick start
 
 ```bash
 # With defaults (Zermatt bags, /ros2_ws/measurements output)
-python3 extract_zermatt_measurements.py
+/usr/bin/python3 extract_zermatt_measurements.py
 
 # With a config file
-python3 extract_zermatt_measurements.py --config config.yaml
+/usr/bin/python3 extract_zermatt_measurements.py --config config.yaml
 
 # Point at different bags; CLI flags override config
-python3 extract_zermatt_measurements.py \
+/usr/bin/python3 extract_zermatt_measurements.py \
     --config config.yaml \
     --max-depth-dev-m 0.02 \
     /path/to/bag_a /path/to/bag_b
 ```
+
+---
+
+## Visualization
+
+Run after extraction. The script reads the two CSVs produced above and writes plots to `/ros2_ws/measurements/plots/`.
+
+```bash
+# With defaults (reads from /ros2_ws/measurements/, writes to .../plots/)
+/usr/bin/python3 visualize_ice_measurements.py
+
+# Pass the config.yaml to include parameter metadata on the title page
+/usr/bin/python3 visualize_ice_measurements.py --config config.yaml
+
+# Override input/output paths explicitly
+/usr/bin/python3 visualize_ice_measurements.py \
+    --raw  /ros2_ws/measurements/measurements_raw.csv \
+    --av   /ros2_ws/measurements/measurements_av.csv \
+    --out  /ros2_ws/measurements/plots \
+    --config config.yaml
+```
+
+### Outputs
+
+| File | Description |
+|---|---|
+| `map_lake_context.png` | Satellite overview of the whole lake with measurement area highlighted |
+| `map_overview.png` | Zoomed satellite map with planned grid and measured positions |
+| `map_heatmap.png` | Satellite map with interpolated thickness heatmap |
+| `distributions.png` | Per-grid-point raw thickness histograms with mean and ±1σ |
+| `time_series.png` | Thickness time series for each touch session |
+| `stats_table.png` | Full statistical summary table |
+| `ice_density.png` | Ice density estimation methodology page |
+| `error_analysis.png` | Dominant error sources (pitch, session position, depth drift) |
+| `summary.pdf` | All figures compiled into a single PDF report |
+
+Satellite tiles require an internet connection (fetched from ESRI WorldImagery via `contextily`). If the devcontainer has no outbound access the maps will render with a plain dark background and a "tiles unavailable" notice — all other figures are unaffected.
 
 ---
 
@@ -287,8 +348,17 @@ Each session in the averaged CSV includes the target grid point coordinates and 
 
 ## Dependencies
 
+**Extraction** (`extract_zermatt_measurements.py`)
 - `rosbag2_py` (ROS 2 Humble)
 - `rclpy`, `rosidl_runtime_py`
-- `tf_transformations`
+- `tf_transformations` (requires `transforms3d` ≥ 0.4.2 for NumPy 2.0 compatibility)
 - `numpy`
 - `PyYAML`
+
+**Visualization** (`visualize_ice_measurements.py`)
+- All of the above, plus:
+- `matplotlib`
+- `contextily`
+- `pyproj`
+- `scipy`
+- `Pillow` (optional — only needed to display the ice core photo on the density page)
