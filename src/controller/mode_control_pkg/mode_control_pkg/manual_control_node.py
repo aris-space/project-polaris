@@ -210,13 +210,32 @@ class ManualControlNode(Node):
         if gain_prefix == 'keyboard':
             gain_x = self._get_keyboard_x_gain(surge)
 
-        #invert y and r to match the behavior of the PS4 controller
-        x = self._clamp_int(surge * gain_x, -1000, 1000)      # forward/back
-        y = self._clamp_int(-sway * gain_y, -1000, 1000)      # lateral
+        # Joystick raw → MANUAL_CONTROL (MAVLink FRD: +x fwd, +y right, +r CW, +s nose-up).
+        # Operator intent: stick UP = forward, stick LEFT = left, RIGHT-stick LEFT = yaw CCW,
+        # RIGHT-stick UP = nose down. Joystick raw is -1 when sticks are pushed up/left.
+        #
+        # Per-axis derivation:
+        #   surge: stick up (raw -1) → want x=+1000           → NEGATE surge
+        #   sway:  stick left (raw -1) → want y=-1000 (left)  → NO flip
+        #   yaw:   stick left (raw -1) → want r=-1000 (CCW)   → NO flip
+        #   pitch: stick up (raw -1) → want s=-1000 (nose dn) → NO flip
+        #   z:     R2→up via 500-offset (no flip)
+        x = self._clamp_int(-surge * gain_x, -1000, 1000)     # forward/back
+        y = self._clamp_int(sway * gain_y, -1000, 1000)       # lateral
         z = self._clamp_int(500.0 + heave_net * gain_z, 0, 1000)  # throttle/depth
-        r = self._clamp_int(-yaw * gain_r, -1000, 1000)       # yaw
-        s = self._clamp_int(roll * gain_s, -1000, 1000)       # roll
-        t = self._clamp_int(pitch * gain_t, -1000, 1000)      # pitch
+        r = self._clamp_int(yaw * gain_r, -1000, 1000)        # yaw
+
+        # Local variable naming note:
+        #   The locals `s` and `t` here DO NOT correspond to MAVLink fields s/t.
+        #   - local `s` holds the ROLL value      → goes into data[4]
+        #   - local `t` holds the PITCH value     → goes into data[5]
+        # The bridge's send_6dof_command() then maps:
+        #   - data[4] (roll)  → MAVLink t   (correct: MANUAL_CONTROL.t = roll)
+        #   - data[5] (pitch) → MAVLink s   (correct: MANUAL_CONTROL.s = pitch)
+        # So the bridge undoes this naming swap before transmission. End-to-end is correct;
+        # the swap is purely a legacy variable-name quirk in this node.
+        s = self._clamp_int(roll * gain_s, -1000, 1000)       # roll  (despite the local name)
+        t = self._clamp_int(pitch * gain_t, -1000, 1000)      # pitch (despite the local name)
 
         mc_msg.data = [x, y, z, r, s, t]
         return mc_msg
