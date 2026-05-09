@@ -52,7 +52,7 @@ def _wait_for_active(executor, node) -> bool:
             executor.spin_once(timeout_sec=_POLL_SEC)
             continue
         if state_id == State.PRIMARY_STATE_ACTIVE:
-            print('Nav2 is active — safe to send missions.')
+            print('Nav2 is active - safe to send missions.')
             return True
         now = time.time()
         if now - last_log >= 10.0:
@@ -97,7 +97,7 @@ def main():
         rclpy.shutdown()
         sys.exit(1)
 
-    print('STARTUP accepted — waiting for Nav2 to reach active...')
+    print('STARTUP accepted - waiting for Nav2 to reach active...')
     ok = _wait_for_active(executor, node)
 
     node.destroy_node()

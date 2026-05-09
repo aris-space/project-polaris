@@ -1,4 +1,4 @@
-# Hardware Merge — Critical Details
+# Hardware Merge - Critical Details
 
 
 ---

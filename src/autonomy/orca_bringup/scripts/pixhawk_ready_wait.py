@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pixhawk readiness via ``/pixhawk/heartbeat`` — fast fail, no long polling."""
+"""Pixhawk readiness via ``/pixhawk/heartbeat`` - fast fail, no long polling."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def ensure_armed_and_mode_guided(
     """
     Fast gate before Nav2: if Pixhawk is not already linkable and armable **now**, return False.
 
-    Does **not** block for tens of seconds waiting for SITL to become healthy — one short
+    Does **not** block for tens of seconds waiting for SITL to become healthy - one short
     heartbeat wait, one arm command, one GUIDED command, brief settle each time, then check.
 
     ``node`` is unused; kept for call-site compatibility.
@@ -112,7 +112,7 @@ def ensure_armed_and_mode_guided(
         return False
 
     print(
-        f'Heartbeat: mode={state.mode}, armed={int(state.armed)} — attempting once',
+        f'Heartbeat: mode={state.mode}, armed={int(state.armed)} - attempting once',
         flush=True,
     )
 

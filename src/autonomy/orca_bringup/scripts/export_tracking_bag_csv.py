@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# MIT License — same as orca_bringup
+# MIT License - same as orca_bringup
 r"""
 Export PurePursuit tracking topics from a rosbag2 folder to plain CSV (no ROS needed to analyze CSVs).
 
@@ -18,8 +18,8 @@ Also supported if present in the bag:
 
 Outputs:
 
-  tracking_errors_long.csv — unified long format (see README in export folder)
-  tracking_errors_wide.csv — one row per cross-track sample; errors + closest + pose + twist + ocean_current (as-of merged)
+  tracking_errors_long.csv - unified long format (see README in export folder)
+  tracking_errors_wide.csv - one row per cross-track sample; errors + closest + pose + twist + ocean_current (as-of merged)
   tracking_export_README.txt
 
 Usage:
@@ -291,11 +291,11 @@ Source bag: {bag_dir}
 tracking_errors_long.csv
   Columns: {', '.join(LONG_HEADER)}
   msg_type:
-    float64 — v0 is scalar error (.data)
-    point   — v0,v1,v2 = closest path point x,y,z (map frame, see bag headers)
-    pose    — v0..v6 = position x,y,z and orientation quaternion x,y,z,w (map)
-    twist   — v0..v5 = linear x,y,z then angular x,y,z (Nav2-reported body twist)
-    vector3 — v0,v1,v2 = ocean current x,y,z (m/s, /ocean_current)
+    float64 - v0 is scalar error (.data)
+    point   - v0,v1,v2 = closest path point x,y,z (map frame, see bag headers)
+    pose    - v0..v6 = position x,y,z and orientation quaternion x,y,z,w (map)
+    twist   - v0..v5 = linear x,y,z then angular x,y,z (Nav2-reported body twist)
+    vector3 - v0,v1,v2 = ocean current x,y,z (m/s, /ocean_current)
 
 tracking_errors_wide.csv
   One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current columns

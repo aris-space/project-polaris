@@ -80,9 +80,9 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
 
 7. **Exported files** (under `csv_export/` next to the bag, or `-o`):
 
-   - **`tracking_errors_long.csv`** — all messages: `msg_type` is `float64`, `point`, `pose`, or `twist`; numeric fields in `v0`…`v12` (see `tracking_export_README.txt`).
-   - **`tracking_errors_wide.csv`** — one row per cross-track time; columns include the three errors plus closest XYZ, robot position + quaternion, and twist linear/angular (aligned with as-of merge).
-   - **`tracking_export_README.txt`** — column reference.
+   - **`tracking_errors_long.csv`** - all messages: `msg_type` is `float64`, `point`, `pose`, or `twist`; numeric fields in `v0`…`v12` (see `tracking_export_README.txt`).
+   - **`tracking_errors_wide.csv`** - one row per cross-track time; columns include the three errors plus closest XYZ, robot position + quaternion, and twist linear/angular (aligned with as-of merge).
+   - **`tracking_export_README.txt`** - column reference.
 
    Optional plot (needs matplotlib): add `--plot` to the `export_tracking_bag_csv.py` command.
 
@@ -140,7 +140,7 @@ print(df.describe())
 ### Troubleshooting
 
 - **No `rosbag2_*` folder in `ls`**  
-  You did not use `bag:=True`, or you launched from a **different** current directory—search:  
+  You did not use `bag:=True`, or you launched from a **different** current directory-search:  
   `find ~ -maxdepth 3 -name metadata.yaml 2>/dev/null`
 
 - **`ros2 bag info` shows 0 messages** on the tracking topics  

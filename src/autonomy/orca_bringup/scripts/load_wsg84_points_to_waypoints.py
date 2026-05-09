@@ -12,7 +12,7 @@ from typing import List, Tuple
 from geometry_msgs.msg import Point, Pose, PoseStamped
 from std_msgs.msg import Header
 
-# Defaults when optional columns are missing or empty (Phase A — vertical bump metadata).
+# Defaults when optional columns are missing or empty (Phase A - vertical bump metadata).
 DEFAULT_DELTA_Z_M = 0.3
 DEFAULT_HOLD_S = 1.0
 
@@ -108,10 +108,10 @@ def process_mission(
 
     Optional columns (any omitted → defaults on every row):
 
-    - up_down — 1 / true / yes / y / on = run up → hold → down after arrival; empty or 0 = skip
+    - up_down - 1 / true / yes / y / on = run up → hold → down after arrival; empty or 0 = skip
       (optional alias column name: vertical_bump)
-    - delta_z_m — bump size in map ENU Up (m); empty → DEFAULT_DELTA_Z_M
-    - hold_s — hold time at top (s); empty → DEFAULT_HOLD_S
+    - delta_z_m - bump size in map ENU Up (m); empty → DEFAULT_DELTA_Z_M
+    - hold_s - hold time at top (s); empty → DEFAULT_HOLD_S
     """
     path = Path(csv_filepath)
     waypoints_enu: List[PoseStamped] = []

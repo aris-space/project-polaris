@@ -12,6 +12,7 @@
   <author>Paul Zambelli</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>mavlink_bridge</exec_depend>

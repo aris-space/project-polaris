@@ -83,7 +83,7 @@ def wait_for_gps_origin(
 ) -> tuple | None:
     """Spin until /ubx_nav_hp_pos_llh yields `required_fixes` consecutive valid fixes; returns (lat_deg, lon_deg, alt_msl_m) or None.
 
-    Altitude is UBX hmsl (height above mean sea level) — matches the datum
+    Altitude is UBX hmsl (height above mean sea level) - matches the datum
     mavlink_bridge uses for GPS_GLOBAL_ORIGIN.
     """
     consecutive = [0]
@@ -352,7 +352,7 @@ def main() -> None:
         print('>>> Mission complete <<<')
 
     except KeyboardInterrupt:
-        # Interrupt before goal accepted, or re-raised from send_goal — MANUAL then disarm.
+        # Interrupt before goal accepted, or re-raised from send_goal - MANUAL then disarm.
         if executor is not None and node is not None:
             if mode_pub is not None:
                 print('>>> Interrupted, setting Pixhawk mode to MANUAL <<<')

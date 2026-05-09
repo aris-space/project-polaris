@@ -4,7 +4,7 @@
 lifecycle_manager_navigation activates nodes in order: controller_server, planner_server,
 behavior_server, bt_navigator, waypoint_follower. If an earlier node never reaches active
 (e.g. bt_navigator fails to load a BT plugin .so or parse the behavior tree XML),
-waypoint_follower stays inactive forever — that is not fixed by adding more package.xml
+waypoint_follower stays inactive forever - that is not fixed by adding more package.xml
 dependencies; check the failing node's logs and ``ros2 lifecycle get /bt_navigator``.
 """
 

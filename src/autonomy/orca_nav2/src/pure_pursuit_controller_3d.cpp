@@ -139,21 +139,21 @@ namespace orca_nav2
     double x_error_{};
     double yaw_error_{};
 
-    // Cross-track velocity damping — derivative term on lateral error.
+    // Cross-track velocity damping - derivative term on lateral error.
     // v_cross = vel.x*sin(yaw_err) + vel.y*cos(yaw_err)  (body frame, + = drifting left of path)
     // Correction: angular.z -= K_cross_vel * v_cross
     // Start conservative: 0.0 (disabled). A safe first value to try is ~0.3.
     double K_cross_vel_{0.0};
 
-    // Safety cutoff — if velocity vector points more than this many radians off the path,
+    // Safety cutoff - if velocity vector points more than this many radians off the path,
     // immediately zero linear.x to stop the spiral mechanism.
     // 0.0 = disabled. A conservative first value is M_PI/2 (90 deg).
     double max_velocity_divergence_rad_{0.0};
-    double min_speed_divergence_check_{0.02};  // m/s — skip check when nearly stopped
+    double min_speed_divergence_check_{0.02};  // m/s - skip check when nearly stopped
 
     rclcpp::Clock::SharedPtr clock_;
 
-    // Emergency publishers — wired to MAVLink bridge topics.
+    // Emergency publishers - wired to MAVLink bridge topics.
     // Fired when max_velocity_divergence_rad threshold is crossed.
     rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Bool>::SharedPtr arm_cmd_pub_;
     rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::String>::SharedPtr mode_cmd_pub_;
@@ -463,7 +463,7 @@ namespace orca_nav2
 
       clock_ = parent->get_clock();
 
-      // Emergency publishers — always created, not gated on publish_tracking_error_
+      // Emergency publishers - always created, not gated on publish_tracking_error_
       arm_cmd_pub_ = parent->create_publisher<std_msgs::msg::Bool>(
         "/pixhawk/arm_cmd", rclcpp::QoS(1).reliable());
       mode_cmd_pub_ = parent->create_publisher<std_msgs::msg::String>(
@@ -611,8 +611,8 @@ namespace orca_nav2
       // diverge_angle = atan2(|v_perp|, v_along)  ∈ [0, π]
       //   0°  = perfectly aligned with path
       //   45° = 45° off path (fires for BOTH into-path and away-from-path symmetrically)
-      //   90° = perpendicular — definitely an emergency
-      //  >90° = pointing backward — always fires
+      //   90° = perpendicular - definitely an emergency
+      //  >90° = pointing backward - always fires
       //
       // atan2 is preferred over acos(dot/|v|): numerically stable everywhere, no clamping needed.
       if (have_tracking && max_velocity_divergence_rad_ > 0.0) {
@@ -625,7 +625,7 @@ namespace orca_nav2
           const double diverge_angle = std::atan2(std::abs(v_perp), v_along);
           if (diverge_angle > max_velocity_divergence_rad_) {
             RCLCPP_ERROR(logger_,
-              "EMERGENCY: velocity %.1f deg off path (limit %.1f deg) — disarming + MANUAL",
+              "EMERGENCY: velocity %.1f deg off path (limit %.1f deg) - disarming + MANUAL",
               diverge_angle * 180.0 / M_PI,
               max_velocity_divergence_rad_ * 180.0 / M_PI);
 

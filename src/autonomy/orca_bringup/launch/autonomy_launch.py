@@ -39,7 +39,7 @@ from nav2_common.launch import RewrittenYaml
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('orca_bringup')
 
-    # use_sim_time is ALWAYS False for hardware — not exposed as an arg
+    # use_sim_time is ALWAYS False for hardware - not exposed as an arg
     # so it can never be accidentally set to True on the real vehicle.
     use_sim_time = 'False'
 
@@ -146,7 +146,7 @@ def generate_launch_description():
         OnProcessExit(
             target_action=lifecycle_manager,
             on_exit=[
-                LogInfo(msg='[FATAL] Lifecycle manager exited — shutting down autonomy stack.'),
+                LogInfo(msg='[FATAL] Lifecycle manager exited - shutting down autonomy stack.'),
                 EmitEvent(event=Shutdown(reason='Lifecycle manager lost')),
             ],
         )
