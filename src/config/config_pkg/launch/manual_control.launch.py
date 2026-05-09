@@ -29,6 +29,7 @@ def generate_launch_description():
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
     mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
     orca_bringup_pkg_dir = get_package_share_directory("orca_bringup")
+    ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -63,6 +64,18 @@ def generate_launch_description():
         condition=IfCondition(autonomy_arg_value),
     )
 
+    # Local EKF (no navsat_transform) auto-starts whenever autonomy is requested,
+    # since Nav2 needs odom -> base_link TF to activate.
+    ekf_local_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ekf_localization_pkg_dir, "launch", "ekf_localization.launch.py")
+        ),
+        launch_arguments={
+            "use_navsat_transform": "false",
+        }.items(),
+        condition=IfCondition(autonomy_arg_value),
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -82,6 +95,7 @@ def generate_launch_description():
             ),
             mode_control_launch,
             mavlink_launch,
+            ekf_local_launch,
             autonomy_launch,
         ]
     )
