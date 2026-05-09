@@ -35,10 +35,10 @@ def get_bearing(lat1, lon1, lat2, lon2):
 # Waypoint 0 — set from ros2 topic echo /fix  OR  /ubx_nav_hp_pos_llh (flip UBX_E7_INPUT above).
 # /fix example:                 lat0, lon0 = 47.328908, 8.572728
 # /ubx_nav_hp_pos_llh example:  lat0, lon0 = 473289080, 85727280
-lat0, lon0 = 47.328908, 8.572728
+lat0, lon0 = 47.404937, 8.631709
 
 # Waypoint 1
-lat1, lon1 = 47.328890, 8.572578
+lat1, lon1 = 47.404968, 8.631630
 
 
 lat0_deg, lon0_deg = to_degrees(lat0, lon0)
