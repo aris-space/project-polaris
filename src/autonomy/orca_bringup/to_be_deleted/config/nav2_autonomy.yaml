@@ -1,0 +1,78 @@
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    cmd_vel_topic: "/pixhawk/cmd_vel"
+    controller_plugins: ["PurePursuit3D"]
+    progress_checker_plugin: "ProgressChecker3D"
+    goal_checker_plugins: ["GoalChecker3D"]
+
+    PurePursuit3D:
+      plugin: "orca_nav2/PurePursuitController3D"
+      x_vel: 0.4
+      x_accel: 0.2
+      z_vel: 0.2
+      z_accel: 0.2
+      yaw_vel: 0.2
+      yaw_accel: 0.1
+      lookahead_dist: 3.0
+      transform_tolerance: 1.0
+      goal_tolerance: 0.1
+      tick_rate: 20.0
+      x_error: 0.0
+      yaw_error: 0.0
+      # Publishes errors + closest point, robot pose (map), twist (see orca_bringup README)
+      publish_tracking_error: true
+
+    GoalChecker3D:
+      plugin: "orca_nav2/GoalChecker3D"
+
+    ProgressChecker3D:
+      plugin: "orca_nav2/ProgressChecker3D"
+
+planner_server:
+  ros__parameters:
+    planner_plugins: ["StraightLinePlanner3D"]
+    StraightLinePlanner3D:
+      plugin: "orca_nav2/StraightLinePlanner3D"
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.05
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: ""
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: True
+        inflation_radius: 0.5
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      track_unknown_space: true
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: ""
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: True
+        inflation_radius: 0.5

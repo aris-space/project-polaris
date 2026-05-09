@@ -3,16 +3,13 @@
 <package format="3">
 
   <name>orca_bringup</name>
-  <version>0.5.0</version>
+  <version>2.0.0</version>
   <description>Launch scripts</description>
 
-  <maintainer email="clyde@mcqueen.net">Clyde McQueen</maintainer>
+  <maintainer email="pzambelli@student.ethz.ch">Paul Zambelli</maintainer>
   <license>MIT</license>
 
-  <url type="repository">https://github.com/clydemcqueen/orca4.git</url>
-  <url type="bugtracker">https://github.com/clydemcqueen/orca4/issues</url>
-
-  <author>Clyde McQueen</author>
+  <author>Paul Zambelli</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -27,9 +24,11 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>ublox_ubx_msgs</exec_depend>
+  <exec_depend>foxglove_msgs</exec_depend>
 
   <!-- Required for sim_launch.py (clock, odom, /ocean_current bridges). -->
-  <exec_depend>ros_gz_bridge</exec_depend>
+  <!-- <exec_depend>ros_gz_bridge</exec_depend> -->
   <!--<exec_depend>ros_gz_image</exec_depend>-->
 
   <test_depend>ament_lint_auto</test_depend>

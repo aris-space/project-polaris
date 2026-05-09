@@ -1,6 +1,6 @@
 ## Start simulation (for rosbag see below)
 ```bash
-ros2 launch orca_bringup sim_launch.py
+ros2 launch orca_bringup sim_launch.py (bag:=True)
 ```
 
 ## Start mission
@@ -11,7 +11,7 @@ ros2 run orca_bringup WSG84_mission_starter.py
 ## Start current in m/s
 `/orca_bringup/scripts/current_vector_node.py`
 ```bash
-ros2 run orca_bringup current_vector_node.py --ros-args -p direction:="dir_x, xy, con_xy, ramp_xyz" -p amplitude:=0.5 -p period:=15.0 -p noise_stddev:=0.1 -p noise_time_constant:=1.5
+ros2 run orca_bringup current_vector_node.py --ros-args -p direction:="x, con_xy, ramp_xyz" -p amplitude:=0.8 -p period:=15.0
 ```
 
 ## Start just mission and send cmd_vel
@@ -20,16 +20,6 @@ ros2 topic pub -1 /pixhawk/arm_cmd std_msgs/msg/Bool "{data: true}"
 ros2 topic pub -1 /pixhawk/mode_cmd std_msgs/msg/String "{data: GUIDED}"
 ros2 topic pub -r 20 /pixhawk/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
 ```
-
-## Make step reponses from max distence of max. dist for replan
-Change in `/orca_description/worlds/sand.world` the lines at pose ENU!. So for step would change the y value (2nd one!).
-```bash
-    <include>
-      <uri>model://orca4</uri>
-      <pose>0 0 -0.2 0 0 0</pose>
-    </include>
-```
-
 
 ## Tracking errors: rosbag → CSV (Docker vs host)
 
@@ -65,29 +55,6 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
    ```
    Leave this running in that terminal.
 
-1. **Start rosbag manually**
-  ```bash
-   ros2 bag record --use-sim-time \
-  /pure_pursuit_cross_track_xy \
-  /pure_pursuit_vertical_error \
-  /pure_pursuit_yaw_error \
-  /pure_pursuit_closest_point_map \
-  /pure_pursuit_robot_pose_map \
-  /pure_pursuit_robot_twist \
-  /ocean_current
-   ```
-   and then in new terminal:
-   ```bash
-   ros2 topic pub --once \
-  --qos-durability transient_local \
-  /ocean_current geometry_msgs/msg/Vector3 \
-  "{x: 0.0, y: 0.0, z: 0.0}"
-   ```
-   Stop with in rosbag terminal
-   ```bash
-   Ctrl+C
-   ```
-
 2. **Run a mission** (second terminal **inside the same container**, with workspace sourced):
    ```bash
    ros2 run orca_bringup WSG84_mission_starter.py
@@ -111,7 +78,7 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
      -o ~/colcon_ws/exports/my_run
    ```
 
-**Exported files** (under `csv_export/` next to the bag, or `-o`):
+7. **Exported files** (under `csv_export/` next to the bag, or `-o`):
 
    - **`tracking_errors_long.csv`** — all messages: `msg_type` is `float64`, `point`, `pose`, or `twist`; numeric fields in `v0`…`v12` (see `tracking_export_README.txt`).
    - **`tracking_errors_wide.csv`** — one row per cross-track time; columns include the three errors plus closest XYZ, robot position + quaternion, and twist linear/angular (aligned with as-of merge).

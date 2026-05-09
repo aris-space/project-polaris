@@ -2,13 +2,14 @@
 """
 Send Nav2 waypoints from ``missions/default_wgs84_mission.csv``.
 
-Origin defaults to ``missions/default_mission_origin.json`` (same as ArduSub home in sim_launch).
-Override: ``--origin=lat,lon,alt`` and/or ``--file path.csv``.
+Origin is read from /ubx_nav_hp_pos_llh (raw u-blox high-precision fix) so that the
+WGS84→ENU conversion uses the same altitude datum (MSL, from UBX hmsl) as the
+Pixhawk's GPS_GLOBAL_ORIGIN set by mavlink_bridge. Override: ``--origin=lat,lon,alt``
+and/or ``--file path.csv``.
 """
 
 from enum import Enum
 import argparse
-import json
 import sys
 import time
 
@@ -16,20 +17,20 @@ import rclpy
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
 from nav2_msgs.action import FollowWaypoints
-from nav_msgs.msg import Path
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.parameter import Parameter
 from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import Bool, String
+from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
-from load_wsg84_points_to_waypoints import process_coordinates
-from nav2_ready_wait import wait_for_waypoint_follower_active
-from pixhawk_ready_wait import (
+from autonomy.orca_bringup.scripts.load_wsg84_points_to_waypoints import process_coordinates
+from autonomy.orca_bringup.scripts.nav2_ready_wait import wait_for_waypoint_follower_active
+from autonomy.orca_bringup.scripts.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,
 )
+
 
 
 class SendGoalResult(Enum):
@@ -72,42 +73,53 @@ def publish_disarm_and_spin(executor, node, arm_pub, spins: int = 30) -> None:
             break
 
 
-def publish_clear_plan_and_spin(executor, node, plan_pub, spins: int = 10) -> None:
-    """Publish an empty Path on /plan so RViz drops the orange line. Tolerant of shutdown."""
-    if plan_pub is None or node is None or executor is None:
-        return
-    try:
-        empty = Path()
-        empty.header.frame_id = 'map'
-        empty.header.stamp = node.get_clock().now().to_msg()
-        plan_pub.publish(empty)
-    except Exception:
-        return
-    for _ in range(spins):
-        if not rclpy.ok():
-            break
-        try:
-            executor.spin_once(timeout_sec=0.05)
-        except Exception:
-            break
-
-
 def default_mission_csv_path() -> str:
     share = get_package_share_directory('orca_bringup')
-    return f'{share}/missions/straight_line_mission.csv'
+    return f'{share}/missions/pool_mission.csv'
 
 
-def default_mission_origin_path() -> str:
-    share = get_package_share_directory('orca_bringup')
-    return f'{share}/missions/default_mission_origin.json'
+def wait_for_gps_origin(
+    executor, node, *, timeout_sec: float = 120.0, required_fixes: int = 5
+) -> tuple | None:
+    """Spin until /ubx_nav_hp_pos_llh yields `required_fixes` consecutive valid fixes; returns (lat_deg, lon_deg, alt_msl_m) or None.
 
+    Altitude is UBX hmsl (height above mean sea level) — matches the datum
+    mavlink_bridge uses for GPS_GLOBAL_ORIGIN.
+    """
+    consecutive = [0]
+    result = [None]
 
-def load_origin_from_share() -> tuple:
-    """(lat, lon, alt_m) from default_mission_origin.json — keep in sync with sim_launch ArduSub home."""
-    path = default_mission_origin_path()
-    with open(path, encoding='utf-8') as f:
-        o = json.load(f)
-    return float(o['lat']), float(o['lon']), float(o['alt'])
+    def _cb(msg: UBXNavHPPosLLH):
+        if result[0] is not None:
+            return
+        if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
+            consecutive[0] = 0
+            return
+        consecutive[0] += 1
+        if consecutive[0] >= required_fixes:
+            # UBX units: lat/lon are deg * 1e7 (int32); hmsl is mm (int32).
+            lat_deg = msg.lat * 1e-7
+            lon_deg = msg.lon * 1e-7
+            alt_m = msg.hmsl * 1e-3
+            result[0] = (lat_deg, lon_deg, alt_m)
+
+    sub = node.create_subscription(UBXNavHPPosLLH, '/ubx_nav_hp_pos_llh', _cb, 10)
+    deadline = time.time() + timeout_sec
+    print(f'Waiting for origin from /ubx_nav_hp_pos_llh ({required_fixes} consecutive valid fixes, up to {timeout_sec:.0f}s)...')
+    while rclpy.ok() and time.time() < deadline:
+        if result[0] is not None:
+            break
+        executor.spin_once(timeout_sec=0.1)
+    node.destroy_subscription(sub)
+    if result[0] is None:
+        print(
+            f'Timed out after {timeout_sec:.0f}s waiting for /ubx_nav_hp_pos_llh '
+            f'({consecutive[0]}/{required_fixes} consecutive valid fixes).'
+        )
+        return None
+    lat, lon, alt = result[0]
+    print(f'Origin (MSL): lat={lat:.7f}, lon={lon:.7f}, alt={alt:.2f}m (stable over {required_fixes} fixes)')
+    return result[0]
 
 
 def parse_origin(s: str) -> tuple:
@@ -135,7 +147,7 @@ def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.
 
 
 def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
-              status_pub=None, total_waypoints: int = 0, plan_pub=None) -> SendGoalResult:
+              status_pub=None, total_waypoints: int = 0) -> SendGoalResult:
     goal_handle = None
 
     def feedback_cb(feedback_msg):
@@ -216,8 +228,6 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
             else:
                 print('Goal canceled')
 
-            publish_clear_plan_and_spin(executor, node, plan_pub, spins=10)
-
             publish_manual_and_spin(executor, node, mode_pub, spins=15)
 
             print('>>> Interrupted, disarming <<<')
@@ -232,7 +242,7 @@ def main() -> None:
         '--origin',
         type=parse_origin,
         default=None,
-        help='lat,lon,alt_m (default: missions/default_mission_origin.json)',
+        help='lat,lon,alt_m (default: read from /gps/filtered topic)',
     )
     parser.add_argument(
         '--file',
@@ -244,28 +254,6 @@ def main() -> None:
     args, ros_args = parser.parse_known_args()
 
     csv_path = args.file if args.file else default_mission_csv_path()
-    if args.origin is not None:
-        lat0, lon0, alt0 = args.origin
-        print('Using origin from --origin')
-    else:
-        try:
-            lat0, lon0, alt0 = load_origin_from_share()
-        except (OSError, KeyError, TypeError, ValueError) as e:
-            print(f'Failed to load default origin from {default_mission_origin_path()}: {e}', file=sys.stderr)
-            sys.exit(1)
-        print(f'Using origin from {default_mission_origin_path()}')
-
-    print(f'Origin (WGS84): lat={lat0}, lon={lon0}, alt={alt0} m')
-    print(f'Mission CSV: {csv_path}')
-
-    try:
-        poses = process_coordinates(csv_path, lat0, lon0, alt0)
-    except (OSError, ValueError) as e:
-        print(f'Error loading mission: {e}', file=sys.stderr)
-        sys.exit(1)
-
-    goal = FollowWaypoints.Goal()
-    goal.poses = poses
 
     # Do not install rclpy SIGINT/SIGTERM handlers: they call shutdown() and invalidate the
     # context while we are still canceling the Nav2 goal, so /pixhawk/mode_cmd publish fails.
@@ -275,16 +263,12 @@ def main() -> None:
     follow_waypoints = None
     mode_pub = None
     arm_pub = None
-    plan_pub = None
     executor = None
 
     try:
         node = rclpy.create_node(
             'wsg84_mission_starter',
             automatically_declare_parameters_from_overrides=True,
-            parameter_overrides=[
-                Parameter('use_sim_time', Parameter.Type.BOOL, True),
-            ],
         )
         executor = MultiThreadedExecutor()
         executor.add_node(node)
@@ -293,9 +277,6 @@ def main() -> None:
         mode_pub = node.create_publisher(String, '/pixhawk/mode_cmd', 10)
         arm_pub = node.create_publisher(Bool, '/pixhawk/arm_cmd', 10)
         status_pub = node.create_publisher(String, '/mission_status', 10)
-        # /plan is owned by Nav2's planner_server; we co-publish an empty Path on cancel/exit
-        # so RViz drops the orange line. RViz subscriber is Reliable, Volatile, depth 5.
-        plan_pub = node.create_publisher(Path, '/plan', 10)
 
         hb_state = PixhawkState()
         node.create_subscription(
@@ -304,6 +285,26 @@ def main() -> None:
             make_heartbeat_callback(hb_state),
             10,
         )
+
+        if args.origin is not None:
+            lat0, lon0, alt0 = args.origin
+            print(f'Using origin from --origin: lat={lat0}, lon={lon0}, alt={alt0} m')
+        else:
+            origin = wait_for_gps_origin(executor, node)
+            if origin is None:
+                print('No EKF origin received; exiting.', file=sys.stderr)
+                sys.exit(1)
+            lat0, lon0, alt0 = origin
+
+        print(f'Mission CSV: {csv_path}')
+        try:
+            poses = process_coordinates(csv_path, lat0, lon0, alt0)
+        except (OSError, ValueError) as e:
+            print(f'Error loading mission: {e}', file=sys.stderr)
+            sys.exit(1)
+
+        goal = FollowWaypoints.Goal()
+        goal.poses = poses
 
         print(f'Loaded {len(goal.poses)} waypoints (map ENU)')
 
@@ -324,13 +325,11 @@ def main() -> None:
             )
             publish_manual_and_spin(executor, node, mode_pub, spins=20)
             publish_disarm_and_spin(executor, node, arm_pub, spins=20)
-            publish_clear_plan_and_spin(executor, node, plan_pub, spins=10)
             sys.exit(1)
 
         print('>>> Executing mission <<<')
         mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
-                                   status_pub=status_pub, total_waypoints=len(goal.poses),
-                                   plan_pub=plan_pub)
+                                   status_pub=status_pub, total_waypoints=len(goal.poses))
 
         if mission_result == SendGoalResult.SUCCESS and rclpy.ok():
             print('>>> Disarming <<<')
@@ -338,20 +337,17 @@ def main() -> None:
             time.sleep(0.5)
             print('>>> Setting Pixhawk mode to MANUAL <<<')
             mode_pub.publish(String(data='MANUAL'))
-            rclpy.spin_once(node, timeout_sec=0.2)
-            publish_clear_plan_and_spin(executor, node, plan_pub, spins=10)
+            executor.spin_once(timeout_sec=0.2)
         elif mission_result == SendGoalResult.FAILURE and rclpy.ok():
             # Nav2 died mid-mission; attempt best-effort disarm + MANUAL.
             print('>>> Mission aborted; attempting disarm + MANUAL <<<')
             publish_manual_and_spin(executor, node, mode_pub, spins=20)
             publish_disarm_and_spin(executor, node, arm_pub, spins=20)
-            publish_clear_plan_and_spin(executor, node, plan_pub, spins=10)
         elif mission_result == SendGoalResult.CANCELED and rclpy.ok():
-            # send_goal already sent MANUAL + disarm + empty /plan; optional flush if drops occurred.
+            # send_goal already sent MANUAL + disarm; optional flush if drops occurred.
             print('>>> Post-cancel flush (MANUAL + disarm) <<<')
             publish_manual_and_spin(executor, node, mode_pub, spins=15)
             publish_disarm_and_spin(executor, node, arm_pub, spins=20)
-            publish_clear_plan_and_spin(executor, node, plan_pub, spins=10)
 
         print('>>> Mission complete <<<')
 
@@ -364,8 +360,6 @@ def main() -> None:
             if arm_pub is not None:
                 print('>>> Interrupted, disarming <<<')
                 publish_disarm_and_spin(executor, node, arm_pub)
-            if plan_pub is not None:
-                publish_clear_plan_and_spin(executor, node, plan_pub)
 
     finally:
         if follow_waypoints is not None:

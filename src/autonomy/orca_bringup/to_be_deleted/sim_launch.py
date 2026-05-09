@@ -125,8 +125,6 @@ def generate_launch_description():
                 '/ocean_current',
             ],
             output='screen',
-            sigterm_timeout='10',
-            sigkill_timeout='5',
             condition=IfCondition(LaunchConfiguration('bag')),
         ),
 
@@ -139,7 +137,6 @@ def generate_launch_description():
                 ExecuteProcess(
                     cmd=[
                         'ros2', 'topic', 'pub', '--once',
-                        '--qos-durability', 'transient_local',
                         '/ocean_current', 'geometry_msgs/msg/Vector3',
                         '{x: 0.0, y: 0.0, z: 0.0}',
                     ],
@@ -153,8 +150,6 @@ def generate_launch_description():
         ExecuteProcess(
             cmd=['rviz2', '-d', rviz_file],
             output='screen',
-            sigterm_timeout='5',
-            sigkill_timeout='5',
             condition=IfCondition(LaunchConfiguration('rviz')),
         ),
 
@@ -168,8 +163,6 @@ def generate_launch_description():
                 '-I0', '--home', ardusub_home,
             ],
             output='screen',
-            sigterm_timeout='15',
-            sigkill_timeout='5',
             condition=IfCondition(LaunchConfiguration('ardusub')),
         ),
 
@@ -179,8 +172,6 @@ def generate_launch_description():
         ExecuteProcess(
             cmd=['gz', 'sim', '-v', '3', '-r', world_file],
             output='screen',
-            sigterm_timeout='15',
-            sigkill_timeout='5',
             condition=IfCondition(LaunchConfiguration('gzclient')),
         ),
 
@@ -188,8 +179,6 @@ def generate_launch_description():
         ExecuteProcess(
             cmd=['gz', 'sim', '-v', '3', '-r', '-s', world_file],
             output='screen',
-            sigterm_timeout='15',
-            sigkill_timeout='5',
             condition=UnlessCondition(LaunchConfiguration('gzclient')),
         ),
 
@@ -203,7 +192,7 @@ def generate_launch_description():
             arguments=[
                 '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
                 '/model/orca4/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
-                '/ocean_current@geometry_msgs/msg/Vector3]gz.msgs.Vector3d',
+                '/ocean_current@geometry_msgs/msg/Vector3]gz.msgs.Vector3d', # TODO: perhaps use Vector3D
             ],
             remappings=[
                 ('/model/orca4/odometry', '/odom'),
