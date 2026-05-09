@@ -121,9 +121,9 @@ controller_server:
 
       # Velocity-divergence emergency threshold (rad).
       # If the velocity vector points more than this angle off the path tangent:
-      #   1. Publishes False  on /pixhawk/arm_cmd  → disarm
-      #   2. Publishes MANUAL on /pixhawk/mode_cmd → manual mode
-      #   3. Throws ControllerException            → aborts navigation
+      #   1. Publishes False  on /pixhawk/arm_cmd  -> disarm
+      #   2. Publishes MANUAL on /pixhawk/mode_cmd -> manual mode
+      #   3. Throws ControllerException            -> aborts navigation
       # 0.0 = disabled.  0.785 = 45 deg (strict).  1.05 = 60 deg (more tolerant).
       max_velocity_divergence_rad: 1.22  # 70 deg - fires symmetrically for both into and away from path
       min_speed_divergence_check: 0.25  # m/s - skip check when nearly stopped
@@ -216,7 +216,7 @@ planner_server_rclcpp_node:
     use_sim_time: True
 
 # Nav2 Humble: use behavior_plugins + nav2_behaviors/* (not recovery_plugins / nav2_recoveries).
-# Wrong names/types leave behavior_server configure failing → unconfigured forever.
+# Wrong names/types leave behavior_server configure failing -> unconfigured forever.
 behavior_server:
   ros__parameters:
     costmap_topic: "local_costmap/costmap_raw"

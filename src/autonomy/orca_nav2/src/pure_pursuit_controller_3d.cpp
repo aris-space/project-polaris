@@ -588,7 +588,7 @@ namespace orca_nav2
 
       // Cross-track velocity damping: derivative feedback on lateral error.
       // v_cross is the velocity component perpendicular to the path (body frame).
-      // Positive v_cross = drifting left of path → subtract from angular.z to steer right.
+      // Positive v_cross = drifting left of path -> subtract from angular.z to steer right.
       // Tuned via K_cross_vel (0 = disabled). Units: (rad/s) / (m/s).
       if (have_tracking && K_cross_vel_ > 0.0) {
         const double v_cross = velocity.linear.x * std::sin(yaw_err) +
@@ -603,7 +603,7 @@ namespace orca_nav2
 
       // Velocity-divergence emergency: decompose velocity into path axes (body frame).
       //   path_tangent_body = ( cos(yaw_err), -sin(yaw_err) )
-      //   path_normal_body  = ( sin(yaw_err),  cos(yaw_err) )  ← same as v_cross above
+      //   path_normal_body  = ( sin(yaw_err),  cos(yaw_err) )  <- same as v_cross above
       //
       //   v_along = velocity component along  path tangent  (+forward along path)
       //   v_perp  = velocity component along  path normal   (+left of path)

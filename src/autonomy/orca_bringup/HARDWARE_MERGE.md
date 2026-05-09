@@ -34,4 +34,4 @@ Source files: `mavlink_publisher.py` line 80, `ros2_receiver.py` line 72.
 
 - [ ] `MAVLINK_PUBLISHER_URL` and `MAVLINK_RECEIVER_URL` set in the shell
 - [ ] `/pixhawk/heartbeat` topic is publishing before starting navigation
-- [ ] `map → odom → base_link` TF chain visible in `ros2 run tf2_tools view_frames`
+- [ ] `map -> odom -> base_link` TF chain visible in `ros2 run tf2_tools view_frames`

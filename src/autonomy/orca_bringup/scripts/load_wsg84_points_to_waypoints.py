@@ -22,7 +22,7 @@ class WaypointMeta:
     """Per-row mission metadata parallel to each ``PoseStamped`` from the same CSV row."""
 
     up_down: bool = False
-    """If True, run up → hold → down after Nav2 reports the waypoint reached."""
+    """If True, run up -> hold -> down after Nav2 reports the waypoint reached."""
 
     delta_z_m: float = DEFAULT_DELTA_Z_M
     """Heave distance in map ENU Up (meters); used when ``up_down`` is True."""
@@ -106,12 +106,12 @@ def process_mission(
 
     Required columns: lat, lon, alt (degrees, degrees, meters; same alt datum as alt0).
 
-    Optional columns (any omitted → defaults on every row):
+    Optional columns (any omitted -> defaults on every row):
 
-    - up_down - 1 / true / yes / y / on = run up → hold → down after arrival; empty or 0 = skip
+    - up_down - 1 / true / yes / y / on = run up -> hold -> down after arrival; empty or 0 = skip
       (optional alias column name: vertical_bump)
-    - delta_z_m - bump size in map ENU Up (m); empty → DEFAULT_DELTA_Z_M
-    - hold_s - hold time at top (s); empty → DEFAULT_HOLD_S
+    - delta_z_m - bump size in map ENU Up (m); empty -> DEFAULT_DELTA_Z_M
+    - hold_s - hold time at top (s); empty -> DEFAULT_HOLD_S
     """
     path = Path(csv_filepath)
     waypoints_enu: List[PoseStamped] = []

@@ -21,7 +21,7 @@ ros2 topic pub -1 /pixhawk/mode_cmd std_msgs/msg/String "{data: GUIDED}"
 ros2 topic pub -r 20 /pixhawk/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
 ```
 
-## Tracking errors: rosbag → CSV (Docker vs host)
+## Tracking errors: rosbag -> CSV (Docker vs host)
 
 The Nav2 plugin `orca_nav2/PurePursuitController3D` can publish six diagnostics
 (`std_msgs/msg/Float64`) while it is actively following a plan:
@@ -30,7 +30,7 @@ The Nav2 plugin `orca_nav2/PurePursuitController3D` can publish six diagnostics
 |-------|------|---------|
 | `/pure_pursuit_cross_track_xy` | `std_msgs/Float64` | Horizontal distance to plan polyline (m) |
 | `/pure_pursuit_vertical_error` | `std_msgs/Float64` | `robot_z - path_z` at closest XY point (m) |
-| `/pure_pursuit_yaw_error` | `std_msgs/Float64` | Shortest angle path heading → robot yaw (rad, about `[-π, π]`) |
+| `/pure_pursuit_yaw_error` | `std_msgs/Float64` | Shortest angle path heading -> robot yaw (rad, about `[-π, π]`) |
 | `/pure_pursuit_closest_point_map` | `geometry_msgs/PointStamped` | Closest point on path in **map** (header `frame_id` = plan frame) |
 | `/pure_pursuit_robot_pose_map` | `geometry_msgs/PoseStamped` | Robot pose in **map** |
 | `/pure_pursuit_robot_twist` | `geometry_msgs/TwistStamped` | Twist Nav2 passes in (usually from odometry; header frame matches robot pose frame) |
@@ -80,7 +80,7 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
 
 7. **Exported files** (under `csv_export/` next to the bag, or `-o`):
 
-   - **`tracking_errors_long.csv`** - all messages: `msg_type` is `float64`, `point`, `pose`, or `twist`; numeric fields in `v0`…`v12` (see `tracking_export_README.txt`).
+   - **`tracking_errors_long.csv`** - all messages: `msg_type` is `float64`, `point`, `pose`, or `twist`; numeric fields in `v0`...`v12` (see `tracking_export_README.txt`).
    - **`tracking_errors_wide.csv`** - one row per cross-track time; columns include the three errors plus closest XYZ, robot position + quaternion, and twist linear/angular (aligned with as-of merge).
    - **`tracking_export_README.txt`** - column reference.
 
@@ -92,7 +92,7 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
 
 `docker cp` must be run on the **host**, not inside the container (`docker: command not found` inside the container is expected).
 
-1. **On the host**, open a terminal (e.g. `polaris_pz@…`, **not** `orca4@…`).
+1. **On the host**, open a terminal (e.g. `polaris_pz@...`, **not** `orca4@...`).
 
 2. **Confirm the container name**:
    ```bash

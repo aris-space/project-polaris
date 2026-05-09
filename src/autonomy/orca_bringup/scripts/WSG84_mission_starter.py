@@ -3,7 +3,7 @@
 Send Nav2 waypoints from ``missions/default_wgs84_mission.csv``.
 
 Origin is read from /ubx_nav_hp_pos_llh (raw u-blox high-precision fix) so that the
-WGS84→ENU conversion uses the same altitude datum (MSL, from UBX hmsl) as the
+WGS84->ENU conversion uses the same altitude datum (MSL, from UBX hmsl) as the
 Pixhawk's GPS_GLOBAL_ORIGIN set by mavlink_bridge. Override: ``--origin=lat,lon,alt``
 and/or ``--file path.csv``.
 """

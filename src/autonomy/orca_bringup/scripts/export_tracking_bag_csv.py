@@ -299,7 +299,7 @@ tracking_errors_long.csv
 
 tracking_errors_wide.csv
   One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current columns
-  use the last sample at or before that time (same controller tick → aligned).
+  use the last sample at or before that time (same controller tick -> aligned).
 
 Plain UTF-8; no ROS needed to analyze. Produced by export_tracking_bag_csv.py
 """
@@ -372,9 +372,9 @@ def main() -> int:
     _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current)
     _write_readme(readme_path, bag_dir)
 
-    print(f'Wrote {len(long_rows)} long rows → {long_path}')
-    print(f'Wide CSV → {wide_path}')
-    print(f'Notes → {readme_path}')
+    print(f'Wrote {len(long_rows)} long rows -> {long_path}')
+    print(f'Wide CSV -> {wide_path}')
+    print(f'Notes -> {readme_path}')
 
     if args.plot:
         _maybe_plot(by_float, bag_dir.name)
