@@ -23,12 +23,14 @@ from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
     ExecuteProcess,
+    IncludeLaunchDescription,
     LogInfo,
     RegisterEventHandler,
 )
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
@@ -38,6 +40,7 @@ from nav2_common.launch import RewrittenYaml
 
 def generate_launch_description():
     orca_bringup_dir = get_package_share_directory('autonomy_bringup_pkg')
+    ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
 
     # use_sim_time is ALWAYS False for hardware - not exposed as an arg
     # so it can never be accidentally set to True on the real vehicle.
@@ -142,6 +145,18 @@ def generate_launch_description():
         }],
     )
 
+    # Local EKF (no navsat_transform) auto-starts whenever autonomy is requested,
+    # since Nav2 needs odom -> base_link TF to activate.
+    ekf_local_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(ekf_localization_pkg_dir, "launch", "ekf_localization.launch.py")
+        ),
+        launch_arguments={
+            "use_navsat_transform": "false",
+        }.items(),
+        condition=IfCondition(LaunchConfiguration("odom_local_start")),
+    )
+
     on_exit_shutdown = RegisterEventHandler(
         OnProcessExit(
             target_action=lifecycle_manager,
@@ -167,6 +182,11 @@ def generate_launch_description():
             'respawn_delay',
             default_value='2.0',
             description='Seconds to wait before restarting a crashed node.',
+        ),
+        DeclareLaunchArgument(
+            'odom_local_start',
+            default_value='false',
+            description='Start the local EKF (odom -> base_link TF) alongside Nav2.',
         ),
 
         # ExecuteProcess(
@@ -194,4 +214,5 @@ def generate_launch_description():
         mission_waypoints_publisher,
         lifecycle_manager,
         on_exit_shutdown,
+        ekf_local_launch,
     ])
