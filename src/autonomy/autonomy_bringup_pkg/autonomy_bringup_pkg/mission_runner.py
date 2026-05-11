@@ -52,8 +52,8 @@ from std_msgs.msg import Bool
 from std_msgs.msg import Header
 from std_msgs.msg import String
 
-from autonomy.orca_bringup.scripts.nav2_ready_wait import wait_for_waypoint_follower_active
-from autonomy.orca_bringup.scripts.pixhawk_ready_wait import (
+from autonomy_bringup_pkg.nav2_ready_wait import wait_for_waypoint_follower_active
+from autonomy_bringup_pkg.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,

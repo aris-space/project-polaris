@@ -23,9 +23,9 @@ from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import Bool, String
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
-from autonomy.orca_bringup.scripts.load_wsg84_points_to_waypoints import process_coordinates
-from autonomy.orca_bringup.scripts.nav2_ready_wait import wait_for_waypoint_follower_active
-from autonomy.orca_bringup.scripts.pixhawk_ready_wait import (
+from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import process_coordinates
+from autonomy_bringup_pkg.nav2_ready_wait import wait_for_waypoint_follower_active
+from autonomy_bringup_pkg.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,
