@@ -88,6 +88,7 @@ Each recording produces a folder named `<name>__<testname>__<location>__<timesta
 ```bash
 ros2 launch config_pkg start_system.launch.py autonomy:=true
 ```
+
 That starts the autonomy process but nav2 is not active yet. When ready, activate it:
 
 ```bash
@@ -116,4 +117,17 @@ docker ps
 ```
 ```bash
 docker exec -it jetson-container bash
+```
+
+When launch terminal not stopping in a other terminal:
+```bash
+pkill -KILL -f "ros2 launch"
+```
+
+Then using colcon build and etc.
+
+```bash
+rosdep install --from-paths src/autonomy --ignore-src -r -y
+colcon build --packages-up-to autonomy_bringup_pkg orca_nav2 --symlink-install
+source install/setup.bash
 ```
