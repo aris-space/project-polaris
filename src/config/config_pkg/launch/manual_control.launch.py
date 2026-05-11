@@ -64,18 +64,6 @@ def generate_launch_description():
         condition=IfCondition(autonomy_arg_value),
     )
 
-    # Local EKF (no navsat_transform) auto-starts whenever autonomy is requested,
-    # since Nav2 needs odom -> base_link TF to activate.
-    ekf_local_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(ekf_localization_pkg_dir, "launch", "ekf_localization.launch.py")
-        ),
-        launch_arguments={
-            "use_navsat_transform": "false",
-        }.items(),
-        condition=IfCondition(autonomy_arg_value),
-    )
-
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -95,7 +83,6 @@ def generate_launch_description():
             ),
             mode_control_launch,
             mavlink_launch,
-            ekf_local_launch,
             autonomy_launch_include,
         ]
     )
