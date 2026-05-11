@@ -3,9 +3,13 @@
 <package format="3">
   <name>autonomy_bringup_pkg</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Autonomy bringup: launch files, params, missions, behavior trees, and helper nodes for Nav2-based AUV autonomy.</description>
   <maintainer email="paulzambelli@student.ethz.ch">polaris_pz</maintainer>
   <license>Apache-2.0</license>
+
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
 
   <depend>rclpy</depend>
   <depend>nav_msgs</depend>
@@ -14,13 +18,21 @@
   <depend>sensor_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>lifecycle_msgs</depend>
-  <depend>ament_index_python</depend>
-  <depend>nav2_bringup</depend>
-  <depend>orca_nav2</depend>
-  <depend>mavlink_bridge</depend>
   <depend>ublox_ubx_msgs</depend>
   <depend>foxglove_msgs</depend>
   <depend>rosbag2_py</depend>
+
+  <depend>nav2_common</depend>
+  <depend>nav2_bringup</depend>
+  <depend>nav2_controller</depend>
+  <depend>nav2_planner</depend>
+  <depend>nav2_behaviors</depend>
+  <depend>nav2_bt_navigator</depend>
+  <depend>nav2_waypoint_follower</depend>
+  <depend>nav2_lifecycle_manager</depend>
+
+  <depend>orca_nav2</depend>
+  <depend>mavlink_bridge</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

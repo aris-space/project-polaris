@@ -74,7 +74,7 @@ def publish_disarm_and_spin(executor, node, arm_pub, spins: int = 30) -> None:
 
 
 def default_mission_csv_path() -> str:
-    share = get_package_share_directory('orca_bringup')
+    share = get_package_share_directory('autonomy_bringup_pkg')
     return f'{share}/missions/pool_mission.csv'
 
 

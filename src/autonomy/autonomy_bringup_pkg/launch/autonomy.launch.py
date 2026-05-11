@@ -11,8 +11,8 @@ Usage (via start_system):
   ros2 launch config_pkg start_system.launch.py autonomy:=true
 
 Usage (standalone):
-  ros2 launch orca_bringup autonomy.launch.py
-  ros2 launch orca_bringup autonomy.launch.py bag:=True
+  ros2 launch autonomy_bringup_pkg autonomy.launch.py
+  ros2 launch autonomy_bringup_pkg autonomy.launch.py bag:=True
 """
 
 import os
@@ -37,7 +37,7 @@ from nav2_common.launch import RewrittenYaml
 # DONE: Delete this rosbag things or at least comment them out.
 
 def generate_launch_description():
-    orca_bringup_dir = get_package_share_directory('orca_bringup')
+    orca_bringup_dir = get_package_share_directory('autonomy_bringup_pkg')
 
     # use_sim_time is ALWAYS False for hardware - not exposed as an arg
     # so it can never be accidentally set to True on the real vehicle.
@@ -115,8 +115,8 @@ def generate_launch_description():
     )
 
     mission_waypoints_publisher = Node(
-        package='orca_bringup',
-        executable='mission_waypoints_publisher.py',
+        package='autonomy_bringup_pkg',
+        executable='mission_waypoints_publisher',
         name='mission_waypoints_publisher',
         output='screen',
         respawn=respawn,
