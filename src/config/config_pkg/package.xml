@@ -8,6 +8,7 @@
   <license>TODO: License declaration</license>
   
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>autonomy_bringup_pkg</exec_depend>
   <exec_depend>ekf_localization_pkg</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
