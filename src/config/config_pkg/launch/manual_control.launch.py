@@ -29,7 +29,6 @@ def generate_launch_description():
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
     mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
     autonomy_bringup_pkg_dir = get_package_share_directory("autonomy_bringup_pkg")
-    ekf_localization_pkg_dir = get_package_share_directory("ekf_localization_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
