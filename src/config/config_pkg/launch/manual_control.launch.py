@@ -53,9 +53,9 @@ def generate_launch_description():
         }.items(),
     )
 
-    autonomy_launch = IncludeLaunchDescription(
+    autonomy_launch_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(orca_bringup_pkg_dir, "launch", "autonomy_launch.py")
+            os.path.join(orca_bringup_pkg_dir, "launch", "autonomy.launch.py")
         ),
         launch_arguments={
             "respawn": respawn_arg_value,
@@ -96,6 +96,6 @@ def generate_launch_description():
             mode_control_launch,
             mavlink_launch,
             ekf_local_launch,
-            autonomy_launch,
+            autonomy_launch_include,
         ]
     )

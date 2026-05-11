@@ -11,8 +11,8 @@ Usage (via start_system):
   ros2 launch config_pkg start_system.launch.py autonomy:=true
 
 Usage (standalone):
-  ros2 launch orca_bringup autonomy_launch.py
-  ros2 launch orca_bringup autonomy_launch.py bag:=True
+  ros2 launch orca_bringup autonomy.launch.py
+  ros2 launch orca_bringup autonomy.launch.py bag:=True
 """
 
 import os
