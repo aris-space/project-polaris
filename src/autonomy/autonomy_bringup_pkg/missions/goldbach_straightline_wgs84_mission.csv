@@ -1,0 +1,7 @@
+lat,lon,alt,up_down,delta_z_m,hold_s
+#Front of steg
+47.328890,8.572578,408.0,0,,
+# More far away of front of steg
+47.328879,8.572458,408.0,0,,
+# Fare away and in little bit more in the north
+# 47.328695,8.572451,408.0,0,,
