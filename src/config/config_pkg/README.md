@@ -85,8 +85,9 @@ Each recording produces a folder named `<name>__<testname>__<location>__<timesta
 
 
 ### copy-paste autonomy TRUE
+So in the autonomy.launch.py file we also start automatically the local ekf (for testing)
 ```bash
-ros2 launch config_pkg start_system.launch.py autonomy:=true
+ros2 launch config_pkg start_system.launch.py autonomy:=true odom_local_start:=true
 ```
 
 That starts the autonomy process but nav2 is not active yet. When ready, activate it:
