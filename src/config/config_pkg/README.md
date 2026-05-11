@@ -104,6 +104,12 @@ run actually the mission:
 ```bash
 ros2 run orca_bringup WSG84_mission_starter.py
 ```
+We need both!
+```bash
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom &
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 odom base_link &
+ros2 topic pub -r 30 /odom nav_msgs/msg/Odometry "{header: {frame_id: 'odom'}, child_frame_id: 'base_link'}" &
+```
 
 # How to start docker (on PC at least)
 
