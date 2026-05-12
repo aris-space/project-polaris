@@ -133,6 +133,7 @@ class GnssDatumWatchdog(Node):
         self._local_anchor_x: float = 0.0
         self._local_anchor_y: float = 0.0
         self._local_anchor_z: float = 0.0
+        self._local_anchor_yaw: float = 0.0
         self._local_anchor_valid: bool = False
 
         self._latest_fix: NavSatFix | None = None
@@ -377,13 +378,26 @@ class GnssDatumWatchdog(Node):
             lx = self._latest_local_odom.pose.pose.position.x
             ly = self._latest_local_odom.pose.pose.position.y
             lz = self._latest_local_odom.pose.pose.position.z
-            local_pos = f" | local EKF odom at datum-set: x={lx:.2f} m  y={ly:.2f} m"
+            # Local EKF yaw at lock time. Needed by global_ekf_to_navsatfix
+            # to rotate state.(x, y) from map frame back to UTM ENU before
+            # back-projecting to lat/lon — otherwise /gps/filtered/global
+            # ends up heading-rotated relative to /fix by exactly this angle.
+            q = self._latest_local_odom.pose.pose.orientation
+            lyaw = math.atan2(
+                2.0 * (float(q.w) * float(q.z) + float(q.x) * float(q.y)),
+                1.0 - 2.0 * (float(q.y) * float(q.y) + float(q.z) * float(q.z)),
+            )
+            local_pos = (
+                f" | local EKF odom at datum-set: x={lx:.2f} m  y={ly:.2f} m  "
+                f"yaw={math.degrees(lyaw):+.3f}°"
+            )
             # Snapshot for bootstrap delta computation. Storing primitives,
             # not the message reference, so the values are immune to
             # subsequent _on_local_odom updates of self._latest_local_odom.
             self._local_anchor_x = float(lx)
             self._local_anchor_y = float(ly)
             self._local_anchor_z = float(lz)
+            self._local_anchor_yaw = float(lyaw)
             self._local_anchor_valid = True
         self.get_logger().info(
             f"Valid fix: lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° "
@@ -427,6 +441,7 @@ class GnssDatumWatchdog(Node):
             f"local_anchor_x:={self._local_anchor_x}",
             f"local_anchor_y:={self._local_anchor_y}",
             f"local_anchor_z:={self._local_anchor_z}",
+            f"local_anchor_yaw:={self._local_anchor_yaw}",
         ]
         if self._navsat_params:
             cmd.append(f"navsat_params_file:={self._navsat_params}")

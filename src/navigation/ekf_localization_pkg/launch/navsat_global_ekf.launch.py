@@ -102,6 +102,20 @@ def generate_launch_description():
                 default_value="0.0",
                 description="Local-EKF z position at GNSS-lock.",
             ),
+            DeclareLaunchArgument(
+                "local_anchor_yaw",
+                default_value="0.0",
+                description=(
+                    "Local-EKF yaw (radians) at GNSS-lock — forwarded as "
+                    "map_yaw_offset_rad to global_ekf_to_navsatfix so that "
+                    "the back-projection rotates state.(x, y) from the map "
+                    "frame (rotated by navsat_transform's lock-time yaw) "
+                    "into UTM ENU before adding to the datum. Without this "
+                    "the published /gps/filtered/global is offset from /fix "
+                    "by a heading-dependent term that scales with distance "
+                    "from datum."
+                ),
+            ),
             # /clock-propagation grace period.
             #
             # This launch file is spawned as a fresh subprocess by
@@ -194,6 +208,44 @@ def generate_launch_description():
                         }],
                         condition=IfCondition(LaunchConfiguration("use_global_ekf")),
                     ),
+                    # gps_to_map_position: project /gps/validated directly to
+                    # true-ENU map-frame Odometry on /odometry/gps_map.
+                    # Replaces the navsat_transform → gps_odom_cov_floor
+                    # path for the global EKF's GPS input. See node
+                    # docstring or ekf_global.yaml comment on odom1.
+                    Node(
+                        package="ekf_localization_pkg",
+                        executable="gps_to_map_position",
+                        name="gps_to_map_position",
+                        output="screen",
+                        parameters=[{
+                            "input_topic": LaunchConfiguration("gps_fix_topic"),
+                            "output_topic": "/odometry/gps_map",
+                            "output_frame_id": "map",
+                            "datum_lat": ParameterValue(
+                                LaunchConfiguration("datum_lat"),
+                                value_type=float,
+                            ),
+                            "datum_lon": ParameterValue(
+                                LaunchConfiguration("datum_lon"),
+                                value_type=float,
+                            ),
+                            "datum_alt": ParameterValue(
+                                LaunchConfiguration("datum_alt"),
+                                value_type=float,
+                            ),
+                            "min_pos_cov_m2": 0.25,
+                            "use_sim_time": LaunchConfiguration("use_sim_time"),
+                        }],
+                        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+                    ),
+                    # gps_odom_cov_floor: legacy path. Kept running for
+                    # backward compatibility (publishes /odometry/gps_floored)
+                    # but the EKF no longer subscribes here — see
+                    # ekf_global.yaml odom1 which now points at
+                    # /odometry/gps_map from gps_to_map_position above.
+                    # Safe to disable in production once the new path
+                    # is fully validated.
                     Node(
                         package="ekf_localization_pkg",
                         executable="gps_odom_cov_floor",
@@ -270,6 +322,15 @@ def generate_launch_description():
                             "datum_lat": LaunchConfiguration("datum_lat"),
                             "datum_lon": LaunchConfiguration("datum_lon"),
                             "datum_alt": LaunchConfiguration("datum_alt"),
+                            # 0.0 — state is now in true ENU map frame
+                            # (the EKF subscribes to /odometry/gps_map from
+                            # gps_to_map_position which projects directly
+                            # via pyproj, no navsat rotation). The
+                            # back-projection is therefore a pure
+                            # datum + state addition with no rotation.
+                            # The watchdog still captures local_anchor_yaw
+                            # for diagnostics but it's not used here.
+                            "map_yaw_offset_rad": 0.0,
                             "global_odom_topic": LaunchConfiguration("global_odom_topic"),
                             "use_sim_time": LaunchConfiguration("use_sim_time"),
                         }],

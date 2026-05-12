@@ -341,7 +341,15 @@ def generate_launch_description():
                     # datum so SBL is projected with the same lat/lon the
                     # algorithm anchored on. Falls back to /gps/validated if
                     # no NavSatFix has appeared within ~5 s.
-                    "datum_navsatfix_topic": "/gps/filtered",
+                    # The primary datum source — must be the global EKF's
+                    # own NavSatFix output (from global_ekf_to_navsatfix),
+                    # NOT navsat_transform's /gps/filtered. The two have
+                    # different lat/lon (navsat's is its own filtered
+                    # estimate; the global EKF's is the actual fused
+                    # state). Using the wrong one gave the diag a
+                    # subtly-different datum than the algorithm anchored
+                    # on, which produced spurious SBL-error offsets.
+                    "datum_navsatfix_topic": "/gps/filtered/global",
                     "datum_topic_fallback": "/gps/validated",
                 }],
             ),
@@ -389,14 +397,27 @@ def generate_launch_description():
                     "/gps/validated",
                     "/odometry/gps",
                     "/odometry/gps_floored",
+                    "/odometry/gps_map",
                     "/sensors/pressure/pose_enu_map",
                     # Three localization outputs
                     "/odometry/filtered/local",
                     "/odometry/filtered/local_validated",
                     "/odometry/filtered/global",
                     "/odometry/filtered/global_anchored",
-                    # NavSatFix forms of global outputs
+                    # NavSatFix forms of global outputs. Two distinct topics:
+                    #   /gps/filtered          — published by navsat_transform_node
+                    #                            (publish_filtered_gps: true), reflects
+                    #                            navsat's idea of the boat's lat/lon
+                    #                            given its current filtered odom input.
+                    #   /gps/filtered/global   — published by global_ekf_to_navsatfix,
+                    #                            directly converts the global EKF's
+                    #                            /odometry/filtered/global to lat/lon.
+                    #                            This is THE global EKF's NavSatFix
+                    #                            output and is what downstream consumers
+                    #                            should subscribe to for the GPS-fused
+                    #                            position estimate.
                     "/gps/filtered",
+                    "/gps/filtered/global",
                     "/gps/filtered/global_anchored",
                     # TF
                     "/tf",

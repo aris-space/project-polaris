@@ -826,7 +826,9 @@ def report(label: str, global_track: list[FixSample],
            max_h_acc_m: float | None,
            global_ekf_csv: GlobalEkfTrack | None,
            global_ekf_label: str,
-           first_point_align: bool = True
+           first_point_align: bool = True,
+           primary_source_label: str = "/gps/filtered/global (anchored)",
+           primary_source_short: str = "anchored"
            ) -> tuple[list[FixSample], Analysis | None]:
     """Print the report and return (gated /fix track, Analysis bundle)."""
     print()
@@ -855,7 +857,9 @@ def report(label: str, global_track: list[FixSample],
 
     A = analyse(global_track, ref_track, odom_track,
                 global_ekf_csv, global_ekf_label,
-                first_point_align=first_point_align)
+                first_point_align=first_point_align,
+                primary_source_label=primary_source_label,
+                primary_source_short=primary_source_short)
     if A is None or A.pd.t_rel.size == 0:
         print("  (no paired samples within the 200 ms gap)")
         return ref_track, A

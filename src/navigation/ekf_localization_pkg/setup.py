@@ -37,6 +37,7 @@ setup(
             "thruster_velocity_estimator = ekf_localization_pkg.thruster_velocity_estimator:main",
             "gps_odom_cov_floor = ekf_localization_pkg.gps_odom_cov_floor:main",
             "pressure_pose_frame_fix = ekf_localization_pkg.pressure_pose_frame_fix:main",
+            "gps_to_map_position = ekf_localization_pkg.gps_to_map_position:main",
             "topic_rate_probe = ekf_localization_pkg.topic_rate_probe:main",
             "tf_rate_probe = ekf_localization_pkg.tf_rate_probe:main",
         ],

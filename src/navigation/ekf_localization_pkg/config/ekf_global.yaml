@@ -140,17 +140,21 @@ ekf_global_node:
     odom0_differential: false
     odom0_relative: false
 
-    # Absolute GPS correction from navsat_transform_node, fed through
-    # gps_odom_cov_floor which widens the pose-covariance diagonal to a
-    # numerically-stable floor (default 0.01 m²). Without that floor, RTK
-    # Fixed h_acc = 6 mm puts R ≈ 4e-5 m², which together with cross-cov
-    # in P makes the Kalman gain matrix ill-conditioned — empirically
-    # observed to blow state up by 5 km in a single update on rectangle_03.
-    # The floor only widens covariance, so it never throws away legitimate
-    # uncertainty; it just keeps R in a regime where the matrix inverse
-    # is well-conditioned. Subscribe to /odometry/gps_floored.
-    # Only x, y — z comes from pressure via pose0 below.
-    odom1: /odometry/gps_floored
+    # Absolute GPS correction from gps_to_map_position (NOT navsat_transform).
+    # gps_to_map_position projects /gps/validated directly to true-ENU
+    # map-frame coordinates (utm − datum, with pyproj), no per-measurement
+    # yaw rotation. This bypasses navsat_transform's use_odometry_yaw
+    # behaviour, which empirically introduced a ~30° frame rotation on
+    # grid_02 that contaminated state and produced a 7 m bias on
+    # /gps/filtered/global vs /fix. With gps_to_map_position the GPS
+    # measurement arrives genuinely in true-ENU map frame and the EKF
+    # state, the map→odom TF, and the back-projection in
+    # global_ekf_to_navsatfix all become consistent — matching anchored's
+    # RTK-level accuracy while keeping the EKF's sensor fusion benefits.
+    # gps_to_map_position also bakes in the cov-floor (default 0.25 m²)
+    # and NaN guards that gps_odom_cov_floor used to do, so this single
+    # topic carries everything the EKF needs.
+    odom1: /odometry/gps_map
     odom1_config: [
       true,  true,  false,
       false, false, false,

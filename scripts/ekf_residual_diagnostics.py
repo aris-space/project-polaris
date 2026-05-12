@@ -669,13 +669,19 @@ def _process_bag(bag_dir: Path, out_root: Path,
                  axes: list[str], max_gap_s: float,
                  mode: str = "posterior",
                  max_prior_age_s: float = 0.10,
-                 q_diag_ref: list[float] | None = None) -> dict[str, Any] | None:
+                 q_diag_ref: list[float] | None = None,
+                 bag_name_override: str | None = None) -> dict[str, Any] | None:
     """Process a single bag and write per-bag diagnostics JSON + PNGs.
 
     mode is one of {"posterior", "prior_approx"}; see
     `era._compute_residual` for semantics.
+
+    bag_name_override: when set, the per-bag output filenames + the JSON
+    "bag" field use this name instead of bag_dir.name. Used by the
+    --bag-name-suffix flow so suffix-stripped names line up with the
+    baseline run for downstream comparison.
     """
-    bag_name = bag_dir.name
+    bag_name = bag_name_override or bag_dir.name
     bag_type = era._bag_type(bag_name)
     if bag_type == "global_run":
         print(f"[skip] {bag_name} (global_run)")
@@ -1129,6 +1135,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--report-md", type=Path,
                     default=Path("POLARIS/research/EKF_RESEARCH_NOTES.md"),
                     help="Append synthesis to this markdown file")
+    ap.add_argument("--bag-name-suffix", default=None,
+                    help="When set, restrict the discovered bag list to "
+                         "directories whose name ends with this suffix. "
+                         "Per-bag outputs are named after the ORIGINAL "
+                         "(suffix-stripped) name so the result can be "
+                         "compared apples-to-apples against a baseline run. "
+                         "Example: --bag-name-suffix _anchored_q_approx "
+                         "picks up offline-replayed bags written by "
+                         "replay_anchored_bag.sh --out-label q_approx.")
     return ap.parse_args(argv)
 
 
@@ -1177,10 +1192,41 @@ def main(argv=None) -> int:
         print(f"  {q_diag_ref}")
 
     bags = era._find_bag_dirs(bags_root)
+    n_pre_suffix = len(bags)
+    bag_name_suffix = args.bag_name_suffix
+    name_strip_suffix: dict[str, str] = {}  # discovered-path → original-name
+    if bag_name_suffix:
+        kept: list[Path] = []
+        for b in bags:
+            if b.name.endswith(bag_name_suffix):
+                kept.append(b)
+                # Strip "<original_name>_anchored_<label>" → "<original_name>".
+                # We accept both "_anchored_q_approx" and "anchored_q_approx"
+                # style suffixes. Strip trailing suffix then trailing underscore.
+                original = b.name[: -len(bag_name_suffix)]
+                original = original.rstrip("_")
+                name_strip_suffix[str(b)] = original
+        bags = kept
+        print(f"--bag-name-suffix '{bag_name_suffix}' kept "
+              f"{len(bags)}/{n_pre_suffix} bag dirs")
+
     include = _split_csv(args.include)
     exclude = _split_csv(args.exclude)
     n_pre = len(bags)
-    bags = era._filter_bags(bags, include, exclude)
+    # When suffix-mode is active, the include/exclude filter matches against
+    # the ORIGINAL bag name (so the existing include CSV from the baseline
+    # run works verbatim).
+    if bag_name_suffix:
+        def _name_for_filter(p: Path) -> str:
+            return name_strip_suffix.get(str(p), p.name)
+        if include:
+            bags = [b for b in bags
+                    if any(tok in _name_for_filter(b) for tok in include)]
+        if exclude:
+            bags = [b for b in bags
+                    if not any(tok in _name_for_filter(b) for tok in exclude)]
+    else:
+        bags = era._filter_bags(bags, include, exclude)
     if not bags:
         print(f"ERROR: filter excluded all {n_pre} bags", file=sys.stderr)
         return 1
@@ -1192,9 +1238,11 @@ def main(argv=None) -> int:
 
     per_bag: list[dict[str, Any]] = []
     for b in bags:
+        override = name_strip_suffix.get(str(b)) if bag_name_suffix else None
         entry = _process_bag(b, out_dir, axes, args.max_match_gap,
                              mode=mode, max_prior_age_s=args.max_prior_age_sec,
-                             q_diag_ref=q_diag_ref)
+                             q_diag_ref=q_diag_ref,
+                             bag_name_override=override)
         if entry is not None:
             per_bag.append(entry)
 
