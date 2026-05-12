@@ -4,7 +4,12 @@
 # extra heading rotation so the IMU yaw matches what navsat_transform expects for GNSS projection.
 navsat_transform_node:
   ros__parameters:
-    frequency: 10.0
+    # Match the EKFs at 30 Hz. Earlier 10.0 was throttling to ~1.2 Hz on
+    # bag replay (same throttle pattern as the EKFs — see ekf_global.yaml
+    # comment on the same parameter). /odometry/gps publishing slower
+    # than the EKF cycle means GPS innovations can't be applied each
+    # cycle, which lets state drift between corrections.
+    frequency: 30.0
     # delay: time (s) navsat_transform waits after spawn before computing the
     # first GPS-to-world-frame transform. With use_odometry_yaw: true, this
     # gives the /odometry/filtered/local_validated subscription time to

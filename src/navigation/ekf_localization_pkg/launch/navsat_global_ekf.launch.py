@@ -14,6 +14,7 @@ from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -47,7 +48,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "imu_topic",
-                default_value="/imu/data",
+                default_value="/imu/data_corrected",
                 description="IMU topic remapped to navsat_transform imu.",
             ),
             DeclareLaunchArgument(
@@ -82,6 +83,25 @@ def generate_launch_description():
                 "datum_alt",
                 description="Datum altitude (meters) — forwarded from gnss_datum_watchdog.",
             ),
+            DeclareLaunchArgument(
+                "local_anchor_x",
+                default_value="0.0",
+                description=(
+                    "Local-EKF x position at GNSS-lock — subtracted from "
+                    "/odometry/gps to convert from navsat's odom frame to "
+                    "map frame inside gps_odom_cov_floor."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "local_anchor_y",
+                default_value="0.0",
+                description="Local-EKF y position at GNSS-lock.",
+            ),
+            DeclareLaunchArgument(
+                "local_anchor_z",
+                default_value="0.0",
+                description="Local-EKF z position at GNSS-lock.",
+            ),
             # /clock-propagation grace period.
             #
             # This launch file is spawned as a fresh subprocess by
@@ -108,6 +128,26 @@ def generate_launch_description():
             TimerAction(
                 period=10.0,
                 actions=[
+                    # Bootstrap identity map->odom so the global EKF can
+                    # transform incoming pose measurements on the very first
+                    # tick. Without this, the first odom0_pose message arrives
+                    # before ekf_global_node has published its own map->odom,
+                    # the TF lookup fails, the pose is dropped, and the filter
+                    # initialises off odom0_twist alone — leaving state yaw
+                    # stuck at 0 while local yaw is ~2.4 rad. Subsequent pose
+                    # messages then get rotated through that wrong TF and the
+                    # state never recovers. Once ekf_global_node starts
+                    # publishing its own map->odom, that broadcast wins because
+                    # it carries the latest stamp; this static publisher is
+                    # only load-bearing during the startup window.
+                    Node(
+                        package="tf2_ros",
+                        executable="static_transform_publisher",
+                        name="map_odom_bootstrap",
+                        output="screen",
+                        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"],
+                        parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
+                    ),
                     Node(
                         package="robot_localization",
                         executable="navsat_transform_node",
@@ -126,6 +166,77 @@ def generate_launch_description():
                             ("odometry/filtered", LaunchConfiguration("odom_topic")),
                         ],
                     ),
+                    # Floor /odometry/gps's pose-covariance diagonal so the
+                    # global EKF's first GPS update doesn't blow up due to
+                    # numerical instability with R ≈ 4e-5 m² (RTK Fixed
+                    # noise floor). Republishes on /odometry/gps_floored.
+                    # ekf_global.yaml's odom1 must point at the floored
+                    # topic for this to take effect.
+                    # pressure_pose_frame_fix: convert
+                    # /sensors/pressure/pose_enu (odom frame) to map frame
+                    # for the global EKF. Same TF-feedback-loop fix
+                    # mechanism as gps_odom_cov_floor; see that node's
+                    # docstring or the v20 entry in EKF_RESEARCH_NOTES.md.
+                    Node(
+                        package="ekf_localization_pkg",
+                        executable="pressure_pose_frame_fix",
+                        name="pressure_pose_frame_fix",
+                        output="screen",
+                        parameters=[{
+                            "input_topic": "/sensors/pressure/pose_enu",
+                            "output_topic": "/sensors/pressure/pose_enu_map",
+                            "output_frame_id": "map",
+                            "local_anchor_z": ParameterValue(
+                                LaunchConfiguration("local_anchor_z"),
+                                value_type=float,
+                            ),
+                            "use_sim_time": LaunchConfiguration("use_sim_time"),
+                        }],
+                        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+                    ),
+                    Node(
+                        package="ekf_localization_pkg",
+                        executable="gps_odom_cov_floor",
+                        name="gps_odom_cov_floor",
+                        output="screen",
+                        parameters=[{
+                            "input_topic": "/odometry/gps",
+                            "output_topic": "/odometry/gps_floored",
+                            # Relabel frame_id "odom" -> "map" AND subtract
+                            # local_anchor to break the navsat-via-TF
+                            # feedback loop. See gps_odom_cov_floor.py
+                            # _on_odom for the mechanism.
+                            "output_frame_id": "map",
+                            "local_anchor_x": ParameterValue(
+                                LaunchConfiguration("local_anchor_x"),
+                                value_type=float,
+                            ),
+                            "local_anchor_y": ParameterValue(
+                                LaunchConfiguration("local_anchor_y"),
+                                value_type=float,
+                            ),
+                            "local_anchor_z": ParameterValue(
+                                LaunchConfiguration("local_anchor_z"),
+                                value_type=float,
+                            ),
+                            # 0.25 m² ≡ 50 cm 1σ. Earlier value 0.01 (10 cm
+                            # 1σ) was too aggressive: at P_xx ≈ 2 m² the
+                            # post-update P collapses to ≈ 0.005 m² which
+                            # then takes a full Q*dt ≈ 1 s to grow back —
+                            # but at the EKF's observed ~1 Hz cycle, that's
+                            # one whole cycle of state collapsing into a
+                            # tiny ball where even small cross-covariance
+                            # bleed into unsensored states (vx, ax) gets
+                            # amplified by K ≈ 1. The looser floor keeps
+                            # the post-update P at ≈ 0.22 m² (K ≈ 0.89,
+                            # still strong pull), which is far more robust
+                            # to the cross-covariance amplification mode
+                            # documented in the v7/v8 grid_02 explosions.
+                            "min_pos_cov_m2": 0.25,
+                            "use_sim_time": LaunchConfiguration("use_sim_time"),
+                        }],
+                        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+                    ),
                     Node(
                         package="robot_localization",
                         executable="ekf_node",
@@ -135,7 +246,19 @@ def generate_launch_description():
                             LaunchConfiguration("global_ekf_params_file"),
                             {"use_sim_time": LaunchConfiguration("use_sim_time")},
                         ],
-                        remappings=[("odometry/filtered", "/odometry/filtered/global")],
+                        # set_pose is declared by robot_localization as a relative
+                        # name; without a namespace it resolves to root /set_pose,
+                        # which would make EVERY ekf_node in the graph subscribe
+                        # to the same global topic. Remap it so this EKF listens
+                        # on its own node-name-prefixed topic, matching what
+                        # gnss_datum_watchdog publishes to. Without this remap,
+                        # the bootstrap message goes to /ekf_global_node/set_pose
+                        # while the EKF listens on /set_pose — they never connect
+                        # and the EKF cold-starts.
+                        remappings=[
+                            ("odometry/filtered", "/odometry/filtered/global"),
+                            ("set_pose", "/ekf_global_node/set_pose"),
+                        ],
                         condition=IfCondition(LaunchConfiguration("use_global_ekf")),
                     ),
                     Node(

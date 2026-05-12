@@ -1,16 +1,33 @@
 ekf_global_node:
   ros__parameters:
+    # 10 Hz. We tried 30 in v11-v13 to chase the publish-rate throttle;
+    # rate didn't change because the actual ceiling is /gps/selected at
+    # 2 Hz, not the timer. 10 Hz gives the EKF enough headroom for
+    # measurement processing without wasting CPU on noop ticks.
     frequency: 10.0
-    # sensor_timeout: when no measurement has been processed for this long, the
-    # filter falls back to predicting to ros::Time::now(). During offline replay
-    # /clock occasionally has gaps longer than any sane finite threshold (5 s
-    # was observed firing 6 times in one run), and in those gaps now() returns
-    # wall-clock instead of sim-time, producing dt = wall_clock − last_sim_time
-    # ≈ 3 days and a state explosion. The predict-to-now() behaviour itself is
-    # what's broken under sim-time gaps — not the threshold value. Set the
-    # timeout effectively to infinity so it never fires; the EKF then advances
-    # only when a real measurement arrives, which is what we want.
-    sensor_timeout: 999999.0
+    # sensor_timeout: amount of time without a measurement before the EKF
+    # falls back to integrating its state forward at each frequency cycle.
+    # Critical pairing with predict_to_current_time:
+    #   - sensor_timeout=999999 + predict_to_current_time=true: the "fall
+    #     back to integrating" branch never fires, so predict_to_current_time
+    #     is silently no-opped. This was observed in v11 (predict_to_current_
+    #     time:true added → publish rate unchanged at 1.28 Hz) and is
+    #     consistent with robot_localization-Humble's gate ordering inside
+    #     RosFilter::periodicUpdate — the integrate-forward path only runs
+    #     when sensor_timeout elapses, regardless of predict_to_current_time.
+    #   - sensor_timeout=0.05 + predict_to_current_time=true: every periodic
+    #     tick (frequency Hz) the timeout has elapsed, so the EKF integrates
+    #     forward and publishes. This is what we want.
+    # Earlier we set sensor_timeout=999999 to dodge a /clock-gap pathology:
+    # when /clock briefly stalled, ros::Time::now() returned wall-clock
+    # instead of sim-time, dt = wall - last_sim ≈ 3 days, state exploded.
+    # That pathology required (a) cold-start state, (b) /clock not yet
+    # propagating, (c) wall-clock fallback. With set_pose bootstrap +
+    # use_sim_time wired through + the launch's TimerAction(period=10) all
+    # in place, the conditions for the explosion no longer obtain — and we
+    # need the timer-driven integrate-forward path active to actually hit
+    # the configured frequency.
+    sensor_timeout: 0.05
     two_d_mode: false
     print_diagnostics: true
     publish_tf: true
@@ -39,35 +56,101 @@ ekf_global_node:
 
     # ── Debug log ────────────────────────────────────────────────────────────
     # robot_localization's built-in deep-trace dump (per-step state, P matrix,
-    # measurement, innovation, K matrix). ~1 GB per 20-min replay — only turn
-    # on while diagnosing.
-    # debug: true
-    # debug_out_file: /tmp/ekf_global_debug.log
+    # measurement, innovation, K matrix). ~1 GB per 20-min replay → ~830 kB/s
+    # sustained disk I/O. On the Jetson during bag replay at 2× rate, that
+    # appeared to throttle the EKF predict/update cycle to ~2 Hz instead of
+    # the configured 10 Hz, which let GPS innovations grow between updates
+    # rather than being corrected each cycle. Disabled 2026-05-10. Re-enable
+    # for targeted single-step inspection only — never for a full run.
+    debug: false
+    debug_out_file: /tmp/ekf_global_debug.log
 
-    # ── Reverted to dual-EKF "stacked" pattern: global fuses local EKF output
-    # We tried the canonical robot_localization pattern (global subscribes to
-    # the same raw sensors as local + GPS) — divergence got *worse* (~135 km
-    # vs ~10 km in the stacked setup). So the correlated-input theory wasn't
-    # the dominant issue, and the stacked pattern is actually less broken on
-    # this dataset. Keeping the stacked setup as the working baseline.
-    odom0: /odometry/filtered/local_validated
+    # ── Canonical dual-EKF "parallel" pattern (cra-ros-pkg/robot_localization
+    # dual_ekf_navsat_example).
+    #
+    # Both EKFs consume the SAME raw sensors. The global EKF additionally
+    # subscribes to /odometry/gps. The local EKF's filtered output is NEVER
+    # fed back into the global EKF. This avoids two structural problems that
+    # afflict the stacked pattern (which had global subscribe to
+    # /odometry/filtered/local_validated):
+    #   1) Cross-correlated noise — re-fusing IMU+DVL data already fused once
+    #      by the local EKF deflates effective covariance and makes the
+    #      global filter overconfident.
+    #   2) map→odom rotation feedback loop — local-EKF poses are stamped in
+    #      odom frame; the global EKF transforms them via map→odom (which it
+    #      itself publishes); once global state drifts from GPS, its map→odom
+    #      rotation drifts too, and incoming local poses get rotated through
+    #      the drifted TF — accentuating divergence each cycle. This loop is
+    #      what produced the 36s-stable-then-drift pattern in the
+    #      fix_static_map_odom debug log: state tracked GPS with K≈0.5 lag
+    #      while map→odom was close to the bootstrap identity, then diverged
+    #      to tens of km once map→odom rotation accumulated error.
+    #
+    # The canonical parallel pattern was tested once before (May 5) and got
+    # worse, but that was BEFORE init_cov[x,y]=100, the static map→odom
+    # bootstrap, and several other fixes were in place. Re-attempting now
+    # with all current fixes applied.
+    #
+    # IMU: /imu/data_corrected — same calibrated stream the local EKF uses.
+    #
+    # Earlier in the session we tested with raw /imu/data on the theory
+    # that GPS-via-/odometry/gps could supply the absolute heading
+    # reference. That assumption was wrong in this stack: GPS only updates
+    # state.{x, y} (odom1_config zeros out orientation rows), so it
+    # provides NO heading correction. With raw /imu/data, every IMU
+    # update tugged state.yaw toward the raw-IMU yaw (which has a
+    # constant 100°+ bias on this boat from imu_yaw_correction's
+    # head_mot calibration), away from the bootstrap-injected calibrated
+    # value. Empirically observed on grid_02: state held bounded for
+    # ~155 s after bootstrap, then began drifting as the raw-IMU yaw
+    # update slowly overwrote the bootstrap orientation. By +330 s
+    # state had crossed 10 km.
+    #
+    # Switching to /imu/data_corrected makes the IMU update reinforce
+    # the bootstrap's calibrated orientation instead of fighting it.
+    # The bag has /imu/data_corrected from the live system (with the
+    # in-mission head_mot calibration baked in); use_imu_yaw_correction:=false
+    # in the launch keeps the offline imu_yaw_correction node disabled
+    # so there's a single publisher.
+    imu0: /imu/data_corrected
+    imu0_config: [
+      false, false, false,
+      true,  true,  true,    # roll, pitch, yaw — fuse all
+      false, false, false,
+      true,  true,  true,    # vroll, vpitch, vyaw
+      false, false, false
+    ]
+    imu0_queue_size: 20
+    imu0_nodelay: false
+    imu0_differential: false
+    imu0_relative: false
+    imu0_remove_gravitational_acceleration: false
+
+    # DVL velocity update — same source the local EKF uses.
+    odom0: /sensors/dvl/odometry_cov
     odom0_config: [
-      false, false, false,   # x, y, z — odom-frame origin ≠ map-frame origin; don't fuse as absolute
-      true,  true,  true,    # roll, pitch, yaw — fuse all (see ekf_local.yaml comment block —
-                             # canonical "no absolute yaw" recommendation tested empirically and
-                             # made divergence worse, so we keep absolute yaw fusion)
-      true,  true,  true,    # vx, vy, vz — velocity is origin-independent; dead-reckoning
-      true,  true,  true,    # vroll, vpitch, vyaw — angular velocity from local-EKF IMU fusion
-      false, false, false    # ax, ay, az — unsensored; locked tight via initial_estimate_covariance
+      false, false, false,
+      false, false, false,
+      true,  true,  true,    # vx, vy, vz — DVL body-frame velocity
+      false, false, false,
+      false, false, false
     ]
     odom0_queue_size: 10
     odom0_nodelay: false
     odom0_differential: false
     odom0_relative: false
 
-    # Absolute GPS correction from navsat_transform_node.
-    # Only x, y — z comes from pressure via local EKF above.
-    odom1: /odometry/gps
+    # Absolute GPS correction from navsat_transform_node, fed through
+    # gps_odom_cov_floor which widens the pose-covariance diagonal to a
+    # numerically-stable floor (default 0.01 m²). Without that floor, RTK
+    # Fixed h_acc = 6 mm puts R ≈ 4e-5 m², which together with cross-cov
+    # in P makes the Kalman gain matrix ill-conditioned — empirically
+    # observed to blow state up by 5 km in a single update on rectangle_03.
+    # The floor only widens covariance, so it never throws away legitimate
+    # uncertainty; it just keeps R in a regime where the matrix inverse
+    # is well-conditioned. Subscribe to /odometry/gps_floored.
+    # Only x, y — z comes from pressure via pose0 below.
+    odom1: /odometry/gps_floored
     odom1_config: [
       true,  true,  false,
       false, false, false,
@@ -79,6 +162,29 @@ ekf_global_node:
     odom1_nodelay: false
     odom1_differential: false
     odom1_relative: false
+
+    # Pressure depth update — consumed via /sensors/pressure/pose_enu_map,
+    # which is /sensors/pressure/pose_enu after pressure_pose_frame_fix has
+    # subtracted local_anchor_z and relabelled header.frame_id to "map".
+    # The raw topic is in odom frame (it's what the local EKF zeroes at
+    # startup); the global EKF needs it in map frame to avoid the same
+    # TF-feedback-loop bug that previously affected GPS — see
+    # gps_odom_cov_floor's mechanism and the v20 entry in
+    # POLARIS/research/EKF_RESEARCH_NOTES.md. Without this remap, state.z
+    # equilibrates ~0.4 m above the true pressure-pinned depth (observed
+    # on v18 grid_02: global z = +0.45 m mean vs local z = +0.06 m).
+    pose0: /sensors/pressure/pose_enu_map
+    pose0_config: [
+      false, false, true,    # z — pressure depth
+      false, false, false,
+      false, false, false,
+      false, false, false,
+      false, false, false
+    ]
+    pose0_queue_size: 20
+    pose0_nodelay: false
+    pose0_differential: false
+    pose0_relative: false
 
     # ── Initial state covariance ─────────────────────────────────────────────
     # Default in robot_localization is 1e-9*I — falsely confident, locks the
@@ -121,21 +227,27 @@ ekf_global_node:
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,         0.0,         0.000000001
     ]
 
-    # ── Time-handling: deliberately use robot_localization defaults ──────────
-    # Earlier we tried `predict_to_current_time: true` and `reset_on_time_jump:
-    # true`. Both made the filter MORE fragile under offline replay, not less:
-    # the global EKF is spawned by gnss_datum_watchdog *after* GPS arrives, so
-    # it bypasses the /clock-wait that protects the local EKF in
-    # `scripts/replay_ekf_bag.sh`. With predict_to_current_time=true and the
-    # filter's `last_update_time_` left at 0 (initial value, or after a reset),
-    # the first periodic predict integrates `dt = now() − 0 ≈ 1.77e9 s` of
-    # whatever velocity has just been absorbed into state — producing position
-    # excursions on the order of (vx · 1.77e9) ≈ 1e9 m. Exactly matched what
-    # we observed: state at (1.244e9, 1.299e9) m on the first /odometry/
-    # filtered/global publish, with vx ≈ 0.7 m/s, vy ≈ 0.74 m/s.
-    # Defaults (predict_to_current_time=false, reset_on_time_jump=false) make
-    # the filter predict only when a measurement arrives, anchoring dt to
-    # measurement timestamps.
+    # ── Time-handling ───────────────────────────────────────────────────────
+    # `predict_to_current_time: true` forces the periodic timer (frequency Hz)
+    # to advance state and publish each tick, regardless of whether a new
+    # measurement has arrived. With it OFF, the EKF only publishes when a
+    # measurement updates state — and v6→v10 showed publish rate stuck at
+    # ~1.5 Hz despite frequency=30, suggesting measurement-arrival gating
+    # was the throttle (probably callback-queue serialization on a single-
+    # threaded executor under high IMU rate).
+    #
+    # Earlier this setting was OFF because at startup, the filter's
+    # `last_update_time_ = 0` plus `now()` returning wall-clock during
+    # /clock-gap windows produced dt ≈ 1.77e9 s and state explosion to ~1e9 m.
+    # That pathology required: cold-start state, no bootstrap, /clock not
+    # yet propagating into the EKF's subprocess. All three are now mitigated:
+    # gnss_datum_watchdog publishes a set_pose with a sim-time stamp shortly
+    # after the EKF subscribes, navsat_global_ekf.launch.py wraps everything
+    # in a TimerAction(period=10) so /clock has time to populate, and the
+    # set_pose itself initialises last_update_time_ to a sane value. So
+    # `predict_to_current_time: true` should now be safe and is needed to
+    # actually achieve the configured frequency.
+    predict_to_current_time: true
 
     # ── Outlier rejection: deliberately left at the robot_localization default
     # (numeric_limits<double>::max(), effectively disabled). A finite threshold

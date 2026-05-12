@@ -50,9 +50,31 @@ from typing import Optional
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
+
+
+# RELIABLE high-depth QoS for the global-odom subscriber. Earlier the diag
+# subscribed with qos_profile_sensor_data (BEST_EFFORT, depth=5); under bag
+# replay at 2× rate with the EKF publishing at 30 Hz, the diag's CSV-write
+# callback couldn't keep up and most messages were dropped — making the
+# "publish rate" derived from CSV row count an artifact of the diag's
+# throughput, not the EKF's actual rate. Using RELIABLE with a deep queue
+# forces the diag to capture every message; if the diag stalls under the
+# load that's still informative (means the EKF really is publishing fast).
+_GLOBAL_ODOM_QOS = QoSProfile(
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=200,
+    durability=QoSDurabilityPolicy.VOLATILE,
+)
 
 
 def _yaw_from_quat(qx: float, qy: float, qz: float, qw: float) -> float:
@@ -162,7 +184,7 @@ class EkfOfflineDiagnostic(Node):
         self._t_last: Optional[float] = None
 
         self._sub_global = self.create_subscription(
-            Odometry, self._global_topic, self._on_global, qos_profile_sensor_data
+            Odometry, self._global_topic, self._on_global, _GLOBAL_ODOM_QOS
         )
         self._sub_local = self.create_subscription(
             Odometry, self._local_topic, self._on_local, qos_profile_sensor_data

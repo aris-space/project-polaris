@@ -98,7 +98,10 @@ EKF_GAP_THRESHOLD_S = 0.2
 # DVL lock-lost covariance sentinel (from measurement_noise_constants.py: no_lock_variance=1e6)
 DVL_LOCK_LOST_COV = 1.0e4
 
-# Reference Q diagonal (from ekf_local.yaml:61-77). 15-state.
+# Reference Q diagonal (from ekf_local.yaml:61-77 in HEAD). 15-state.
+# Used as the JSON `Q_diagonal_ref` LABEL only — the actual NIS / S / residual
+# numbers are bag-derived from /odometry/filtered/local's pose/twist
+# covariance, which already encodes the recording-time Q. See --q-yaml flag.
 Q_DIAG_REF = [
     0.12, 0.12, 0.08,   # x, y, z
     0.03, 0.03, 0.08,   # roll, pitch, yaw
@@ -106,6 +109,47 @@ Q_DIAG_REF = [
     0.02, 0.02, 0.06,   # wx, wy, wz
     0.005, 0.005, 0.005  # ax, ay, az
 ]
+
+
+def load_q_diagonal_from_yaml(yaml_path: Path) -> list[float]:
+    """Parse process_noise_covariance from a robot_localization yaml and return
+    its 15-element diagonal. Dependency-free; tolerant to whitespace and
+    different commenting. Raises on malformed input."""
+    text = yaml_path.read_text()
+    # Find the line that starts the matrix.
+    marker = "process_noise_covariance"
+    idx = text.find(marker)
+    if idx < 0:
+        raise ValueError(f"'{marker}' not found in {yaml_path}")
+    # Pull everything after the opening bracket.
+    open_b = text.find("[", idx)
+    close_b = text.find("]", open_b + 1)
+    if open_b < 0 or close_b < 0:
+        raise ValueError(f"matrix brackets not found near {marker}")
+    body = text[open_b + 1:close_b]
+    # Strip inline yaml comments (# ...) line by line.
+    cleaned_lines: list[str] = []
+    for line in body.splitlines():
+        hash_pos = line.find("#")
+        if hash_pos >= 0:
+            line = line[:hash_pos]
+        cleaned_lines.append(line)
+    cleaned = ",".join(cleaned_lines)
+    nums: list[float] = []
+    for tok in cleaned.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            nums.append(float(tok))
+        except ValueError:
+            raise ValueError(f"non-numeric token in Q matrix: {tok!r}")
+    if len(nums) != 225:
+        raise ValueError(
+            f"expected 225 elements (15x15) in process_noise_covariance, "
+            f"got {len(nums)}")
+    diag = [nums[i * 15 + i] for i in range(15)]
+    return diag
 
 # Fallback R values (from measurement_noise_constants.py) when message covariance
 # is the -1 sentinel or zero.
@@ -143,8 +187,15 @@ def _stamp_s(stamp) -> float:
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
 def _bag_type(bag_name: str) -> str:
-    prefixes = ("vertical", "straight_surge", "yaw_turns", "depth_hold",
-                "stationary", "global_run")
+    # Order matters: longer prefixes first so 'stationary_water' beats
+    # 'stationary', 'yaw_turns' beats 'yaw', 'straight_surge' beats 'surge'.
+    prefixes = (
+        # legacy 2026-04-23 set + permanent prefixes (longest-first)
+        "stationary_water", "straight_surge", "yaw_turns", "depth_hold",
+        "global_run", "vertical", "stationary",
+        # 2026-05-07 maneuver set (single-word prefixes)
+        "yaw", "surge", "roll", "pitch", "heave",
+    )
     low = bag_name.lower()
     for p in prefixes:
         if low.startswith(p):
@@ -152,12 +203,20 @@ def _bag_type(bag_name: str) -> str:
     return "other"
 
 def _axes_for_bag_type(bt: str) -> list[str]:
-    if bt == "vertical":        return ["pressure.z", "dvl.vz", "imu.roll", "imu.pitch"]
-    if bt == "straight_surge":  return ["dvl.vx", "dvl.vy", "imu.roll", "imu.pitch"]
-    if bt == "yaw_turns":       return ["imu.yaw", "imu.omega_z", "imu.roll", "imu.pitch"]
-    if bt == "depth_hold":      return ["imu.roll", "imu.pitch", "pressure.z", "dvl.vz"]
-    if bt == "stationary":      return ALL_AXES[:]
-    if bt == "global_run":      return []
+    # 2026-04-23 set
+    if bt == "vertical":         return ["pressure.z", "dvl.vz", "imu.roll", "imu.pitch"]
+    if bt == "straight_surge":   return ["dvl.vx", "dvl.vy", "imu.roll", "imu.pitch"]
+    if bt == "yaw_turns":        return ["imu.yaw", "imu.omega_z", "imu.roll", "imu.pitch"]
+    if bt == "depth_hold":       return ["imu.roll", "imu.pitch", "pressure.z", "dvl.vz"]
+    if bt == "stationary":       return ALL_AXES[:]
+    if bt == "global_run":       return []
+    # 2026-05-07 set
+    if bt == "yaw":              return ["imu.yaw", "imu.omega_z", "imu.roll", "imu.pitch"]
+    if bt == "surge":            return ["dvl.vx", "dvl.vy", "imu.roll", "imu.pitch"]
+    if bt == "roll":             return ["imu.roll", "imu.omega_x", "imu.pitch"]
+    if bt == "pitch":            return ["imu.pitch", "imu.omega_y", "imu.roll"]
+    if bt == "heave":            return ["pressure.z", "dvl.vz", "imu.roll", "imu.pitch"]
+    if bt == "stationary_water": return ALL_AXES[:]
     return ALL_AXES[:]
 
 ALL_AXES = [
@@ -1045,7 +1104,8 @@ def _axis_unit(axis: str) -> str:
 def _process_one_bag(bag_dir: Path, out_dir: Path, sensors_keep: set[str],
                      max_match_gap_s: float,
                      mode: str = "posterior",
-                     max_prior_age_s: float = 0.10) -> dict[str, Any] | None:
+                     max_prior_age_s: float = 0.10,
+                     q_diag_ref: list[float] | None = None) -> dict[str, Any] | None:
     bag_name = bag_dir.name
     bag_type = _bag_type(bag_name)
     if bag_type == "global_run":
@@ -1122,7 +1182,7 @@ def _process_one_bag(bag_dir: Path, out_dir: Path, sensors_keep: set[str],
     bag_json = {
         "bag": bag_name,
         "bag_type": bag_type,
-        "Q_diagonal_ref": Q_DIAG_REF,
+        "Q_diagonal_ref": list(q_diag_ref) if q_diag_ref else Q_DIAG_REF,
         "residual_mode": mode,
         "max_match_gap_s": max_match_gap_s,
         "max_prior_age_s": max_prior_age_s,
@@ -1172,6 +1232,20 @@ def _parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--exclude",
                     help="Comma-separated substrings; bags whose dir name contains "
                          "any are skipped. Applied after --include.")
+    ap.add_argument("--q-yaml", type=Path, default=None,
+                    help="Path to a robot_localization yaml whose "
+                         "process_noise_covariance diagonal is used as the "
+                         "Q_diagonal_ref label. Default: hardcoded HEAD values "
+                         "in this script. The recording-time Q for a bag set "
+                         "may differ from HEAD; passing the right yaml here "
+                         "keeps JSON labels accurate.")
+    ap.add_argument("--imu-topic", default=None,
+                    help="Override the IMU topic the script reads from the "
+                         "bag (default /imu/data). Use /imu/data_corrected "
+                         "when the live EKF was subscribed to that topic "
+                         "(e.g., 2026-05-07 campaign). Whichever topic the "
+                         "EKF actually fused MUST be passed here for the "
+                         "residual to compare apples-to-apples.")
     return ap.parse_args(argv)
 
 
@@ -1212,6 +1286,29 @@ def main(argv=None) -> int:
     sensors_keep = _resolve_sensors(args.sensors)
     is_single = (bag_dir / "metadata.yaml").exists()
     mode = args.residual_mode
+    # Apply --imu-topic override BEFORE any bag-reading. Mutates the module-level
+    # constants so _read_bag dispatches on the right topic.
+    global TOPIC_IMU, REQUIRED_TOPICS
+    if args.imu_topic:
+        old_imu = TOPIC_IMU
+        TOPIC_IMU = args.imu_topic
+        REQUIRED_TOPICS = tuple(args.imu_topic if t == old_imu else t
+                                for t in REQUIRED_TOPICS)
+        print(f"IMU topic override: {old_imu} -> {TOPIC_IMU}")
+    q_diag_ref: list[float] | None = None
+    q_yaml_path: Path | None = None
+    if args.q_yaml is not None:
+        q_yaml_path = args.q_yaml.resolve()
+        if not q_yaml_path.is_file():
+            print(f"ERROR: --q-yaml file not found: {q_yaml_path}", file=sys.stderr)
+            return 1
+        try:
+            q_diag_ref = load_q_diagonal_from_yaml(q_yaml_path)
+        except Exception as e:
+            print(f"ERROR: failed to parse --q-yaml: {e}", file=sys.stderr)
+            return 1
+        print(f"Q_diagonal_ref loaded from {q_yaml_path}:")
+        print(f"  {q_diag_ref}")
     # Default output-dir name carries the mode so posterior/prior_approx runs
     # never clobber each other. If the user passes --output-dir explicitly we
     # leave it untouched (their responsibility to keep modes separated).
@@ -1222,6 +1319,7 @@ def main(argv=None) -> int:
         entry = _process_one_bag(
             bag_dir, out_dir, sensors_keep, args.max_match_gap,
             mode=mode, max_prior_age_s=args.max_prior_age_sec,
+            q_diag_ref=q_diag_ref,
         )
         return 0 if entry is not None else 2
 
@@ -1261,7 +1359,8 @@ def main(argv=None) -> int:
         ),
         "include_filter": include or None,
         "exclude_filter": exclude or None,
-        "Q_diagonal_ref": Q_DIAG_REF,
+        "Q_diagonal_ref": list(q_diag_ref) if q_diag_ref else Q_DIAG_REF,
+        "Q_diagonal_ref_source": (str(q_yaml_path) if q_yaml_path else "hardcoded HEAD constant Q_DIAG_REF"),
         "bags": {},
     }
     for b in bags:
@@ -1269,6 +1368,7 @@ def main(argv=None) -> int:
         entry = _process_one_bag(
             b, sub, sensors_keep, args.max_match_gap,
             mode=mode, max_prior_age_s=args.max_prior_age_sec,
+            q_diag_ref=q_diag_ref,
         )
         if entry is not None:
             aggregate["bags"][b.name] = {

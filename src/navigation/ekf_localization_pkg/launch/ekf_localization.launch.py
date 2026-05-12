@@ -57,18 +57,22 @@ def generate_launch_description():
     )
     imu_topic_arg = DeclareLaunchArgument(
         "imu_topic",
-        default_value="/imu/data",
-        description="IMU topic forwarded to navsat_transform.",
+        default_value="/imu/data_corrected",
+        description=(
+            "IMU topic forwarded to navsat_transform. Defaults to the head_mot-"
+            "calibrated stream so navsat's yaw reference matches what the "
+            "local and global EKFs are running on."
+        ),
     )
     imu0_topic_arg = DeclareLaunchArgument(
         "imu0_topic",
-        default_value="/imu/data",
+        default_value="/imu/data_corrected",
         description=(
-            "IMU topic the local EKF actually fuses. Defaults to /imu/data "
-            "(raw). Override to /imu/data_corrected if imu_yaw_correction is "
-            "running upstream so the local EKF sees the heading-calibrated "
-            "stream. Sets ekf_local_node's imu0 parameter directly, "
-            "overriding the value in ekf_local.yaml."
+            "IMU topic the local EKF actually fuses. Defaults to "
+            "/imu/data_corrected (head_mot-calibrated) so the entire stack "
+            "(local EKF, navsat_transform, ekf_global_node) runs off a "
+            "single consistent heading frame. Sets ekf_local_node's imu0 "
+            "parameter directly, overriding the value in ekf_local.yaml."
         ),
     )
     odom_topic_arg = DeclareLaunchArgument(
@@ -90,6 +94,20 @@ def generate_launch_description():
             "anchor instead of IMU-only dead-reckoning."
         ),
     )
+    use_sim_time_arg = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description=(
+            "Wire use_sim_time into every node in this included launch. "
+            "MUST be set to true for offline-bag replay; otherwise the watchdog "
+            "and friends timestamp outgoing messages with wall clock, which "
+            "(a) makes set_pose's header.stamp ~days into the bag's future and "
+            "(b) cascades that bug to the watchdog's spawned navsat_transform + "
+            "ekf_global subprocess. SetUseSimTime in the parent launch does "
+            "NOT propagate into IncludeLaunchDescription'd children — has to "
+            "be passed explicitly."
+        ),
+    )
 
     # Local EKF: fuses IMU + DVL + pressure. Starts immediately, no GPS needed.
     ekf_local_node = Node(
@@ -99,9 +117,19 @@ def generate_launch_description():
         output="screen",
         parameters=[
             LaunchConfiguration("params_file"),
-            {"imu0": LaunchConfiguration("imu0_topic")},
+            {"imu0": LaunchConfiguration("imu0_topic"),
+             "use_sim_time": LaunchConfiguration("use_sim_time")},
         ],
-        remappings=[("odometry/filtered", "/odometry/filtered/local")],
+        # Remap set_pose to the node-name-prefixed topic. Without this,
+        # robot_localization's relative `set_pose` resolves to root /set_pose,
+        # so any /set_pose publication would reset BOTH the local and global
+        # EKFs (corrupting whichever wasn't intended). The watchdog only
+        # targets the global EKF; this remap ensures /set_pose stays inert
+        # for the local one.
+        remappings=[
+            ("odometry/filtered", "/odometry/filtered/local"),
+            ("set_pose", "/ekf_local_node/set_pose"),
+        ],
     )
 
     # Validator: forwards /odometry/filtered/local → /odometry/filtered/local_validated
@@ -121,6 +149,7 @@ def generate_launch_description():
             "output_topic": "/odometry/filtered/local_validated",
             "max_forward_jump_s": 60.0,
             "max_backward_jump_s": 1.0,
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
         }],
     )
 
@@ -149,6 +178,17 @@ def generate_launch_description():
             "navsat_params_file": LaunchConfiguration("navsat_params_file"),
             "global_ekf_params_file": LaunchConfiguration("global_params_file"),
             "use_global_ekf": LaunchConfiguration("use_global_ekf"),
+            # CRITICAL: the watchdog reads use_sim_time at __init__ to decide
+            # whether to forward use_sim_time:=true to its spawned subprocess
+            # (navsat_global_ekf.launch.py). It also uses self.get_clock() to
+            # stamp the bootstrap set_pose message — if use_sim_time is False,
+            # that stamp is wall-clock-now, which under offline replay is
+            # ~days into the bag's future. robot_localization rejects every
+            # subsequent measurement as "preceded the most recent pose
+            # reset" and freezes. Empirically observed on grid_02:
+            # bootstrap stamped May 9 22:00 (wall) while bag was May 7
+            # 12:25 — 215000 s gap, all bag measurements rejected.
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
         }],
         condition=IfCondition(LaunchConfiguration("use_navsat_transform")),
     )
@@ -166,6 +206,7 @@ def generate_launch_description():
             imu0_topic_arg,
             odom_topic_arg,
             use_thruster_fallback_arg,
+            use_sim_time_arg,
             ekf_local_node,
             odometry_validator_node,
             thruster_fallback_node,

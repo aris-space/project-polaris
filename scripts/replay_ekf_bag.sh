@@ -8,7 +8,7 @@
 #   launch_file        one of:
 #                        offline_ekf_replay.launch.py   (default — global EKF stack)
 #                        offline_anchored_replay.launch.py   (gnss_anchored_pose stack)
-#   extra_launch_args  additional `key:=value` args passed to ros2 launch.
+#   extra_launch_args  additional 'key:=value' args passed to ros2 launch.
 #                      e.g. imu_yaw_offset_deg:=-140  yaw_offset_deg:=0
 #
 # Outputs (per run):
@@ -24,7 +24,7 @@ set -eo pipefail
 BAG_DIR="${1:?Usage: $0 <bag_dir> [rate] [launch_file] [extra_launch_args...]}"
 RATE="${2:-2.0}"
 LAUNCH_FILE="${3:-offline_ekf_replay.launch.py}"
-# Everything after position 3 is forwarded verbatim to `ros2 launch`. Empty
+# Everything after position 3 is forwarded verbatim to ros2 launch. Empty
 # if not provided. Used for things like imu_yaw_offset_deg:=-140.
 EXTRA_LAUNCH_ARGS=("${@:4}")
 
@@ -120,10 +120,43 @@ echo "[replay_ekf_bag] h_acc gate: disabled (offline replay)"
 # Kill any EKF/navsat processes lingering from a previous bag run.
 # A diverged /odometry/filtered/local from a prior run stays on the DDS bus and
 # corrupts navsat_transform's datum anchor the moment the next run starts.
-pkill -f "ekf_node" 2>/dev/null || true
-pkill -f "navsat_transform_node" 2>/dev/null || true
-pkill -f "gnss_datum_watchdog" 2>/dev/null || true
-pkill -f "navsat_global_ekf.launch" 2>/dev/null || true
+# The list must cover ALL nodes that publish on /odometry/filtered/* or
+# /gps/filtered/* — any leftover publisher creates a duplicate stream that
+# the recorder + ekf_offline_diagnostic interleave into the new run's data,
+# producing inflated bbox / path-length numbers (observed: 30 m vs 14 m
+# real bbox on rect_01 because a stale gnss_anchored_pose from a prior
+# replay was still publishing alongside the fresh one).
+# IMPORTANT: do NOT pkill -f on "offline_ekf_replay.launch" or
+# "offline_anchored_replay.launch" -- those substrings appear in THIS
+# script's own argv (we were invoked as "bash scripts/replay_ekf_bag.sh
+# ... offline_ekf_replay.launch.py ..."), and pkill -f matches the full
+# command line, so the script would SIGTERM itself. Killing the node
+# executables below is sufficient; the parent "ros2 launch" exits on its
+# own when its children are gone.
+#
+# Self-protection: pgrep -v with $$ filters anything matched against this
+# pid out of the kill set. Belt-and-braces in case a future pattern is
+# also too loose.
+_self_pid=$$
+_safe_pkill() {
+    local pattern="$1"
+    # Find PIDs matching the pattern, excluding self.
+    local pids
+    pids=$(pgrep -f "$pattern" 2>/dev/null | grep -v "^${_self_pid}$" || true)
+    if [ -n "$pids" ]; then
+        # shellcheck disable=SC2086
+        kill $pids 2>/dev/null || true
+    fi
+}
+_safe_pkill "ekf_node"
+_safe_pkill "navsat_transform_node"
+_safe_pkill "gnss_datum_watchdog"
+_safe_pkill "navsat_global_ekf.launch"
+_safe_pkill "gnss_anchored_pose"
+_safe_pkill "imu_yaw_correction"
+_safe_pkill "odometry_validator"
+_safe_pkill "ekf_offline_diagnostic"
+_safe_pkill "global_ekf_to_navsatfix"
 sleep 1
 
 # --- Start recorder -----------------------------------------------------------
@@ -203,31 +236,31 @@ echo "[replay_ekf_bag] Playback complete — killing EKF stack before /clock die
 # CRITICAL ORDER: kill publishers (EKF + navsat) IMMEDIATELY after bag ends,
 # BEFORE any flush sleep.
 #
-# When `ros2 bag play` exits, /clock stops being published. Any node still
-# running with `use_sim_time=true` then falls back to wall-clock for
-# `ros::Time::now()`. For the EKF that means the next 30 Hz periodic predict
-# computes `dt = wall_clock_now - last_sim_time` ≈ 3 days for offline replay
-# of a recent bag, integrates velocity over that bogus dt, blows up its
-# state to millions of metres, and publishes that garbage out — which the
-# recorder happily captures and the diagnostic summary then reports as a
-# `[DIAG] >10 km divergence` at the very end of every run.
-# (Confirmed via debug log: a single predict-step delta of 315 544 s carrying
-# an `odom0_twist` measurement with today's wall-clock stamp instead of bag
-# sim-time.)
+# When ros2 bag play exits, /clock stops being published. Any node still
+# running with use_sim_time=true then falls back to wall-clock for
+# rclcpp::Clock::now(). For the EKF that means the next 30 Hz periodic
+# predict computes dt = wall_clock_now - last_sim_time ~= 3 days for offline
+# replay of a recent bag, integrates velocity over that bogus dt, blows up
+# its state to millions of metres, and publishes that garbage out -- which
+# the recorder happily captures and the diagnostic summary then reports as
+# a [DIAG] >10 km divergence at the very end of every run.
+# (Confirmed via debug log: a single predict-step delta of 315544 s
+# carrying an odom0_twist measurement with todays wall-clock stamp instead
+# of bag sim-time.)
 #
 # Killing publishers first stops the bad messages at the source. Recorder
 # then drains its buffer with the last in-bag (good) messages only.
 #
 # Default kill (SIGTERM): each Python node installs a SIGTERM handler
-# (in `main()`) that converts it into a KeyboardInterrupt, so the existing
-# `try/finally: destroy_node` clause runs — flushing the diag CSV and
-# printing the final-summary log lines. SIGINT to `ros2 launch` works too
-# but is much slower (graceful tree-walk through every child); SIGTERM with
-# the handler in place gives us fast-and-graceful.
+# in main() that converts it into a KeyboardInterrupt, so the existing
+# try/finally: destroy_node clause runs -- flushing the diag CSV and
+# printing the final-summary log lines. SIGINT to ros2 launch works too
+# but is much slower (graceful tree-walk through every child); SIGTERM
+# with the handler in place gives us fast-and-graceful.
 kill "$EKF_PID" 2>/dev/null || true
 pkill -f "navsat_global_ekf.launch" 2>/dev/null || true
 wait "$EKF_PID" 2>/dev/null || true
-sleep 2   # recorder drains in-flight buffered messages — none from EKF after this point
+sleep 2   # recorder drains in-flight buffered messages
 kill "$REC_PID" 2>/dev/null || true
 wait "$REC_PID" 2>/dev/null || true
 

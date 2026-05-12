@@ -124,19 +124,19 @@ DIAG_GROUPS: dict[str, list[str]] = {
     "all":        list(era.ALL_AXES),
 }
 
-# Regime palette (dark-theme friendly).
+# Regime palette — light theme, matches q_tuning_figure_examples/make_q_tuning_examples.py.
 REGIME_COLORS = {
-    "steady":     "#3dd6c6",
-    "step":       "#e8b86d",
-    "pump":       "#a78bfa",
-    "idle":       "#3dd6c6",
-    "surge":      "#e8b86d",
-    "reverse":    "#f08aa6",
+    "idle":       "#cfd8dc",
+    "steady":     "#d4e6f1",
+    "step":       "#fbe5d6",
+    "pump":       "#e8daef",
+    "surge":      "#fadbd8",
+    "reverse":    "#f5cba7",
     "sway":       "#a78bfa",
-    "heave":      "#9ad17b",
-    "yaw":        "#7cc5ff",
-    "roll_pitch": "#bba16a",
-    "mixed":      "#c44e52",
+    "heave":      "#d5f5e3",
+    "yaw":        "#d6eaf8",
+    "roll_pitch": "#fdebd0",
+    "mixed":      "#fcf3cf",
     "locked":     "#3dd6c6",
     "unlocked":   "#c44e52",
 }
@@ -478,67 +478,188 @@ def _legend_handles(used_labels: Iterable[str]) -> list:
 def _plot_axis_diag(s: AxisSeries, axis: str, bag: era.BagRead,
                     bag_name: str, regime_at: np.ndarray,
                     out_path: Path) -> None:
+    """Five-panel diagnostic figure per the redesign in
+    POLARIS/research/Q_TUNING_PLOT_REDESIGN.md.
+
+    Panels:
+      (a) residual with ±2√S band              — qfig1 (timeline) shape
+      (b) S (log)                                — innovation covariance
+      (c) NIS samples with χ²₁ acceptance band  — lower + median + upper
+      (d) driving signal                         — physical sanity
+      (e) NIS distribution + χ²₁ PDF             — qfig2 (distribution) shape
+    """
+    # Light theme — verbatim from
+    # POLARIS/research/q_tuning_figure_examples/make_q_tuning_examples.py.
     plt.rcParams.update({
-        "figure.facecolor": "#0c0f12",
-        "axes.facecolor":   "#141a20",
-        "axes.edgecolor":   "#1e2832",
-        "axes.labelcolor":  "#8b9caa",
-        "xtick.color":      "#8b9caa",
-        "ytick.color":      "#8b9caa",
-        "text.color":       "#e6edf3",
-        "grid.color":       "#1e2832",
-        "grid.linewidth":   0.5,
-        "legend.facecolor": "#141a20",
-        "legend.edgecolor": "#1e2832",
+        "font.family":       "DejaVu Sans",
+        "font.size":         9,
+        "axes.titlesize":    10,
+        "axes.labelsize":    9,
+        "axes.linewidth":    0.8,
+        "axes.spines.top":   False,
+        "axes.spines.right": False,
+        "axes.grid":         True,
+        "grid.color":        "#dddddd",
+        "grid.linewidth":    0.5,
+        "xtick.labelsize":   8,
+        "ytick.labelsize":   8,
+        "xtick.direction":   "in",
+        "ytick.direction":   "in",
+        "legend.fontsize":   8,
+        "legend.frameon":    True,
+        "legend.framealpha": 0.9,
+        "legend.edgecolor":  "#bbbbbb",
+        "lines.linewidth":   1.4,
+        "savefig.dpi":       300,
+        "savefig.bbox":      "tight",
+        "figure.facecolor":  "white",
+        "axes.facecolor":    "white",
+        "axes.edgecolor":    "black",
+        "axes.labelcolor":   "black",
+        "xtick.color":       "black",
+        "ytick.color":       "black",
+        "text.color":        "black",
+        "legend.facecolor":  "white",
     })
-    fig, axes = plt.subplots(4, 1, figsize=(13, 11), sharex=True)
+
+    C_RES = "#1f5fa3"
+    C_ENV = "#d6263d"
+    C_NIS = "#2a8a64"
+    C_CHI = "#666666"
+    C_BAD = "#c0392b"
+
+    # χ²₁ critical points.
+    try:
+        from scipy.stats import chi2
+        CHI2_LO  = float(chi2.ppf(0.025, 1))
+        CHI2_MED = float(chi2.median(1))
+        CHI2_HI  = float(chi2.ppf(0.975, 1))
+    except Exception:
+        CHI2_LO, CHI2_MED, CHI2_HI = 0.000982, 0.4549, 5.024
+
+    fig = plt.figure(figsize=(11.5, 11.0))
+    gs = fig.add_gridspec(
+        5, 1,
+        height_ratios=[1.4, 1.0, 1.2, 1.0, 1.4],
+        hspace=0.40,
+    )
+    axA = fig.add_subplot(gs[0])
+    axB = fig.add_subplot(gs[1], sharex=axA)
+    axC = fig.add_subplot(gs[2], sharex=axA)
+    axD = fig.add_subplot(gs[3], sharex=axA)
+    axE = fig.add_subplot(gs[4])  # NOT sharex — independent log-NIS axis
+
     fig.suptitle(
-        f"{bag_name} - {axis} regime diagnostic  [mode={s.mode}]",
-        fontsize=12)
+        f"{bag_name}  —  {axis}  regime diagnostic  [mode={s.mode}]",
+        x=0.02, ha="left", fontweight="bold", fontsize=11)
 
+    unit = era._axis_unit(axis)
+
+    # (a) residual with ±2√S band
     env = 2.0 * np.sqrt(np.maximum(s.S, 0.0))
-    axes[0].plot(s.t_rel_s, s.resid, color="#3dd6c6", lw=0.7, label="residual")
-    axes[0].plot(s.t_rel_s, env, color="#e8b86d", lw=0.5, alpha=0.7,
-                 label="+- 2 sqrt(S)")
-    axes[0].plot(s.t_rel_s, -env, color="#e8b86d", lw=0.5, alpha=0.7)
-    axes[0].axhline(0.0, color="#8b9caa", lw=0.4, alpha=0.6)
-    axes[0].set_ylabel(f"residual [{era._axis_unit(axis)}]")
-    _shade_regimes(axes[0], s.t_rel_s, regime_at)
-    axes[0].grid(True, alpha=0.3)
+    _shade_regimes(axA, s.t_rel_s, regime_at)
+    axA.fill_between(s.t_rel_s, -env, env, color=C_ENV, alpha=0.18,
+                     label=r"$\pm 2\sqrt{S}$ (filter $95\,\%$ band)")
+    axA.plot(s.t_rel_s, s.resid, color=C_RES, lw=0.7, label="residual r")
+    axA.axhline(0.0, color="black", lw=0.5, alpha=0.6)
+    axA.set_ylabel(f"residual [{unit}]")
+    axA.set_title("(a) Residual within filter $95\\,\\%$ band  —  "
+                  "5–10 % of points outside means S (thus Q) is too small",
+                  loc="left", pad=4)
+    axA.legend(loc="upper right", ncol=2)
 
-    axes[1].plot(s.t_rel_s, s.S, color="#a78bfa", lw=0.7, label="S = R + P")
-    axes[1].set_ylabel("S")
-    axes[1].set_yscale("log")
-    _shade_regimes(axes[1], s.t_rel_s, regime_at)
-    axes[1].grid(True, alpha=0.3, which="both")
+    # (b) S
+    _shade_regimes(axB, s.t_rel_s, regime_at)
+    axB.plot(s.t_rel_s, s.S, color="#7a3a91", lw=1.0, label="S = R + P")
+    axB.set_yscale("log")
+    axB.set_ylabel(f"S  [{unit}²]")
+    axB.set_title("(b) Innovation covariance S (log)", loc="left", pad=4)
 
-    nis_plot = np.where(np.isfinite(s.NIS) & (s.NIS > 0), s.NIS, np.nan)
-    axes[2].plot(s.t_rel_s, nis_plot, color="#9ad17b", lw=0.7, label="NIS = r^2/S")
-    axes[2].axhline(NIS_CHI2_95, color="#c44e52", lw=0.5, ls="--",
-                    label=f"chi2_95 = {NIS_CHI2_95:.2f}")
-    axes[2].set_ylabel("NIS [log]")
-    axes[2].set_yscale("log")
-    _shade_regimes(axes[2], s.t_rel_s, regime_at)
-    axes[2].grid(True, alpha=0.3, which="both")
+    # (c) NIS with χ²₁ acceptance band (LOWER + MEDIAN + UPPER)
+    nis_pos = np.where(np.isfinite(s.NIS) & (s.NIS > 0), s.NIS, np.nan)
+    _shade_regimes(axC, s.t_rel_s, regime_at)
+    axC.scatter(s.t_rel_s, nis_pos, s=4, c=C_NIS, alpha=0.65,
+                rasterized=True, label="NIS = r²/S")
+    axC.axhline(CHI2_HI,  color=C_BAD, ls="--", lw=1.0,
+                label=f"$\\chi^2_{{1,0.975}} = {CHI2_HI:.3f}$")
+    axC.axhline(CHI2_MED, color=C_CHI, ls=":",  lw=1.0,
+                label=f"$\\chi^2_{{1,0.5}} = {CHI2_MED:.3f}$")
+    axC.axhline(CHI2_LO,  color=C_BAD, ls="--", lw=1.0,
+                label=f"$\\chi^2_{{1,0.025}} = {CHI2_LO:.3f}$")
+    axC.set_yscale("log")
+    axC.set_ylabel("NIS")
+    axC.set_title("(c) NIS samples with $\\chi^2_1$ acceptance band  —  "
+                  "well-tuned: median $\\approx 0.45$; over-confident: median $\\gg 1$",
+                  loc="left", pad=4)
+    axC.legend(loc="upper right", fontsize=7.5, ncol=2)
 
+    # (d) driving signal
     drv = _driving_signal(axis, bag)
+    _shade_regimes(axD, s.t_rel_s, regime_at)
     if drv is not None:
         t_d, x_d, lbl_d = drv
-        axes[3].plot(t_d, x_d, color="#7cc5ff", lw=0.7, label=lbl_d)
-        axes[3].set_ylabel(lbl_d)
+        axD.plot(t_d, x_d, color=C_RES, lw=1.0, label=lbl_d)
+        axD.set_ylabel(lbl_d)
     else:
-        axes[3].text(0.5, 0.5, "(no driving signal)", color="#8b9caa",
-                     ha="center", va="center", transform=axes[3].transAxes)
-    axes[3].set_xlabel("t - t0 [s]")
-    _shade_regimes(axes[3], s.t_rel_s, regime_at)
-    axes[3].grid(True, alpha=0.3)
+        axD.text(0.5, 0.5, "(no driving signal)", color=C_CHI,
+                 ha="center", va="center", transform=axD.transAxes)
+        axD.set_ylabel("—")
+    axD.set_xlabel("t − t₀ [s]")
+    axD.set_title("(d) Driving signal — confirms regime labelling",
+                  loc="left", pad=4)
 
-    handles = _legend_handles([str(x) for x in regime_at])
+    # (e) NIS distribution + χ²₁ PDF (qfig2 shape, scoped to this axis)
+    nis_finite = nis_pos[np.isfinite(nis_pos)]
+    if nis_finite.size > 0:
+        lo_x = max(1e-6, float(np.nanmin(nis_finite)))
+        hi_x = max(CHI2_HI * 5.0, float(np.nanmax(nis_finite)))
+        # Guard against degenerate ranges (constant residual sequences).
+        if not np.isfinite(lo_x) or not np.isfinite(hi_x) or hi_x <= lo_x:
+            lo_x, hi_x = 1e-6, 1e3
+        bins = np.logspace(np.log10(lo_x), np.log10(hi_x), 60)
+        axE.hist(nis_finite, bins=bins, density=True, color=C_NIS,
+                 alpha=0.55, edgecolor="white", lw=0.4,
+                 label="empirical")
+        try:
+            from scipy.stats import chi2
+            xx = np.logspace(np.log10(lo_x), np.log10(hi_x), 400)
+            axE.plot(xx, chi2.pdf(xx, 1), color=C_BAD, lw=1.4,
+                     label=r"$\chi^2_1$ PDF (theory)")
+        except Exception:
+            pass
+        axE.axvline(CHI2_HI,  color=C_BAD, ls="--", lw=0.9, alpha=0.8)
+        axE.axvline(CHI2_MED, color=C_CHI, ls=":",  lw=0.9, alpha=0.8)
+        axE.axvline(CHI2_LO,  color=C_BAD, ls="--", lw=0.9, alpha=0.8)
+        med_e = float(np.median(nis_finite))
+        exc   = float(np.mean(nis_finite > CHI2_HI))
+        axE.text(0.98, 0.95,
+                 f"median = {med_e:.3g}\nP(NIS > {CHI2_HI:.2f}) = {exc*100:.1f}%",
+                 transform=axE.transAxes, ha="right", va="top",
+                 fontsize=8,
+                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                           edgecolor="#bbbbbb", lw=0.5, alpha=0.9))
+        axE.set_xscale("log")
+        axE.set_yscale("log")
+    else:
+        axE.text(0.5, 0.5, "(no NIS samples)", color=C_CHI,
+                 ha="center", va="center", transform=axE.transAxes)
+    axE.set_xlabel("NIS")
+    axE.set_ylabel("density")
+    axE.set_title("(e) NIS distribution vs $\\chi^2_1$  —  "
+                  "shape match means the filter is consistent",
+                  loc="left", pad=4)
+    axE.legend(loc="lower left", fontsize=7.5)
+
+    # Shared regime legend at the bottom.
+    used = list(dict.fromkeys(regime_at.tolist()))
+    handles = _legend_handles([str(x) for x in used])
     if handles:
-        axes[0].legend(handles=handles, loc="upper right", fontsize=8,
-                       title="regime")
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+        fig.legend(handles=handles, loc="lower center",
+                   ncol=min(len(handles), 7),
+                   bbox_to_anchor=(0.5, -0.005),
+                   frameon=False, fontsize=8)
+
+    fig.savefig(out_path)
     plt.close(fig)
 
 
@@ -547,7 +668,8 @@ def _plot_axis_diag(s: AxisSeries, axis: str, bag: era.BagRead,
 def _process_bag(bag_dir: Path, out_root: Path,
                  axes: list[str], max_gap_s: float,
                  mode: str = "posterior",
-                 max_prior_age_s: float = 0.10) -> dict[str, Any] | None:
+                 max_prior_age_s: float = 0.10,
+                 q_diag_ref: list[float] | None = None) -> dict[str, Any] | None:
     """Process a single bag and write per-bag diagnostics JSON + PNGs.
 
     mode is one of {"posterior", "prior_approx"}; see
@@ -589,6 +711,7 @@ def _process_bag(bag_dir: Path, out_root: Path,
     max_gap_ns = int(max_gap_s * 1e9)
     max_prior_age_ns = int(max_prior_age_s * 1e9)
     per_axis_json: dict[str, Any] = {}
+    npz_payload: dict[str, np.ndarray] = {}
     for axis in axes_to_run:
         s = _collect_axis(bag, axis, max_gap_ns, sensors_reliable,
                           mode=mode, max_prior_age_ns=max_prior_age_ns)
@@ -623,6 +746,23 @@ def _process_bag(bag_dir: Path, out_root: Path,
             "regimes": regime_stats,
             "plot": png.name,
         }
+        # Per-sample arrays for downstream canonical figures
+        # (q_tuning_figures.py whiteness, distribution, regime split).
+        ax_key = axis.replace(".", "_")
+        npz_payload[f"{ax_key}__t"]      = s.t_rel_s.astype(np.float64)
+        npz_payload[f"{ax_key}__r"]      = s.resid.astype(np.float64)
+        npz_payload[f"{ax_key}__R"]      = s.R.astype(np.float64)
+        npz_payload[f"{ax_key}__P"]      = s.P.astype(np.float64)
+        npz_payload[f"{ax_key}__S"]      = s.S.astype(np.float64)
+        npz_payload[f"{ax_key}__NIS"]    = s.NIS.astype(np.float64)
+        npz_payload[f"{ax_key}__dt"]     = s.dt_s.astype(np.float64)
+        npz_payload[f"{ax_key}__regime"] = np.asarray(
+            [str(x) for x in regime_at], dtype="U16")
+
+    if npz_payload:
+        npz_path = out_bag / f"{bag_name}_diagnostics_series_{mode}.npz"
+        np.savez_compressed(npz_path, **npz_payload)
+        print(f"  Saved per-sample sidecar: {npz_path.name}")
 
     bag_json = {
         "bag": bag_name,
@@ -636,7 +776,7 @@ def _process_bag(bag_dir: Path, out_root: Path,
             "innovation, but avoids comparing against a posterior state "
             "that may already include the same measurement."
         ),
-        "Q_diagonal_ref_used_for_run": era.Q_DIAG_REF,
+        "Q_diagonal_ref_used_for_run": list(q_diag_ref) if q_diag_ref else era.Q_DIAG_REF,
         "regime_thresholds": {
             "pressure_step_dzdt_m_s": P_STEP_DZDT,
             "pressure_steady_dzdt_m_s": P_STEADY_DZDT,
@@ -647,6 +787,8 @@ def _process_bag(bag_dir: Path, out_root: Path,
         },
         "manual_control_present": int(cmd.t_ns.size) > 0,
         "manual_control_msgs": int(cmd.t_ns.size),
+        "series_sidecar_npz": (f"{bag_name}_diagnostics_series_{mode}.npz"
+                                if npz_payload else None),
         "axes": per_axis_json,
         "sensors_reliable": sensors_reliable,
     }
@@ -974,6 +1116,16 @@ def _parse_args(argv=None) -> argparse.Namespace:
                     help="Path to a previous diagnostics_summary.json (e.g. "
                          "from the other --residual-mode). Emits a side-by-side "
                          "comparison table to stdout and the report file.")
+    ap.add_argument("--q-yaml", type=Path, default=None,
+                    help="Path to a robot_localization yaml whose "
+                         "process_noise_covariance diagonal is used as the "
+                         "Q_diagonal_ref label. Default: the hardcoded "
+                         "Q_DIAG_REF in scripts/ekf_residual_analysis.py.")
+    ap.add_argument("--imu-topic", default=None,
+                    help="Override the IMU topic the script reads "
+                         "(default /imu/data). For the 2026-05-07 campaign "
+                         "the live EKF was subscribed to /imu/data_corrected; "
+                         "use that here to avoid a phantom yaw offset.")
     ap.add_argument("--report-md", type=Path,
                     default=Path("POLARIS/research/EKF_RESEARCH_NOTES.md"),
                     help="Append synthesis to this markdown file")
@@ -1000,6 +1152,30 @@ def main(argv=None) -> int:
     out_dir = args.output_dir or default_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Apply --imu-topic override BEFORE any bag-reading. Mutates era's module-level
+    # constants so era._read_bag dispatches on the right topic.
+    if args.imu_topic:
+        old_imu = era.TOPIC_IMU
+        era.TOPIC_IMU = args.imu_topic
+        era.REQUIRED_TOPICS = tuple(
+            args.imu_topic if t == old_imu else t for t in era.REQUIRED_TOPICS)
+        print(f"IMU topic override: {old_imu} -> {era.TOPIC_IMU}")
+
+    q_diag_ref: list[float] | None = None
+    q_yaml_path: Path | None = None
+    if args.q_yaml is not None:
+        q_yaml_path = args.q_yaml.resolve()
+        if not q_yaml_path.is_file():
+            print(f"ERROR: --q-yaml not found: {q_yaml_path}", file=sys.stderr)
+            return 1
+        try:
+            q_diag_ref = era.load_q_diagonal_from_yaml(q_yaml_path)
+        except Exception as e:
+            print(f"ERROR: failed to parse --q-yaml: {e}", file=sys.stderr)
+            return 1
+        print(f"Q_diagonal_ref loaded from {q_yaml_path}")
+        print(f"  {q_diag_ref}")
+
     bags = era._find_bag_dirs(bags_root)
     include = _split_csv(args.include)
     exclude = _split_csv(args.exclude)
@@ -1017,7 +1193,8 @@ def main(argv=None) -> int:
     per_bag: list[dict[str, Any]] = []
     for b in bags:
         entry = _process_bag(b, out_dir, axes, args.max_match_gap,
-                             mode=mode, max_prior_age_s=args.max_prior_age_sec)
+                             mode=mode, max_prior_age_s=args.max_prior_age_sec,
+                             q_diag_ref=q_diag_ref)
         if entry is not None:
             per_bag.append(entry)
 
@@ -1036,7 +1213,10 @@ def main(argv=None) -> int:
         "include_filter": include,
         "exclude_filter": exclude,
         "axes_requested": axes,
-        "Q_diagonal_ref": era.Q_DIAG_REF,
+        "Q_diagonal_ref": list(q_diag_ref) if q_diag_ref else era.Q_DIAG_REF,
+        "Q_diagonal_ref_source": (str(q_yaml_path) if q_yaml_path
+                                   else "hardcoded HEAD constant era.Q_DIAG_REF"),
+        "imu_topic": era.TOPIC_IMU,
         "regime_thresholds": {
             "pressure_step_dzdt_m_s": P_STEP_DZDT,
             "pressure_steady_dzdt_m_s": P_STEADY_DZDT,
