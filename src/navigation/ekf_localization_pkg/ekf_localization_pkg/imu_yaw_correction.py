@@ -48,7 +48,13 @@ import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import Imu, NavSatFix
 from std_srvs.srv import Trigger
 
@@ -148,7 +154,27 @@ class ImuYawCorrection(Node):
         self._cal_timer = None
 
         # I/O.
-        self._pub = self.create_publisher(Imu, output_topic, qos_profile_sensor_data)
+        # Publisher: RELIABLE so downstream consumers (local EKF, anything
+        # else fusing /imu/data_corrected) never silently lose messages
+        # under callback-queue load. The Xsens publishes /imu/data RELIABLE
+        # at 100 Hz; we preserve that delivery semantic. Earlier the
+        # publisher used qos_profile_sensor_data (BEST_EFFORT, depth=5).
+        # The bags recorded with that earlier code carry BEST_EFFORT in
+        # their stored offered_qos_profiles — see metadata.yaml — and
+        # cannot be retroactively upgraded. Future bags recorded with this
+        # fix in place will store RELIABLE.
+        _imu_pub_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10,
+            durability=QoSDurabilityPolicy.VOLATILE,
+        )
+        self._pub = self.create_publisher(Imu, output_topic, _imu_pub_qos)
+        # Subscribers stay sensor-style (BEST_EFFORT) so they're compatible
+        # with both RELIABLE and BEST_EFFORT upstreams. /imu/data is
+        # published RELIABLE by the Xsens driver; /gps and /ubx_nav_pvt
+        # are usually RELIABLE too. RELIABLE→BEST_EFFORT is a compatible
+        # combo, so this works in both live and offline-replay paths.
         self.create_subscription(Imu, input_topic, self._on_imu, qos_profile_sensor_data)
         self.create_subscription(NavSatFix, gps_topic, self._on_gps, qos_profile_sensor_data)
 
