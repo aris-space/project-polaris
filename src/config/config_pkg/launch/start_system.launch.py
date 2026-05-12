@@ -25,6 +25,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "autonomy": LaunchConfiguration("autonomy"),
+            "odom_local_start": LaunchConfiguration("odom_local_start")
         }.items(),
     )
 
@@ -88,6 +89,11 @@ def generate_launch_description():
                 "autonomy",
                 default_value="false",
                 description="Launch the Nav2 autonomy stack iff true is passed.",
+            ),
+            DeclareLaunchArgument(
+                "odom_local_start",
+                default_value="false",
+                description="Start the local odometry node.",
             ),
             DeclareLaunchArgument(
                 "use_navsat_transform",

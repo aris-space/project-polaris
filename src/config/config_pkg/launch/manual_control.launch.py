@@ -20,6 +20,7 @@ def generate_launch_description():
     respawn_arg_value = LaunchConfiguration("respawn")
     respawn_delay_arg_value = LaunchConfiguration("respawn_delay")
     autonomy_arg_value = LaunchConfiguration("autonomy")
+    odom_local_start_arg_value = LaunchConfiguration("odom_local_start")
 
     # Node action fields can safely use concrete python values.
     respawn = True
@@ -28,7 +29,7 @@ def generate_launch_description():
     # 1. Find the path to the child package
     mode_control_pkg_dir = get_package_share_directory("mode_control_pkg")
     mavlink_bridge_pkg_dir = get_package_share_directory("mavlink_bridge")
-    orca_bringup_pkg_dir = get_package_share_directory("orca_bringup")
+    autonomy_bringup_pkg_dir = get_package_share_directory("autonomy_bringup_pkg")
 
     mode_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -54,11 +55,12 @@ def generate_launch_description():
 
     autonomy_launch_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(orca_bringup_pkg_dir, "launch", "autonomy.launch.py")
+            os.path.join(autonomy_bringup_pkg_dir, "launch", "autonomy.launch.py")
         ),
         launch_arguments={
             "respawn": respawn_arg_value,
             "respawn_delay": respawn_delay_arg_value,
+            "odom_local_start": odom_local_start_arg_value,
         }.items(),
         condition=IfCondition(autonomy_arg_value),
     )
@@ -79,6 +81,11 @@ def generate_launch_description():
                 "autonomy",
                 default_value="false",
                 description="Launch the Nav2 autonomy stack alongside manual control.",
+            ),
+            DeclareLaunchArgument(
+                "odom_local_start",
+                default_value="false",
+                description="Start the local odometry node.",
             ),
             mode_control_launch,
             mavlink_launch,

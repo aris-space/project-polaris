@@ -23,9 +23,9 @@ from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import Bool, String
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
-from autonomy.orca_bringup.scripts.load_wsg84_points_to_waypoints import process_coordinates
-from autonomy.orca_bringup.scripts.nav2_ready_wait import wait_for_waypoint_follower_active
-from autonomy.orca_bringup.scripts.pixhawk_ready_wait import (
+from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import process_coordinates
+from autonomy_bringup_pkg.nav2_ready_wait import wait_for_waypoint_follower_active
+from autonomy_bringup_pkg.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,
@@ -74,7 +74,7 @@ def publish_disarm_and_spin(executor, node, arm_pub, spins: int = 30) -> None:
 
 
 def default_mission_csv_path() -> str:
-    share = get_package_share_directory('orca_bringup')
+    share = get_package_share_directory('autonomy_bringup_pkg')
     return f'{share}/missions/pool_mission.csv'
 
 

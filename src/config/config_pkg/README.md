@@ -85,9 +85,11 @@ Each recording produces a folder named `<name>__<testname>__<location>__<timesta
 
 
 ### copy-paste autonomy TRUE
+So in the autonomy.launch.py file we also start automatically the local ekf (for testing)
 ```bash
-ros2 launch config_pkg start_system.launch.py autonomy:=true
+ros2 launch config_pkg start_system.launch.py autonomy:=true odom_local_start:=true
 ```
+
 That starts the autonomy process but nav2 is not active yet. When ready, activate it:
 
 ```bash
@@ -101,6 +103,12 @@ ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/Manag
 run actually the mission:
 ```bash
 ros2 run orca_bringup WSG84_mission_starter.py
+```
+We need both!
+```bash
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom &
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 odom base_link &
+ros2 topic pub -r 30 /odom nav_msgs/msg/Odometry "{header: {frame_id: 'odom'}, child_frame_id: 'base_link'}" &
 ```
 
 # How to start docker (on PC at least)
@@ -116,4 +124,17 @@ docker ps
 ```
 ```bash
 docker exec -it jetson-container bash
+```
+
+When launch terminal not stopping in a other terminal:
+```bash
+pkill -KILL -f "ros2 launch"
+```
+
+Then using colcon build and etc.
+
+```bash
+rosdep install --from-paths src/autonomy --ignore-src -r -y
+colcon build --packages-up-to autonomy_bringup_pkg orca_nav2 --symlink-install
+source install/setup.bash
 ```
