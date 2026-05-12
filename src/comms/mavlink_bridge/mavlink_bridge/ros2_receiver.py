@@ -222,7 +222,7 @@ class MavlinkBridgeReceiver(Node):
         # velocity until GUID_TIMEOUT (~3 s) elapses. We override that here: if
         # no cmd_vel arrives within 0.3 s, send one zero-velocity setpoint so the
         # sub stops within ~0.4 s of the upstream publisher going silent.
-        self._CMD_VEL_TIMEOUT_S = 0.3
+        self._CMD_VEL_TIMEOUT_S = 4 # 0.3
         self._cmd_vel_last_msg_t = 0.0
         self._cmd_vel_was_active = False
         self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
