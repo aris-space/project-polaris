@@ -917,7 +917,7 @@ class MavlinkBridgeReceiver(Node):
             0.0,  # Position (ignored)
             surge,
             0.0,
-            heave,  # Velocities (m/s)
+            0.0,  # Velocities (m/s)
             0.0,
             0.0,
             0.0,  # Acceleration (ignored)
