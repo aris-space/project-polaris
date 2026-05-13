@@ -26,8 +26,10 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetUseSimTime
+from launch_ros.descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -84,26 +86,53 @@ def generate_launch_description():
     imu_yaw_offset_arg = DeclareLaunchArgument(
         "imu_yaw_offset_deg",
         default_value="0.0",
-        description="Pre-EKF yaw correction (deg, CCW about +Z) for imu_yaw_correction.",
+        description=(
+            "Pre-EKF yaw correction (deg, CCW about +Z) for imu_yaw_correction. "
+            "Ignored if use_imu_yaw_correction:=false."
+        ),
     )
     ubx_pvt_topic_arg = DeclareLaunchArgument(
         "ubx_pvt_topic",
         default_value="/ubx_nav_pvt",
         description="UBX-NAV-PVT topic for head_mot-based yaw calibration.",
     )
+    use_imu_yaw_correction_arg = DeclareLaunchArgument(
+        "use_imu_yaw_correction",
+        default_value="true",
+        description=(
+            "Spin up the imu_yaw_correction node. Set to false when replaying "
+            "a bag that ALREADY contains /imu/data_corrected from the live "
+            "stack (post-2026-05-07 bags) — otherwise two publishers on the "
+            "same topic confuse the local EKF. When false, the bag's "
+            "/imu/data_corrected is replayed directly and carries the live "
+            "head_mot-based calibration."
+        ),
+    )
 
+    # Pre-EKF heading correction. Started only when the bag does NOT already
+    # contain /imu/data_corrected (pre-2026-05-07 bags). For live-stack-
+    # recorded bags, the recorded /imu/data_corrected already carries the
+    # in-mission head_mot calibration; running this node would create a
+    # conflicting second publisher on the same topic.
     imu_yaw_correction_node = Node(
         package="ekf_localization_pkg",
         executable="imu_yaw_correction",
         name="imu_yaw_correction",
         output="screen",
         parameters=[{
-            "yaw_offset_deg": LaunchConfiguration("imu_yaw_offset_deg"),
+            # Force float — passing "imu_yaw_offset_deg:=-140" on the command
+            # line arrives as int and rclpy rejects it (yaw_offset_deg is
+            # declared DOUBLE inside the node).
+            "yaw_offset_deg": ParameterValue(
+                LaunchConfiguration("imu_yaw_offset_deg"),
+                value_type=float,
+            ),
             "input_topic": "/imu/data",
             "output_topic": "/imu/data_corrected",
             "gps_topic": LaunchConfiguration("gps_fix_topic"),
             "ubx_pvt_topic": LaunchConfiguration("ubx_pvt_topic"),
         }],
+        condition=IfCondition(LaunchConfiguration("use_imu_yaw_correction")),
     )
 
     ekf_local_node = Node(
@@ -141,9 +170,12 @@ def generate_launch_description():
             "gps_topic": LaunchConfiguration("gps_fix_topic"),
             "global_odom_topic": "/odometry/filtered/global",
             "h_acc_topic": LaunchConfiguration("h_acc_topic"),
-            "h_acc_max_m": LaunchConfiguration("h_acc_max_m"),
-            "reanchor_on_each_fix": LaunchConfiguration("reanchor_on_each_fix"),
-            "yaw_offset_deg": LaunchConfiguration("yaw_offset_deg"),
+            "h_acc_max_m": ParameterValue(
+                LaunchConfiguration("h_acc_max_m"), value_type=float),
+            "reanchor_on_each_fix": ParameterValue(
+                LaunchConfiguration("reanchor_on_each_fix"), value_type=bool),
+            "yaw_offset_deg": ParameterValue(
+                LaunchConfiguration("yaw_offset_deg"), value_type=float),
             "gps_antenna_offset_xyz": LaunchConfiguration("gps_antenna_offset_xyz"),
             "publish_tf": True,
             "map_frame": "map",
@@ -201,6 +233,7 @@ def generate_launch_description():
         antenna_offset_arg,
         imu_yaw_offset_arg,
         ubx_pvt_topic_arg,
+        use_imu_yaw_correction_arg,
         diag_output_dir_arg,
         imu_yaw_correction_node,
         ekf_local_node,

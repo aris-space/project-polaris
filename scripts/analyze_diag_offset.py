@@ -36,18 +36,32 @@ import sys
 from pathlib import Path
 
 
-def load(path: Path):
+def load(path: Path, p_xx_max: float | None = None):
     xs, ys, sxs, sys_ = [], [], [], []
     # Also load global x,y unconditionally (even when SBL is missing) so we can
     # report path-length / bounding-box stats over the whole run.
     all_xs, all_ys = [], []
     all_sxs, all_sys = [], []
+    # Diagnostic split: high-P vs low-P global samples. When the diagnostic
+    # CSV interleaves messages from two different /odometry/filtered/global
+    # publishers (e.g. a stale gnss_anchored_pose from a previous replay),
+    # the bbox/path-length numbers double-count both streams. Splitting by
+    # P_xx separates them.
+    lo_xs, lo_ys = [], []  # P_xx <= p_xx_max  (the "good" stream if specified)
+    hi_xs, hi_ys = [], []  # P_xx >  p_xx_max
     with path.open("r", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
                 x = float(row["x"]); y = float(row["y"])
                 all_xs.append(x); all_ys.append(y)
+                if p_xx_max is not None:
+                    pxx = float(row.get("P_xx", "nan"))
+                    if math.isfinite(pxx):
+                        if pxx <= p_xx_max:
+                            lo_xs.append(x); lo_ys.append(y)
+                        else:
+                            hi_xs.append(x); hi_ys.append(y)
             except (ValueError, KeyError):
                 pass
             try:
@@ -60,8 +74,17 @@ def load(path: Path):
                 sx = float(row["sbl_x"]); sy = float(row["sbl_y"])
             except (ValueError, KeyError):
                 continue
+            # If filtering, restrict the paired (rigid-body) fit to the low-P
+            # stream so the fit isn't poisoned by the second publisher.
+            if p_xx_max is not None:
+                try:
+                    pxx = float(row.get("P_xx", "nan"))
+                except (ValueError, KeyError):
+                    pxx = float("nan")
+                if not math.isfinite(pxx) or pxx > p_xx_max:
+                    continue
             xs.append(x); ys.append(y); sxs.append(sx); sys_.append(sy)
-    return xs, ys, sxs, sys_, all_xs, all_ys, all_sxs, all_sys
+    return xs, ys, sxs, sys_, all_xs, all_ys, all_sxs, all_sys, lo_xs, lo_ys, hi_xs, hi_ys
 
 
 def bbox_and_path(xs, ys):
@@ -163,10 +186,25 @@ def main(argv=None):
             "EKF-vs-SBL tracking error, not a datum-pick artefact."
         ),
     )
+    p.add_argument(
+        "--p-xx-max",
+        type=float,
+        default=None,
+        help=(
+            "If set, only include rows where P_xx <= this value in the "
+            "rigid-body fit. Reports separate bbox stats for the low-P "
+            "stream vs the high-P stream so duplicate-publisher artefacts "
+            "(e.g. a stale gnss_anchored_pose from a prior replay still "
+            "publishing on /odometry/filtered/global) can be isolated. "
+            "Try 1.0 to filter to gnss_anchored_pose's normal cov range."
+        ),
+    )
     args = p.parse_args(argv)
 
     for csvp in args.csvs:
-        xs, ys, sxs, sys_, all_xs, all_ys, all_sxs, all_sys = load(csvp)
+        xs, ys, sxs, sys_, all_xs, all_ys, all_sxs, all_sys, lo_xs, lo_ys, hi_xs, hi_ys = load(
+            csvp, p_xx_max=args.p_xx_max
+        )
         if args.rebase_sbl and sxs and sys_:
             # First paired row: SBL at the moment the global track first
             # publishes (= anchor moment for anchored runs). The AUV is at
@@ -187,19 +225,36 @@ def main(argv=None):
         trans = fit_translation_only(xs, ys, sxs, sys_)
         gbb = bbox_and_path(all_xs, all_ys)
         sbb = bbox_and_path(all_sxs, all_sys)
+        lo_bb = bbox_and_path(lo_xs, lo_ys) if lo_xs else None
+        hi_bb = bbox_and_path(hi_xs, hi_ys) if hi_xs else None
         print()
         print("=" * 90)
         print(f"file: {csvp}")
         print("=" * 90)
         print(f"  paired (both topics fresh) samples: {rigid['n']}")
         print()
-        print("  GLOBAL track (whole run):")
+        print("  GLOBAL track (whole run, both streams if duplicate publishers):")
         if gbb:
             print(f"    n_samples = {gbb['n_samples']}")
             print(f"    x range   = [{gbb['x_range'][0]:+8.2f}, {gbb['x_range'][1]:+8.2f}]  (width  = {gbb['bbox_w']:.2f} m)")
             print(f"    y range   = [{gbb['y_range'][0]:+8.2f}, {gbb['y_range'][1]:+8.2f}]  (height = {gbb['bbox_h']:.2f} m)")
             print(f"    path length              = {gbb['path_length']:>10.2f} m")
             print(f"    max distance from origin = {gbb['max_disp_from_origin']:>10.2f} m")
+        if lo_bb is not None:
+            print()
+            print(f"  GLOBAL track (low-P stream, P_xx <= {args.p_xx_max}):")
+            print(f"    n_samples = {lo_bb['n_samples']}")
+            print(f"    x range   = [{lo_bb['x_range'][0]:+8.2f}, {lo_bb['x_range'][1]:+8.2f}]  (width  = {lo_bb['bbox_w']:.2f} m)")
+            print(f"    y range   = [{lo_bb['y_range'][0]:+8.2f}, {lo_bb['y_range'][1]:+8.2f}]  (height = {lo_bb['bbox_h']:.2f} m)")
+            print(f"    path length              = {lo_bb['path_length']:>10.2f} m")
+            print(f"    max distance from origin = {lo_bb['max_disp_from_origin']:>10.2f} m")
+        if hi_bb is not None and hi_bb["n_samples"] > 0:
+            print()
+            print(f"  GLOBAL track (high-P stream, P_xx > {args.p_xx_max} — likely stray publisher):")
+            print(f"    n_samples = {hi_bb['n_samples']}")
+            print(f"    x range   = [{hi_bb['x_range'][0]:+8.2f}, {hi_bb['x_range'][1]:+8.2f}]  (width  = {hi_bb['bbox_w']:.2f} m)")
+            print(f"    y range   = [{hi_bb['y_range'][0]:+8.2f}, {hi_bb['y_range'][1]:+8.2f}]  (height = {hi_bb['bbox_h']:.2f} m)")
+            print(f"    max distance from origin = {hi_bb['max_disp_from_origin']:>10.2f} m")
         print()
         print("  SBL track (whole run):")
         if sbb:
