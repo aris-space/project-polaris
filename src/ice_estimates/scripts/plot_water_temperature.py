@@ -34,6 +34,9 @@ TOPIC_DEPTH = "/sensors/pressure/pose_enu"
 # Set to None to disable.
 MIN_DEPTH_M = -0.5
 
+# Drop this many seconds from the start of each bag (sensor thermal equilibration).
+TRIM_START_S = 45.0
+
 # Drop this many samples from the end of each bag to remove end-of-mission spikes.
 TRIM_END_SAMPLES = 30
 
@@ -136,7 +139,10 @@ def main():
         ts, temps = extract_temperature(bag_path, min_depth_m=MIN_DEPTH_M)
         if len(temps) == 0:
             continue
-        if TRIM_END_SAMPLES:
+        if TRIM_START_S and len(ts):
+            mask = ts - ts[0] >= TRIM_START_S
+            ts, temps = ts[mask], temps[mask]
+        if TRIM_END_SAMPLES and len(ts) > TRIM_END_SAMPLES:
             ts, temps = ts[:-TRIM_END_SAMPLES], temps[:-TRIM_END_SAMPLES]
         if len(temps) == 0:
             continue
@@ -181,7 +187,7 @@ def main():
         label=f"±1σ = {std*1000:.1f} m°C",
     )
 
-    ax.set_xlabel("Time since bag start (s)", color="#333333", fontsize=10)
+    ax.set_xlabel("Time since first valid sample (s)", color="#333333", fontsize=10)
     ax.set_ylabel("Water temperature (°C)", color="#333333", fontsize=10)
     depth_label = f" (depth < {MIN_DEPTH_M} m)" if MIN_DEPTH_M is not None else ""
     ax.set_title(
