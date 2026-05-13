@@ -39,22 +39,10 @@ yaw_calibration_min_distance_m  Min distance for the two-fix fallback to be
 head_acc_max_deg            Max head_mot uncertainty per sample (default 5.0)
 head_mot_min_samples        Min valid head_mot samples in the window before
                             preferring head_mot over two-fix (default 5)
-yaw_stability_window_s      Required IMU yaw history span (s) for the AHRS-
-                            convergence precondition that gates the
-                            calibrate_yaw_offset service. Set to 0 to disable
-                            the gate. Default 30.0.
-yaw_stability_threshold_deg Max IMU yaw std (deg) over that window for the
-                            gate to pass. Default 0.1 (mirrors selector's
-                            imu_heading_stable_threshold_deg). Calibrating
-                            while std exceeds this would capture a slewing
-                            yaw and lock in an offset that the AHRS would
-                            drift away from afterwards.
 """
 from __future__ import annotations
 
 import math
-from collections import deque
-from statistics import stdev
 
 import rclpy
 from rcl_interfaces.msg import SetParametersResult
@@ -108,16 +96,6 @@ def _yaw_from_quat(qx: float, qy: float, qz: float, qw: float) -> float:
     return math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
 
 
-def _unwrap_stdev_rad(yaws: list[float]) -> float:
-    """Std (rad) of a yaw sequence after unwrapping the ±π boundary."""
-    TWO_PI = 2.0 * math.pi
-    unwrapped = [yaws[0]]
-    for i in range(1, len(yaws)):
-        diff = (yaws[i] - yaws[i - 1] + math.pi) % TWO_PI - math.pi
-        unwrapped.append(unwrapped[-1] + diff)
-    return stdev(unwrapped)
-
-
 def _ubx_scaled_to_deg(raw) -> float:
     """u-blox UBX-NAV-PVT head_mot/head_acc fields. Spec says int32/uint32 scaled
     by 1e-5 deg, but some ROS wrappers pre-scale to plain degrees.
@@ -151,8 +129,6 @@ class ImuYawCorrection(Node):
         self.declare_parameter("yaw_calibration_min_distance_m", 3.0)
         self.declare_parameter("head_acc_max_deg", 5.0)
         self.declare_parameter("head_mot_min_samples", 5)
-        self.declare_parameter("yaw_stability_window_s", 30.0)
-        self.declare_parameter("yaw_stability_threshold_deg", 0.1)
 
         input_topic: str = self.get_parameter("input_topic").value
         output_topic: str = self.get_parameter("output_topic").value
@@ -168,9 +144,6 @@ class ImuYawCorrection(Node):
         # Latest sensor state (for calibration).
         self._latest_imu: Imu | None = None
         self._latest_fix: NavSatFix | None = None
-        # Rolling raw-yaw buffer (stamp_s, yaw_rad) for the AHRS-stability
-        # precondition checked when calibrate_yaw_offset is invoked.
-        self._imu_yaw_ring: deque[tuple[float, float]] = deque()
 
         # Calibration state.
         self._cal_active: bool = False
@@ -256,19 +229,6 @@ class ImuYawCorrection(Node):
     def _on_imu(self, msg: Imu) -> None:
         self._latest_imu = msg
 
-        # Maintain the rolling raw-yaw buffer used by the calibration
-        # service's AHRS-stability precondition. Cheap (atan2 + deque).
-        window_s = float(self.get_parameter("yaw_stability_window_s").value)
-        if window_s > 0.0:
-            stamp_s = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
-            raw_yaw = _yaw_from_quat(
-                msg.orientation.x, msg.orientation.y,
-                msg.orientation.z, msg.orientation.w,
-            )
-            self._imu_yaw_ring.append((stamp_s, raw_yaw))
-            while self._imu_yaw_ring and (stamp_s - self._imu_yaw_ring[0][0]) > window_s:
-                self._imu_yaw_ring.popleft()
-
         out = Imu()
         out.header = msg.header
         out.orientation_covariance     = msg.orientation_covariance
@@ -329,55 +289,6 @@ class ImuYawCorrection(Node):
             response.success = False
             response.message = "No /imu/data received yet"
             return response
-
-        # AHRS-convergence precondition. Calibration captures a CONSTANT
-        # yaw_offset_deg; if the AHRS is still slewing (gyro/accel bias
-        # estimators not settled, magnetometer fusion still pulling) the
-        # captured offset matches the AHRS state during the window, not its
-        # converged state, and the live yaw drifts away from the offset
-        # afterwards. Same gate as selector.py uses for /gps/selected, but
-        # re-evaluated per-call (no latch).
-        window_s = float(self.get_parameter("yaw_stability_window_s").value)
-        threshold_deg = float(self.get_parameter("yaw_stability_threshold_deg").value)
-        if window_s > 0.0:
-            if len(self._imu_yaw_ring) < 10:
-                msg_str = (
-                    f"Yaw calibration refused: only {len(self._imu_yaw_ring)} IMU yaw "
-                    f"samples buffered (need ≥10 over {window_s:.0f}s). Wait for "
-                    "more /imu/data, then retry."
-                )
-                self.get_logger().warn(msg_str)
-                response.success = False
-                response.message = msg_str
-                return response
-            span_s = self._imu_yaw_ring[-1][0] - self._imu_yaw_ring[0][0]
-            if span_s < window_s:
-                msg_str = (
-                    f"Yaw calibration refused: IMU yaw buffer spans only "
-                    f"{span_s:.1f}s of the required {window_s:.0f}s window. "
-                    "Wait longer after IMU startup, then retry."
-                )
-                self.get_logger().warn(msg_str)
-                response.success = False
-                response.message = msg_str
-                return response
-            std_deg = math.degrees(
-                _unwrap_stdev_rad([y for _, y in self._imu_yaw_ring])
-            )
-            if std_deg > threshold_deg:
-                msg_str = (
-                    f"Yaw calibration refused: AHRS not converged — raw IMU yaw "
-                    f"std {std_deg:.3f}° over last {window_s:.0f}s exceeds "
-                    f"threshold {threshold_deg:.3f}°. Sit still and let the AHRS "
-                    "settle (gyro/accel bias estimators, magnetometer fusion), "
-                    "then retry. Calibrating now would lock in an offset that "
-                    "the AHRS drifts away from afterwards."
-                )
-                self.get_logger().warn(msg_str)
-                response.success = False
-                response.message = msg_str
-                return response
-
         if self._latest_fix is None:
             response.success = False
             response.message = "No /fix received yet (will need it for two-fix fallback)"
