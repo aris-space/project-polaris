@@ -55,15 +55,35 @@ pressure_to_contact_z_m: 0.210
 # vertical distance to the ice (see formula above).
 pressure_to_contact_x_m: 0.515
 
+# Vertical distance from the BlueRobotics pressure sensor UP to
+# the top-mounted ultrasonic distance sensor along the AUV body
+# z-axis. Positive when the ultrasonic sensor sits ABOVE the
+# pressure sensor (the normal configuration: ultrasonic on top
+# of the tower, pressure sensor below in the body).
+#
+# Used by the ultrasonic-based ice thickness method (no touch
+# required):
+#
+#   depth_ultrasonic = depth_pressure - pressure_to_ultrasonic_z_m
+#   ice_draft        = depth_ultrasonic - d_ultrasonic
+#   T_ice            = ice_draft * rho_water / rho_ice
+#
+# Derived from the body geometry: the pressure sensor sits
+# 0.210 m below the ice contact point (pressure_to_contact_z_m)
+# and the ultrasonic sensor sits 0.148 m below that same contact
+# point (per ice_touch_detection_node), so the ultrasonic is
+# 0.210 - 0.148 = 0.062 m above the pressure sensor.
+pressure_to_ultrasonic_z_m: 0.062
+
 # Fresh water density (kg/m3). Adjust for saline or brackish water.
-rho_water: 1000.0
+rho_water: 999.4
 
 # Ice density (kg/m3). Standard for fresh-water ice.
 # Sea ice is typically 720-940 kg/m3 depending on salinity and porosity.
-rho_ice: 887.0
+rho_ice: 887.5
 
 # Gravitational acceleration (m/s2).
-g: 9.81
+g: 9.802
 
 
 # ------------------------------------------------------------
