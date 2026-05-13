@@ -36,7 +36,7 @@
         
         <RateController hz="1.0"> 
           <Fallback>
-            <IsStraightPathValid path="{path}" max_dist="1.5" goal="{goal}"/>
+            <IsStraightPathValid path="{path}" max_dist="0.9" goal="{goal}"/>
             <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
           </Fallback>
         </RateController>
@@ -53,6 +53,7 @@
     </RecoveryNode>
   </BehaviorTree>
 </root>
+
 
 
 <!-- <root main_tree_to_execute="MainTree">
