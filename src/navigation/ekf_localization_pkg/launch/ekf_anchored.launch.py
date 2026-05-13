@@ -119,7 +119,11 @@ def generate_launch_description():
             "yaw_offset_deg": LaunchConfiguration("imu_yaw_offset_deg"),
             "input_topic": "/imu/data",
             "output_topic": "/imu/data_corrected",
-            "gps_topic": LaunchConfiguration("gps_fix_topic"),
+            # Raw /fix, not the gated /gps/selected: yaw calibration needs
+            # GNSS available before the selector's IMU yaw stability gate
+            # latches (the gate's whole purpose is to protect the EKF map
+            # datum from a moving platform — opposite of this use case).
+            "gps_topic": "/fix",
             "ubx_pvt_topic": LaunchConfiguration("ubx_pvt_topic"),
         }],
     )

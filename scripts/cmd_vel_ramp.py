@@ -141,9 +141,8 @@ class RampPublisher(Node):
                 if self._tail_count == 1:
                     self.get_logger().info(f"profile done at t={t:.2f}s; sending {self.tail_zeros} explicit zeros")
             else:
-                self.pub.publish(Twist())
-                self.get_logger().info("done")
-                rclpy.shutdown()
+                self.get_logger().info("done — profile complete, node keeping alive (Ctrl-C to stop)")
+                self.timer.cancel()
 
 
 def parse_args():
