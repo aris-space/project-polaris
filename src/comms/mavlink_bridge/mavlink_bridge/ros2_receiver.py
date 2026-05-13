@@ -935,6 +935,7 @@ class MavlinkBridgeReceiver(Node):
         resumes. Bypasses ArduSub's ~3 s GUID_TIMEOUT so the sub stops within
         ~0.4 s of the upstream publisher going silent (Ctrl+C, controller
         crash, mode change, mission completion)."""
+        return
         if not self._cmd_vel_was_active:
             return
         if self.pixhawk_mode != "GUIDED":
