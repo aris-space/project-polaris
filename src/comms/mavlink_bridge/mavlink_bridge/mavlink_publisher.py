@@ -253,7 +253,7 @@ class MavlinkBridgeSender(Node):
         )
         self.logger.info(f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=100ms)")
 
-        # Request SERVO_OUTPUT_RAW messages at 20 Hz
+        # Request SERVO_OUTPUT_RAW messages at 10 Hz
         self.logger.info("Requesting SERVO_OUTPUT_RAW message stream from Pixhawk...")
         self.port.mav.command_long_send(
             self.port.target_system,
@@ -261,10 +261,10 @@ class MavlinkBridgeSender(Node):
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
             0,  # confirmation
             mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,  # message ID = 36
-            50000,  # interval in microseconds (50ms = 20Hz)
+            100000,  # interval in microseconds (100ms = 10Hz)
             0, 0, 0, 0, 0,
         )
-        self.logger.info("SERVO_OUTPUT_RAW request sent (interval=50ms)")
+        self.logger.info("SERVO_OUTPUT_RAW request sent (interval=100ms)")
 
         self.msg_type_counter = {
             # "HEARTBEAT": 0,

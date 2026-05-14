@@ -222,7 +222,7 @@ class MavlinkBridgeReceiver(Node):
         # velocity until GUID_TIMEOUT (~3 s) elapses. We override that here: if
         # no cmd_vel arrives within 0.3 s, send one zero-velocity setpoint so the
         # sub stops within ~0.4 s of the upstream publisher going silent.
-        self._CMD_VEL_TIMEOUT_S = 0.3
+        self._CMD_VEL_TIMEOUT_S = 4 # 0.3
         self._cmd_vel_last_msg_t = 0.0
         self._cmd_vel_was_active = False
         self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
@@ -397,28 +397,42 @@ class MavlinkBridgeReceiver(Node):
 
     def send_6dof_command(self, control_input):
         """
-        Note: Extension fields (s, t) are usually enabled in
-        newer MAVLink 2.0 implementations. This has to be tested!
-        Input values: -1000 to 1000 (except heave, see below)
+        Forwards a 6-tuple to MAVLink MANUAL_CONTROL (transport only, no frame
+        conversion happens here).
+
+        Input convention — the caller (manual_control_node /
+        manual_altitude_hold_control_node) must already have converted from
+        ROS-FLU to MANUAL_CONTROL FRD before calling this:
+            control_input[0] = surge   in [-1000, +1000], + = forward
+            control_input[1] = sway    in [-1000, +1000], + = right (FRD)
+            control_input[2] = heave   in [    0,  1000], 500 = neutral, > 500 = up
+            control_input[3] = yaw     in [-1000, +1000], + = CW from above (FRD)
+            control_input[4] = roll    in [-1000, +1000], + = roll right
+            control_input[5] = pitch   in [-1000, +1000], + = nose up
+
+        MAVLink MANUAL_CONTROL field meanings as ArduSub interprets them:
+            x = surge, y = sway, z = heave, r = yaw,
+            s = PITCH (extension 1), t = ROLL (extension 2)
+
+        Note that MANUAL_CONTROL.s carries pitch and .t carries roll — so this
+        function maps control_input[5] (pitch) → s and control_input[4] (roll)
+        → t. Intentional and correct; do not "fix" by reordering.
         """
-        # self.get_logger().info(
-        #     f"Sending 6DOF command with control input: {control_input}"
-        # )
         self._file_logger.info(
             f"Sending 6DOF command with control input: {control_input}"
         )
         surge, sway, heave, yaw, roll, pitch = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
-            int(surge),  # x
-            int(sway),  # y
-            int(heave),  # z (0-1000)
-            int(yaw),  # r
-            0,  # buttons
-            0,  # buttons 2
-            3,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
-            int(pitch),  # s (Extension 1)
-            int(roll),  # t (Extension 2)
+            int(surge),  # x  = surge
+            int(sway),   # y  = sway
+            int(heave),  # z  = heave (0-1000, 500 = neutral)
+            int(yaw),    # r  = yaw
+            0,           # buttons
+            0,           # buttons2
+            3,           # enabled_extensions = 0b11 → enable s and t fields
+            int(pitch),  # s  = pitch  (MANUAL_CONTROL.s carries pitch in ArduSub)
+            int(roll),   # t  = roll   (MANUAL_CONTROL.t carries roll  in ArduSub)
         )
 
     def reboot_cb(self, msg):
@@ -873,17 +887,9 @@ class MavlinkBridgeReceiver(Node):
 
         # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
         # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
-        #   +linear.x = forward, +linear.y = left, +linear.z = up,
-        #   +angular.z = yaw CCW (left).
-        # ArduSub 4.5.7 interprets SET_POSITION_TARGET_LOCAL_NED with BODY_FRD
-        # spec-correctly for z (down positive) and yaw (CW positive), but the
-        # x axis is empirically inverted (forward needs negative vx). Verified
-        # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
-        # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
-        # Now yaw aloso for now just hardcoded corect!
-        surge    = -float(msg.linear.x)   # FLU forward -> negative vx
+        surge    = float(msg.linear.x)   # FLU forward -> negative vx
         heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
-        yaw_rate = float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
+        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
@@ -929,6 +935,7 @@ class MavlinkBridgeReceiver(Node):
         resumes. Bypasses ArduSub's ~3 s GUID_TIMEOUT so the sub stops within
         ~0.4 s of the upstream publisher going silent (Ctrl+C, controller
         crash, mode change, mission completion)."""
+        return
         if not self._cmd_vel_was_active:
             return
         if self.pixhawk_mode != "GUIDED":
@@ -939,19 +946,20 @@ class MavlinkBridgeReceiver(Node):
             return
         m = mavutil.mavlink
         type_mask = (
-            m.POSITION_TARGET_TYPEMASK_X_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
+            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
         )
         self.port.mav.set_position_target_local_ned_send(
             0,
             self.port.target_system,
             self.port.target_component,
-            m.MAV_FRAME_BODY_FRD,
+            m.MAV_FRAME_BODY_OFFSET_NED,
             type_mask,
             0.0,
             0.0,

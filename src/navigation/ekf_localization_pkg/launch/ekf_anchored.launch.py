@@ -19,6 +19,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -79,6 +80,54 @@ def generate_launch_description():
             "yaw rotations so /gps/filtered/global stays aligned with raw /fix."
         ),
     )
+    imu_yaw_offset_arg = DeclareLaunchArgument(
+        "imu_yaw_offset_deg",
+        default_value="0.0",
+        description=(
+            "Pre-EKF yaw correction (deg, CCW about +Z) applied by "
+            "imu_yaw_correction to /imu/data before the local EKF sees it. "
+            "Trigger /imu_yaw_correction/calibrate_yaw_offset to set this "
+            "automatically from GNSS heading after a forward-driving maneuver."
+        ),
+    )
+    ubx_pvt_topic_arg = DeclareLaunchArgument(
+        "ubx_pvt_topic",
+        default_value="/ubx_nav_pvt",
+        description=(
+            "UBX-NAV-PVT topic for head_mot-based yaw calibration. Empty "
+            "string disables the head_mot path; only two-fix bearing fallback."
+        ),
+    )
+    use_thruster_fallback_arg = DeclareLaunchArgument(
+        "use_thruster_fallback",
+        default_value="true",
+        description=(
+            "Launch thruster_velocity_estimator. Activates only when DVL has "
+            "been absent for dvl_timeout_s (default 3 s)."
+        ),
+    )
+
+    # Pre-EKF: rotate /imu/data by yaw_offset_deg, republish on /imu/data_corrected.
+    # The local EKF then sees the calibrated heading directly, so /odometry/filtered/local
+    # and the local TF tree are correct without any post-EKF fix-up.
+    imu_yaw_correction_node = Node(
+        package="ekf_localization_pkg",
+        executable="imu_yaw_correction",
+        name="imu_yaw_correction",
+        output="screen",
+        parameters=[{
+            "yaw_offset_deg": LaunchConfiguration("imu_yaw_offset_deg"),
+            "input_topic": "/imu/data",
+            "output_topic": "/imu/data_corrected",
+            # Raw /fix, not the gated /gps/selected: yaw calibration needs
+            # GNSS available before the selector's IMU yaw stability gate
+            # latches (the gate's whole purpose is to protect the EKF map
+            # datum from a moving platform — opposite of this use case).
+            "gps_topic": "/fix",
+            "ubx_pvt_topic": LaunchConfiguration("ubx_pvt_topic"),
+        }],
+    )
+
     ekf_local_node = Node(
         package="robot_localization",
         executable="ekf_node",
@@ -99,6 +148,16 @@ def generate_launch_description():
             "max_forward_jump_s": 60.0,
             "max_backward_jump_s": 1.0,
         }],
+    )
+
+    # Thruster fallback: estimates surge velocity from PWM when DVL is absent.
+    # Silent during normal DVL operation; activates after dvl_timeout_s (default 3 s).
+    thruster_fallback_node = Node(
+        package="ekf_localization_pkg",
+        executable="thruster_velocity_estimator",
+        name="thruster_velocity_estimator",
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("use_thruster_fallback")),
     )
 
     anchored_pose_node = Node(
@@ -129,7 +188,12 @@ def generate_launch_description():
         reanchor_arg,
         yaw_offset_arg,
         antenna_offset_arg,
+        imu_yaw_offset_arg,
+        ubx_pvt_topic_arg,
+        use_thruster_fallback_arg,
+        imu_yaw_correction_node,
         ekf_local_node,
         odometry_validator_node,
+        thruster_fallback_node,
         anchored_pose_node,
     ])
