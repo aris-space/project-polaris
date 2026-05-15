@@ -19,7 +19,7 @@ from nav2_msgs.srv import ManageLifecycleNodes
 
 _SERVICE = '/lifecycle_manager_navigation/manage_nodes'
 _STARTUP_CMD = 0
-_CALL_TIMEOUT_SEC = 10.0
+_CALL_TIMEOUT_SEC = 90.0
 _ACTIVE_TIMEOUT_SEC = 180.0
 _POLL_SEC = 0.25
 
