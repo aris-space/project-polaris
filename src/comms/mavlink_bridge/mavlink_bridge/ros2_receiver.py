@@ -104,6 +104,12 @@ class MavlinkBridgeReceiver(Node):
 
         self._gps_origin_sent = False
         self._gps_origin_valid_count = 0
+        # RTK gate state — mirrors gnss_datum_watchdog so map->odom and the
+        # Pixhawk origin become valid under the same conditions. Track first-
+        # message time so we can fall back to the old bits-only check if
+        # h_acc never satisfies the threshold within _GPS_ORIGIN_FALLBACK_S.
+        self._gps_origin_first_valid_bits_t = 0.0
+        self._gps_origin_fallback_warned = False
 
         # Depth monitoring state (populated by MAVLink drain loop)
         self._vfrhud_alt = float(
@@ -829,15 +835,63 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info(f"Queued ArduSub param write for {mav_param_id}")
 
+    # RTK gate — mirrors gnss_datum_watchdog (which decides when map->odom
+    # becomes active) so the Pixhawk origin and the EKF datum lock under the
+    # same conditions. UBX-NAV-HPPOSLLH h_acc is in 0.1 mm units.
+    _GPS_ORIGIN_H_ACC_MAX_M = 0.50
+    _GPS_ORIGIN_H_ACC_TO_M = 1e-4
+    _GPS_ORIGIN_NULL_ISLAND_E7 = 1_000_000  # 0.1° in 1e-7 deg units
+    _GPS_ORIGIN_FALLBACK_S = 30.0           # bits-only fallback after this long
+
     def gps_origin_cb(self, msg: UBXNavHPPosLLH):
         if self._gps_origin_sent:
             return
         if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
             self._gps_origin_valid_count = 0
             return
-        self._gps_origin_valid_count += 1
-        if self._gps_origin_valid_count < 5:
+
+        # Null-island guard — UBX lat/lon are already in 1e-7 deg.
+        if (
+            abs(int(msg.lat)) < self._GPS_ORIGIN_NULL_ISLAND_E7
+            and abs(int(msg.lon)) < self._GPS_ORIGIN_NULL_ISLAND_E7
+        ):
+            self._gps_origin_valid_count = 0
             return
+
+        # First message with clean bits + non-null position — start the
+        # fallback timer.
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        if self._gps_origin_first_valid_bits_t == 0.0:
+            self._gps_origin_first_valid_bits_t = now_s
+
+        # Primary gate: h_acc must be present and within 0.50 m, exactly like
+        # gnss_datum_watchdog. Same field, same conversion, same threshold.
+        h_acc_m = float(msg.h_acc) * self._GPS_ORIGIN_H_ACC_TO_M
+        rtk_ok = 0.0 < h_acc_m <= self._GPS_ORIGIN_H_ACC_MAX_M
+
+        if not rtk_ok:
+            # Fallback after 30 s of clean-bits-but-no-RTK: revert to the old
+            # "5 consecutive valid-bits messages" criterion so the Pixhawk still
+            # gets a home even if RTK never converges. Warn once.
+            elapsed = now_s - self._gps_origin_first_valid_bits_t
+            if elapsed < self._GPS_ORIGIN_FALLBACK_S:
+                return
+            if not self._gps_origin_fallback_warned:
+                self.get_logger().warn(
+                    f"GPS origin: h_acc still > {self._GPS_ORIGIN_H_ACC_MAX_M:.2f} m "
+                    f"after {elapsed:.0f}s (h_acc={h_acc_m:.2f}m); falling back to "
+                    "bits-only check (5 consecutive valid messages). Pixhawk origin "
+                    "will not match the EKF datum quality threshold."
+                )
+                self._file_logger.warning(
+                    f"GPS origin fallback after {elapsed:.0f}s without RTK h_acc "
+                    f"(latest h_acc={h_acc_m:.2f}m, threshold={self._GPS_ORIGIN_H_ACC_MAX_M:.2f}m)"
+                )
+                self._gps_origin_fallback_warned = True
+            self._gps_origin_valid_count += 1
+            if self._gps_origin_valid_count < 5:
+                return
+            # fall through to send
 
         # UBX-NAV-HPPOSLLH units:
         #   lat, lon:  deg * 1e7 (already MAVLink degE7 scale)
@@ -872,11 +926,14 @@ class MavlinkBridgeReceiver(Node):
         lat_deg = lat_e7 * 1e-7
         lon_deg = lon_e7 * 1e-7
         alt_m = alt_mm * 1e-3
+        gate = 'RTK' if rtk_ok else 'fallback'
         self.get_logger().info(
-            f"GPS_GLOBAL_ORIGIN sent (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
+            f"GPS_GLOBAL_ORIGIN sent (MSL, {gate}): lat={lat_deg:.7f}, lon={lon_deg:.7f}, "
+            f"alt={alt_m:.2f}m, h_acc={h_acc_m:.2f}m"
         )
         self._file_logger.info(
-            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
+            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL, {gate}): lat={lat_deg:.7f}, "
+            f"lon={lon_deg:.7f}, alt={alt_m:.2f}m, h_acc={h_acc_m:.2f}m"
         )
 
     def cmd_vel_cb(self, msg):
