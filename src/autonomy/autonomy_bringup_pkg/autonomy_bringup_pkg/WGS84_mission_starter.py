@@ -10,6 +10,7 @@ and/or ``--file path.csv``.
 
 from enum import Enum
 import argparse
+import math
 import sys
 import time
 
@@ -20,6 +21,7 @@ from nav2_msgs.action import FollowWaypoints
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
+from mavros_msgs.msg import State as PixhawkHeartbeat
 from std_msgs.msg import Bool, String
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
@@ -73,9 +75,29 @@ def publish_disarm_and_spin(executor, node, arm_pub, spins: int = 30) -> None:
             break
 
 
+def _print_waypoint_summary(poses, csv_path: str) -> None:
+    n = len(poses)
+    print(f'Loaded {n} waypoints from {csv_path}')
+    total_dist = 0.0
+    for i, p in enumerate(poses):
+        x = p.pose.position.x
+        y = p.pose.position.y
+        z = p.pose.position.z
+        if i + 1 < n:
+            nx = poses[i + 1].pose.position.x
+            ny = poses[i + 1].pose.position.y
+            nz = poses[i + 1].pose.position.z
+            d = math.sqrt((nx - x) ** 2 + (ny - y) ** 2 + (nz - z) ** 2)
+            total_dist += d
+            print(f'  WP#{i+1:2d}: x={x:8.2f}m  y={y:8.2f}m  z={z:7.2f}m  →  {d:.1f}m to next')
+        else:
+            print(f'  WP#{i+1:2d}: x={x:8.2f}m  y={y:8.2f}m  z={z:7.2f}m  [last]')
+    print(f'  Total path length: {total_dist:.1f}m')
+
+
 def default_mission_csv_path() -> str:
     share = get_package_share_directory('autonomy_bringup_pkg')
-    return f'{share}/missions/pool_mission.csv'
+    return f'{share}/missions/goldbach_straightline_wgs84_mission.csv'
 
 
 def wait_for_gps_origin(
@@ -147,13 +169,19 @@ def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.
 
 
 def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
-              status_pub=None, total_waypoints: int = 0) -> SendGoalResult:
+              status_pub=None, total_waypoints: int = 0, poses=None) -> SendGoalResult:
     goal_handle = None
 
     def feedback_cb(feedback_msg):
         wp = feedback_msg.feedback.current_waypoint
         if status_pub is not None:
             status_pub.publish(String(data=f"{wp + 1}/{total_waypoints}"))
+        if poses is not None and wp < len(poses):
+            p = poses[wp]
+            x, y, z = p.pose.position.x, p.pose.position.y, p.pose.position.z
+            print(f'  Heading to WP {wp+1}/{total_waypoints}: x={x:.2f}m  y={y:.2f}m  z={z:.2f}m')
+        else:
+            print(f'  Heading to WP {wp+1}/{total_waypoints}')
 
     try:
         if not wait_for_follow_waypoints(executor, action_client):
@@ -280,7 +308,7 @@ def main() -> None:
 
         hb_state = PixhawkState()
         node.create_subscription(
-            String,
+            PixhawkHeartbeat,
             '/pixhawk/heartbeat',
             make_heartbeat_callback(hb_state),
             10,
@@ -306,7 +334,7 @@ def main() -> None:
         goal = FollowWaypoints.Goal()
         goal.poses = poses
 
-        print(f'Loaded {len(goal.poses)} waypoints (map ENU)')
+        _print_waypoint_summary(poses, csv_path)
 
         for _ in range(10):
             executor.spin_once(timeout_sec=0.05)
@@ -329,7 +357,8 @@ def main() -> None:
 
         print('>>> Executing mission <<<')
         mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
-                                   status_pub=status_pub, total_waypoints=len(goal.poses))
+                                   status_pub=status_pub, total_waypoints=len(goal.poses),
+                                   poses=poses)
 
         if mission_result == SendGoalResult.SUCCESS and rclpy.ok():
             print('>>> Disarming <<<')

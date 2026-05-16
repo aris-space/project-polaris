@@ -35,6 +35,9 @@
 #include "orca_nav2/param_macro.hpp"
 #include "rclcpp/rclcpp.hpp"
 
+
+// NOt to be merged in dev!!!!!!!!!!!!!!!!!!!!
+
 namespace orca_nav2
 {
 
@@ -47,6 +50,10 @@ class StraightLinePlanner3D : public nav2_core::GlobalPlanner
   // Parameters
   double planning_dist_{};
   bool z_before_xy_{};
+  //Changed
+  bool use_fixed_start_{};
+  double fixed_start_x_{};
+  double fixed_start_y_{};
 
 public:
   StraightLinePlanner3D() = default;
@@ -72,6 +79,11 @@ public:
       planning_dist_ = 0.1;
     }
 
+    // CHANGED
+    PARAMETER(parent, name, use_fixed_start, false)
+    PARAMETER(parent, name, fixed_start_x, 0.0)
+    PARAMETER(parent, name, fixed_start_y, 0.0)
+
     RCLCPP_INFO(logger_, "StraightLinePlanner3D configured");
   }
 
@@ -82,6 +94,7 @@ public:
   void deactivate() override {}
 
   // Move in one 3D segment
+  // Adapted for step responses.
   void createOneSegmentPlan(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
@@ -180,10 +193,20 @@ public:
     global_path.header.stamp = clock_->now();
     global_path.header.frame_id = global_frame_id_;
 
+    // For step response testing: override XY of path start with a fixed point,
+    // so the path is the ideal line regardless of where the robot spawned.
+    geometry_msgs::msg::PoseStamped effective_start = start;
+    if (use_fixed_start_) {
+      effective_start.pose.position.x = fixed_start_x_;
+      effective_start.pose.position.y = fixed_start_y_;
+      RCLCPP_INFO(logger_, "Fixed start enabled: path starts at (%.2f, %.2f), robot is at (%.2f, %.2f)",
+        fixed_start_x_, fixed_start_y_, start.pose.position.x, start.pose.position.y);
+    }
+
     if (z_before_xy_) {
-      createTwoSegmentPlan(start, goal, global_path);
+      createTwoSegmentPlan(effective_start, goal, global_path);
     } else {
-      createOneSegmentPlan(start, goal, global_path);
+      createOneSegmentPlan(effective_start, goal, global_path);
     }
 
     // Goal x, y, z and yaw

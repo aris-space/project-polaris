@@ -94,40 +94,75 @@ controller_server:
     LongStraightLine:
       plugin: "orca_nav2/PurePursuitController3D"
       lookahead_dist: 2.5
-      lookahead_dist: 2.5
       transform_tolerance: 1.0
-      goal_tolerance: 0.2 # 0.4? but we are doing a very long strate! pay attention goal stioll needs to be reached!!¨!!!!!!!!!!!!!!!!!
+      goal_tolerance: 0.2
       tick_rate: 20.0
 
       x_vel: 0.4
-      x_accel: 0.3
-      z_vel: 0.3
+      x_accel: 0.2
+      z_vel: 0.25
       z_accel: 0.2
       yaw_vel: 0.3
-      yaw_accel: 0.15
+      yaw_accel: 0.35
 
-      # The motion model may be bogus, so actual velocity may be lower or higher than desired
-      # velocity. Specify a range using the error terms, e.g.,
-      # [(1 - yaw_error_) * yaw_vel_, (1 + yaw_error_) * yaw_vel_]
-      x_error: 0.15 #0.3, 0.35
-      yaw_error: 0.15 #0.15, 0.2
       # Tracking topics: 3x Float64 + PointStamped + PoseStamped + TwistStamped (see README)
       publish_tracking_error: true
 
       # Cross-track velocity damping (PD derivative term on lateral error).
       # angular.z -= K_cross_vel * v_cross,  where v_cross = vel.x*sin(yaw_err) + vel.y*cos(yaw_err)
       # Units: (rad/s) / (m/s).  0.0 = disabled.  Conservative starting point: 0.3.
-      K_cross_vel: 0.0 #0.15
+      K_cross_vel: 0.0
 
       # Velocity-divergence emergency threshold (rad).
       # If the velocity vector points more than this angle off the path tangent:
-      #   1. Publishes False  on /pixhawk/arm_cmd  -> disarm
-      #   2. Publishes MANUAL on /pixhawk/mode_cmd -> manual mode
-      #   3. Throws ControllerException            -> aborts navigation
-      # 0.0 = disabled.  0.785 = 45 deg (strict).  1.05 = 60 deg (more tolerant).
-      max_velocity_divergence_rad: 1.22  # 70 deg - fires symmetrically for both into and away from path
-      min_speed_divergence_check: 0.25  # m/s - skip check when nearly stopped
-      K_descelerate: 0.5
+      #   1. Publishes False  on /pixhawk/arm_cmd  → disarm
+      #   2. Publishes MANUAL on /pixhawk/mode_cmd → manual mode
+      #   3. Throws ControllerException            → aborts navigation
+      max_velocity_divergence_rad: 1.22  # 70 deg — fires symmetrically for both into and away from path
+      min_speed_divergence_check: 0.25  # m/s — skip check when nearly stopped
+
+      # Breaking
+      K_descelerate: 0.17
+
+      # ── Regulated Pure Pursuit ──────────────────────────────────────────────
+      # Rotate-to-heading: stop translating and rotate in place when the heading
+      # error to the curvature carrot exceeds rotate_to_heading_min_angle.
+      # Hysteresis: engages at min_angle, releases only at the smaller release_angle
+      # to prevent premature exit and the cross-track drift that follows.
+      use_rotate_to_heading: true
+      rotate_to_heading_angular_vel: 0.2  # rad/s — max rotation speed
+      rotate_to_heading_min_angle: 1.22    # rad (70 deg) — only rotate-in-place for sharp turns
+      rotate_to_heading_release_angle: 0.1 # rad (~3 deg) — MUST be < v²/(2*decel) = 0.1²/(2*0.05) = 0.1 rad
+      # Real AUV angular braking capability (rad/s²) — used in sqrt decel formula.
+      # Much lower than yaw_accel (ramp rate) because water drag limits actual decel.
+      # Braking starts at dist = v²/(2*decel) from target. With v=0.1, decel=0.05 → 0.1 rad.
+      rotate_to_heading_decel: 0.05
+
+      # Stateful goal heading: once within XY goal tolerance, stay in heading-align
+      # mode even if the robot drifts slightly back out of tolerance.
+      stateful: false
+
+      # Velocity-scaled lookahead: lookahead = speed * lookahead_time (clamped).
+      # Keep false until basic heading behaviour is confirmed good.
+      use_velocity_scaled_lookahead: false
+      min_lookahead_dist: 1.25
+      max_lookahead_dist: 2.5
+      lookahead_time: 6.25
+
+      # Fixed curvature lookahead: measure curvature at this fixed distance regardless
+      # of the main lookahead. Breaks the slow→short lookahead→high curvature feedback loop.
+      use_fixed_curvature_lookahead: true
+      curvature_lookahead_dist: 2.5  # m — matched to lookahead_dist
+
+      # Curvature-regulated linear velocity: scale forward speed down when the turning
+      # radius falls below regulated_linear_scaling_min_radius.
+      use_regulated_linear_vel_scaling: true
+      regulated_linear_scaling_min_radius: 0.9
+      regulated_linear_scaling_min_speed: 0.05
+
+      # Approach velocity: ramp forward speed down over the last N metres to goal.
+      min_approach_linear_velocity: 0.0
+      approach_velocity_scaling_dist: 4.5
 
     SharpTurn:
       plugin: "orca_nav2/SharpTurnController3D"
@@ -208,7 +243,11 @@ planner_server:
     # OrcaPlanner parameters
     StraightLine:
       plugin: "orca_nav2/StraightLinePlanner3D"
-      planning_dist: 0.1    # Plan a pose every planning_dist meters
+      planning_dist: 0.05    # Plan a pose every planning_dist meters
+      # Fpr step reponse - NOT To BE MERGED into dev!!
+      use_fixed_start: false # Set true for step response tests
+      fixed_start_x: 0.0    # X of ideal path start in map frame (lon direction)
+      fixed_start_y: 0.0    # Y of ideal path start in map frame (lat direction)
 
 
 planner_server_rclcpp_node:
@@ -216,7 +255,7 @@ planner_server_rclcpp_node:
     use_sim_time: True
 
 # Nav2 Humble: use behavior_plugins + nav2_behaviors/* (not recovery_plugins / nav2_recoveries).
-# Wrong names/types leave behavior_server configure failing -> unconfigured forever.
+# Wrong names/types leave behavior_server configure failing → unconfigured forever.
 behavior_server:
   ros__parameters:
     costmap_topic: "local_costmap/costmap_raw"
@@ -251,4 +290,4 @@ waypoint_follower:
     wait_at_waypoint:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
       enabled: True
-      waypoint_pause_duration: 2000   # Sleep for 2000ms
+      waypoint_pause_duration: 1250   # Sleep for 2000ms

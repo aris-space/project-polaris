@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 import rclpy
+from mavros_msgs.msg import State as PixhawkHeartbeat
 from std_msgs.msg import Bool, String
 
 
@@ -49,6 +50,12 @@ class PixhawkState:
         self.mode, self.armed, self.system_status = parsed
         self.last_msg_time = now
 
+    def update_from_state(self, msg: 'PixhawkHeartbeat', now: float) -> None:
+        self.mode = msg.mode
+        self.armed = msg.armed
+        self.system_status = msg.system_status
+        self.last_msg_time = now
+
 
 def _spin(executor, timeout_sec: float) -> None:
     executor.spin_once(timeout_sec=timeout_sec)
@@ -82,68 +89,58 @@ def ensure_armed_and_mode_guided(
     mode_pub,
     state: PixhawkState,
     *,
-    heartbeat_wait_sec: float = 1.5,
+    heartbeat_wait_sec: float = 5.0,
     settle_after_arm_sec: float = 1.5,
     settle_after_guided_sec: float = 1.5,
     poll_sec: float = 0.05,
+    max_attempts: int = 4,
 ) -> bool:
     """
-    Fast gate before Nav2: if Pixhawk is not already linkable and armable **now**, return False.
-
-    Does **not** block for tens of seconds waiting for SITL to become healthy - one short
-    heartbeat wait, one arm command, one GUIDED command, brief settle each time, then check.
+    Gate before Nav2: wait for heartbeat, then arm + set GUIDED with retries.
 
     ``node`` is unused; kept for call-site compatibility.
     """
     _ = node
     deadline = time.time() + heartbeat_wait_sec
-    print(
-        f'Checking /pixhawk/heartbeat (up to {heartbeat_wait_sec:.1f}s)',
-        flush=True,)
+    print(f'Checking /pixhawk/heartbeat (up to {heartbeat_wait_sec:.1f}s)', flush=True)
     while rclpy.ok() and time.time() < deadline:
         if state.last_msg_time > 0.0:
             break
         _spin(executor, poll_sec)
     else:
-        print(
-            'No Pixhawk heartbeat yet.',
-            flush=True,
-        )
+        print('No Pixhawk heartbeat received. Is mavlink_bridge running?', flush=True)
         return False
 
-    print(
-        f'Heartbeat: mode={state.mode}, armed={int(state.armed)} - attempting once',
-        flush=True,
-    )
+    print(f'Heartbeat: mode={state.mode}, armed={int(state.armed)}, system_status={state.system_status}', flush=True)
 
-    print('>>> Arming <<<', flush=True)
-    arm_pub.publish(Bool(data=True))
-    _spin_for(executor, settle_after_arm_sec, poll_sec)
+    for attempt in range(1, max_attempts + 1):
+        print(f'>>> Arming (attempt {attempt}/{max_attempts}) <<<', flush=True)
+        arm_pub.publish(Bool(data=True))
+        _spin_for(executor, settle_after_arm_sec, poll_sec)
+        if state.armed:
+            break
     if not state.armed:
-        print(
-            f'Not armed; skipping mission.',
-            flush=True,
-        )
+        print(f'Not armed after {max_attempts} attempts; skipping mission.', flush=True)
         return False
     print('Pixhawk reports ARMED.', flush=True)
 
-    print('>>> Setting Pixhawk mode to GUIDED <<<', flush=True)
-    mode_pub.publish(String(data='GUIDED'))
-    _spin_for(executor, settle_after_guided_sec, poll_sec)
+    for attempt in range(1, max_attempts + 1):
+        print(f'>>> Setting Pixhawk mode to GUIDED (attempt {attempt}/{max_attempts}) <<<', flush=True)
+        mode_pub.publish(String(data='GUIDED'))
+        _spin_for(executor, settle_after_guided_sec, poll_sec)
+        if mode_matches(state.mode, 'GUIDED'):
+            break
     if not mode_matches(state.mode, 'GUIDED'):
-        print(
-            f'Not in GUIDED; skipping mission.',
-            flush=True,
-        )
+        print(f'Not in GUIDED after {max_attempts} attempts (current: {state.mode}); skipping mission.', flush=True)
         return False
     print(f'Pixhawk reports mode {state.mode}.', flush=True)
     return True
 
 
-def make_heartbeat_callback(state: PixhawkState) -> Callable[[String], None]:
-    """Subscription callback factory."""
+def make_heartbeat_callback(state: PixhawkState) -> Callable[['PixhawkHeartbeat'], None]:
+    """Subscription callback factory. Expects mavros_msgs/State (published by mavlink_bridge)."""
 
-    def _cb(msg: String) -> None:
-        state.update_from_string(msg.data, time.time())
+    def _cb(msg: 'PixhawkHeartbeat') -> None:
+        state.update_from_state(msg, time.time())
 
     return _cb

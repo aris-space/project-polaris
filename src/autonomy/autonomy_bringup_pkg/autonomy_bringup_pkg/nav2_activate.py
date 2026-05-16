@@ -19,7 +19,7 @@ from nav2_msgs.srv import ManageLifecycleNodes
 
 _SERVICE = '/lifecycle_manager_navigation/manage_nodes'
 _STARTUP_CMD = 0
-_CALL_TIMEOUT_SEC = 10.0
+_CALL_TIMEOUT_SEC = 90.0
 _ACTIVE_TIMEOUT_SEC = 180.0
 _POLL_SEC = 0.25
 
@@ -82,11 +82,28 @@ def main():
 
     req = ManageLifecycleNodes.Request()
     req.command = _STARTUP_CMD
+    print(
+        'Sending STARTUP to lifecycle_manager_navigation...\n'
+        '  WARNING: planner_server global costmap needs map→odom TF.\n'
+        '  This TF is published by the global EKF, which starts only after GPS fix.\n'
+        '  If no GPS fix yet, this call will hang until the fix is acquired.\n'
+        f'  Waiting up to {_CALL_TIMEOUT_SEC:.0f}s for response...'
+    )
     future = client.call_async(req)
     executor.spin_until_future_complete(future, timeout_sec=_CALL_TIMEOUT_SEC)
 
     if not future.done() or future.result() is None:
-        print('STARTUP service call timed out.')
+        print(
+            f'STARTUP service call timed out after {_CALL_TIMEOUT_SEC:.0f}s.\n'
+            '  Most likely cause: planner_server is waiting for map→odom TF (no GPS fix yet).\n'
+            '  Diagnose node states:\n'
+            '    ros2 lifecycle get /controller_server\n'
+            '    ros2 lifecycle get /planner_server\n'
+            '    ros2 lifecycle get /bt_navigator\n'
+            '    ros2 lifecycle get /waypoint_follower\n'
+            '  Check GPS stream:  ros2 topic hz /ubx_nav_hp_pos_llh\n'
+            '  Check TF:          ros2 run tf2_tools view_frames'
+        )
         node.destroy_node()
         rclpy.shutdown()
         sys.exit(1)
