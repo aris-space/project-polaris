@@ -5,14 +5,55 @@
 #
 # Run INSIDE the Docker container: docker exec -it jetson-container bash
 #
-# Usage: bash scripts/replay_anchored_bag.sh <bag_dir> [rate]
-#   bag_dir  path to bag directory (contains metadata.yaml + *.mcap)
-#   rate     playback multiplier, default 2.0
+# Usage:
+#   bash scripts/replay_anchored_bag.sh <bag_dir> [rate] \
+#        [--params-file PATH] [--out-label LABEL]
+#
+#   bag_dir         path to bag directory (contains metadata.yaml + *.mcap)
+#   rate            playback multiplier, default 2.0
+#   --params-file   override the EKF params yaml (default: package default
+#                   ekf_local.yaml). Used for Q tuning campaigns — pass a
+#                   campaign yaml like ekf_local_q_approx_2026_05_12.yaml.
+#   --out-label     suffix for the output bag dir; default "anchored" produces
+#                   <bag>/anchored_replay/<bag>_anchored. Use e.g.
+#                   --out-label q_approx to write to
+#                   <bag>/anchored_replay/<bag>_anchored_q_approx and preserve
+#                   any earlier replay output.
 
 set -eo pipefail
 
-BAG_DIR="${1:?Usage: $0 <bag_dir> [rate]}"
-RATE="${2:-2.0}"
+BAG_DIR=""
+RATE="2.0"
+PARAMS_FILE=""
+OUT_LABEL=""
+
+# Parse args. Keep bag_dir + rate as positionals; --params-file and --out-label
+# can appear anywhere.
+_positional=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --params-file)
+            PARAMS_FILE="$2"; shift 2 ;;
+        --params-file=*)
+            PARAMS_FILE="${1#*=}"; shift ;;
+        --out-label)
+            OUT_LABEL="$2"; shift 2 ;;
+        --out-label=*)
+            OUT_LABEL="${1#*=}"; shift ;;
+        --help|-h)
+            sed -n '1,30p' "$0"; exit 0 ;;
+        *)
+            _positional+=("$1"); shift ;;
+    esac
+done
+if [ "${#_positional[@]}" -lt 1 ]; then
+    echo "Usage: $0 <bag_dir> [rate] [--params-file PATH] [--out-label LABEL]" >&2
+    exit 1
+fi
+BAG_DIR="${_positional[0]}"
+if [ "${#_positional[@]}" -ge 2 ]; then
+    RATE="${_positional[1]}"
+fi
 
 # Optional anchor-gate overrides from env vars.
 # H_ACC_MAX_M=''  → keep launch default (0.5 m, gnss_datum_watchdog parity)
@@ -23,7 +64,14 @@ H_ACC_TOPIC="${H_ACC_TOPIC-/ubx_nav_hp_pos_llh}"
 
 BAG_DIR="${BAG_DIR%/}"
 BAG_NAME="$(basename "$BAG_DIR")"
-OUT_DIR="${BAG_DIR}/anchored_replay/${BAG_NAME}_anchored"
+# Build output dir. Default suffix "anchored"; with --out-label q_approx it
+# becomes anchored_q_approx so the original output is preserved.
+if [ -n "$OUT_LABEL" ]; then
+    OUT_SUFFIX="anchored_${OUT_LABEL}"
+else
+    OUT_SUFFIX="anchored"
+fi
+OUT_DIR="${BAG_DIR}/anchored_replay/${BAG_NAME}_${OUT_SUFFIX}"
 
 source /opt/ros/humble/setup.bash
 source /ros2_ws/install/setup.bash
@@ -110,6 +158,14 @@ mkdir -p "$(dirname "$EKF_LOG")"
 LAUNCH_ARGS=( "gps_fix_topic:=$GPS_TOPIC" "h_acc_topic:=$H_ACC_TOPIC" )
 if [ -n "$H_ACC_MAX_M" ]; then
     LAUNCH_ARGS+=( "h_acc_max_m:=$H_ACC_MAX_M" )
+fi
+if [ -n "$PARAMS_FILE" ]; then
+    if [ ! -f "$PARAMS_FILE" ]; then
+        echo "[replay_anchored_bag] ERROR: --params-file not found: $PARAMS_FILE" >&2
+        exit 1
+    fi
+    LAUNCH_ARGS+=( "params_file:=$PARAMS_FILE" )
+    echo "[replay_anchored_bag] params_file: $PARAMS_FILE"
 fi
 echo "[replay_anchored_bag] Launch args: ${LAUNCH_ARGS[*]}"
 if [ -n "${DEBUG:-}" ]; then

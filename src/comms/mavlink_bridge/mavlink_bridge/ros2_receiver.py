@@ -222,7 +222,7 @@ class MavlinkBridgeReceiver(Node):
         # velocity until GUID_TIMEOUT (~3 s) elapses. We override that here: if
         # no cmd_vel arrives within 0.3 s, send one zero-velocity setpoint so the
         # sub stops within ~0.4 s of the upstream publisher going silent.
-        self._CMD_VEL_TIMEOUT_S = 0.3
+        self._CMD_VEL_TIMEOUT_S = 4 # 0.3
         self._cmd_vel_last_msg_t = 0.0
         self._cmd_vel_was_active = False
         self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
@@ -887,17 +887,9 @@ class MavlinkBridgeReceiver(Node):
 
         # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
         # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
-        #   +linear.x = forward, +linear.y = left, +linear.z = up,
-        #   +angular.z = yaw CCW (left).
-        # ArduSub 4.5.7 interprets SET_POSITION_TARGET_LOCAL_NED with BODY_FRD
-        # spec-correctly for z (down positive) and yaw (CW positive), but the
-        # x axis is empirically inverted (forward needs negative vx). Verified
-        # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
-        # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
-        # Now yaw aloso for now just hardcoded corect!
-        surge    = -float(msg.linear.x)   # FLU forward -> negative vx
+        surge    = float(msg.linear.x)   # FLU forward -> negative vx
         heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
-        yaw_rate = float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
+        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
@@ -943,6 +935,7 @@ class MavlinkBridgeReceiver(Node):
         resumes. Bypasses ArduSub's ~3 s GUID_TIMEOUT so the sub stops within
         ~0.4 s of the upstream publisher going silent (Ctrl+C, controller
         crash, mode change, mission completion)."""
+        return
         if not self._cmd_vel_was_active:
             return
         if self.pixhawk_mode != "GUIDED":
@@ -953,19 +946,20 @@ class MavlinkBridgeReceiver(Node):
             return
         m = mavutil.mavlink
         type_mask = (
-            m.POSITION_TARGET_TYPEMASK_X_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
+            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
             | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
         )
         self.port.mav.set_position_target_local_ned_send(
             0,
             self.port.target_system,
             self.port.target_component,
-            m.MAV_FRAME_BODY_FRD,
+            m.MAV_FRAME_BODY_OFFSET_NED,
             type_mask,
             0.0,
             0.0,
