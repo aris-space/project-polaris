@@ -40,6 +40,7 @@ setup(
             'nav2_activate               = autonomy_bringup_pkg.nav2_activate:main',
             'nav2_arm_watchdog           = autonomy_bringup_pkg.nav2_arm_watchdog:main',
             'nav2_deactivate             = autonomy_bringup_pkg.nav2_deactivate:main',
+            'nav2_lifecycle_diagnostics  = autonomy_bringup_pkg.nav2_lifecycle_diagnostics:main',
             'wgs84_mission_starter       = autonomy_bringup_pkg.WGS84_mission_starter:main',
         ],
     },
