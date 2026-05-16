@@ -126,6 +126,15 @@ def generate_launch_description():
         respawn_delay=respawn_delay,
     )
 
+    nav2_arm_watchdog = Node(
+        package='autonomy_bringup_pkg',
+        executable='nav2_arm_watchdog',
+        name='nav2_arm_watchdog',
+        output='screen',
+        respawn=respawn,
+        respawn_delay=respawn_delay,
+    )
+
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
         executable='lifecycle_manager',
@@ -212,6 +221,7 @@ def generate_launch_description():
         bt_navigator,
         waypoint_follower,
         mission_waypoints_publisher,
+        nav2_arm_watchdog,
         lifecycle_manager,
         on_exit_shutdown,
         ekf_local_launch,

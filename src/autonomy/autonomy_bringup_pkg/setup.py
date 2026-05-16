@@ -38,6 +38,7 @@ setup(
             'mission_runner              = autonomy_bringup_pkg.mission_runner:main',
             'mission_waypoints_publisher = autonomy_bringup_pkg.mission_waypoints_publisher:main',
             'nav2_activate               = autonomy_bringup_pkg.nav2_activate:main',
+            'nav2_arm_watchdog           = autonomy_bringup_pkg.nav2_arm_watchdog:main',
             'nav2_deactivate             = autonomy_bringup_pkg.nav2_deactivate:main',
             'wgs84_mission_starter       = autonomy_bringup_pkg.WGS84_mission_starter:main',
         ],
