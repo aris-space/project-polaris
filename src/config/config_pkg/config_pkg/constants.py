@@ -25,7 +25,7 @@ class GpsOriginConditions:
     GPS_ORIGIN_H_ACC_MAX_M = 0.50
     GPS_ORIGIN_H_ACC_TO_M = 1e-4
     GPS_ORIGIN_NULL_ISLAND_E7 = 1_000_000  # 0.1° in 1e-7 deg units
-    GPS_ORIGIN_FALLBACK_S = 30.0           # bits-only fallback after this long
+    GPS_ORIGIN_FALLBACK_S = 300.0          # bits-only fallback after this long (5 min — fits NTRIP cold-start)
 
 
 class SubConfig:
