@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Publish Nav2 lifecycle state as /diagnostics for the Foxglove panel.
+"""Publish Nav2 lifecycle state on /diagnostics_software for Foxglove.
+
+Kept separate from /diagnostics (hardware vitals: battery, ultrasonics,
+temps, pixhawk heartbeat) so the two surfaces can be shown in their own
+Foxglove panels.
 
 Polls /<node>/get_state for every node managed by lifecycle_manager_navigation
 at 1 Hz and emits a DiagnosticArray with one parent status ('Autonomy Stack',
@@ -41,6 +45,7 @@ _NODES = (
 _PARENT_NAME = 'Autonomy Stack'
 _PUBLISH_PERIOD_SEC = 1.0
 _CALL_TIMEOUT_SEC = 2.0
+_DIAG_TOPIC = '/diagnostics_software'
 
 _TRANSITION_STATE_IDS = {
     LifecycleState.TRANSITION_STATE_CONFIGURING,
@@ -140,14 +145,14 @@ class Nav2LifecycleDiagnostics(Node):
             for name in _NODES
         ]
 
-        self._diag_pub = self.create_publisher(DiagnosticArray, '/diagnostics', 10)
+        self._diag_pub = self.create_publisher(DiagnosticArray, _DIAG_TOPIC, 10)
         self.create_timer(
             _PUBLISH_PERIOD_SEC, self._tick, callback_group=cb_group
         )
 
         self.get_logger().info(
-            f'Publishing Nav2 lifecycle to /diagnostics at {1.0 / _PUBLISH_PERIOD_SEC:.1f} Hz '
-            f'for: {", ".join(_NODES)}'
+            f'Publishing Nav2 lifecycle to {_DIAG_TOPIC} at '
+            f'{1.0 / _PUBLISH_PERIOD_SEC:.1f} Hz for: {", ".join(_NODES)}'
         )
 
     def _tick(self) -> None:
