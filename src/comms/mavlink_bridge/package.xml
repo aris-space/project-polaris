@@ -21,6 +21,7 @@
   <depend>rcl_interfaces</depend>
   <depend>geometry_msgs</depend>
   <depend>ublox_ubx_msgs</depend>
+  <exec_depend>config_pkg</exec_depend>
   
 
   <export>

@@ -25,6 +25,7 @@ from mavros_msgs.msg import State as PixhawkHeartbeat
 from std_msgs.msg import Bool, String
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
+from config_pkg.constants import GpsOriginConditions
 from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import process_coordinates
 from autonomy_bringup_pkg.nav2_ready_wait import wait_for_waypoint_follower_active
 from autonomy_bringup_pkg.pixhawk_ready_wait import (
@@ -100,48 +101,122 @@ def default_mission_csv_path() -> str:
     return f'{share}/missions/goldbach_straightline_wgs84_mission.csv'
 
 
+# RTK gate — mirrors gnss_datum_watchdog (decides when map->odom becomes
+# active) and ros2_receiver (decides when Pixhawk GPS_GLOBAL_ORIGIN is set),
+# so the mission CSV's ENU origin lands on the same lat/lon as those two.
+# UBX-NAV-HPPOSLLH h_acc is in 0.1 mm units.
+_GPS_ORIGIN_H_ACC_MAX_M = GpsOriginConditions.GPS_ORIGIN_H_ACC_MAX_M
+_GPS_ORIGIN_H_ACC_TO_M = GpsOriginConditions.GPS_ORIGIN_H_ACC_TO_M
+_GPS_ORIGIN_NULL_ISLAND_E7 = GpsOriginConditions.GPS_ORIGIN_NULL_ISLAND_E7
+_GPS_ORIGIN_FALLBACK_S = GpsOriginConditions.GPS_ORIGIN_FALLBACK_S
+
+
 def wait_for_gps_origin(
     executor, node, *, timeout_sec: float = 120.0, required_fixes: int = 5
 ) -> tuple | None:
-    """Spin until /ubx_nav_hp_pos_llh yields `required_fixes` consecutive valid fixes; returns (lat_deg, lon_deg, alt_msl_m) or None.
+    """Spin until /ubx_nav_hp_pos_llh yields an RTK-quality fix; returns (lat_deg, lon_deg, alt_msl_m) or None.
 
-    Altitude is UBX hmsl (height above mean sea level) - matches the datum
+    Primary gate (single-shot, mirrors gnss_datum_watchdog):
+      - invalid_lon / invalid_lat / invalid_hmsl bits all clear
+      - |lat| > 0.1° and |lon| > 0.1° (null-island guard)
+      - 0 < h_acc ≤ 0.50 m
+
+    Soft fallback: if 30 s pass with clean-bits messages but h_acc never
+    satisfies the threshold, warn once and accept the next `required_fixes`
+    consecutive clean-bits messages (the old behaviour). Lets the mission
+    start with a degraded origin — but the warning makes it obvious that
+    the origin no longer matches the EKF datum.
+
+    Altitude is UBX hmsl (height above mean sea level) — matches the datum
     mavlink_bridge uses for GPS_GLOBAL_ORIGIN.
     """
-    consecutive = [0]
-    result = [None]
+    state = {
+        'result': None,
+        'gate': None,                     # 'RTK' or 'fallback' once chosen
+        'first_valid_bits_t': 0.0,
+        'fallback_consecutive': 0,
+        'fallback_warned': False,
+        'last_h_acc_m': float('nan'),
+    }
 
     def _cb(msg: UBXNavHPPosLLH):
-        if result[0] is not None:
+        if state['result'] is not None:
             return
         if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
-            consecutive[0] = 0
+            state['fallback_consecutive'] = 0
             return
-        consecutive[0] += 1
-        if consecutive[0] >= required_fixes:
+        if (
+            abs(int(msg.lat)) < _GPS_ORIGIN_NULL_ISLAND_E7
+            and abs(int(msg.lon)) < _GPS_ORIGIN_NULL_ISLAND_E7
+        ):
+            state['fallback_consecutive'] = 0
+            return
+
+        now_s = time.time()
+        if state['first_valid_bits_t'] == 0.0:
+            state['first_valid_bits_t'] = now_s
+
+        h_acc_m = float(msg.h_acc) * _GPS_ORIGIN_H_ACC_TO_M
+        state['last_h_acc_m'] = h_acc_m
+        rtk_ok = 0.0 < h_acc_m <= _GPS_ORIGIN_H_ACC_MAX_M
+
+        if rtk_ok:
             # UBX units: lat/lon are deg * 1e7 (int32); hmsl is mm (int32).
-            lat_deg = msg.lat * 1e-7
-            lon_deg = msg.lon * 1e-7
-            alt_m = msg.hmsl * 1e-3
-            result[0] = (lat_deg, lon_deg, alt_m)
+            state['gate'] = 'RTK'
+            state['result'] = (
+                msg.lat * 1e-7,
+                msg.lon * 1e-7,
+                msg.hmsl * 1e-3,
+            )
+            return
+
+        # h_acc gate failed — check fallback window.
+        elapsed = now_s - state['first_valid_bits_t']
+        if elapsed < _GPS_ORIGIN_FALLBACK_S:
+            return
+        if not state['fallback_warned']:
+            print(
+                f'WARN: h_acc still > {_GPS_ORIGIN_H_ACC_MAX_M:.2f} m after '
+                f'{elapsed:.0f}s (latest h_acc={h_acc_m:.2f}m); falling back to '
+                f'bits-only check ({required_fixes} consecutive valid messages). '
+                'Mission origin will NOT match the EKF datum — vehicle will hit a '
+                'point offset by however far this fix is from the true RTK position.'
+            )
+            state['fallback_warned'] = True
+        state['fallback_consecutive'] += 1
+        if state['fallback_consecutive'] >= required_fixes:
+            state['gate'] = 'fallback'
+            state['result'] = (
+                msg.lat * 1e-7,
+                msg.lon * 1e-7,
+                msg.hmsl * 1e-3,
+            )
 
     sub = node.create_subscription(UBXNavHPPosLLH, '/ubx_nav_hp_pos_llh', _cb, 10)
     deadline = time.time() + timeout_sec
-    print(f'Waiting for origin from /ubx_nav_hp_pos_llh ({required_fixes} consecutive valid fixes, up to {timeout_sec:.0f}s)...')
+    print(
+        f'Waiting for RTK origin from /ubx_nav_hp_pos_llh '
+        f'(h_acc ≤ {_GPS_ORIGIN_H_ACC_MAX_M * 100:.0f} cm, '
+        f'{_GPS_ORIGIN_FALLBACK_S:.0f}s fallback to bits-only, up to {timeout_sec:.0f}s)...'
+    )
     while rclpy.ok() and time.time() < deadline:
-        if result[0] is not None:
+        if state['result'] is not None:
             break
         executor.spin_once(timeout_sec=0.1)
     node.destroy_subscription(sub)
-    if result[0] is None:
+    if state['result'] is None:
         print(
             f'Timed out after {timeout_sec:.0f}s waiting for /ubx_nav_hp_pos_llh '
-            f'({consecutive[0]}/{required_fixes} consecutive valid fixes).'
+            f'(latest h_acc={state["last_h_acc_m"]:.2f}m, '
+            f'fallback {state["fallback_consecutive"]}/{required_fixes}).'
         )
         return None
-    lat, lon, alt = result[0]
-    print(f'Origin (MSL): lat={lat:.7f}, lon={lon:.7f}, alt={alt:.2f}m (stable over {required_fixes} fixes)')
-    return result[0]
+    lat, lon, alt = state['result']
+    print(
+        f'Origin ({state["gate"]}, MSL): lat={lat:.7f}, lon={lon:.7f}, alt={alt:.2f}m, '
+        f'h_acc={state["last_h_acc_m"]:.2f}m'
+    )
+    return state['result']
 
 
 def parse_origin(s: str) -> tuple:

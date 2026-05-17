@@ -17,6 +17,16 @@ from config_pkg.constants import JoyControlMapping
 emergency_stop_button_idx = JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX
 """
 
+class GpsOriginConditions:
+    # RTK gate — mirrors gnss_datum_watchdog (decides when map->odom becomes
+    # active) and ros2_receiver (decides when Pixhawk GPS_GLOBAL_ORIGIN is set),
+    # so the mission CSV's ENU origin lands on the same lat/lon as those two.
+    # UBX-NAV-HPPOSLLH h_acc is in 0.1 mm units.
+    GPS_ORIGIN_H_ACC_MAX_M = 0.50
+    GPS_ORIGIN_H_ACC_TO_M = 1e-4
+    GPS_ORIGIN_NULL_ISLAND_E7 = 1_000_000  # 0.1° in 1e-7 deg units
+    GPS_ORIGIN_FALLBACK_S = 30.0           # bits-only fallback after this long
+
 
 class SubConfig:
     MAX_DEPTH = 30.0  # meters

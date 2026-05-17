@@ -7,7 +7,7 @@ import logging, os
 import math
 import time
 from datetime import datetime
-from config_pkg.constants import Logs, Comms, Ports
+from config_pkg.constants import Logs, Comms, Ports, GpsOriginConditions
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
@@ -835,13 +835,15 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info(f"Queued ArduSub param write for {mav_param_id}")
 
-    # RTK gate — mirrors gnss_datum_watchdog (which decides when map->odom
-    # becomes active) so the Pixhawk origin and the EKF datum lock under the
-    # same conditions. UBX-NAV-HPPOSLLH h_acc is in 0.1 mm units.
-    _GPS_ORIGIN_H_ACC_MAX_M = 0.50
-    _GPS_ORIGIN_H_ACC_TO_M = 1e-4
-    _GPS_ORIGIN_NULL_ISLAND_E7 = 1_000_000  # 0.1° in 1e-7 deg units
-    _GPS_ORIGIN_FALLBACK_S = 30.0           # bits-only fallback after this long
+    # RTK gate — mirrors gnss_datum_watchdog (decides when map->odom becomes
+    # active) and ros2_receiver (decides when Pixhawk GPS_GLOBAL_ORIGIN is set),
+    # so the mission CSV's ENU origin lands on the same lat/lon as those two.
+    # UBX-NAV-HPPOSLLH h_acc is in 0.1 mm units.
+    _GPS_ORIGIN_H_ACC_MAX_M = GpsOriginConditions.GPS_ORIGIN_H_ACC_MAX_M
+    _GPS_ORIGIN_H_ACC_TO_M = GpsOriginConditions.GPS_ORIGIN_H_ACC_TO_M
+    _GPS_ORIGIN_NULL_ISLAND_E7 = GpsOriginConditions.GPS_ORIGIN_NULL_ISLAND_E7
+    _GPS_ORIGIN_FALLBACK_S = GpsOriginConditions.GPS_ORIGIN_FALLBACK_S
+
 
     def gps_origin_cb(self, msg: UBXNavHPPosLLH):
         if self._gps_origin_sent:
