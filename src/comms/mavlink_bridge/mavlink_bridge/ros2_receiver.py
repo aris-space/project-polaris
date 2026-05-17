@@ -211,12 +211,13 @@ class MavlinkBridgeReceiver(Node):
             Bool, "/pixhawk/reboot_cmd", self.reboot_cb, Comms.SUB_QOS_DEPTH
         )
 
-        self.guided_setpoint_subscriber = self.create_subscription(
-            Twist,  # Depending on the msg type from imports
-            "/pixhawk/cmd_vel",
-            self.cmd_vel_cb,
-            Comms.SUB_QOS_DEPTH,
-        )
+        # LAND TEST: cmd_vel subscription disabled so no velocity setpoints reach the FC.
+        # self.guided_setpoint_subscriber = self.create_subscription(
+        #     Twist,  # Depending on the msg type from imports
+        #     "/pixhawk/cmd_vel",
+        #     self.cmd_vel_cb,
+        #     Comms.SUB_QOS_DEPTH,
+        # )
 
         # cmd_vel watchdog: ArduSub's GUIDED controller holds the last commanded
         # velocity until GUID_TIMEOUT (~3 s) elapses. We override that here: if
@@ -880,54 +881,56 @@ class MavlinkBridgeReceiver(Node):
         )
 
     def cmd_vel_cb(self, msg):
-        # msg is geometry_msgs.msg.Twist
-        # ArduSub needs GUIDED mode for velocity setpoints
-        if self.pixhawk_mode != "GUIDED":
-            return
-
-        # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
-        # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
-        surge    = float(msg.linear.x)   # FLU forward -> negative vx
-        heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
-        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
-
-        # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
-        # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
-        # set VY_IGNORE when commanding vx,vz; otherwise guided_set_velocity() is skipped.
-        m = mavutil.mavlink
-        type_mask = (
-            m.POSITION_TARGET_TYPEMASK_X_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
-        )
-
-        # 3. Send to Pixhawk in MAV_FRAME_BODY_FRD ("Forward" relative to nose).
-        self.port.mav.set_position_target_local_ned_send(
-            0,  # time_boot_ms
-            self.port.target_system,
-            self.port.target_component,
-            mavutil.mavlink.MAV_FRAME_BODY_FRD,  # Frame: Body-Relative
-            type_mask,
-            0.0,
-            0.0,
-            0.0,  # Position (ignored)
-            surge,
-            0.0,
-            0.0,  # Velocities (m/s)
-            0.0,
-            0.0,
-            0.0,  # Acceleration (ignored)
-            0.0,  # Yaw Angle (ignored)
-            yaw_rate,  # Yaw Rate (rad/s)
-        )
-
-        # Refresh watchdog: arms the timeout zero-send when cmd_vel goes silent.
-        self._cmd_vel_last_msg_t = self.get_clock().now().nanoseconds * 1e-9
-        self._cmd_vel_was_active = True
+        # LAND TEST: body of cmd_vel_cb commented out so no velocity setpoints reach the FC.
+        return
+        # # msg is geometry_msgs.msg.Twist
+        # # ArduSub needs GUIDED mode for velocity setpoints
+        # if self.pixhawk_mode != "GUIDED":
+        #     return
+        #
+        # # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
+        # # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
+        # surge    = float(msg.linear.x)   # FLU forward -> negative vx
+        # heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
+        # yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
+        #
+        # # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
+        # # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
+        # # set VY_IGNORE when commanding vx,vz; otherwise guided_set_velocity() is skipped.
+        # m = mavutil.mavlink
+        # type_mask = (
+        #     m.POSITION_TARGET_TYPEMASK_X_IGNORE
+        #     | m.POSITION_TARGET_TYPEMASK_Y_IGNORE
+        #     | m.POSITION_TARGET_TYPEMASK_Z_IGNORE
+        #     | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
+        #     | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
+        #     | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+        #     | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+        # )
+        #
+        # # 3. Send to Pixhawk in MAV_FRAME_BODY_FRD ("Forward" relative to nose).
+        # self.port.mav.set_position_target_local_ned_send(
+        #     0,  # time_boot_ms
+        #     self.port.target_system,
+        #     self.port.target_component,
+        #     mavutil.mavlink.MAV_FRAME_BODY_FRD,  # Frame: Body-Relative
+        #     type_mask,
+        #     0.0,
+        #     0.0,
+        #     0.0,  # Position (ignored)
+        #     surge,
+        #     0.0,
+        #     0.0,  # Velocities (m/s)
+        #     0.0,
+        #     0.0,
+        #     0.0,  # Acceleration (ignored)
+        #     0.0,  # Yaw Angle (ignored)
+        #     yaw_rate,  # Yaw Rate (rad/s)
+        # )
+        #
+        # # Refresh watchdog: arms the timeout zero-send when cmd_vel goes silent.
+        # self._cmd_vel_last_msg_t = self.get_clock().now().nanoseconds * 1e-9
+        # self._cmd_vel_was_active = True
 
     def _cmd_vel_watchdog_cb(self):
         """If no /pixhawk/cmd_vel arrives within _CMD_VEL_TIMEOUT_S, send one
