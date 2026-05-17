@@ -106,6 +106,13 @@ def process_mission(
 
     Required columns: lat, lon, alt (degrees, degrees, meters; same alt datum as alt0).
 
+    NOTE on the vertical datum: the watchdog publishes /gnss_datum from u-blox
+    /fix, whose altitude is HAE (WGS-84 ellipsoidal height). So CSV ``alt``
+    values must also be HAE — NOT MSL/orthometric. In Switzerland the geoid
+    separation N is ~+47 m to +50 m, so an MSL value would yield an ENU Up
+    error of that magnitude on every waypoint. Convert MSL -> HAE by adding
+    N(lat, lon) from EGM2008 before saving.
+
     Optional columns (any omitted -> defaults on every row):
 
     - up_down - 1 / true / yes / y / on = run up -> hold -> down after arrival; empty or 0 = skip
