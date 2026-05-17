@@ -35,7 +35,6 @@ setup(
     entry_points={
         'console_scripts': [
             'export_tracking_bag_csv     = autonomy_bringup_pkg.export_tracking_bag_csv:main',
-            'mission_runner              = autonomy_bringup_pkg.mission_runner:main',
             'mission_waypoint_loader     = autonomy_bringup_pkg.mission_waypoint_loader:main',
             'mission_waypoints_publisher = autonomy_bringup_pkg.mission_waypoints_publisher:main',
             'nav2_activate               = autonomy_bringup_pkg.nav2_activate:main',
