@@ -88,8 +88,8 @@ controller_server:
     # Goal checker parameters
     goal_checker:
       plugin: "orca_nav2/GoalChecker3D"
-      xy_goal_tolerance: 2.0 # 0.8
-      z_goal_tolerance: 0.4
+      xy_goal_tolerance: 0.8
+      z_goal_tolerance: 60
 
     # Controller parameters
     LongStraightLine:
