@@ -38,17 +38,19 @@ Fuses IMU + DVL + pressure. Produces the `odom → base_link` TF and
 | Pressure sensor | `/sensors/pressure/pose_enu` | Z-position (depth) |
 | Thruster fallback *(optional)* | `/sensors/thruster/odometry_cov` | Linear velocity — only when DVL absent |
 
-### Global EKF — spawned on first quality GNSS fix, 10 Hz
+### Global EKF — activated on first quality GNSS fix, 10 Hz
 
-Fuses local EKF output + GPS. Produces the `map → odom` TF and
-`/odometry/filtered/global`. Started by `gnss_datum_watchdog` once h_acc ≤ 0.5 m.
+Fuses local EKF output + GPS + pressure (in map frame). Produces the
+`map → odom` TF and `/odometry/filtered/global`. The node starts at T=0
+in dormant mode; `gnss_datum_watchdog` activates it via SetParameters
+once h_acc ≤ 0.5 m, then a one-shot `set_pose` bootstrap initialises
+state at the datum.
 
 | Sensor | Topic | States fused |
 |--------|-------|--------------|
 | Local EKF (validated) | `/odometry/filtered/local_validated` | Orientation, velocity |
-| GPS via navsat_transform | `/odometry/gps` | X, Y position (ENU) |
-
-Z-position is deliberately excluded from GPS fusion; pressure handles depth.
+| GPS (direct UTM projection) | `/odometry/gps_map` | X, Y position (ENU) |
+| Pressure (map-frame relabelled) | `/sensors/pressure/pose_enu_map` | Z position |
 
 ---
 
@@ -67,11 +69,13 @@ multi-day `dt` during rosbag replay clock gaps.
 
 ### `gnss_datum_watchdog`
 
-Blocks `navsat_transform_node` and `ekf_global_node` from starting until a
-quality GNSS fix is confirmed, preventing null-island (0°, 0°) from corrupting
-the map frame. After the datum is set, validates every incoming fix by
-coordinate range and haversine distance before forwarding it to
-`navsat_transform` on `/gps/validated`.
+Holds the dormant global EKF stack inert until a quality GNSS fix is
+confirmed (so null-island 0°,0° can never corrupt the map frame). On
+first quality lock it pushes the datum (and `local_anchor_z`) to the
+four dormant global-stack nodes via SetParameters, then schedules a
+one-shot `set_pose` to bootstrap `ekf_global_node` directly into the
+correct state. After lock, every incoming fix is range/haversine-
+validated and republished on `/gps/validated`.
 
 **Quality gate:** `status >= 0`, `|lat| > 0.1°`, `h_acc ≤ h_acc_max_m` (requires
 UBX-NAV-HPPOSLLH).
@@ -167,19 +171,18 @@ parameters for Foxglove Map panel landmark pins.
 
 | File | Use case |
 |------|----------|
-| `ekf_localization.launch.py` | **Online** — local + global EKF via GNSS datum watchdog |
+| `ekf_localization.launch.py` | **Online** — local + in-place global EKF via GNSS datum watchdog |
 | `ekf_anchored.launch.py` | **Online** — local EKF + single-fix anchor (no global EKF) |
 | `offline_ekf_replay.launch.py` | Rosbag replay of online stack (`use_sim_time=true`) |
 | `offline_anchored_replay.launch.py` | Rosbag replay of anchored stack |
-| `navsat_global_ekf.launch.py` | Internal — spawned by `gnss_datum_watchdog` |
 | `ekf_global.launch.py` | Standalone global EKF for debugging |
 
 Common arguments (both online launches):
 
 ```bash
 ros2 launch ekf_localization_pkg ekf_localization.launch.py \
-  use_thruster_fallback:=true \    # enable DVL fallback node (default true)
-  use_navsat_transform:=true \     # enable GPS (default true)
+  use_thruster_fallback:=true \       # enable DVL fallback node (default true)
+  use_gnss_datum_watchdog:=true \     # enable GPS / global EKF stack (default true)
   gps_fix_topic:=/fix \
   h_acc_topic:=/ubx_nav_hp_pos_llh
 ```

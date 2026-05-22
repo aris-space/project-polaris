@@ -5,51 +5,54 @@ true-ENU map-frame Odometry on /odometry/gps_map.
 Why this exists
 ---------------
 
-`navsat_transform_node` with `use_odometry_yaw: true` rotates each GPS
-measurement by the boat's current odom-frame yaw before publishing on
-`/odometry/gps`. On this stack (where local odom is already true ENU via
-`head_mot` calibration), that rotation is a no-op in principle — but
-empirically it introduces a ~30° rotation that contaminates downstream
-gps_floored, EKF state, and the back-projection. The 7 m mean offset of
-/gps/filtered/global vs /fix on grid_02 traces directly to it.
+The legacy stack used `navsat_transform_node` with
+`use_odometry_yaw: true`, which rotates each GPS measurement by the
+boat's current odom-frame yaw before publishing it as `/odometry/gps`.
+On this stack — where the local EKF's odom frame is already true ENU
+via `head_mot` IMU calibration — that rotation should be a no-op, but
+empirically introduced a ~30° rotation contaminating downstream
+state and back-projection. The 7 m mean offset of /gps/filtered/global
+vs /fix on grid_02 traced directly to it (input-side yaw feedback loop:
+navsat used the EKF's yaw to rotate GPS, EKF fused the rotated GPS,
+its yaw shifted, navsat rotated more, etc.).
 
-`gnss_anchored_pose` doesn't have this problem because it does the lat/lon
-→ UTM → (UTM − datum) projection itself, with no IMU/odom yaw involvement.
-The result is genuinely in true ENU, and anchored matches /fix to 0.6 m
-mean (vs global EKF's 7.3 m).
+`gnss_anchored_pose` doesn't have this problem because it does the
+lat/lon → UTM → (UTM − datum) projection itself, with no IMU/odom yaw
+involvement. The result is genuinely in true ENU, and anchored matched
+/fix to 0.6 m mean (vs the navsat-based global EKF's 7.3 m).
 
-This node packages anchored's projection logic as a standalone publisher
-so the global EKF can consume a clean true-ENU map-frame GPS measurement
-without going through navsat_transform's rotation. Result is the same as
-anchored's underlying math but available as an input to the EKF — so we
-keep the EKF's sensor fusion (DVL, IMU, pressure between GPS updates,
-proper uncertainty propagation, predict step) and gain the projection
+This node packages anchored's projection logic as a standalone
+publisher so the global EKF can consume a clean true-ENU map-frame
+GPS measurement directly. Result is the same as anchored's underlying
+math but available as an input to the EKF — so we keep the EKF's
+sensor fusion (DVL, IMU, pressure between GPS updates, proper
+uncertainty propagation, predict step) and gain the projection
 correctness.
 
-Output is byte-for-byte the same shape as gps_odom_cov_floor's
-`/odometry/gps_floored` (cov-floored, NaN-guarded, off-diagonals zeroed,
-frame_id="map") so the EKF can subscribe to either interchangeably.
+Output: cov-floored, NaN-guarded, off-diagonals zeroed,
+`frame_id="map"`. Publishes on /odometry/gps_map.
 
-Datum is passed as parameters by the launch (same path
-`gnss_datum_watchdog` already uses to send datum_lat/lon to
-`global_ekf_to_navsatfix_node`).
+Datum is set by `gnss_datum_watchdog` at GNSS lock via SetParameters
+(same mechanism the watchdog uses for `global_ekf_to_navsatfix_node`).
 
 Parameters
 ----------
-input_topic       NavSatFix to consume (default /gps/validated).
+input_topic       NavSatFix to consume (default /gps/validated_filtered).
 output_topic      Odometry topic to publish (default /odometry/gps_map).
 output_frame_id   header.frame_id of output (default "map").
 datum_lat         Datum latitude (degrees) — anchor of the map frame.
 datum_lon         Datum longitude (degrees).
 datum_alt         Datum altitude (m) — subtracted from each fix's altitude.
-min_pos_cov_m2    Diagonal pose-covariance floor (m²). Default 0.25 to
-                  match gps_odom_cov_floor's empirically-tuned value.
+min_pos_cov_m2    Diagonal pose-covariance floor (m²). Canonical value
+                  is 0.10 (32 cm 1σ), the geometric midpoint of the
+                  0.04 / 0.25 sweep (see 2026-05-18 research note).
 """
 from __future__ import annotations
 
 import math
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from nav_msgs.msg import Odometry
@@ -79,21 +82,22 @@ class GpsToMapPosition(Node):
         in_topic: str = str(self.get_parameter("input_topic").value)
         out_topic: str = str(self.get_parameter("output_topic").value)
         self._frame_id: str = str(self.get_parameter("output_frame_id").value)
-        datum_lat: float = float(self.get_parameter("datum_lat").value)
-        datum_lon: float = float(self.get_parameter("datum_lon").value)
-        self._datum_alt: float = float(self.get_parameter("datum_alt").value)
         self._floor: float = float(self.get_parameter("min_pos_cov_m2").value)
 
-        if abs(datum_lat) < 0.1 and abs(datum_lon) < 0.1:
-            self.get_logger().fatal(
-                f"Datum appears to be null-island ({datum_lat}, {datum_lon}) — "
-                "datum_lat/datum_lon must be forwarded from gnss_datum_watchdog."
-            )
-            raise RuntimeError("Invalid datum: null-island")
-
-        epsg = _utm_epsg(datum_lat, datum_lon)
-        self._to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
-        self._datum_e, self._datum_n = self._to_utm.transform(datum_lon, datum_lat)
+        # Datum state: starts dormant (zero/null-island = "not yet set").
+        # Activated by parameter update from gnss_datum_watchdog when it
+        # locks on a valid GNSS fix. _datum_valid gates publishing —
+        # without a valid datum, GPS-fix arrivals are received but not
+        # republished as map-frame Odometry.
+        self._datum_lat: float = float(self.get_parameter("datum_lat").value)
+        self._datum_lon: float = float(self.get_parameter("datum_lon").value)
+        self._datum_alt: float = float(self.get_parameter("datum_alt").value)
+        self._datum_valid: bool = False
+        self._to_utm = None
+        self._datum_e: float = 0.0
+        self._datum_n: float = 0.0
+        if self._is_datum_valid(self._datum_lat, self._datum_lon):
+            self._activate_datum(self._datum_lat, self._datum_lon, self._datum_alt)
 
         self._n_in = 0
         self._n_nan_replaced = 0
@@ -104,15 +108,62 @@ class GpsToMapPosition(Node):
         )
         self._pub = self.create_publisher(Odometry, out_topic, 10)
 
+        # Dynamic-datum: watchdog calls /gps_to_map_position/set_parameters
+        # after lock to push datum_lat/lon/alt. We re-init the UTM
+        # transformer and start publishing.
+        self.add_on_set_parameters_callback(self._on_param_change)
+
+        if self._datum_valid:
+            self.get_logger().info(
+                f"gps_to_map_position: {in_topic} -> {out_topic}, "
+                f"datum SET AT LAUNCH ({self._datum_lat:.7f}, "
+                f"{self._datum_lon:.7f}, {self._datum_alt:.2f} m), "
+                f"frame_id='{self._frame_id}'"
+            )
+        else:
+            self.get_logger().info(
+                f"gps_to_map_position: {in_topic} -> {out_topic}, "
+                f"DORMANT (waiting for datum_lat/lon to be set via "
+                f"set_parameters service from gnss_datum_watchdog), "
+                f"frame_id='{self._frame_id}', "
+                f"min_pos_cov_m2={self._floor:.4f} ({self._floor ** 0.5:.3f} m 1σ)"
+            )
+
+    @staticmethod
+    def _is_datum_valid(lat: float, lon: float) -> bool:
+        return abs(lat) > 0.1 or abs(lon) > 0.1
+
+    def _activate_datum(self, lat: float, lon: float, alt: float) -> None:
+        epsg = _utm_epsg(lat, lon)
+        self._to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+        self._datum_e, self._datum_n = self._to_utm.transform(lon, lat)
+        self._datum_lat = lat
+        self._datum_lon = lon
+        self._datum_alt = alt
+        self._datum_valid = True
         self.get_logger().info(
-            f"gps_to_map_position: {in_topic} -> {out_topic}, "
-            f"datum=({datum_lat:.7f}, {datum_lon:.7f}, {self._datum_alt:.2f} m) -> "
-            f"{epsg} E={self._datum_e:.3f} N={self._datum_n:.3f}, "
-            f"frame_id='{self._frame_id}', "
-            f"min_pos_cov_m2={self._floor:.4f} ({self._floor ** 0.5:.3f} m 1σ)"
+            f"datum activated: ({lat:.7f}, {lon:.7f}, {alt:.2f} m) -> "
+            f"{epsg} E={self._datum_e:.3f} N={self._datum_n:.3f}"
         )
 
+    def _on_param_change(self, params) -> SetParametersResult:
+        new_lat = self._datum_lat
+        new_lon = self._datum_lon
+        new_alt = self._datum_alt
+        for p in params:
+            if p.name == "datum_lat":
+                new_lat = float(p.value)
+            elif p.name == "datum_lon":
+                new_lon = float(p.value)
+            elif p.name == "datum_alt":
+                new_alt = float(p.value)
+        if self._is_datum_valid(new_lat, new_lon):
+            self._activate_datum(new_lat, new_lon, new_alt)
+        return SetParametersResult(successful=True)
+
     def _on_fix(self, msg: NavSatFix) -> None:
+        if not self._datum_valid:
+            return  # dormant — no datum yet
         if msg.status.status < 0:
             return
         if abs(msg.latitude) < 0.1 and abs(msg.longitude) < 0.1:

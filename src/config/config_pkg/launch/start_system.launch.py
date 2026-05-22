@@ -13,7 +13,7 @@ def generate_launch_description():
     config_pkg_dir = get_package_share_directory("config_pkg")
     ice_estimates_pkg_dir = get_package_share_directory("ice_estimates")
 
-    use_navsat_transform_arg_value = LaunchConfiguration("use_navsat_transform")
+    use_gnss_datum_watchdog_arg_value = LaunchConfiguration("use_gnss_datum_watchdog")
     use_global_ekf_arg_value = LaunchConfiguration("use_global_ekf")
     gps_fix_topic_arg_value = LaunchConfiguration("gps_fix_topic")
     p_surface_pa_arg_value = LaunchConfiguration("p_surface_pa")
@@ -36,7 +36,7 @@ def generate_launch_description():
             os.path.join(config_pkg_dir, "launch", "navigation.launch.py")
         ),
         launch_arguments={
-            "use_navsat_transform": use_navsat_transform_arg_value,
+            "use_gnss_datum_watchdog": use_gnss_datum_watchdog_arg_value,
             "use_global_ekf": use_global_ekf_arg_value,
             "gps_fix_topic": gps_fix_topic_arg_value,
             "p_surface_pa": p_surface_pa_arg_value,
@@ -82,10 +82,11 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "use_navsat_transform",
+                "use_gnss_datum_watchdog",
                 default_value="true",
                 description=(
-                    "Launch navsat_transform_node. When true, publishes /odometry/gps for ekf_global."
+                    "Enable gnss_datum_watchdog: gates and republishes GPS, then "
+                    "activates the in-place global EKF stack on first quality lock."
                 ),
             ),
             DeclareLaunchArgument(

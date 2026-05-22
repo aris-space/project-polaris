@@ -14,7 +14,7 @@ pins state.z cleanly. The global EKF lives in map frame; consuming the
 same message would require robot_localization to TF-transform `odom→map`
 on every measurement. **That TF is published by the global EKF itself
 based on its drifting state**, which creates the same positive-feedback
-loop documented for `/odometry/gps` in the v15 (bug 7) fix. Observed
+loop documented for the GPS odometry in the v15 (bug 7) fix. Observed
 empirically on the v18 grid_02 recording:
 
   - local EKF z:      +0.06 m steady (pressure-pinned)
@@ -26,11 +26,12 @@ loop. Less catastrophic than the horizontal version (because z has only
 pressure pulling on it, not GPS pulling against a contaminated TF) but
 still a structural error.
 
-The fix mirrors `gps_odom_cov_floor`'s mechanism for the GPS odometry:
-subtract `local_anchor_z` from the message's z to convert from odom-frame
-position to map-frame position, then rewrite `header.frame_id = "map"` so
-robot_localization skips the TF lookup. The position values are then
-genuinely in map frame and the feedback loop is broken.
+The fix mirrors `gps_to_map_position`'s direct-projection approach for
+GPS: subtract `local_anchor_z` from the message's z to convert from
+odom-frame position to map-frame position, then rewrite
+`header.frame_id = "map"` so robot_localization skips the TF lookup.
+The position values are then genuinely in map frame and the feedback
+loop is broken.
 
 The local EKF keeps subscribing to the original
 `/sensors/pressure/pose_enu` (which is in odom frame, correct for local).
@@ -51,6 +52,7 @@ from __future__ import annotations
 import math
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -70,6 +72,12 @@ class PressurePoseFrameFix(Node):
             self.get_parameter("output_frame_id").value
         )
         self._anchor_z: float = float(self.get_parameter("local_anchor_z").value)
+        # Dormant flag: when False, we don't publish — the global EKF
+        # won't have a meaningful local_anchor_z reference yet, so any
+        # pressure message we forward would be off by an unknown offset.
+        # gnss_datum_watchdog calls set_parameters on this node at lock
+        # time and we flip to active mode.
+        self._datum_locked: bool = False
 
         self._n_in = 0
         self._n_nan_replaced = 0
@@ -81,6 +89,7 @@ class PressurePoseFrameFix(Node):
         self._pub = self.create_publisher(
             PoseWithCovarianceStamped, out_topic, 10,
         )
+        self.add_on_set_parameters_callback(self._on_param_change)
 
         if self._output_frame_id:
             mode_msg = (
@@ -93,13 +102,27 @@ class PressurePoseFrameFix(Node):
             f"pressure_pose_frame_fix: {in_topic} -> {out_topic}, {mode_msg}"
         )
 
+    def _on_param_change(self, params) -> SetParametersResult:
+        for p in params:
+            if p.name == "local_anchor_z":
+                self._anchor_z = float(p.value)
+                self._datum_locked = True
+                self.get_logger().info(
+                    f"anchor_z updated → {self._anchor_z:+.4f} m  (datum now locked, "
+                    "publishing /sensors/pressure/pose_enu_map)"
+                )
+        return SetParametersResult(successful=True)
+
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        if not self._datum_locked:
+            return  # dormant — wait for watchdog to set local_anchor_z
         if self._output_frame_id:
             msg.header.frame_id = self._output_frame_id
             msg.pose.pose.position.z -= self._anchor_z
 
         # NaN guard on the z covariance diagonal (index 14 in 6x6
-        # row-major) — same defensive logic as gps_odom_cov_floor.
+        # row-major) — same defensive logic gps_to_map_position applies
+        # to the GPS odometry covariance.
         # robot_localization runs eigenvalue checks on the full 6x6;
         # a NaN anywhere can poison the update path even on channels
         # that aren't fused.
