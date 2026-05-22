@@ -151,9 +151,9 @@ ekf_global_node:
     # state, the map→odom TF, and the back-projection in
     # global_ekf_to_navsatfix all become consistent — matching anchored's
     # RTK-level accuracy while keeping the EKF's sensor fusion benefits.
-    # gps_to_map_position also bakes in the cov-floor (default 0.25 m²)
-    # and NaN guards that gps_odom_cov_floor used to do, so this single
-    # topic carries everything the EKF needs.
+    # gps_to_map_position also bakes in the cov-floor (canonical 0.10 m²)
+    # and NaN guards directly, so this single topic carries everything
+    # the EKF needs.
     odom1: /odometry/gps_map
     odom1_config: [
       true,  true,  false,
@@ -190,8 +190,8 @@ ekf_global_node:
     # The raw topic is in odom frame (it's what the local EKF zeroes at
     # startup); the global EKF needs it in map frame to avoid the same
     # TF-feedback-loop bug that previously affected GPS — see
-    # gps_odom_cov_floor's mechanism and the v20 entry in
-    # POLARIS/research/EKF_RESEARCH_NOTES.md. Without this remap, state.z
+    # the 2026-05-18 entry in POLARIS/research/EKF_RESEARCH_NOTES.md
+    # (z-channel TF feedback fix). Without this remap, state.z
     # equilibrates ~0.4 m above the true pressure-pinned depth (observed
     # on v18 grid_02: global z = +0.45 m mean vs local z = +0.06 m).
     pose0: /sensors/pressure/pose_enu_map
@@ -261,13 +261,13 @@ ekf_global_node:
     # `last_update_time_ = 0` plus `now()` returning wall-clock during
     # /clock-gap windows produced dt ≈ 1.77e9 s and state explosion to ~1e9 m.
     # That pathology required: cold-start state, no bootstrap, /clock not
-    # yet propagating into the EKF's subprocess. All three are now mitigated:
-    # gnss_datum_watchdog publishes a set_pose with a sim-time stamp shortly
-    # after the EKF subscribes, navsat_global_ekf.launch.py wraps everything
-    # in a TimerAction(period=10) so /clock has time to populate, and the
-    # set_pose itself initialises last_update_time_ to a sane value. So
-    # `predict_to_current_time: true` should now be safe and is needed to
-    # actually achieve the configured frequency.
+    # yet propagating into the EKF process. All three are now mitigated:
+    # gnss_datum_watchdog publishes a set_pose with a sim-time stamp once
+    # the EKF subscriber is registered; the in-place ekf_global_node starts
+    # at T=0 in the main launch so /clock has time to populate before any
+    # measurement arrives; and the set_pose itself initialises
+    # last_update_time_ to a sane value. So `predict_to_current_time: true`
+    # is now safe and is needed to actually achieve the configured frequency.
     predict_to_current_time: true
 
     # ── Outlier rejection: deliberately left at the robot_localization default

@@ -11,7 +11,6 @@ from launch_ros.actions import Node
 def generate_launch_description():
     pkg_dir = get_package_share_directory("ekf_localization_pkg")
     default_params = Path(pkg_dir, "config", "ekf_local.yaml")
-    default_navsat_params = Path(pkg_dir, "config", "navsat_transform.yaml")
     default_global_params = Path(pkg_dir, "config", "ekf_global.yaml")
 
     params_file_arg = DeclareLaunchArgument(
@@ -19,18 +18,13 @@ def generate_launch_description():
         default_value=str(default_params),
         description="Path to local EKF (ekf_local_node) parameters YAML.",
     )
-    use_navsat_arg = DeclareLaunchArgument(
-        "use_navsat_transform",
+    use_gnss_datum_watchdog_arg = DeclareLaunchArgument(
+        "use_gnss_datum_watchdog",
         default_value="true",
         description=(
             "Enable gnss_datum_watchdog. When a quality GNSS fix arrives the watchdog "
-            "spawns navsat_transform_node and (optionally) ekf_global_node."
+            "captures the datum and activates the dormant in-place global-EKF stack."
         ),
-    )
-    navsat_params_file_arg = DeclareLaunchArgument(
-        "navsat_params_file",
-        default_value=str(default_navsat_params),
-        description="Base navsat_transform params forwarded to the watchdog.",
     )
     use_global_ekf_arg = DeclareLaunchArgument(
         "use_global_ekf",
@@ -163,8 +157,9 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_thruster_fallback")),
     )
 
-    # Watchdog: waits for a quality GNSS fix, then spawns navsat_transform_node
-    # and ekf_global_node via navsat_global_ekf.launch.py with the fix as datum.
+    # Watchdog: waits for a quality GNSS fix, then activates the dormant
+    # global-EKF stack by pushing the datum and local-EKF anchor to the
+    # in-place nodes via SetParameters.
     datum_watchdog_node = Node(
         package="ekf_localization_pkg",
         executable="gnss_datum_watchdog",
@@ -175,29 +170,24 @@ def generate_launch_description():
             "h_acc_topic": LaunchConfiguration("h_acc_topic"),
             "imu_topic": LaunchConfiguration("imu_topic"),
             "odom_topic": LaunchConfiguration("odom_topic"),
-            "navsat_params_file": LaunchConfiguration("navsat_params_file"),
-            "global_ekf_params_file": LaunchConfiguration("global_params_file"),
             "use_global_ekf": LaunchConfiguration("use_global_ekf"),
-            # CRITICAL: the watchdog reads use_sim_time at __init__ to decide
-            # whether to forward use_sim_time:=true to its spawned subprocess
-            # (navsat_global_ekf.launch.py). It also uses self.get_clock() to
-            # stamp the bootstrap set_pose message — if use_sim_time is False,
-            # that stamp is wall-clock-now, which under offline replay is
-            # ~days into the bag's future. robot_localization rejects every
-            # subsequent measurement as "preceded the most recent pose
-            # reset" and freezes. Empirically observed on grid_02:
+            # CRITICAL: the watchdog uses self.get_clock() to stamp the
+            # bootstrap set_pose message — if use_sim_time is False under
+            # offline replay, that stamp is wall-clock-now, which can be
+            # days into the bag's future. robot_localization then rejects
+            # every subsequent measurement as "preceded the most recent
+            # pose reset" and freezes. Empirically observed on grid_02:
             # bootstrap stamped May 9 22:00 (wall) while bag was May 7
-            # 12:25 — 215000 s gap, all bag measurements rejected.
+            # 12:25 — 215 000 s gap, all bag measurements rejected.
             "use_sim_time": LaunchConfiguration("use_sim_time"),
         }],
-        condition=IfCondition(LaunchConfiguration("use_navsat_transform")),
+        condition=IfCondition(LaunchConfiguration("use_gnss_datum_watchdog")),
     )
 
     # ── IN-PLACE global-stack nodes ──────────────────────────────────────
     # Start in dormant mode at T=0 (no datum yet). The watchdog calls
     # set_parameters on each of them when GNSS lock fires, flipping them
-    # to active mode. This avoids the 30-50 s subprocess startup wait that
-    # the legacy `navsat_global_ekf.launch.py` path incurred.
+    # to active mode. ~6 s warmup (single DDS discovery at launch).
     static_map_odom_node = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -310,8 +300,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             params_file_arg,
-            use_navsat_arg,
-            navsat_params_file_arg,
+            use_gnss_datum_watchdog_arg,
             use_global_ekf_arg,
             global_params_file_arg,
             gps_fix_topic_arg,

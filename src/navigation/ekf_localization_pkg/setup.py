@@ -35,7 +35,6 @@ setup(
             "imu_yaw_correction = ekf_localization_pkg.imu_yaw_correction:main",
             "ekf_offline_diagnostic = ekf_localization_pkg.ekf_offline_diagnostic:main",
             "thruster_velocity_estimator = ekf_localization_pkg.thruster_velocity_estimator:main",
-            "gps_odom_cov_floor = ekf_localization_pkg.gps_odom_cov_floor:main",
             "pressure_pose_frame_fix = ekf_localization_pkg.pressure_pose_frame_fix:main",
             "gps_to_map_position = ekf_localization_pkg.gps_to_map_position:main",
             "gps_velocity_filter = ekf_localization_pkg.gps_velocity_filter:main",

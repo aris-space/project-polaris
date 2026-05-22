@@ -1,8 +1,9 @@
 """
-Offline EKF + navsat + global EKF against a **played** rosbag (MCAP).
+Offline EKF stack (local EKF + dormant in-place global EKF) against a
+**played** rosbag (MCAP).
 
-Use this when mission bags have sensor streams but no (or wrong) on-robot filter
-recording — e.g. `use_navsat_transform:=false` on the vehicle.
+Use this when mission bags have sensor streams but no (or wrong) on-robot
+filter recording — e.g. `use_gnss_datum_watchdog:=false` on the vehicle.
 
 **You run bag playback separately** (so you can pick `--topics` / exclusions):
 
@@ -68,9 +69,9 @@ def generate_launch_description():
         [
             SetUseSimTime(True),
             DeclareLaunchArgument(
-                "use_navsat_transform",
+                "use_gnss_datum_watchdog",
                 default_value="true",
-                description="Enable gnss_datum_watchdog (which spawns navsat_transform + global EKF).",
+                description="Enable gnss_datum_watchdog (activates the in-place global EKF stack on first lock).",
             ),
             DeclareLaunchArgument(
                 "use_global_ekf",
@@ -240,7 +241,7 @@ def generate_launch_description():
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([str(ekf_launch)]),
                 launch_arguments={
-                    "use_navsat_transform": LaunchConfiguration("use_navsat_transform"),
+                    "use_gnss_datum_watchdog": LaunchConfiguration("use_gnss_datum_watchdog"),
                     "use_global_ekf": LaunchConfiguration("use_global_ekf"),
                     "gps_fix_topic": LaunchConfiguration("gps_fix_topic"),
                     "h_acc_topic": LaunchConfiguration("h_acc_topic"),
@@ -407,19 +408,15 @@ def generate_launch_description():
                     "/odometry/filtered/local_validated",
                     "/odometry/filtered/global",
                     "/odometry/filtered/global_anchored",
-                    # NavSatFix forms of global outputs. Two distinct topics:
-                    #   /gps/filtered          — published by navsat_transform_node
-                    #                            (publish_filtered_gps: true), reflects
-                    #                            navsat's idea of the boat's lat/lon
-                    #                            given its current filtered odom input.
+                    # NavSatFix forms of global outputs:
                     #   /gps/filtered/global   — published by global_ekf_to_navsatfix,
                     #                            directly converts the global EKF's
                     #                            /odometry/filtered/global to lat/lon.
                     #                            This is THE global EKF's NavSatFix
-                    #                            output and is what downstream consumers
-                    #                            should subscribe to for the GPS-fused
-                    #                            position estimate.
-                    "/gps/filtered",
+                    #                            output for downstream consumers
+                    #                            (Foxglove maps, telemetry).
+                    #   /gps/filtered/global_anchored — same shape, from the
+                    #                            anchored-shadow comparator.
                     "/gps/filtered/global",
                     "/gps/filtered/global_anchored",
                     # TF

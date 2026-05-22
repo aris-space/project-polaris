@@ -1,8 +1,5 @@
 import math
 import signal
-import subprocess
-import tempfile
-from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
@@ -40,12 +37,17 @@ _HPPOSLLH_H_ACC_TO_M = 1e-4
 
 class GnssDatumWatchdog(Node):
     """
-    Waits for a quality-gated GNSS fix, then spawns navsat_transform_node and
-    ekf_global_node via navsat_global_ekf.launch.py with that fix as the datum.
+    Waits for a quality-gated GNSS fix, then activates the in-place global
+    EKF stack by pushing the datum (and the local-EKF anchor z) into the
+    already-running, dormant global-stack nodes via SetParameters service
+    calls. After that, it schedules a one-shot `set_pose` publish to
+    bootstrap `ekf_global_node` directly into the correct state (datum
+    origin + local-EKF orientation), bypassing the cold-start transient.
 
-    This guarantees navsat_transform never starts at null-island (0°, 0°): the
-    GPS-dependent nodes are only launched once a valid position is confirmed.
-    The local EKF (IMU + DVL + pressure) runs from system start, independently.
+    The local EKF (IMU + DVL + pressure) runs from system start,
+    independently. The global stack stays dormant — passing GPS through
+    null-island projection or feeding bogus z would corrupt downstream —
+    until this watchdog flips it on.
 
     Quality gate (both must pass when h_acc topic is available):
       - NavSatFix.status >= 0   (valid fix, not STATUS_NO_FIX)
@@ -58,17 +60,15 @@ class GnssDatumWatchdog(Node):
     h_acc_topic          UBXNavHPPosLLH accuracy topic        (default /ubx_nav_hp_pos_llh)
     h_acc_max_m          Max acceptable horizontal accuracy   (default 0.50 m)
     max_fix_distance_m   Max haversine distance from datum    (default 100000 m = 100 km)
-    imu_topic            IMU topic forwarded to navsat        (default /imu/data_corrected)
-    odom_topic           Local odom forwarded to navsat       (default /odometry/filtered/local)
-    navsat_params_file   Base navsat_transform YAML path      (default: package navsat_transform.yaml)
-    global_ekf_params_file  Global EKF YAML path             (default: package ekf_global.yaml)
-    use_global_ekf       Also launch ekf_global_node         (default true)
+    imu_topic            IMU topic (forwarded for diagnostics)
+    odom_topic           Local odom topic (used to snapshot anchor)
+    use_global_ekf       Enable global-stack activation       (default true)
 
     After the datum is set, every incoming fix is validated by:
       - status >= 0 and |lat| > 0.1° (null-island guard)
       - haversine distance from datum <= max_fix_distance_m
-    Valid fixes are republished on /gps/validated; navsat_transform subscribes
-    to that topic instead of the raw fix topic so garbage fixes never reach it.
+    Valid fixes are republished on /gps/validated, which feeds the
+    `gps_velocity_filter` and downstream `gps_to_map_position`.
     """
 
     def __init__(self) -> None:
@@ -80,8 +80,6 @@ class GnssDatumWatchdog(Node):
         self.declare_parameter("max_fix_distance_m", 100_000.0)
         self.declare_parameter("imu_topic", "/imu/data_corrected")
         self.declare_parameter("odom_topic", "/odometry/filtered/local")
-        self.declare_parameter("navsat_params_file", "")
-        self.declare_parameter("global_ekf_params_file", "")
         self.declare_parameter("use_global_ekf", True)
         # ── Bootstrap: publish a one-shot PoseWithCovarianceStamped to
         # /ekf_global_node/set_pose at watchdog spawn time, so the global EKF
@@ -95,13 +93,6 @@ class GnssDatumWatchdog(Node):
         self.declare_parameter("bootstrap_pose_cov_xy_m2", 0.01)
         self.declare_parameter("bootstrap_pose_cov_z_m2", 0.01)
         self.declare_parameter("bootstrap_pose_cov_rpy_rad2", 0.001)
-        # Legacy: grace period for the subprocess-spawn path. Only used
-        # when use_inplace_global_stack=False.
-        self.declare_parameter("spawn_grace_period_s", 10.0)
-        # Architectural switch — True (default) skips subprocess.Popen and
-        # pushes datum/anchor via set_parameters to already-running nodes
-        # in the main launch. ~1-2 s warmup instead of 30-50 s.
-        self.declare_parameter("use_inplace_global_stack", True)
         self.declare_parameter("gps_to_map_node_name", "gps_to_map_position")
         self.declare_parameter("global_ekf_to_navsatfix_node_name", "global_ekf_to_navsatfix_node")
         self.declare_parameter("pressure_pose_frame_fix_node_name", "pressure_pose_frame_fix")
@@ -112,8 +103,6 @@ class GnssDatumWatchdog(Node):
         self._max_fix_distance_m: float = self.get_parameter("max_fix_distance_m").value
         self._imu_topic: str = self.get_parameter("imu_topic").value
         self._odom_topic: str = self.get_parameter("odom_topic").value
-        self._navsat_params: str = self.get_parameter("navsat_params_file").value
-        self._global_ekf_params: str = self.get_parameter("global_ekf_params_file").value
         self._use_global_ekf: bool = bool(self.get_parameter("use_global_ekf").value)
         self._fix_topic = fix_topic
         self._use_sim_time: bool = bool(self.get_parameter("use_sim_time").value)
@@ -129,12 +118,6 @@ class GnssDatumWatchdog(Node):
         )
         self._bootstrap_retry_delay_s: float = float(
             self.get_parameter("bootstrap_retry_delay_s").value
-        )
-        self._spawn_grace_period_s: float = float(
-            self.get_parameter("spawn_grace_period_s").value
-        )
-        self._use_inplace_global_stack: bool = bool(
-            self.get_parameter("use_inplace_global_stack").value
         )
         self._gps_to_map_node: str = str(
             self.get_parameter("gps_to_map_node_name").value
@@ -157,7 +140,7 @@ class GnssDatumWatchdog(Node):
         self._bootstrap_timer = None
         self._bootstrap_pub = None
         # Local-EKF position at the instant of datum-lock. Captured in
-        # _spawn_navsat_and_global so that the bootstrap publish can compute
+        # _activate_global_stack so that the bootstrap publish can compute
         # (current_local − anchor_local) instead of bootstrapping at a fixed
         # (0, 0). This lets us bootstrap the EKF at the boat's actual current
         # position in map frame, even if the boat has moved during the 12 s
@@ -165,7 +148,6 @@ class GnssDatumWatchdog(Node):
         self._local_anchor_x: float = 0.0
         self._local_anchor_y: float = 0.0
         self._local_anchor_z: float = 0.0
-        self._local_anchor_yaw: float = 0.0
         self._local_anchor_valid: bool = False
 
         self._latest_fix: NavSatFix | None = None
@@ -198,7 +180,7 @@ class GnssDatumWatchdog(Node):
         # any lake test) to identify whether GPS or global EKF causes the crash.
         self._diag_warn_m = 10_000.0
         self._diag_odom_gps_sub = self.create_subscription(
-            Odometry, "/odometry/gps", self._on_diag_odom_gps, 10
+            Odometry, "/odometry/gps_map", self._on_diag_odom_gps, 10
         )
         self._diag_global_sub = self.create_subscription(
             Odometry, "/odometry/filtered/global", self._on_diag_global_odom, 10
@@ -274,7 +256,7 @@ class GnssDatumWatchdog(Node):
                 return
 
         self._launched = True
-        self._spawn_navsat_and_global(fix)
+        self._activate_global_stack(fix)
 
     def _validate_and_republish(self, msg: NavSatFix) -> None:
         # Log every incoming fix so we can see exactly what arrives near the crash.
@@ -306,12 +288,12 @@ class GnssDatumWatchdog(Node):
                     f"[GPS reject] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
                     f"dist={dist / 1000.0:.1f} km from datum "
                     f"(max {self._max_fix_distance_m / 1000.0:.0f} km) — "
-                    "likely corrupt/mislabeled NavSatFix; not forwarded to navsat_transform",
+                    "likely corrupt/mislabeled NavSatFix; not forwarded to global stack",
                 )
                 return
             self.get_logger().info(
                 f"[GPS valid] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
-                f"dist={dist:.0f} m from datum — forwarding to navsat_transform",
+                f"dist={dist:.0f} m from datum — forwarding to global stack",
                 throttle_duration_sec=10.0,
             )
         self._n_gps_validated += 1
@@ -324,14 +306,14 @@ class GnssDatumWatchdog(Node):
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         self.get_logger().info(
-            f"[GPS odom] x={x:.2f} m  y={y:.2f} m — navsat_transform → /odometry/gps",
+            f"[GPS odom] x={x:.2f} m  y={y:.2f} m — gps_to_map_position → /odometry/gps_map",
             throttle_duration_sec=5.0,
         )
         if abs(x) > self._diag_warn_m or abs(y) > self._diag_warn_m:
             self.get_logger().warn(
-                f"[DIAG] /odometry/gps out of range: "
+                f"[DIAG] /odometry/gps_map out of range: "
                 f"x={x / 1000.0:.2f} km, y={y / 1000.0:.2f} km — "
-                "navsat_transform computed a far GPS odometry; crash imminent. "
+                "gps_to_map_position emitted a far GPS odometry; crash imminent. "
                 "A bad GPS fix likely slipped through the gateway.",
             )
 
@@ -394,7 +376,9 @@ class GnssDatumWatchdog(Node):
             f"diag_thresholds_hit=[{thresholds}]"
         )
 
-    def _spawn_navsat_and_global(self, fix: NavSatFix) -> None:
+    def _activate_global_stack(self, fix: NavSatFix) -> None:
+        """Capture the datum + local-EKF anchor, push to the dormant global-
+        stack nodes via SetParameters, and schedule the set_pose bootstrap."""
         self._datum_lat = fix.latitude
         self._datum_lon = fix.longitude
         t_now = self.get_clock().now().nanoseconds * 1e-9
@@ -410,10 +394,9 @@ class GnssDatumWatchdog(Node):
             lx = self._latest_local_odom.pose.pose.position.x
             ly = self._latest_local_odom.pose.pose.position.y
             lz = self._latest_local_odom.pose.pose.position.z
-            # Local EKF yaw at lock time. Needed by global_ekf_to_navsatfix
-            # to rotate state.(x, y) from map frame back to UTM ENU before
-            # back-projecting to lat/lon — otherwise /gps/filtered/global
-            # ends up heading-rotated relative to /fix by exactly this angle.
+            # Local EKF yaw at lock — diagnostic only. The in-place global
+            # stack introduces no map↔UTM rotation, so global_ekf_to_navsatfix
+            # back-projects without rotation; this value is just logged.
             q = self._latest_local_odom.pose.pose.orientation
             lyaw = math.atan2(
                 2.0 * (float(q.w) * float(q.z) + float(q.x) * float(q.y)),
@@ -429,67 +412,17 @@ class GnssDatumWatchdog(Node):
             self._local_anchor_x = float(lx)
             self._local_anchor_y = float(ly)
             self._local_anchor_z = float(lz)
-            self._local_anchor_yaw = float(lyaw)
             self._local_anchor_valid = True
         self.get_logger().info(
             f"Valid fix: lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° "
-            f"alt={fix.altitude:.1f} m{h_acc_str} — spawning navsat_transform + global EKF"
+            f"alt={fix.altitude:.1f} m{h_acc_str} — activating global stack"
             f"{local_pos}"
         )
 
-        if self._use_inplace_global_stack:
-            self._push_datum_to_inplace_nodes(fix)
-            self.get_logger().info(
-                "datum pushed to in-place global-stack nodes via set_parameters."
-            )
-            return self._schedule_bootstrap()
-
-        # ── LEGACY subprocess.Popen path ──────────────────────────────────
-        # Write a minimal YAML with just the datum; loaded second in the launch
-        # so it overrides any placeholder datum in the base navsat params file.
-        datum_yaml = (
-            "navsat_transform_node:\n"
-            "  ros__parameters:\n"
-            f"    datum: [{fix.latitude}, {fix.longitude}, {fix.altitude}]\n"
-        )
-        datum_file = Path(tempfile.mkdtemp()) / "gnss_datum.yaml"
-        datum_file.write_text(datum_yaml)
-
-        cmd = [
-            "ros2", "launch", "ekf_localization_pkg", "navsat_global_ekf.launch.py",
-            f"datum_yaml:={datum_file}",
-            f"datum_lat:={fix.latitude}",
-            f"datum_lon:={fix.longitude}",
-            f"datum_alt:={fix.altitude}",
-            f"gps_fix_topic:=/gps/validated",
-            f"imu_topic:={self._imu_topic}",
-            f"odom_topic:={self._odom_topic}",
-            f"use_global_ekf:={'true' if self._use_global_ekf else 'false'}",
-            f"use_sim_time:={'true' if self._use_sim_time else 'false'}",
-            # local_anchor: the local EKF's position at this instant. Map
-            # frame's origin is the GPS datum, which corresponds to this
-            # local-EKF position in odom frame. gps_odom_cov_floor
-            # subtracts these from /odometry/gps to convert from odom
-            # frame (where navsat publishes) to map frame (where the
-            # global EKF lives). Falls back to (0,0,0) if the local odom
-            # subscription hasn't delivered a message yet — that case
-            # produces a misaligned but stable global track, easier to
-            # debug than the alternative TF-feedback divergence.
-            f"local_anchor_x:={self._local_anchor_x}",
-            f"local_anchor_y:={self._local_anchor_y}",
-            f"local_anchor_z:={self._local_anchor_z}",
-            f"local_anchor_yaw:={self._local_anchor_yaw}",
-        ]
-        if self._navsat_params:
-            cmd.append(f"navsat_params_file:={self._navsat_params}")
-        if self._global_ekf_params:
-            cmd.append(f"global_ekf_params_file:={self._global_ekf_params}")
-
-        subprocess.Popen(cmd)
+        self._push_datum_to_inplace_nodes(fix)
         self.get_logger().info(
-            "navsat_transform_node + ekf_global_node launched with precise datum."
+            "datum pushed to in-place global-stack nodes via set_parameters."
         )
-
         self._schedule_bootstrap()
 
     def _schedule_bootstrap(self) -> None:
@@ -641,7 +574,7 @@ class GnssDatumWatchdog(Node):
             dy = float(local.pose.pose.position.y) - self._local_anchor_y
         else:
             # Fallback to (0, 0) if for some reason the anchor wasn't captured
-            # (shouldn't happen — _spawn_navsat_and_global captures it).
+            # (shouldn't happen — _activate_global_stack captures it).
             dx = 0.0
             dy = 0.0
         msg.pose.pose.position.x = dx
@@ -649,7 +582,7 @@ class GnssDatumWatchdog(Node):
         msg.pose.pose.position.z = float(local.pose.pose.position.z)
         # Orientation: take the local EKF's converged orientation. By
         # construction the map and odom frames share their yaw axis (the
-        # static identity bootstrap inside navsat_global_ekf.launch.py keeps
+        # static map→odom identity TF in ekf_localization.launch.py keeps
         # them parallel) so the local-EKF orientation expressed in odom
         # frame is also valid in map frame.
         msg.pose.pose.orientation.x = float(local.pose.pose.orientation.x)

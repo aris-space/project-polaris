@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    use_navsat_transform_arg_value = LaunchConfiguration("use_navsat_transform")
+    use_gnss_datum_watchdog_arg_value = LaunchConfiguration("use_gnss_datum_watchdog")
     use_global_ekf_arg_value = LaunchConfiguration("use_global_ekf")
     gps_fix_topic_arg_value = LaunchConfiguration("gps_fix_topic")
     p_surface_pa_arg_value = LaunchConfiguration("p_surface_pa")
@@ -27,7 +27,7 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            "use_navsat_transform": use_navsat_transform_arg_value,
+            "use_gnss_datum_watchdog": use_gnss_datum_watchdog_arg_value,
             "use_global_ekf": use_global_ekf_arg_value,
             "gps_fix_topic": gps_fix_topic_arg_value,
         }.items(),
@@ -98,10 +98,11 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "use_navsat_transform",
+                "use_gnss_datum_watchdog",
                 default_value="true",
                 description=(
-                    "Launch navsat_transform_node. When true, publishes /odometry/gps for ekf_global."
+                    "Enable gnss_datum_watchdog: gates and republishes GPS, then "
+                    "activates the in-place global EKF stack on first quality lock."
                 ),
             ),
             DeclareLaunchArgument(

@@ -5,45 +5,47 @@ true-ENU map-frame Odometry on /odometry/gps_map.
 Why this exists
 ---------------
 
-`navsat_transform_node` with `use_odometry_yaw: true` rotates each GPS
-measurement by the boat's current odom-frame yaw before publishing on
-`/odometry/gps`. On this stack (where local odom is already true ENU via
-`head_mot` calibration), that rotation is a no-op in principle — but
-empirically it introduces a ~30° rotation that contaminates downstream
-gps_floored, EKF state, and the back-projection. The 7 m mean offset of
-/gps/filtered/global vs /fix on grid_02 traces directly to it.
+The legacy stack used `navsat_transform_node` with
+`use_odometry_yaw: true`, which rotates each GPS measurement by the
+boat's current odom-frame yaw before publishing it as `/odometry/gps`.
+On this stack — where the local EKF's odom frame is already true ENU
+via `head_mot` IMU calibration — that rotation should be a no-op, but
+empirically introduced a ~30° rotation contaminating downstream
+state and back-projection. The 7 m mean offset of /gps/filtered/global
+vs /fix on grid_02 traced directly to it (input-side yaw feedback loop:
+navsat used the EKF's yaw to rotate GPS, EKF fused the rotated GPS,
+its yaw shifted, navsat rotated more, etc.).
 
-`gnss_anchored_pose` doesn't have this problem because it does the lat/lon
-→ UTM → (UTM − datum) projection itself, with no IMU/odom yaw involvement.
-The result is genuinely in true ENU, and anchored matches /fix to 0.6 m
-mean (vs global EKF's 7.3 m).
+`gnss_anchored_pose` doesn't have this problem because it does the
+lat/lon → UTM → (UTM − datum) projection itself, with no IMU/odom yaw
+involvement. The result is genuinely in true ENU, and anchored matched
+/fix to 0.6 m mean (vs the navsat-based global EKF's 7.3 m).
 
-This node packages anchored's projection logic as a standalone publisher
-so the global EKF can consume a clean true-ENU map-frame GPS measurement
-without going through navsat_transform's rotation. Result is the same as
-anchored's underlying math but available as an input to the EKF — so we
-keep the EKF's sensor fusion (DVL, IMU, pressure between GPS updates,
-proper uncertainty propagation, predict step) and gain the projection
+This node packages anchored's projection logic as a standalone
+publisher so the global EKF can consume a clean true-ENU map-frame
+GPS measurement directly. Result is the same as anchored's underlying
+math but available as an input to the EKF — so we keep the EKF's
+sensor fusion (DVL, IMU, pressure between GPS updates, proper
+uncertainty propagation, predict step) and gain the projection
 correctness.
 
-Output is byte-for-byte the same shape as gps_odom_cov_floor's
-`/odometry/gps_floored` (cov-floored, NaN-guarded, off-diagonals zeroed,
-frame_id="map") so the EKF can subscribe to either interchangeably.
+Output: cov-floored, NaN-guarded, off-diagonals zeroed,
+`frame_id="map"`. Publishes on /odometry/gps_map.
 
-Datum is passed as parameters by the launch (same path
-`gnss_datum_watchdog` already uses to send datum_lat/lon to
-`global_ekf_to_navsatfix_node`).
+Datum is set by `gnss_datum_watchdog` at GNSS lock via SetParameters
+(same mechanism the watchdog uses for `global_ekf_to_navsatfix_node`).
 
 Parameters
 ----------
-input_topic       NavSatFix to consume (default /gps/validated).
+input_topic       NavSatFix to consume (default /gps/validated_filtered).
 output_topic      Odometry topic to publish (default /odometry/gps_map).
 output_frame_id   header.frame_id of output (default "map").
 datum_lat         Datum latitude (degrees) — anchor of the map frame.
 datum_lon         Datum longitude (degrees).
 datum_alt         Datum altitude (m) — subtracted from each fix's altitude.
-min_pos_cov_m2    Diagonal pose-covariance floor (m²). Default 0.25 to
-                  match gps_odom_cov_floor's empirically-tuned value.
+min_pos_cov_m2    Diagonal pose-covariance floor (m²). Canonical value
+                  is 0.10 (32 cm 1σ), the geometric midpoint of the
+                  0.04 / 0.25 sweep (see 2026-05-18 research note).
 """
 from __future__ import annotations
 
