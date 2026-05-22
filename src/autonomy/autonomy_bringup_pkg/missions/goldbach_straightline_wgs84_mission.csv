@@ -4,7 +4,7 @@ lat,lon,alt,up_down,delta_z_m,hold_s
 # East
 47.404937530999995,8.631432236999999,482.3962,0,,
 # South
-47.404869657999996,8631302832000001, 482.3989, 0,,
+47.404869657999996,8.631302832000001, 482.3989, 0,,
 # alt is HAE (WGS-84 ellipsoidal height) — matches /fix.altitude from u-blox.
 # Convert from Swiss MSL by adding the EGM2008 geoid separation N (~+46.7 m at this site):
 #   HAE = MSL + N(lat,lon).  E.g. 408 m MSL  ->  454.7 m HAE.
