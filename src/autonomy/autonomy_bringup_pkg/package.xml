@@ -33,8 +33,6 @@
   <depend>nav2_lifecycle_manager</depend>
 
   <depend>orca_nav2</depend>
-  <depend>mavlink_bridge</depend>
-  <exec_depend>config_pkg</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
