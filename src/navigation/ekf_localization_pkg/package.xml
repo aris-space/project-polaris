@@ -17,6 +17,8 @@
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
   <depend>ublox_ubx_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>tf2_ros</depend>
   <exec_depend>python3-pyproj</exec_depend>
 
   <test_depend>ament_copyright</test_depend>

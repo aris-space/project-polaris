@@ -40,6 +40,7 @@ setup(
             "gps_velocity_filter = ekf_localization_pkg.gps_velocity_filter:main",
             "topic_rate_probe = ekf_localization_pkg.topic_rate_probe:main",
             "tf_rate_probe = ekf_localization_pkg.tf_rate_probe:main",
+            "ekf_diagnostics = ekf_localization_pkg.ekf_diagnostics:main",
         ],
     },
 )

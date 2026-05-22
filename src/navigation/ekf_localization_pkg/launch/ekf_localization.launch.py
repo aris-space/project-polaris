@@ -297,6 +297,21 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_global_ekf")),
     )
 
+    # EKF stack health diagnostics — publishes on /diagnostics_software so the
+    # operator (Foxglove diagnostic panel) can see whether the local/global
+    # EKFs, map→odom TF, GPS pipeline, and divergence-vs-GPS are healthy.
+    # Pattern matches src/autonomy/.../nav2_lifecycle_diagnostics.py
+    # (parent + per-subsystem children).
+    ekf_diagnostics_node = Node(
+        package="ekf_localization_pkg",
+        executable="ekf_diagnostics",
+        name="ekf_diagnostics",
+        output="screen",
+        parameters=[{
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+    )
+
     return LaunchDescription(
         [
             params_file_arg,
@@ -321,5 +336,6 @@ def generate_launch_description():
             pressure_pose_frame_fix_node,
             ekf_global_node,
             global_ekf_to_navsatfix_node,
+            ekf_diagnostics_node,
         ]
     )
