@@ -167,7 +167,11 @@ def generate_launch_description():
         output="screen",
         parameters=[{
             "local_odom_topic": "/odometry/filtered/local_validated",
-            "gps_topic": LaunchConfiguration("gps_fix_topic"),
+            # Raw /fix, not the gated /gps/selected: the calibrate_yaw_offset
+            # service needs GNSS before the selector's IMU yaw stability gate
+            # opens (same reason imu_yaw_correction uses /fix directly).
+            # Anchor quality is still protected by the h_acc gate in _try_anchor.
+            "gps_topic": "/fix",
             "global_odom_topic": "/odometry/filtered/global",
             "h_acc_topic": LaunchConfiguration("h_acc_topic"),
             "h_acc_max_m": LaunchConfiguration("h_acc_max_m"),
