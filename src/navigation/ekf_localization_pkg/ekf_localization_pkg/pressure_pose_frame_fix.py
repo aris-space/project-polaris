@@ -51,6 +51,7 @@ from __future__ import annotations
 import math
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import PoseWithCovarianceStamped
@@ -70,6 +71,12 @@ class PressurePoseFrameFix(Node):
             self.get_parameter("output_frame_id").value
         )
         self._anchor_z: float = float(self.get_parameter("local_anchor_z").value)
+        # Dormant flag: when False, we don't publish — the global EKF
+        # won't have a meaningful local_anchor_z reference yet, so any
+        # pressure message we forward would be off by an unknown offset.
+        # gnss_datum_watchdog calls set_parameters on this node at lock
+        # time and we flip to active mode.
+        self._datum_locked: bool = False
 
         self._n_in = 0
         self._n_nan_replaced = 0
@@ -81,6 +88,7 @@ class PressurePoseFrameFix(Node):
         self._pub = self.create_publisher(
             PoseWithCovarianceStamped, out_topic, 10,
         )
+        self.add_on_set_parameters_callback(self._on_param_change)
 
         if self._output_frame_id:
             mode_msg = (
@@ -93,7 +101,20 @@ class PressurePoseFrameFix(Node):
             f"pressure_pose_frame_fix: {in_topic} -> {out_topic}, {mode_msg}"
         )
 
+    def _on_param_change(self, params) -> SetParametersResult:
+        for p in params:
+            if p.name == "local_anchor_z":
+                self._anchor_z = float(p.value)
+                self._datum_locked = True
+                self.get_logger().info(
+                    f"anchor_z updated → {self._anchor_z:+.4f} m  (datum now locked, "
+                    "publishing /sensors/pressure/pose_enu_map)"
+                )
+        return SetParametersResult(successful=True)
+
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
+        if not self._datum_locked:
+            return  # dormant — wait for watchdog to set local_anchor_z
         if self._output_frame_id:
             msg.header.frame_id = self._output_frame_id
             msg.pose.pose.position.z -= self._anchor_z

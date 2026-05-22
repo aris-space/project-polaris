@@ -41,6 +41,7 @@ from __future__ import annotations
 import math
 
 import rclpy
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
 from nav_msgs.msg import Odometry
@@ -67,9 +68,6 @@ class GlobalEkfToNavsatFix(Node):
         self.declare_parameter("global_odom_topic", "/odometry/filtered/global")
         self.declare_parameter("output_topic", "/gps/filtered/global")
 
-        datum_lat: float = self.get_parameter("datum_lat").value
-        datum_lon: float = self.get_parameter("datum_lon").value
-        datum_alt: float = self.get_parameter("datum_alt").value
         map_yaw: float   = float(self.get_parameter("map_yaw_offset_rad").value)
         odom_topic: str  = self.get_parameter("global_odom_topic").value
         out_topic: str   = self.get_parameter("output_topic").value
@@ -81,37 +79,17 @@ class GlobalEkfToNavsatFix(Node):
         self._map_sin = math.sin(map_yaw)
         self._apply_rotation = abs(map_yaw) > 1e-9
 
-        if abs(datum_lat) < 0.1 and abs(datum_lon) < 0.1:
-            self.get_logger().fatal(
-                f"Datum appears to be null-island ({datum_lat}, {datum_lon}) — "
-                "check that datum_lat/datum_lon are forwarded from gnss_datum_watchdog."
-            )
-            raise RuntimeError("Invalid datum: null-island")
-
-        epsg = _utm_epsg(datum_lat, datum_lon)
-        to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
-        self._from_utm = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
-
-        self._datum_e, self._datum_n = to_utm.transform(datum_lon, datum_lat)
-        self._datum_alt = datum_alt
-
-        self.get_logger().info(
-            f"Datum: lat={datum_lat:.7f}°  lon={datum_lon:.7f}°  alt={datum_alt:.1f} m  "
-            f"→ {epsg}  E={self._datum_e:.3f}  N={self._datum_n:.3f}"
-        )
-        if self._apply_rotation:
-            self.get_logger().info(
-                f"map↔UTM yaw rotation: {map_yaw:+.6f} rad "
-                f"({math.degrees(map_yaw):+.3f}°). State (x,y) will be rotated "
-                f"by +yaw before adding to datum_UTM."
-            )
-        else:
-            self.get_logger().info(
-                "map↔UTM yaw rotation: identity (map_yaw_offset_rad=0). "
-                "Assumes the map frame is ENU-aligned. If /gps/filtered/global "
-                "shows a heading-dependent offset vs /fix, set this parameter "
-                "to the local-EKF yaw at GNSS lock (passed by gnss_datum_watchdog)."
-            )
+        # Datum state: dormant until set via parameter callback by
+        # gnss_datum_watchdog at GNSS-lock time.
+        self._datum_lat: float = float(self.get_parameter("datum_lat").value)
+        self._datum_lon: float = float(self.get_parameter("datum_lon").value)
+        self._datum_alt: float = float(self.get_parameter("datum_alt").value)
+        self._datum_valid: bool = False
+        self._from_utm = None
+        self._datum_e: float = 0.0
+        self._datum_n: float = 0.0
+        if self._is_datum_valid(self._datum_lat, self._datum_lon):
+            self._activate_datum(self._datum_lat, self._datum_lon, self._datum_alt)
 
         self._pub = self.create_publisher(
             NavSatFix, out_topic, QoSProfile(depth=10)
@@ -119,12 +97,56 @@ class GlobalEkfToNavsatFix(Node):
         self._sub = self.create_subscription(
             Odometry, odom_topic, self._on_odom, qos_profile_sensor_data
         )
+        self.add_on_set_parameters_callback(self._on_param_change)
 
+        if self._datum_valid:
+            self.get_logger().info(
+                f"global_ekf_to_navsatfix: datum SET AT LAUNCH, subscribed to "
+                f"'{odom_topic}', publishing on '{out_topic}'"
+            )
+        else:
+            self.get_logger().info(
+                f"global_ekf_to_navsatfix: DORMANT (waiting for datum_lat/lon "
+                f"via set_parameters from watchdog), subscribed to '{odom_topic}', "
+                f"output '{out_topic}'"
+            )
+
+    @staticmethod
+    def _is_datum_valid(lat: float, lon: float) -> bool:
+        return abs(lat) > 0.1 or abs(lon) > 0.1
+
+    def _activate_datum(self, lat: float, lon: float, alt: float) -> None:
+        epsg = _utm_epsg(lat, lon)
+        to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+        self._from_utm = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
+        self._datum_e, self._datum_n = to_utm.transform(lon, lat)
+        self._datum_alt = alt
+        self._datum_lat = lat
+        self._datum_lon = lon
+        self._datum_valid = True
         self.get_logger().info(
-            f"Subscribed to '{odom_topic}', publishing NavSatFix on '{out_topic}'"
+            f"datum activated: ({lat:.7f}, {lon:.7f}, {alt:.2f} m) -> "
+            f"{epsg} E={self._datum_e:.3f} N={self._datum_n:.3f}"
         )
 
+    def _on_param_change(self, params) -> SetParametersResult:
+        new_lat = self._datum_lat
+        new_lon = self._datum_lon
+        new_alt = self._datum_alt
+        for p in params:
+            if p.name == "datum_lat":
+                new_lat = float(p.value)
+            elif p.name == "datum_lon":
+                new_lon = float(p.value)
+            elif p.name == "datum_alt":
+                new_alt = float(p.value)
+        if self._is_datum_valid(new_lat, new_lon):
+            self._activate_datum(new_lat, new_lon, new_alt)
+        return SetParametersResult(successful=True)
+
     def _on_odom(self, msg: Odometry) -> None:
+        if not self._datum_valid:
+            return  # dormant — no datum yet
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
         z = msg.pose.pose.position.z

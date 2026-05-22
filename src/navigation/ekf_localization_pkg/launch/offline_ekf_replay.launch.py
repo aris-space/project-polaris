@@ -330,12 +330,14 @@ def generate_launch_description():
                     "output_dir": LaunchConfiguration("diag_output_dir"),
                     "global_odom_topic": "/odometry/filtered/global",
                     "local_odom_topic": "/odometry/filtered/local_validated",
-                    # /odometry/gps_floored carries the post-anchor-subtraction,
-                    # map-frame, cov-floored GPS — i.e. exactly what the global
-                    # EKF processes. Innovation columns in the diag CSV reflect
-                    # the EKF's actual innovations rather than raw navsat
-                    # output (which is in odom frame).
-                    "gps_odom_topic": "/odometry/gps_floored",
+                    # /odometry/gps_map carries the direct lat/lon → UTM →
+                    # (utm − datum) projection from gps_to_map_position —
+                    # which IS what the global EKF processes in the new
+                    # in-place architecture. Innovation columns in the
+                    # diag CSV reflect the EKF's actual innovations.
+                    # Older runs used /odometry/gps_floored (navsat output)
+                    # which is no longer published in the in-place stack.
+                    "gps_odom_topic": "/odometry/gps_map",
                     "sbl_topic": "/waterlinked_ugps/navsatfix",
                     # Use the global track's own NavSatFix as the diagnostic
                     # datum so SBL is projected with the same lat/lon the
@@ -395,6 +397,7 @@ def generate_launch_description():
                     # Live-derived intermediates (from this launch's nodes)
                     "/imu/data_corrected",
                     "/gps/validated",
+                    "/gps/validated_filtered",
                     "/odometry/gps",
                     "/odometry/gps_floored",
                     "/odometry/gps_map",

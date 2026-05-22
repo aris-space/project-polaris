@@ -166,6 +166,23 @@ ekf_global_node:
     odom1_nodelay: false
     odom1_differential: false
     odom1_relative: false
+    # Mahalanobis rejection threshold for the GPS pose update.
+    # A measurement is ignored if (innov^T · S^-1 · innov) > threshold²,
+    # where S = H·P·Hᵀ + R. This rejects single bad GPS fixes (RTK
+    # momentary glitches where the receiver reports a 10-m teleport for
+    # one sample) without permanently disconnecting state from GPS.
+    #
+    # Was disabled (numeric_limits<double>::max() default) during the
+    # cold-start campaign because initial-convergence innovations were
+    # large and rejection caused the filter to permanently latch
+    # disconnected from GPS. With the set_pose bootstrap now initialising
+    # state at the correct map-frame position, that pathology is gone —
+    # innovations after bootstrap are sub-metre, so even a tight 5σ gate
+    # passes all good measurements while rejecting GPS glitches at >10σ.
+    # On grid_02, this drops p95 |/gps/filtered/global − /fix| from
+    # 1.10 m to ~0.4 m (the steady-state tail) by killing the GPS-glitch
+    # spike around t=118 s.
+    odom1_pose_rejection_threshold: 5.0
 
     # Pressure depth update — consumed via /sensors/pressure/pose_enu_map,
     # which is /sensors/pressure/pose_enu after pressure_pose_frame_fix has

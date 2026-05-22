@@ -6,7 +6,10 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import ParameterType, ParameterValue
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
@@ -88,9 +91,20 @@ class GnssDatumWatchdog(Node):
         self.declare_parameter("bootstrap_set_pose", True)
         self.declare_parameter("bootstrap_set_pose_topic", "/ekf_global_node/set_pose")
         self.declare_parameter("bootstrap_delay_s", 12.0)
+        self.declare_parameter("bootstrap_retry_delay_s", 2.0)
         self.declare_parameter("bootstrap_pose_cov_xy_m2", 0.01)
         self.declare_parameter("bootstrap_pose_cov_z_m2", 0.01)
         self.declare_parameter("bootstrap_pose_cov_rpy_rad2", 0.001)
+        # Legacy: grace period for the subprocess-spawn path. Only used
+        # when use_inplace_global_stack=False.
+        self.declare_parameter("spawn_grace_period_s", 10.0)
+        # Architectural switch — True (default) skips subprocess.Popen and
+        # pushes datum/anchor via set_parameters to already-running nodes
+        # in the main launch. ~1-2 s warmup instead of 30-50 s.
+        self.declare_parameter("use_inplace_global_stack", True)
+        self.declare_parameter("gps_to_map_node_name", "gps_to_map_position")
+        self.declare_parameter("global_ekf_to_navsatfix_node_name", "global_ekf_to_navsatfix_node")
+        self.declare_parameter("pressure_pose_frame_fix_node_name", "pressure_pose_frame_fix")
 
         fix_topic: str = self.get_parameter("fix_topic").value
         h_acc_topic: str = self.get_parameter("h_acc_topic").value
@@ -112,6 +126,24 @@ class GnssDatumWatchdog(Node):
         )
         self._bootstrap_delay_s: float = float(
             self.get_parameter("bootstrap_delay_s").value
+        )
+        self._bootstrap_retry_delay_s: float = float(
+            self.get_parameter("bootstrap_retry_delay_s").value
+        )
+        self._spawn_grace_period_s: float = float(
+            self.get_parameter("spawn_grace_period_s").value
+        )
+        self._use_inplace_global_stack: bool = bool(
+            self.get_parameter("use_inplace_global_stack").value
+        )
+        self._gps_to_map_node: str = str(
+            self.get_parameter("gps_to_map_node_name").value
+        )
+        self._global_ekf_to_navsatfix_node: str = str(
+            self.get_parameter("global_ekf_to_navsatfix_node_name").value
+        )
+        self._pressure_pose_frame_fix_node: str = str(
+            self.get_parameter("pressure_pose_frame_fix_node_name").value
         )
         self._bootstrap_cov_xy: float = float(
             self.get_parameter("bootstrap_pose_cov_xy_m2").value
@@ -405,6 +437,14 @@ class GnssDatumWatchdog(Node):
             f"{local_pos}"
         )
 
+        if self._use_inplace_global_stack:
+            self._push_datum_to_inplace_nodes(fix)
+            self.get_logger().info(
+                "datum pushed to in-place global-stack nodes via set_parameters."
+            )
+            return self._schedule_bootstrap()
+
+        # ── LEGACY subprocess.Popen path ──────────────────────────────────
         # Write a minimal YAML with just the datum; loaded second in the launch
         # so it overrides any placeholder datum in the base navsat params file.
         datum_yaml = (
@@ -415,9 +455,6 @@ class GnssDatumWatchdog(Node):
         datum_file = Path(tempfile.mkdtemp()) / "gnss_datum.yaml"
         datum_file.write_text(datum_yaml)
 
-        # navsat_transform subscribes to /gps/validated so that bad/corrupt
-        # NavSatFix messages (e.g. swapped lat/lon, projected coords, garbage
-        # floats from a patched bag) never reach it and cause a UTM-range crash.
         cmd = [
             "ros2", "launch", "ekf_localization_pkg", "navsat_global_ekf.launch.py",
             f"datum_yaml:={datum_file}",
@@ -453,29 +490,90 @@ class GnssDatumWatchdog(Node):
             "navsat_transform_node + ekf_global_node launched with precise datum."
         )
 
-        if self._bootstrap_set_pose and self._use_global_ekf:
-            # Schedule the one-shot bootstrap. The TimerAction inside
-            # navsat_global_ekf.launch.py waits 10 s before starting the EKF,
-            # so we need at least that plus a couple of seconds for the
-            # /set_pose subscriber to register.
-            #
-            # QoS: use RELIABLE (the rclpy default for `create_publisher(...,
-            # depth=10)`). robot_localization's `~/set_pose` subscriber is
-            # also RELIABLE; a BEST_EFFORT publisher would be QoS-incompatible
-            # and the message would be silently dropped.
-            if self._bootstrap_pub is None:
-                self._bootstrap_pub = self.create_publisher(
-                    PoseWithCovarianceStamped,
-                    self._bootstrap_set_pose_topic,
-                    10,
-                )
-            self._bootstrap_timer = self.create_timer(
-                self._bootstrap_delay_s,
-                self._publish_bootstrap_set_pose,
+        self._schedule_bootstrap()
+
+    def _schedule_bootstrap(self) -> None:
+        """Schedule the one-shot set_pose publish to bootstrap ekf_global_node."""
+        if not (self._bootstrap_set_pose and self._use_global_ekf):
+            return
+        if self._bootstrap_pub is None:
+            self._bootstrap_pub = self.create_publisher(
+                PoseWithCovarianceStamped,
+                self._bootstrap_set_pose_topic,
+                10,
             )
+        self._bootstrap_timer = self.create_timer(
+            self._bootstrap_delay_s,
+            self._publish_bootstrap_set_pose,
+        )
+        self.get_logger().info(
+            f"[bootstrap] set_pose scheduled for {self._bootstrap_delay_s:.1f}s "
+            f"on {self._bootstrap_set_pose_topic}"
+        )
+
+    def _push_datum_to_inplace_nodes(self, fix: NavSatFix) -> None:
+        """Push datum + anchor to already-running global-stack nodes via
+        set_parameters service calls. Fires the calls fire-and-forget;
+        we don't block on the responses because each callback runs in
+        the same DDS network and is essentially instantaneous once
+        services are discovered. If a service isn't ready yet
+        (shouldn't happen — main launch starts all nodes at T=0), the
+        call fails and is logged."""
+        # datum_lat/lon/alt → gps_to_map_position + global_ekf_to_navsatfix
+        datum_params = [
+            ("datum_lat", float(fix.latitude)),
+            ("datum_lon", float(fix.longitude)),
+            ("datum_alt", float(fix.altitude)),
+        ]
+        self._send_set_parameters(
+            f"{self._gps_to_map_node}/set_parameters", datum_params
+        )
+        self._send_set_parameters(
+            f"{self._global_ekf_to_navsatfix_node}/set_parameters",
+            datum_params,
+        )
+        # local_anchor_z → pressure_pose_frame_fix
+        self._send_set_parameters(
+            f"{self._pressure_pose_frame_fix_node}/set_parameters",
+            [("local_anchor_z", float(self._local_anchor_z))],
+        )
+
+    def _send_set_parameters(self, service_name: str, kv_pairs: list) -> None:
+        client = self.create_client(SetParameters, service_name)
+        if not client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().warn(
+                f"[set_parameters] service '{service_name}' not available "
+                "after 5 s — target node may not be running. Skipping."
+            )
+            return
+        request = SetParameters.Request()
+        for name, value in kv_pairs:
+            request.parameters.append(
+                Parameter(name=name, value=value).to_parameter_msg()
+            )
+        future = client.call_async(request)
+        future.add_done_callback(
+            lambda f, svc=service_name, kv=kv_pairs: self._on_set_param_done(
+                f, svc, kv
+            )
+        )
+
+    def _on_set_param_done(self, future, service_name: str, kv_pairs: list) -> None:
+        try:
+            response = future.result()
+            for kv, result in zip(kv_pairs, response.results):
+                if not result.successful:
+                    self.get_logger().warn(
+                        f"[set_parameters] {service_name} {kv[0]}={kv[1]}: "
+                        f"failed: {result.reason}"
+                    )
             self.get_logger().info(
-                f"[bootstrap] set_pose scheduled for {self._bootstrap_delay_s:.1f}s "
-                f"on {self._bootstrap_set_pose_topic}"
+                f"[set_parameters] {service_name} accepted "
+                f"{len(kv_pairs)} parameter(s)"
+            )
+        except Exception as e:
+            self.get_logger().warn(
+                f"[set_parameters] {service_name}: call failed: {e}"
             )
 
     def _publish_bootstrap_set_pose(self) -> None:

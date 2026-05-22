@@ -193,6 +193,120 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_navsat_transform")),
     )
 
+    # ── IN-PLACE global-stack nodes ──────────────────────────────────────
+    # Start in dormant mode at T=0 (no datum yet). The watchdog calls
+    # set_parameters on each of them when GNSS lock fires, flipping them
+    # to active mode. This avoids the 30-50 s subprocess startup wait that
+    # the legacy `navsat_global_ekf.launch.py` path incurred.
+    static_map_odom_node = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="map_odom_bootstrap",
+        output="screen",
+        arguments=["0", "0", "0", "0", "0", "0", "map", "odom"],
+        parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
+    # GPS velocity-consistency filter: drops fixes that imply impossible
+    # boat velocities (typical RTK-glitch failure mode where a few samples
+    # report kilometres of jump while h_acc still claims fix-quality). Sits
+    # between the watchdog and gps_to_map_position. Without this, tight
+    # cov_floor settings on the EKF let glitched fixes pull state several
+    # metres before the next good fix snaps it back — visible as
+    # "trajectory jumps to middle and back" in the overlay plot.
+    gps_velocity_filter_node = Node(
+        package="ekf_localization_pkg",
+        executable="gps_velocity_filter",
+        name="gps_velocity_filter",
+        output="screen",
+        parameters=[{
+            "input_topic": "/gps/validated",
+            "output_topic": "/gps/validated_filtered",
+            "max_velocity_m_s": 2.0,
+            "max_time_gap_s": 5.0,
+            "min_dt_s": 0.01,
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
+    gps_to_map_position_node = Node(
+        package="ekf_localization_pkg",
+        executable="gps_to_map_position",
+        name="gps_to_map_position",
+        output="screen",
+        parameters=[{
+            "input_topic": "/gps/validated_filtered",
+            "output_topic": "/odometry/gps_map",
+            "output_frame_id": "map",
+            # null-island default — watchdog overrides after lock.
+            "datum_lat": 0.0,
+            "datum_lon": 0.0,
+            "datum_alt": 0.0,
+            # 0.10 m² ≡ ~32 cm 1σ. Geometric midpoint between 0.04
+            # (aggressive tracking, but exposes RTK glitches as visible
+            # 1.5 m "jump to middle" artifacts) and 0.25 (clean
+            # trajectory, but p95 vs /fix ~70 cm). With 0.10, K_steady
+            # is ~0.5 — state still snaps reasonably to GPS but doesn't
+            # chase short-lived outliers as hard. RTK glitches are still
+            # gated upstream by the watchdog's h_acc check (≤ 0.5 m),
+            # the velocity filter (≤ 3 m/s apparent), and additionally
+            # rejected by the EKF's odom1_pose_rejection_threshold: 5σ.
+            "min_pos_cov_m2": 0.10,
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
+    pressure_pose_frame_fix_node = Node(
+        package="ekf_localization_pkg",
+        executable="pressure_pose_frame_fix",
+        name="pressure_pose_frame_fix",
+        output="screen",
+        parameters=[{
+            "input_topic": "/sensors/pressure/pose_enu",
+            "output_topic": "/sensors/pressure/pose_enu_map",
+            "output_frame_id": "map",
+            "local_anchor_z": 0.0,  # watchdog overrides on lock
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
+    ekf_global_node = Node(
+        package="robot_localization",
+        executable="ekf_node",
+        name="ekf_global_node",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("global_params_file"),
+            {"use_sim_time": LaunchConfiguration("use_sim_time")},
+        ],
+        remappings=[
+            ("odometry/filtered", "/odometry/filtered/global"),
+            ("set_pose", "/ekf_global_node/set_pose"),
+        ],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
+    global_ekf_to_navsatfix_node = Node(
+        package="ekf_localization_pkg",
+        executable="global_ekf_to_navsatfix",
+        name="global_ekf_to_navsatfix_node",
+        output="screen",
+        parameters=[{
+            "datum_lat": 0.0,  # watchdog overrides on lock
+            "datum_lon": 0.0,
+            "datum_alt": 0.0,
+            "map_yaw_offset_rad": 0.0,
+            "global_odom_topic": "/odometry/filtered/global",
+            "output_topic": "/gps/filtered/global",
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+        }],
+        condition=IfCondition(LaunchConfiguration("use_global_ekf")),
+    )
+
     return LaunchDescription(
         [
             params_file_arg,
@@ -211,5 +325,12 @@ def generate_launch_description():
             odometry_validator_node,
             thruster_fallback_node,
             datum_watchdog_node,
+            # Global stack — start dormant; watchdog activates on lock.
+            static_map_odom_node,
+            gps_velocity_filter_node,
+            gps_to_map_position_node,
+            pressure_pose_frame_fix_node,
+            ekf_global_node,
+            global_ekf_to_navsatfix_node,
         ]
     )
