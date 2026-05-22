@@ -196,7 +196,7 @@ def main():
             'mission_runner',
             automatically_declare_parameters_from_overrides=True,
             parameter_overrides=[
-                Parameter('use_sim_time', Parameter.Type.BOOL, True),
+                Parameter('use_sim_time', Parameter.Type.BOOL, False),
             ],
         )
         executor = MultiThreadedExecutor()
