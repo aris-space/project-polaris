@@ -25,6 +25,7 @@ import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 
+from action_msgs.srv import CancelGoal
 from lifecycle_msgs.msg import State as LifecycleState
 from lifecycle_msgs.srv import GetState
 from mavros_msgs.msg import State as PixhawkHeartbeat
@@ -35,6 +36,7 @@ from autonomy_bringup_pkg.pixhawk_ready_wait import mode_matches
 
 _MANAGE_SERVICE = '/lifecycle_manager_navigation/manage_nodes'
 _GET_STATE_SERVICE = '/waypoint_follower/get_state'
+_FW_CANCEL_SERVICE = '/follow_waypoints/_action/cancel_goal'
 _DEACTIVATE_CMD = 1
 _REQUIRED_MODE = 'GUIDED'
 _STATE_POLL_SEC = 1.0
@@ -70,6 +72,9 @@ class Nav2ArmWatchdog(Node):
         )
         self._get_state_client = self.create_client(
             GetState, _GET_STATE_SERVICE, callback_group=cb_group
+        )
+        self._fw_cancel_client = self.create_client(
+            CancelGoal, _FW_CANCEL_SERVICE, callback_group=cb_group
         )
 
         self.create_timer(_STATE_POLL_SEC, self._poll_nav2_state, callback_group=cb_group)
@@ -148,6 +153,35 @@ class Nav2ArmWatchdog(Node):
         self._send_deactivate()
 
     def _send_deactivate(self) -> None:
+        """Cancel any active /follow_waypoints goals first, then deactivate Nav2.
+
+        Sending DEACTIVATE while waypoint_follower has an active FollowWaypoints
+        action goal causes it to crash (service unreachable) because on_deactivate
+        hits an in-flight goal while bt_navigator is still active.  Canceling first
+        gives waypoint_follower a clean state before the lifecycle transition.
+        """
+        if self._fw_cancel_client.service_is_ready():
+            self.get_logger().info(
+                'Canceling active FollowWaypoints goals before deactivating Nav2.'
+            )
+            future = self._fw_cancel_client.call_async(CancelGoal.Request())
+            future.add_done_callback(self._on_fw_cancel_done)
+        else:
+            self._do_deactivate()
+
+    def _on_fw_cancel_done(self, future) -> None:
+        try:
+            result = future.result()
+            if result is not None and result.goals_canceling:
+                self.get_logger().info(
+                    f'{len(result.goals_canceling)} FollowWaypoints goal(s) canceling; '
+                    'proceeding with Nav2 deactivation.'
+                )
+        except Exception as exc:
+            self.get_logger().warn(f'FollowWaypoints cancel raised: {exc}')
+        self._do_deactivate()
+
+    def _do_deactivate(self) -> None:
         if not self._manage_client.service_is_ready():
             self.get_logger().error(
                 f'{_MANAGE_SERVICE} not ready; cannot deactivate Nav2.'
