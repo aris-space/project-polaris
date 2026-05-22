@@ -42,6 +42,7 @@ from autonomy_bringup_pkg.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,
+    mode_matches,
 )
 
 
@@ -194,13 +195,17 @@ def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.
 
 
 def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
-              status_pub=None, total_waypoints: int = 0, poses=None) -> SendGoalResult:
+              status_pub=None, total_waypoints: int = 0, poses=None, hb_state=None) -> SendGoalResult:
     goal_handle = None
+    _last_wp = [-1]
 
     def feedback_cb(feedback_msg):
         wp = feedback_msg.feedback.current_waypoint
         if status_pub is not None:
             status_pub.publish(String(data=f"{wp + 1}/{total_waypoints}"))
+        if wp == _last_wp[0]:
+            return
+        _last_wp[0] = wp
         if poses is not None and wp < len(poses):
             p = poses[wp]
             x, y, z = p.pose.position.x, p.pose.position.y, p.pose.position.z
@@ -229,7 +234,29 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
 
         print('Goal accepted with ID: {}'.format(bytes(goal_handle.goal_id.uuid).hex()))
         result_future = goal_handle.get_result_async()
-        executor.spin_until_future_complete(result_future, timeout_sec=3600.0)
+
+        # Poll for mission result while monitoring Pixhawk state.  If the
+        # pilot disarms or leaves GUIDED mid-mission we cancel the
+        # FollowWaypoints goal immediately so waypoint_follower has no active
+        # action when the nav2_arm_watchdog sends DEACTIVATE a moment later.
+        # Without this, the lifecycle DEACTIVATE hits waypoint_follower while
+        # it still has an active goal, causing it to crash (service unreachable)
+        # and leaving all other Nav2 nodes stuck in ACTIVE.
+        _cancel_sent = False
+        _deadline = time.time() + 3600.0
+        while rclpy.ok() and not result_future.done() and time.time() < _deadline:
+            executor.spin_once(timeout_sec=0.1)
+            if hb_state is not None and not _cancel_sent:
+                if not hb_state.armed or not mode_matches(hb_state.mode, 'GUIDED'):
+                    reasons = []
+                    if not hb_state.armed:
+                        reasons.append('disarmed')
+                    if not mode_matches(hb_state.mode, 'GUIDED'):
+                        reasons.append(f'mode={hb_state.mode or "?"}')
+                    print(f'>>> Pilot intervention ({", ".join(reasons)}); '
+                          'canceling mission goal before Nav2 deactivates <<<')
+                    _cancel_sent = True
+                    goal_handle.cancel_goal_async()
 
         if not result_future.done():
             print('Timeout waiting for mission result (Nav2 unreachable?)')
@@ -245,7 +272,7 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
             print('Goal completed')
             return SendGoalResult.SUCCESS
         elif status == GoalStatus.STATUS_CANCELED:
-            print('Goal was canceled externally')
+            print('Goal was canceled' + (' by pilot intervention' if _cancel_sent else ' externally'))
             return SendGoalResult.CANCELED
         else:
             print(f'Goal ended with status {status} (Nav2 may have shut down mid-mission)')
@@ -405,7 +432,7 @@ def main() -> None:
         print('>>> Executing mission <<<')
         mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
                                    status_pub=status_pub, total_waypoints=len(goal.poses),
-                                   poses=poses)
+                                   poses=poses, hb_state=hb_state)
 
         if mission_result == SendGoalResult.SUCCESS and rclpy.ok():
             print('>>> Disarming <<<')
