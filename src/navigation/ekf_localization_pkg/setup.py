@@ -29,6 +29,17 @@ setup(
         "console_scripts": [
             "gnss_datum_watchdog = ekf_localization_pkg.gnss_datum_watchdog:main",
             "global_ekf_to_navsatfix = ekf_localization_pkg.global_ekf_to_navsatfix:main",
+            "odometry_validator = ekf_localization_pkg.odometry_validator:main",
+            "gnss_anchored_pose = ekf_localization_pkg.gnss_anchored_pose:main",
+            "navsatfix_marker = ekf_localization_pkg.navsatfix_marker:main",
+            "imu_yaw_correction = ekf_localization_pkg.imu_yaw_correction:main",
+            "ekf_offline_diagnostic = ekf_localization_pkg.ekf_offline_diagnostic:main",
+            "thruster_velocity_estimator = ekf_localization_pkg.thruster_velocity_estimator:main",
+            "gps_odom_cov_floor = ekf_localization_pkg.gps_odom_cov_floor:main",
+            "pressure_pose_frame_fix = ekf_localization_pkg.pressure_pose_frame_fix:main",
+            "gps_to_map_position = ekf_localization_pkg.gps_to_map_position:main",
+            "topic_rate_probe = ekf_localization_pkg.topic_rate_probe:main",
+            "tf_rate_probe = ekf_localization_pkg.tf_rate_probe:main",
         ],
     },
 )

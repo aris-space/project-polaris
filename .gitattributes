@@ -1,0 +1,5 @@
+# Shell scripts must use LF so Linux containers (Docker, devcontainer) run them.
+*.sh text eol=lf
+
+# Submodule metadata must be LF so path parsing in containers is not corrupted by CR.
+.gitmodules text eol=lf

@@ -2,7 +2,7 @@
 {
     "name": "Polaris ROS2",
     // Use your full-dev image with Gazebo
-    "image": "ghcr.io/aris-space/project-polaris-docker:x64-dev",
+    "image": "ghcr.io/aris-space/project-polaris-docker:dev",
     // Where the workspace lives *inside* the container
     "workspaceFolder": "/ros2_ws",
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
@@ -24,6 +24,7 @@
     // VS Code will run this once after the container is created
     "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
     // You’re using root in the image
+    "forwardPorts": [8765],
     "remoteUser": "root",
     "customizations": {
         "vscode": {

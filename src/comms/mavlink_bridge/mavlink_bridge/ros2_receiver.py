@@ -15,13 +15,14 @@ from std_msgs.msg import String
 from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
+
 #
 from geometry_msgs.msg import Twist
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
+
 #
 from rclpy.parameter import Parameter as RclpyParameter
 from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
-
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
 os.makedirs(log_dir, exist_ok=True)
@@ -76,7 +77,9 @@ class MavlinkBridgeReceiver(Node):
         self._gcs_port.mav.srcSystem = 255
         self._gcs_port.mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
         self.create_timer(1.0, self._gcs_heartbeat_cb)
-        self.get_logger().info("GCS heartbeat sender active (sysid=255, 1 Hz) — FS_GCS_ENABLE failsafe armed")
+        self.get_logger().info(
+            "GCS heartbeat sender active (sysid=255, 1 Hz) — FS_GCS_ENABLE failsafe armed"
+        )
 
         self.declare_parameter("external_odom_quality", 100)
         self.declare_parameter("external_odom_max_rate_hz", 30.0)
@@ -209,11 +212,20 @@ class MavlinkBridgeReceiver(Node):
         )
 
         self.guided_setpoint_subscriber = self.create_subscription(
-            Twist, # Depending on the msg type from imports
+            Twist,  # Depending on the msg type from imports
             "/pixhawk/cmd_vel",
             self.cmd_vel_cb,
             Comms.SUB_QOS_DEPTH,
         )
+
+        # cmd_vel watchdog: ArduSub's GUIDED controller holds the last commanded
+        # velocity until GUID_TIMEOUT (~3 s) elapses. We override that here: if
+        # no cmd_vel arrives within 0.3 s, send one zero-velocity setpoint so the
+        # sub stops within ~0.4 s of the upstream publisher going silent.
+        self._CMD_VEL_TIMEOUT_S = 4 # 0.3
+        self._cmd_vel_last_msg_t = 0.0
+        self._cmd_vel_was_active = False
+        self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
 
         self.gps_fix_subscriber = self.create_subscription(
             UBXNavHPPosLLH,
@@ -254,9 +266,9 @@ class MavlinkBridgeReceiver(Node):
         """
         Called when a message arrives in the pixhawk/manual_control topic. The message should contain the surge, sway, heave, roll, pitch and yaw values for the manual control command.
         """
-        if (
-            self.pixhawk_mode in ("MANUAL", "STABILIZE", "ALT_HOLD")
-        ) and len(msg.data) == 6:
+        if (self.pixhawk_mode in ("MANUAL", "STABILIZE", "ALT_HOLD")) and len(
+            msg.data
+        ) == 6:
             self.send_6dof_command(msg.data)
 
         elif len(msg.data) == 4:
@@ -385,28 +397,42 @@ class MavlinkBridgeReceiver(Node):
 
     def send_6dof_command(self, control_input):
         """
-        Note: Extension fields (s, t) are usually enabled in
-        newer MAVLink 2.0 implementations. This has to be tested!
-        Input values: -1000 to 1000 (except heave, see below)
+        Forwards a 6-tuple to MAVLink MANUAL_CONTROL (transport only, no frame
+        conversion happens here).
+
+        Input convention — the caller (manual_control_node /
+        manual_altitude_hold_control_node) must already have converted from
+        ROS-FLU to MANUAL_CONTROL FRD before calling this:
+            control_input[0] = surge   in [-1000, +1000], + = forward
+            control_input[1] = sway    in [-1000, +1000], + = right (FRD)
+            control_input[2] = heave   in [    0,  1000], 500 = neutral, > 500 = up
+            control_input[3] = yaw     in [-1000, +1000], + = CW from above (FRD)
+            control_input[4] = roll    in [-1000, +1000], + = roll right
+            control_input[5] = pitch   in [-1000, +1000], + = nose up
+
+        MAVLink MANUAL_CONTROL field meanings as ArduSub interprets them:
+            x = surge, y = sway, z = heave, r = yaw,
+            s = PITCH (extension 1), t = ROLL (extension 2)
+
+        Note that MANUAL_CONTROL.s carries pitch and .t carries roll — so this
+        function maps control_input[5] (pitch) → s and control_input[4] (roll)
+        → t. Intentional and correct; do not "fix" by reordering.
         """
-        # self.get_logger().info(
-        #     f"Sending 6DOF command with control input: {control_input}"
-        # )
         self._file_logger.info(
             f"Sending 6DOF command with control input: {control_input}"
         )
         surge, sway, heave, yaw, roll, pitch = control_input
         self.port.mav.manual_control_send(
             self.port.target_system,
-            int(surge),  # x
-            int(sway),  # y
-            int(heave),  # z (0-1000)
-            int(yaw),  # r
-            0,  # buttons
-            0,  # buttons 2
-            3,  # MAVLINK_MSG_MANUAL_CONTROL_FIELD_FLAGS_ENABLE_EXTENSION (enables s and t fields)
-            int(pitch),  # s (Extension 1)
-            int(roll),  # t (Extension 2)
+            int(surge),  # x  = surge
+            int(sway),   # y  = sway
+            int(heave),  # z  = heave (0-1000, 500 = neutral)
+            int(yaw),    # r  = yaw
+            0,           # buttons
+            0,           # buttons2
+            3,           # enabled_extensions = 0b11 → enable s and t fields
+            int(pitch),  # s  = pitch  (MANUAL_CONTROL.s carries pitch in ArduSub)
+            int(roll),   # t  = roll   (MANUAL_CONTROL.t carries roll  in ArduSub)
         )
 
     def reboot_cb(self, msg):
@@ -429,9 +455,11 @@ class MavlinkBridgeReceiver(Node):
                 0,
                 0,
             )
-            self.get_logger().info("Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)")
+            self.get_logger().info(
+                "Sent reboot command to Pixhawk (vehicle must be disarmed or Pixhawk will deny)"
+            )
             self._file_logger.info("Sent reboot command to Pixhawk")
-            
+
             ack = self.port.recv_match(type="COMMAND_ACK", blocking=True, timeout=3)
             if ack is None:
                 self.get_logger().warn("Reboot: no ACK received from Pixhawk within 3s")
@@ -483,12 +511,11 @@ class MavlinkBridgeReceiver(Node):
         y2 = msg.pose.pose.orientation.y
         z2 = msg.pose.pose.orientation.z
 
-
         w1, x1, y1, z1 = 0.0, _s, _s, 0.0
-        wt = w1*w2 - x1*x2 - y1*y2 - z1*z2
-        xt = w1*x2 + x1*w2 + y1*z2 - z1*y2
-        yt = w1*y2 - x1*z2 + y1*w2 + z1*x2
-        zt = w1*z2 + x1*y2 - y1*x2 + z1*w2
+        wt = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        xt = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+        yt = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+        zt = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
 
         # Step 2: q_ned_frd = q_tmp (0, 1, 0, 0)  [FLU→FRD: 180° around x]
         q = [-xt, wt, zt, -yt]
@@ -832,9 +859,13 @@ class MavlinkBridgeReceiver(Node):
             lat_e7,
             lon_e7,
             alt_mm,
-            0.0, 0.0, 0.0,         # x, y, z local NED (unknown)
+            0.0,
+            0.0,
+            0.0,  # x, y, z local NED (unknown)
             [1.0, 0.0, 0.0, 0.0],  # quaternion
-            0.0, 0.0, 0.0,         # approach_x, approach_y, approach_z
+            0.0,
+            0.0,
+            0.0,  # approach_x, approach_y, approach_z
             time_usec,
         )
         self._gps_origin_sent = True
@@ -849,20 +880,16 @@ class MavlinkBridgeReceiver(Node):
         )
 
     def cmd_vel_cb(self, msg):
-        # msg is geometry_msgs.msg.Twist        
+        # msg is geometry_msgs.msg.Twist
         # ArduSub needs GUIDED mode for velocity setpoints
         if self.pixhawk_mode != "GUIDED":
             return
 
-        # 1. Map ROS ENU (Body) to ArduSub NED (Body)
-        # ROS X (Forward) -> NED X (Surge)
-        # ROS Y (Left)    -> NED Y (Sway) - We set this to 0 if not used
-        # ROS Z (Up)      -> NED Z (Heave) - Flip sign because Z is down in NED
-        surge = float(msg.linear.x)
-        heave = -float(msg.linear.z) 
-        
-        # ROS Angular Z (CCW) -> NED Yaw Rate (CW) - Flip sign
-        yaw_rate = -float(msg.angular.z)
+        # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
+        # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
+        surge    = float(msg.linear.x)   # FLU forward -> negative vx
+        heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
+        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
@@ -878,20 +905,76 @@ class MavlinkBridgeReceiver(Node):
             | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
         )
 
-        # 3. Send to Pixhawk
-        # Using MAV_FRAME_BODY_OFFSET_NED so "Forward" is relative to the sub's nose
+        # 3. Send to Pixhawk in MAV_FRAME_BODY_FRD ("Forward" relative to nose).
         self.port.mav.set_position_target_local_ned_send(
-            0,                                              # time_boot_ms
+            0,  # time_boot_ms
             self.port.target_system,
             self.port.target_component,
-            mavutil.mavlink.MAV_FRAME_BODY_FRD,      # Frame: Body-Relative
+            mavutil.mavlink.MAV_FRAME_BODY_FRD,  # Frame: Body-Relative
             type_mask,
-            0.0, 0.0, 0.0,                                  # Position (ignored)
-            surge, 0.0, heave,                              # Velocities (m/s)
-            0.0, 0.0, 0.0,                                  # Acceleration (ignored)
-            0.0,                                            # Yaw Angle (ignored)
-            yaw_rate                                        # Yaw Rate (rad/s)
+            0.0,
+            0.0,
+            0.0,  # Position (ignored)
+            surge,
+            0.0,
+            heave,  # Velocities (m/s)
+            0.0,
+            0.0,
+            0.0,  # Acceleration (ignored)
+            0.0,  # Yaw Angle (ignored)
+            yaw_rate,  # Yaw Rate (rad/s)
         )
+
+        # Refresh watchdog: arms the timeout zero-send when cmd_vel goes silent.
+        self._cmd_vel_last_msg_t = self.get_clock().now().nanoseconds * 1e-9
+        self._cmd_vel_was_active = True
+
+    def _cmd_vel_watchdog_cb(self):
+        """If no /pixhawk/cmd_vel arrives within _CMD_VEL_TIMEOUT_S, send one
+        zero-velocity setpoint and disarm. Re-arms automatically when cmd_vel
+        resumes. Bypasses ArduSub's ~3 s GUID_TIMEOUT so the sub stops within
+        ~0.4 s of the upstream publisher going silent (Ctrl+C, controller
+        crash, mode change, mission completion)."""
+        return
+        if not self._cmd_vel_was_active:
+            return
+        if self.pixhawk_mode != "GUIDED":
+            self._cmd_vel_was_active = False
+            return
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if now - self._cmd_vel_last_msg_t < self._CMD_VEL_TIMEOUT_S:
+            return
+        m = mavutil.mavlink
+        type_mask = (
+            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+        )
+        self.port.mav.set_position_target_local_ned_send(
+            0,
+            self.port.target_system,
+            self.port.target_component,
+            m.MAV_FRAME_BODY_OFFSET_NED,
+            type_mask,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+        self._cmd_vel_was_active = False
+        self.get_logger().info("cmd_vel watchdog: timeout, sent zero-velocity setpoint")
 
     def _gcs_heartbeat_cb(self):
         """Send 1 Hz GCS heartbeat. ArduSub FS_GCS_ENABLE failsafes if these stop arriving."""
@@ -903,11 +986,39 @@ class MavlinkBridgeReceiver(Node):
             mavutil.mavlink.MAV_STATE_ACTIVE,
         )
 
+    def _send_disarm(self):
+        """Send a disarm command to the Pixhawk. Called on node shutdown."""
+        try:
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0,
+                0,  # 0 = disarm
+                21196,  # force disarm, bypasses safety checks
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            self.get_logger().info("Shutdown disarm command sent to Pixhawk")
+            self._file_logger.info("Shutdown disarm command sent to Pixhawk")
+        except Exception as e:
+            self._file_logger.error(f"Shutdown disarm failed: {e}")
+
+    def destroy_node(self):
+        self._send_disarm()
+        super().destroy_node()
+
     """--------------------------------------------- main function ---------------------------------------------"""
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = MavlinkBridgeReceiver()
-    rclpy.spin(node)  # Keeps the node running and processing callbacks
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()

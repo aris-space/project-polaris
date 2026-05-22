@@ -96,8 +96,8 @@ class TestWrapPi:
 
 class TestComputePsi:
     def test_psi_with_zero_imu_yaw(self):
-        # θ_imu=0 → θ_base=0+π=π → ψ=π+π/2+0.0623, wrapped to [-π,π]
-        expected = _wrap_pi(math.pi + math.pi / 2 + 0.0623)
+        # θ_imu=0 → θ_base=0+π=π → ψ=π+π/2+_MAG_DECL, wrapped to [-π,π]
+        expected = _wrap_pi(math.pi + math.pi / 2 + 0.058725188)
         assert _compute_psi(0.0) == pytest.approx(expected, rel=1e-9)
 
 

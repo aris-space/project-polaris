@@ -17,9 +17,9 @@ def generate_launch_description():
     ultrasonic_respawn_arg_value = LaunchConfiguration(
         "ultrasonic_respawn", default="false"
     )
-    temperature_respawn_arg_value = LaunchConfiguration(
-        "temperature_respawn", default="true"
-    )
+    # temperature_respawn_arg_value = LaunchConfiguration(
+    #     "temperature_respawn", default="true"
+    # )
     xsens_respawn_arg_value = LaunchConfiguration("xsens_respawn", default="true")
     dvl_respawn_arg_value = LaunchConfiguration("dvl_respawn", default="true")
     keller_respawn_arg_value = LaunchConfiguration("keller_respawn", default="true")
@@ -54,7 +54,7 @@ def generate_launch_description():
     # 1. Find the path to the child package
     gnss_bringup_pkg_dir = get_package_share_directory("gnss_bringup_pkg")
     ultrasonic_driver_pkg_dir = get_package_share_directory("ultrasonic_driver")
-    temperature_sensor_pkg_dir = get_package_share_directory("temperature_sensor_pkg")
+    # temperature_sensor_pkg_dir = get_package_share_directory("temperature_sensor_pkg")
     xsens_mti_pkg_dir = get_package_share_directory("xsens_mti_ros2_driver")
     dvl_a50_pkg_dir = get_package_share_directory("dvl_a50_pkg")
     keller_26x_pkg_dir = get_package_share_directory("keller_26x_pkg")
@@ -91,19 +91,19 @@ def generate_launch_description():
         }.items(),
     )
 
-    temperature_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                temperature_sensor_pkg_dir,
-                "launch",
-                "launch_temperature_sensors.launch.py",
-            )
-        ),
-        launch_arguments={
-            "respawn": temperature_respawn_arg_value,
-            "respawn_delay": respawn_delay_arg_value,
-        }.items(),
-    )
+    # temperature_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(
+    #             temperature_sensor_pkg_dir,
+    #             "launch",
+    #             "launch_temperature_sensors.launch.py",
+    #         )
+    #     ),
+    #     launch_arguments={
+    #         "respawn": temperature_respawn_arg_value,
+    #         "respawn_delay": respawn_delay_arg_value,
+    #     }.items(),
+    # )
 
     xsens_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -206,11 +206,11 @@ def generate_launch_description():
                 default_value="true",
                 description="Respawn ultrasonic nodes if they exit/crash.",
             ),
-            DeclareLaunchArgument(
-                "temperature_respawn",
-                default_value="true",
-                description="Respawn temperature sensor nodes if they exit/crash.",
-            ),
+            # DeclareLaunchArgument(
+            #     "temperature_respawn",
+            #     default_value="true",
+            #     description="Respawn temperature sensor nodes if they exit/crash.",
+            # ),
             DeclareLaunchArgument(
                 "xsens_respawn",
                 default_value="true",
@@ -309,7 +309,7 @@ def generate_launch_description():
             ),
             gnss_launch,
             ultrasonic_launch,
-            temperature_launch,
+            # temperature_launch,
             xsens_launch,
             dvl_launch,
             keller_launch,

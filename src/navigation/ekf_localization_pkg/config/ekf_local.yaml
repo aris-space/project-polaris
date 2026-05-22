@@ -1,7 +1,22 @@
 ekf_local_node:
   ros__parameters:
     frequency: 30.0
-    sensor_timeout: 0.2
+    # sensor_timeout + predict_to_current_time: paired knobs that determine
+    # whether the periodic timer at `frequency` Hz drives state advancement
+    # and publishing, or whether the EKF only advances on measurement
+    # arrival. With timeout=999999 + predict_to_current_time=false (the
+    # earlier setting), the EKF was measurement-gated and ended up
+    # publishing at ~13 Hz under offline replay at --rate 2.0 — the
+    # single-threaded executor was saturated on the ~146 Hz callback load
+    # (86 Hz IMU + 50 Hz pressure + 9.7 Hz DVL) and starving the timer.
+    # Lowering timeout + enabling predict_to_current_time tells the EKF
+    # to run the timer-driven integrate-forward path each cycle. The
+    # /clock-gap pathology that originally motivated timeout=999999
+    # (multi-day dt under wall-clock-fallback when /clock stalled) is
+    # mitigated by the bootstrap and explicit use_sim_time plumbing now
+    # in place across the stack.
+    sensor_timeout: 0.05
+    predict_to_current_time: true
     two_d_mode: false
     print_diagnostics: true
     publish_tf: true
@@ -12,16 +27,42 @@ ekf_local_node:
     base_link_frame: base_link
     world_frame: odom
 
-    # IMU (XSens)
-    # Uses orientation + angular velocity + linear acceleration.
-    # Pre-EKF stationary variance hints: recordings/stationary_tep_stats.json (TEP Section 6 offline).
-    imu0: /imu/data
+    # IMU (XSens) — VRU mode (gyro-only yaw, no magnetometer reference).
+    #
+    # imu0_config: fuse absolute yaw. The canonical robot_localization
+    # `dual_ekf_navsat_example` recommends NOT fusing absolute yaw for IMUs
+    # without magnetometer reference, on the theory that the gyro-integrated
+    # absolute yaw isn't truly absolute and fusing it would lock P[yaw] tight
+    # so GPS can't correct heading via cross-covariance during motion. We
+    # tested that recommendation directly: removing absolute-yaw fusion made
+    # divergence WORSE on both bags we tried (depth_hold ~10→20 km;
+    # zermatt_rectangle_01 diverged to ~90 km in 2 minutes vs the original
+    # config's slower drift). The reason: without an initial absolute-yaw
+    # measurement, the EKF starts at the default initial yaw (0) and needs
+    # time + motion + cross-covariance updates to converge to the actual
+    # heading — and during that convergence window, body velocity gets
+    # rotated through the wrong yaw and position runs away faster than GPS
+    # can pull it back. The IMU's gyro-integrated yaw is wrong in absolute
+    # terms but is *internally consistent* with the IMU's own time evolution,
+    # so feeding it gives the EKF a usable starting reference even if it
+    # drifts slowly. Empirically this works better than the canonical
+    # recommendation for our stack.
+    #
+    # /imu/data_corrected: head_mot-calibrated stream (yaw rotated into ENU
+    # by imu_yaw_correction). The whole stack (local EKF, navsat_transform
+    # via use_odometry_yaw, ekf_global_node) runs off the same calibrated
+    # heading so map-frame projections, set_pose bootstrap, and GPS fusion
+    # all live in a consistent rotational frame. Live system: imu_yaw_
+    # correction is in bringup; offline replay: bag carries
+    # /imu/data_corrected from the live system unless use_imu_yaw_correction
+    # is enabled to recompute from raw /imu/data.
+    imu0: /imu/data_corrected
     imu0_config: [
       false, false, false,
-      true,  true,  true,
+      true,  true,  true,     # roll, pitch, yaw — fuse all (see above)
       false, false, false,
-      false,  false,  false,
-      false,  false,  false
+      true,  true,  true,     # vroll, vpitch, vyaw
+      false, false, false
     ]
     imu0_queue_size: 20
     imu0_nodelay: false
@@ -43,6 +84,25 @@ ekf_local_node:
     odom0_differential: false
     odom0_relative: false
 
+    # Thruster-model DVL fallback: body-frame velocity estimated from surge PWM.
+    # Published by thruster_velocity_estimator ONLY when DVL has been absent for
+    # dvl_timeout_s seconds (default 3 s), so this slot is silent during normal
+    # DVL operation. Covariance ratio vs DVL: ~600 000×, so DVL completely
+    # dominates whenever it returns — no manual switching needed.
+    # Simulation: 60s DVL dropout → 16.8 m IMU-only vs 1.0 m with this source.
+    odom1: /sensors/thruster/odometry_cov
+    odom1_config: [
+      false, false, false,
+      false, false, false,
+      true,  true,  true,
+      false, false, false,
+      false, false, false
+    ]
+    odom1_queue_size: 10
+    odom1_nodelay: false
+    odom1_differential: false
+    odom1_relative: false
+
     # Pressure depth update from /pixhawk/scaled_pressure converted to ENU pose-z.
     pose0: /sensors/pressure/pose_enu
     pose0_config: [
@@ -59,21 +119,21 @@ ekf_local_node:
 
     # Process noise covariance (15x15, row-major)
     process_noise_covariance: [
-      0.12, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.12, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.08, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.08, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.00001, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.00001, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0005, 0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.001, 0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.001, 0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.06, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.005
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.000000001
     ]
 
     # Pressure source notes:
