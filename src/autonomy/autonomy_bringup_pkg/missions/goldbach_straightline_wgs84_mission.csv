@@ -1,9 +1,15 @@
 lat,lon,alt,up_down,delta_z_m,hold_s
+# Along the line
+47.404911004,8.631235599,482.3435,0,,
+# East
+47.404937530999995,8.631432236999999,482.3962,0,,
+# South
+47.404869657999996,8631302832000001, 482.3989, 0,,
 # alt is HAE (WGS-84 ellipsoidal height) — matches /fix.altitude from u-blox.
 # Convert from Swiss MSL by adding the EGM2008 geoid separation N (~+46.7 m at this site):
 #   HAE = MSL + N(lat,lon).  E.g. 408 m MSL  ->  454.7 m HAE.
 # Front of steg (408 m MSL + 46.7 m = 454.7 m HAE)
-47.32889922, 8.572742, 452.0,0,,
+#47.32889922,8.572742,452.0,0,,
 # More far away of front of steg
 # 47.328879,8.572458,454.7,0,,
 # Fare away and in little bit more in the north
