@@ -6,8 +6,8 @@ temps, pixhawk heartbeat) so the two surfaces can be shown in their own
 Foxglove panels.
 
 Polls /<node>/get_state for every node managed by lifecycle_manager_navigation
-at 1 Hz and emits a DiagnosticArray with one parent status ('Autonomy Stack',
-level = worst child) plus one child status per node. Level mapping:
+at 1 Hz and emits a DiagnosticArray with a single 'Autonomy Stack' status
+whose values list contains one row per node (level = worst row). Level mapping:
 
   ACTIVE                                                    -> OK
   CONFIGURING / ACTIVATING / DEACTIVATING / CLEANINGUP /
@@ -164,7 +164,7 @@ class Nav2LifecycleDiagnostics(Node):
     def _publish(self) -> None:
         now = self.get_clock().now().to_msg()
 
-        children = []
+        node_rows: list[KeyValue] = []
         worst_level = DiagnosticStatus.OK
         active_count = 0
         worst_node = None
@@ -174,19 +174,10 @@ class Nav2LifecycleDiagnostics(Node):
             level = _level_for_state(state_id)
             label = _state_label(state_id)
 
-            status = DiagnosticStatus()
-            status.name = f'{_PARENT_NAME}: {tracker.name}'
-            status.level = level
-            status.message = label
-            status.hardware_id = ''
-            status.values = [
-                KeyValue(key='state', value=label),
-                KeyValue(
-                    key='state_id',
-                    value=str(state_id) if state_id is not None else 'n/a',
-                ),
-            ]
-            children.append(status)
+            node_rows.append(KeyValue(
+                key=tracker.name,
+                value=label,
+            ))
 
             if state_id == LifecycleState.PRIMARY_STATE_ACTIVE:
                 active_count += 1
@@ -203,13 +194,15 @@ class Nav2LifecycleDiagnostics(Node):
         else:
             node_name, label = worst_node
             parent.message = f'{node_name}: {label}'
+        node_rows.sort(key=lambda kv: kv.key)
         parent.values = [
             KeyValue(key='active_count', value=f'{active_count}/{len(self._trackers)}'),
+            *node_rows,
         ]
 
         msg = DiagnosticArray()
         msg.header.stamp = now
-        msg.status = [parent, *children]
+        msg.status = [parent]
         self._diag_pub.publish(msg)
 
 
