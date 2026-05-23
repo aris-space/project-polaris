@@ -2,11 +2,11 @@
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     global_frame: "map"
     robot_base_frame: "base_link"
     transform_tolerance: 1.0
-    odom_topic: "/odom"
+    odom_topic: "/odometry/filtered/local"
     bt_loop_duration: 10
     default_server_timeout: 20
     default_nav_to_pose_bt_xml: "bringup.py should replace me"
@@ -65,15 +65,16 @@ bt_navigator:
 
 bt_navigator_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 controller_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     controller_frequency: 20.0
-    min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
-    min_theta_velocity_threshold: 0.001
+    odom_topic: "/odometry/filtered/local"
+    min_x_velocity_threshold: 0.015
+    min_y_velocity_threshold: 0.015
+    min_theta_velocity_threshold: 0.008
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["goal_checker"] # also here different checker?
     controller_plugins: ["LongStraightLine", "SharpTurn"]
@@ -87,15 +88,15 @@ controller_server:
     # Goal checker parameters
     goal_checker:
       plugin: "orca_nav2/GoalChecker3D"
-      xy_goal_tolerance: 0.3
-      z_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.8
+      z_goal_tolerance: 60.0
 
     # Controller parameters
     LongStraightLine:
       plugin: "orca_nav2/PurePursuitController3D"
       lookahead_dist: 2.5
       transform_tolerance: 1.0
-      goal_tolerance: 0.2
+      goal_tolerance: 0.3
       tick_rate: 20.0
 
       x_vel: 0.4
@@ -120,9 +121,6 @@ controller_server:
       #   3. Throws ControllerException            → aborts navigation
       max_velocity_divergence_rad: 1.22  # 70 deg — fires symmetrically for both into and away from path
       min_speed_divergence_check: 0.25  # m/s — skip check when nearly stopped
-
-      # Breaking
-      K_descelerate: 0.17
 
       # ── Regulated Pure Pursuit ──────────────────────────────────────────────
       # Rotate-to-heading: stop translating and rotate in place when the heading
@@ -162,7 +160,8 @@ controller_server:
 
       # Approach velocity: ramp forward speed down over the last N metres to goal.
       min_approach_linear_velocity: 0.0
-      approach_velocity_scaling_dist: 4.5
+      approach_velocity_scaling_dist: 3.25
+      K_descelerate: 0.35
 
     SharpTurn:
       plugin: "orca_nav2/SharpTurnController3D"
@@ -187,7 +186,7 @@ controller_server:
 
 controller_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 
 # The local costmap is always empty
@@ -199,7 +198,7 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
-      use_sim_time: true
+      use_sim_time: false
       rolling_window: true
       width: 3
       height: 3
@@ -221,7 +220,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: true
+      use_sim_time: false
       rolling_window: true
       track_unknown_space: true
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -237,7 +236,7 @@ global_costmap:
 
 planner_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     planner_plugins: ["StraightLine"]
 
     # OrcaPlanner parameters
@@ -252,12 +251,13 @@ planner_server:
 
 planner_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 # Nav2 Humble: use behavior_plugins + nav2_behaviors/* (not recovery_plugins / nav2_recoveries).
 # Wrong names/types leave behavior_server configure failing → unconfigured forever.
 behavior_server:
   ros__parameters:
+    odom_topic: "/odometry/filtered/local"
     costmap_topic: "local_costmap/costmap_raw"
     footprint_topic: "local_costmap/published_footprint"
     cycle_frequency: 10.0
@@ -271,7 +271,7 @@ behavior_server:
     global_frame: "odom"
     robot_base_frame: "base_link"
     transform_timeout: 2.0
-    use_sim_time: True
+    use_sim_time: False
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
@@ -279,11 +279,11 @@ behavior_server:
 
 robot_state_publisher:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
 
 waypoint_follower:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: False
     loop_rate: 20
     stop_on_failure: False
     waypoint_task_executor_plugin: "wait_at_waypoint"
