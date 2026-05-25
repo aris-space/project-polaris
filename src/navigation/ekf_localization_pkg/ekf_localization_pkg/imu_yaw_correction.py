@@ -31,7 +31,7 @@ yaw_offset_deg              Rotation about +Z applied to orientation.
                             Live-tunable. Default 0.
 input_topic                 Default /imu/data
 output_topic                Default /imu/data_corrected
-gps_topic                   Default /gps/selected (used for fallback bearing)
+gps_topic                   Default /fix (used for fallback bearing)
 ubx_pvt_topic               Default /ubx_nav_pvt. Empty disables head_mot path.
 yaw_calibration_duration_s  Calibration window length (default 10.0)
 yaw_calibration_min_distance_m  Min distance for the two-fix fallback to be
@@ -123,7 +123,7 @@ class ImuYawCorrection(Node):
         self.declare_parameter("yaw_offset_deg", 0.0)
         self.declare_parameter("input_topic", "/imu/data")
         self.declare_parameter("output_topic", "/imu/data_corrected")
-        self.declare_parameter("gps_topic", "/gps/selected")
+        self.declare_parameter("gps_topic", "/fix")
         self.declare_parameter("ubx_pvt_topic", "/ubx_nav_pvt")
         self.declare_parameter("yaw_calibration_duration_s", 10.0)
         self.declare_parameter("yaw_calibration_min_distance_m", 3.0)
