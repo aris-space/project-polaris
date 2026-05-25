@@ -53,7 +53,7 @@ class MissionWaypointLoader(Node):
         super().__init__('mission_waypoint_loader')
 
         share = get_package_share_directory('autonomy_bringup_pkg')
-        default_csv = f'{share}/missions/pool_mission.csv'
+        default_csv = f'{share}/missions/goldbach_straightline_wgs84_mission.csv'
         self.declare_parameter('mission_csv', default_csv)
         self.declare_parameter('datum_topic', '/gnss_datum')
         self.declare_parameter('output_topic', '/mission_waypoints_enu')
