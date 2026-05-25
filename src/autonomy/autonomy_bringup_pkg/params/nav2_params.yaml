@@ -127,7 +127,7 @@ controller_server:
       # error to the curvature carrot exceeds rotate_to_heading_min_angle.
       # Hysteresis: engages at min_angle, releases only at the smaller release_angle
       # to prevent premature exit and the cross-track drift that follows.
-      use_rotate_to_heading: true
+      use_rotate_to_heading: false
       rotate_to_heading_angular_vel: 0.3  # rad/s — max rotation speed
       rotate_to_heading_min_angle: 1.22    # rad (70 deg) — only rotate-in-place for sharp turns
       rotate_to_heading_release_angle: 0.1 # rad (~3 deg) — MUST be < v²/(2*decel) = 0.1²/(2*0.05) = 0.1 rad
