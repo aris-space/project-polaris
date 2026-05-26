@@ -100,7 +100,7 @@ controller_server:
       tick_rate: 20.0
 
       x_vel: 0.4
-      x_accel: 0.2
+      x_accel: 0.2 #See protocal from lake3: 0.01
       z_vel: 0.25
       z_accel: 0.2
       yaw_vel: 0.3
@@ -127,9 +127,9 @@ controller_server:
       # error to the curvature carrot exceeds rotate_to_heading_min_angle.
       # Hysteresis: engages at min_angle, releases only at the smaller release_angle
       # to prevent premature exit and the cross-track drift that follows.
-      use_rotate_to_heading: false
-      rotate_to_heading_angular_vel: 0.3  # rad/s — max rotation speed
-      rotate_to_heading_min_angle: 1.22    # rad (70 deg) — only rotate-in-place for sharp turns
+      use_rotate_to_heading: true
+      rotate_to_heading_angular_vel: 0.2 #0.3  # rad/s — max rotation speed
+      rotate_to_heading_min_angle: 1.3 #1.22    # rad (70 deg) — only rotate-in-place for sharp turns
       rotate_to_heading_release_angle: 0.1 # rad (~3 deg) — MUST be < v²/(2*decel) = 0.1²/(2*0.05) = 0.1 rad
       # Real AUV angular braking capability (rad/s²) — used in sqrt decel formula.
       # Much lower than yaw_accel (ramp rate) because water drag limits actual decel.
