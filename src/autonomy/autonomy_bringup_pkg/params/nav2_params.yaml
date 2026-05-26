@@ -120,7 +120,7 @@ controller_server:
       #   2. Publishes MANUAL on /pixhawk/mode_cmd → manual mode
       #   3. Throws ControllerException            → aborts navigation
       max_velocity_divergence_rad: 1.22  # 70 deg — fires symmetrically for both into and away from path
-      min_speed_divergence_check: 0.25  # m/s — skip check when nearly stopped
+      min_speed_divergence_check: 0.5  # m/s — skip check when nearly stopped
 
       # ── Regulated Pure Pursuit ──────────────────────────────────────────────
       # Rotate-to-heading: stop translating and rotate in place when the heading
