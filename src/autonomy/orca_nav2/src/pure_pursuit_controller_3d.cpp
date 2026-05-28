@@ -201,9 +201,14 @@ namespace orca_nav2
     {
       try
       {
+        // Use latest-available TF (TimePointZero) instead of a stamped lookup.
+        // Why: map→odom is published by the global EKF at 10 Hz, so a stamped
+        // lookup with in_pose.header.stamp blocks each control cycle until the
+        // next 10 Hz TF arrives, capping cmd_vel at the global-EKF rate
+        // regardless of controller_frequency (20 Hz).
         auto transform = tf_->lookupTransform(
             target_frame, in_pose.header.frame_id,
-            in_pose.header.stamp, tf2::durationFromSec(transform_tolerance_));
+            tf2::TimePointZero, tf2::durationFromSec(transform_tolerance_));
         tf2::doTransform(in_pose, out_pose, transform);
         return true;
       }
