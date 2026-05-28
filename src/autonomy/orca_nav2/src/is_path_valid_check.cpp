@@ -26,7 +26,8 @@ public:
   {
     return {
       BT::InputPort<nav_msgs::msg::Path>("path", "Path to Check"),
-      BT::InputPort<double>("max_dist", 0.5, "Maximum allowed distance from path."),
+      BT::InputPort<double>("max_xy_dist", 0.5, "Maximum allowed XY (cross-track) distance from path."),
+      BT::InputPort<double>("max_z_dist", 50.0, "Maximum allowed Z (vertical) distance from path. Large default makes Z permissive (heave-disabled mode)."),
       BT::InputPort<geometry_msgs::msg::PoseStamped>(
         "goal", "If wired, path end must match this goal within xy/z tolerances (avoids stale paths)."),
       BT::InputPort<double>("xy_goal_tolerance", 0.35, "XY distance path end vs goal (same frame)."),
@@ -50,13 +51,16 @@ BT::NodeStatus IsPathValidCheck::tick()
   std::shared_ptr<tf2_ros::Buffer> tf_buffer;
   geometry_msgs::msg::PoseStamped pose;
   geometry_msgs::msg::Point closest_map;
-  double max_dist;
+  double max_xy_dist;
+  double max_z_dist;
   double cross_track_xy_m;
   double vertical_error_m;
   double yaw_error_rad;
   double transform_tolerance = 1.0;
 
-  if (!getInput("path", path) || !getInput("max_dist", max_dist)) {
+  if (!getInput("path", path) || !getInput("max_xy_dist", max_xy_dist) ||
+    !getInput("max_z_dist", max_z_dist))
+  {
     return BT::NodeStatus::FAILURE;
   }
   if (path.poses.empty()) {
@@ -73,7 +77,7 @@ BT::NodeStatus IsPathValidCheck::tick()
   tracking_errors_along_path(
     path, pose, cross_track_xy_m, vertical_error_m, yaw_error_rad, closest_map);
 
-  if (std::abs(cross_track_xy_m) > max_dist || std::abs(vertical_error_m) > max_dist) {
+  if (std::abs(cross_track_xy_m) > max_xy_dist || std::abs(vertical_error_m) > max_z_dist) {
     return BT::NodeStatus::FAILURE;
   }
 
