@@ -23,8 +23,7 @@ Outputs:
   tracking_export_README.txt
 
 Usage:
-  source /opt/ros/humble/setup.bash && source install/setup.bash
-  ros2 run orca_bringup export_tracking_bag_csv.py /path/to/rosbag2_folder
+source /opt/ros/humble/setup.bash && python3 /home/polaris_pz/project-polaris/src/autonomy/autonomy_bringup_pkg/autonomy_bringup_pkg/export_tracking_bag_csv.py "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/move_to_goal_lake_11_2026_05_26-14_38_21"
 """
 
 from __future__ import annotations
