@@ -146,6 +146,15 @@ def main():
 
     ping_ts, ping_dist, depth_ts, depth_m, pitch_ts, pitch_deg = extract_data(bag_paths)
 
+    # Pressure and ping have no valid data past this point in the St. Moritz bag.
+    TMAX_S = 800.0
+    m_ping = ping_ts <= TMAX_S
+    ping_ts, ping_dist = ping_ts[m_ping], ping_dist[m_ping]
+    m_depth = depth_ts <= TMAX_S
+    depth_ts, depth_m = depth_ts[m_depth], depth_m[m_depth]
+    m_pitch = pitch_ts <= TMAX_S
+    pitch_ts, pitch_deg = pitch_ts[m_pitch], pitch_deg[m_pitch]
+
     if len(ping_ts) == 0:
         print("No ping sonar data with confidence = 100 found.", file=sys.stderr)
         sys.exit(1)
@@ -217,12 +226,17 @@ def main():
 
     # ── Bottom: pitch from /imu/data ─────────────────────────────────────────
     if len(pitch_deg) > 0:
+        pitch_mean = pitch_deg.mean()
         ax_pitch.plot(
             pitch_ts, pitch_deg,
             lw=1.0, color="#16a085", alpha=0.9, zorder=2,
             label=f"Pitch (IMU)  std = {pitch_deg.std():.2f}°",
         )
         ax_pitch.axhline(0.0, color="#555555", lw=0.8, ls=":", alpha=0.6)
+        ax_pitch.axhline(
+            pitch_mean, color="#c0392b", lw=1.2, ls="--", alpha=0.8,
+            label=f"Mean = {pitch_mean:.2f}°",
+        )
     else:
         ax_pitch.text(0.5, 0.5, "No /imu/data in bag",
                       ha="center", va="center", transform=ax_pitch.transAxes,
