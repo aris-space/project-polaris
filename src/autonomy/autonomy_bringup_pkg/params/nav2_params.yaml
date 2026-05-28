@@ -119,8 +119,10 @@ controller_server:
       #   1. Publishes False  on /pixhawk/arm_cmd  → disarm
       #   2. Publishes MANUAL on /pixhawk/mode_cmd → manual mode
       #   3. Throws ControllerException            → aborts navigation
-      max_velocity_divergence_rad: 1.22  # 70 deg — fires symmetrically for both into and away from path
-      min_speed_divergence_check: 0.5  # m/s — skip check when nearly stopped
+      # Master enable for the check above — set false to disable the disarm+MANUAL trip entirely.
+      enable_velocity_divergence_emergency: false
+      max_velocity_divergence_rad: 1.4  # 82 deg — fires symmetrically for both into and away from path
+      min_speed_divergence_check: 0.35  # m/s — skip check when nearly stopped 0.5
 
       # ── Regulated Pure Pursuit ──────────────────────────────────────────────
       # Rotate-to-heading: stop translating and rotate in place when the heading

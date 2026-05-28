@@ -129,6 +129,7 @@ namespace orca_nav2
     double K_cross_vel_{0.0};
 
     // Velocity-divergence emergency
+    bool enable_velocity_divergence_emergency_{true};
     double max_velocity_divergence_rad_{0.0};
     double min_speed_divergence_check_{0.02};
 
@@ -589,6 +590,7 @@ namespace orca_nav2
       PARAMETER(parent, name, tick_rate, 20.0)
       PARAMETER(parent, name, publish_tracking_error, true)
       PARAMETER(parent, name, K_cross_vel, 0.0)
+      PARAMETER(parent, name, enable_velocity_divergence_emergency, true)
       PARAMETER(parent, name, max_velocity_divergence_rad, 0.0)
       PARAMETER(parent, name, min_speed_divergence_check, 0.02)
       PARAMETER(parent, name, K_descelerate, 0.2)
@@ -746,7 +748,8 @@ namespace orca_nav2
       yaw_limiter_.limit(cmd_vel.twist.angular.z, prev_vel_.angular.z);
 
       // Velocity-divergence emergency safety cutoff
-      if (have_tracking && max_velocity_divergence_rad_ > 0.0) {
+      if (have_tracking && enable_velocity_divergence_emergency_ &&
+          max_velocity_divergence_rad_ > 0.0) {
         const double vel_xy = std::hypot(velocity.linear.x, velocity.linear.y);
         if (vel_xy > min_speed_divergence_check_) {
           const double v_along = velocity.linear.x * std::cos(yaw_err) -
