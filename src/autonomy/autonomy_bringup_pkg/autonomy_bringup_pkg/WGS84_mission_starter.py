@@ -290,23 +290,28 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
 
             print('Canceling goal...')
             cancel_future = goal_handle.cancel_goal_async()
-            executor.spin_until_future_complete(cancel_future)
-            cancel_response = cancel_future.result()
+            try:
+                executor.spin_until_future_complete(cancel_future, timeout_sec=5.0)
+            except Exception:
+                pass
 
-            if cancel_response is None:
-                exc = cancel_future.exception()
-                if exc is not None:
-                    raise RuntimeError('Exception while canceling goal: {!r}'.format(exc)) from exc
-                print('Cancel finished without response (shutdown?)')
-
-            elif len(cancel_response.goals_canceling) == 0:
-                raise RuntimeError('Failed to cancel goal')
-            elif len(cancel_response.goals_canceling) > 1:
-                raise RuntimeError('More than one goal canceled')
-            elif cancel_response.goals_canceling[0].goal_id != goal_handle.goal_id:
-                raise RuntimeError('Canceled goal with incorrect goal ID')
+            if not cancel_future.done():
+                print('Cancel request timed out (Nav2 may be shutting down)')
             else:
-                print('Goal canceled')
+                cancel_response = cancel_future.result()
+                if cancel_response is None:
+                    exc = cancel_future.exception()
+                    if exc is not None:
+                        print(f'Warning: exception while canceling goal: {exc!r}')
+                    else:
+                        print('Cancel finished without response (shutdown?)')
+                elif len(cancel_response.goals_canceling) == 0:
+                    # Goal may have already ended (aborted/succeeded) before cancel arrived.
+                    print('Warning: cancel response had no goals_canceling (goal already ended?)')
+                elif cancel_response.goals_canceling[0].goal_id != goal_handle.goal_id:
+                    print('Warning: canceled goal with unexpected goal ID')
+                else:
+                    print('Goal canceled')
 
             publish_manual_and_spin(executor, node, mode_pub, spins=15)
 
