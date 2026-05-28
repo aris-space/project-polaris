@@ -34,3 +34,9 @@ settings.json
 mavlink_logs/
 CLAUDE.md
 
+# Claude Code local config
+.claude/
+
+# Basemap/contextily tile cache
+**/.basemap_cache/
+
