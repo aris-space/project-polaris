@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """
-Send Nav2 waypoints from ``missions/default_wgs84_mission.csv``.
+Send Nav2 waypoints from the mission CSV transformed at autonomy bringup.
 
-Origin is read from /ubx_nav_hp_pos_llh (raw u-blox high-precision fix) so that the
-WGS84->ENU conversion uses the same altitude datum (MSL, from UBX hmsl) as the
-Pixhawk's GPS_GLOBAL_ORIGIN set by mavlink_bridge. Override: ``--origin=lat,lon,alt``
-and/or ``--file path.csv``.
+By default, subscribes to the latched ``/mission_waypoints_enu`` topic
+published by ``mission_waypoint_loader`` once an RTK-quality fix locks at
+bringup. The same RTK gate as ``gnss_datum_watchdog`` is used, so the
+waypoint origin matches the EKF datum and the Pixhawk's GPS_GLOBAL_ORIGIN.
+
+This means the operator can hit "go" any time after autonomy bringup —
+surface, underwater, hours later — because the transform happens once on
+the surface, not at mission start.
+
+Manual override (dry runs, replays): pass both ``--origin lat,lon,alt`` and
+``--file path.csv`` to bypass the loader and transform locally.
 """
 
 from enum import Enum
@@ -16,14 +23,18 @@ import time
 
 import rclpy
 from action_msgs.msg import GoalStatus
-from ament_index_python.packages import get_package_share_directory
+from geometry_msgs.msg import PoseArray, PoseStamped
 from nav2_msgs.action import FollowWaypoints
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+)
 from rclpy.signals import SignalHandlerOptions
 from mavros_msgs.msg import State as PixhawkHeartbeat
 from std_msgs.msg import Bool, String
-from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
 from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import process_coordinates
 from autonomy_bringup_pkg.nav2_ready_wait import wait_for_waypoint_follower_active
@@ -31,6 +42,7 @@ from autonomy_bringup_pkg.pixhawk_ready_wait import (
     PixhawkState,
     ensure_armed_and_mode_guided,
     make_heartbeat_callback,
+    mode_matches,
 )
 
 
@@ -95,53 +107,67 @@ def _print_waypoint_summary(poses, csv_path: str) -> None:
     print(f'  Total path length: {total_dist:.1f}m')
 
 
-def default_mission_csv_path() -> str:
-    share = get_package_share_directory('autonomy_bringup_pkg')
-    return f'{share}/missions/goldbach_straightline_wgs84_mission.csv'
+_MISSION_WAYPOINTS_TOPIC = '/mission_waypoints_enu'
 
 
-def wait_for_gps_origin(
-    executor, node, *, timeout_sec: float = 120.0, required_fixes: int = 5
-) -> tuple | None:
-    """Spin until /ubx_nav_hp_pos_llh yields `required_fixes` consecutive valid fixes; returns (lat_deg, lon_deg, alt_msl_m) or None.
+def wait_for_mission_waypoints(
+    executor, node, *, timeout_sec: float = 120.0
+) -> list | None:
+    """Subscribe to the latched /mission_waypoints_enu and return the PoseStamped[] inside.
 
-    Altitude is UBX hmsl (height above mean sea level) - matches the datum
-    mavlink_bridge uses for GPS_GLOBAL_ORIGIN.
+    mission_waypoint_loader (started by autonomy.launch.py) waits for an
+    RTK-quality fix on the surface, transforms the mission CSV once, and
+    latches the result on /mission_waypoints_enu (PoseArray, TRANSIENT_LOCAL).
+    We just consume that — the vehicle can be on the surface, underwater, or
+    anywhere in between by the time the operator runs this starter.
+
+    The PoseArray frame_id (= 'map') is propagated to each PoseStamped so
+    Nav2 plans in the same frame the loader anchored at the RTK datum.
     """
-    consecutive = [0]
-    result = [None]
+    state = {'poses': None}
 
-    def _cb(msg: UBXNavHPPosLLH):
-        if result[0] is not None:
+    def _cb(msg: PoseArray) -> None:
+        if state['poses'] is not None:
             return
-        if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
-            consecutive[0] = 0
-            return
-        consecutive[0] += 1
-        if consecutive[0] >= required_fixes:
-            # UBX units: lat/lon are deg * 1e7 (int32); hmsl is mm (int32).
-            lat_deg = msg.lat * 1e-7
-            lon_deg = msg.lon * 1e-7
-            alt_m = msg.hmsl * 1e-3
-            result[0] = (lat_deg, lon_deg, alt_m)
+        frame = msg.header.frame_id or 'map'
+        poses = []
+        for p in msg.poses:
+            ps = PoseStamped()
+            ps.header.stamp = msg.header.stamp
+            ps.header.frame_id = frame
+            ps.pose = p
+            poses.append(ps)
+        state['poses'] = poses
 
-    sub = node.create_subscription(UBXNavHPPosLLH, '/ubx_nav_hp_pos_llh', _cb, 10)
+    latched_qos = QoSProfile(
+        depth=1,
+        durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        reliability=QoSReliabilityPolicy.RELIABLE,
+    )
+    sub = node.create_subscription(
+        PoseArray, _MISSION_WAYPOINTS_TOPIC, _cb, latched_qos
+    )
+
     deadline = time.time() + timeout_sec
-    print(f'Waiting for origin from /ubx_nav_hp_pos_llh ({required_fixes} consecutive valid fixes, up to {timeout_sec:.0f}s)...')
+    print(
+        f'Waiting for latched mission waypoints on {_MISSION_WAYPOINTS_TOPIC} '
+        f'(published by mission_waypoint_loader once RTK locks; up to {timeout_sec:.0f}s)...'
+    )
     while rclpy.ok() and time.time() < deadline:
-        if result[0] is not None:
+        if state['poses'] is not None:
             break
         executor.spin_once(timeout_sec=0.1)
     node.destroy_subscription(sub)
-    if result[0] is None:
+
+    if state['poses'] is None:
         print(
-            f'Timed out after {timeout_sec:.0f}s waiting for /ubx_nav_hp_pos_llh '
-            f'({consecutive[0]}/{required_fixes} consecutive valid fixes).'
+            f'Timed out after {timeout_sec:.0f}s waiting for {_MISSION_WAYPOINTS_TOPIC}. '
+            f'Check that mission_waypoint_loader has logged an RTK lock '
+            f'(ros2 topic echo --once {_MISSION_WAYPOINTS_TOPIC}).'
         )
         return None
-    lat, lon, alt = result[0]
-    print(f'Origin (MSL): lat={lat:.7f}, lon={lon:.7f}, alt={alt:.2f}m (stable over {required_fixes} fixes)')
-    return result[0]
+    print(f'Received {len(state["poses"])} latched waypoints from {_MISSION_WAYPOINTS_TOPIC}.')
+    return state['poses']
 
 
 def parse_origin(s: str) -> tuple:
@@ -169,13 +195,17 @@ def wait_for_follow_waypoints(executor, action_client, timeout_sec: float = 300.
 
 
 def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
-              status_pub=None, total_waypoints: int = 0, poses=None) -> SendGoalResult:
+              status_pub=None, total_waypoints: int = 0, poses=None, hb_state=None) -> SendGoalResult:
     goal_handle = None
+    _last_wp = [-1]
 
     def feedback_cb(feedback_msg):
         wp = feedback_msg.feedback.current_waypoint
         if status_pub is not None:
             status_pub.publish(String(data=f"{wp + 1}/{total_waypoints}"))
+        if wp == _last_wp[0]:
+            return
+        _last_wp[0] = wp
         if poses is not None and wp < len(poses):
             p = poses[wp]
             x, y, z = p.pose.position.x, p.pose.position.y, p.pose.position.z
@@ -204,7 +234,29 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
 
         print('Goal accepted with ID: {}'.format(bytes(goal_handle.goal_id.uuid).hex()))
         result_future = goal_handle.get_result_async()
-        executor.spin_until_future_complete(result_future, timeout_sec=3600.0)
+
+        # Poll for mission result while monitoring Pixhawk state.  If the
+        # pilot disarms or leaves GUIDED mid-mission we cancel the
+        # FollowWaypoints goal immediately so waypoint_follower has no active
+        # action when the nav2_arm_watchdog sends DEACTIVATE a moment later.
+        # Without this, the lifecycle DEACTIVATE hits waypoint_follower while
+        # it still has an active goal, causing it to crash (service unreachable)
+        # and leaving all other Nav2 nodes stuck in ACTIVE.
+        _cancel_sent = False
+        _deadline = time.time() + 3600.0
+        while rclpy.ok() and not result_future.done() and time.time() < _deadline:
+            executor.spin_once(timeout_sec=0.1)
+            if hb_state is not None and not _cancel_sent:
+                if not hb_state.armed or not mode_matches(hb_state.mode, 'GUIDED'):
+                    reasons = []
+                    if not hb_state.armed:
+                        reasons.append('disarmed')
+                    if not mode_matches(hb_state.mode, 'GUIDED'):
+                        reasons.append(f'mode={hb_state.mode or "?"}')
+                    print(f'>>> Pilot intervention ({", ".join(reasons)}); '
+                          'canceling mission goal before Nav2 deactivates <<<')
+                    _cancel_sent = True
+                    goal_handle.cancel_goal_async()
 
         if not result_future.done():
             print('Timeout waiting for mission result (Nav2 unreachable?)')
@@ -220,7 +272,7 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
             print('Goal completed')
             return SendGoalResult.SUCCESS
         elif status == GoalStatus.STATUS_CANCELED:
-            print('Goal was canceled externally')
+            print('Goal was canceled' + (' by pilot intervention' if _cancel_sent else ' externally'))
             return SendGoalResult.CANCELED
         else:
             print(f'Goal ended with status {status} (Nav2 may have shut down mid-mission)')
@@ -238,23 +290,28 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
 
             print('Canceling goal...')
             cancel_future = goal_handle.cancel_goal_async()
-            executor.spin_until_future_complete(cancel_future)
-            cancel_response = cancel_future.result()
+            try:
+                executor.spin_until_future_complete(cancel_future, timeout_sec=5.0)
+            except Exception:
+                pass
 
-            if cancel_response is None:
-                exc = cancel_future.exception()
-                if exc is not None:
-                    raise RuntimeError('Exception while canceling goal: {!r}'.format(exc)) from exc
-                print('Cancel finished without response (shutdown?)')
-
-            elif len(cancel_response.goals_canceling) == 0:
-                raise RuntimeError('Failed to cancel goal')
-            elif len(cancel_response.goals_canceling) > 1:
-                raise RuntimeError('More than one goal canceled')
-            elif cancel_response.goals_canceling[0].goal_id != goal_handle.goal_id:
-                raise RuntimeError('Canceled goal with incorrect goal ID')
+            if not cancel_future.done():
+                print('Cancel request timed out (Nav2 may be shutting down)')
             else:
-                print('Goal canceled')
+                cancel_response = cancel_future.result()
+                if cancel_response is None:
+                    exc = cancel_future.exception()
+                    if exc is not None:
+                        print(f'Warning: exception while canceling goal: {exc!r}')
+                    else:
+                        print('Cancel finished without response (shutdown?)')
+                elif len(cancel_response.goals_canceling) == 0:
+                    # Goal may have already ended (aborted/succeeded) before cancel arrived.
+                    print('Warning: cancel response had no goals_canceling (goal already ended?)')
+                elif cancel_response.goals_canceling[0].goal_id != goal_handle.goal_id:
+                    print('Warning: canceled goal with unexpected goal ID')
+                else:
+                    print('Goal canceled')
 
             publish_manual_and_spin(executor, node, mode_pub, spins=15)
 
@@ -270,7 +327,7 @@ def main() -> None:
         '--origin',
         type=parse_origin,
         default=None,
-        help='lat,lon,alt_m (default: read from /gps/filtered topic)',
+        help='lat,lon,alt_m manual override (default: consume latched /mission_waypoints_enu)',
     )
     parser.add_argument(
         '--file',
@@ -281,7 +338,18 @@ def main() -> None:
 
     args, ros_args = parser.parse_known_args()
 
-    csv_path = args.file if args.file else default_mission_csv_path()
+    # Manual-override sanity: --origin and --file are an all-or-nothing pair.
+    # Without both, you'd either transform a default CSV with an operator-
+    # provided origin (footgun) or transform an operator CSV with the latched
+    # loader origin (which means the loader already ran — just don't pass --file).
+    if (args.origin is None) != (args.file is None):
+        print(
+            'Manual override requires BOTH --origin and --file (or neither, to '
+            'consume the latched /mission_waypoints_enu published by '
+            'mission_waypoint_loader at autonomy bringup).',
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Do not install rclpy SIGINT/SIGTERM handlers: they call shutdown() and invalidate the
     # context while we are still canceling the Nav2 goal, so /pixhawk/mode_cmd publish fails.
@@ -314,22 +382,33 @@ def main() -> None:
             10,
         )
 
+        # Two paths:
+        #   1. Default — consume the latched PoseArray published by
+        #      mission_waypoint_loader, which transformed the CSV at autonomy
+        #      bringup using the same RTK gate as gnss_datum_watchdog. Works
+        #      whether the vehicle is on the surface or already underwater.
+        #   2. Manual override (--origin AND --file together) — transform the
+        #      CSV locally with the operator-provided origin. For dry runs and
+        #      replays; bypasses the RTK gate.
         if args.origin is not None:
             lat0, lon0, alt0 = args.origin
-            print(f'Using origin from --origin: lat={lat0}, lon={lon0}, alt={alt0} m')
-        else:
-            origin = wait_for_gps_origin(executor, node)
-            if origin is None:
-                print('No EKF origin received; exiting.', file=sys.stderr)
+            csv_path = args.file
+            print(f'Manual override: --origin lat={lat0}, lon={lon0}, alt={alt0} m')
+            print(f'Mission CSV: {csv_path}')
+            try:
+                poses = process_coordinates(csv_path, lat0, lon0, alt0)
+            except (OSError, ValueError) as e:
+                print(f'Error loading mission: {e}', file=sys.stderr)
                 sys.exit(1)
-            lat0, lon0, alt0 = origin
-
-        print(f'Mission CSV: {csv_path}')
-        try:
-            poses = process_coordinates(csv_path, lat0, lon0, alt0)
-        except (OSError, ValueError) as e:
-            print(f'Error loading mission: {e}', file=sys.stderr)
-            sys.exit(1)
+        else:
+            poses = wait_for_mission_waypoints(executor, node)
+            if poses is None:
+                print(
+                    'No latched waypoints received from mission_waypoint_loader; exiting.',
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            csv_path = '<from mission_waypoint_loader>'
 
         goal = FollowWaypoints.Goal()
         goal.poses = poses
@@ -358,7 +437,7 @@ def main() -> None:
         print('>>> Executing mission <<<')
         mission_result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
                                    status_pub=status_pub, total_waypoints=len(goal.poses),
-                                   poses=poses)
+                                   poses=poses, hb_state=hb_state)
 
         if mission_result == SendGoalResult.SUCCESS and rclpy.ok():
             print('>>> Disarming <<<')

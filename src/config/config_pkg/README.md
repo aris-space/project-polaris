@@ -129,6 +129,7 @@ docker exec -it jetson-container bash
 When launch terminal not stopping in a other terminal:
 ```bash
 pkill -KILL -f "ros2 launch"
+pkill -f ros2
 ```
 
 Then using colcon build and etc.
