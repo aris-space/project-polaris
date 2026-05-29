@@ -6,7 +6,12 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
@@ -160,6 +165,22 @@ class GnssDatumWatchdog(Node):
         # Validated GPS fixes forwarded to navsat_transform (replaces raw topic).
         self._validated_pub = self.create_publisher(
             NavSatFix, "/gps/validated", qos_profile_sensor_data
+        )
+
+        # One-shot latched publication of the locked datum. Published exactly
+        # once inside _spawn_navsat_and_global (same instant the watchdog
+        # spawns navsat_transform and map->odom goes live). Downstream
+        # consumers (mission_waypoint_loader) subscribe with TRANSIENT_LOCAL
+        # and receive the latched message even if they connect minutes later
+        # — so the mission CSV's ENU origin is byte-for-byte the same fix
+        # that anchored the EKF datum.
+        latched_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self._datum_pub = self.create_publisher(
+            NavSatFix, "/gnss_datum", latched_qos
         )
 
         # Diagnostic monitors — warn the moment a position exceeds 10 km (way beyond
@@ -403,6 +424,16 @@ class GnssDatumWatchdog(Node):
             f"Valid fix: lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° "
             f"alt={fix.altitude:.1f} m{h_acc_str} — spawning navsat_transform + global EKF"
             f"{local_pos}"
+        )
+
+        # Publish the locked datum on /gnss_datum (latched). Downstream nodes
+        # (e.g. mission_waypoint_loader) use this as their single source of
+        # truth for the map-frame origin, ensuring they share the exact same
+        # fix as the EKF.
+        self._datum_pub.publish(fix)
+        self.get_logger().info(
+            f"Published datum on /gnss_datum (latched): "
+            f"lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° alt={fix.altitude:.1f} m"
         )
 
         # Write a minimal YAML with just the datum; loaded second in the launch

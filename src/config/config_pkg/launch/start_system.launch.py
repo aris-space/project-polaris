@@ -22,7 +22,11 @@ def generate_launch_description():
     manual_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(config_pkg_dir, "launch", "manual_control.launch.py")
-        )
+        ),
+        launch_arguments={
+            "autonomy": LaunchConfiguration("autonomy"),
+            "odom_local_start": LaunchConfiguration("odom_local_start")
+        }.items(),
     )
 
     sensors_launch = IncludeLaunchDescription(
@@ -81,6 +85,16 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "autonomy",
+                default_value="false",
+                description="Launch the Nav2 autonomy stack iff true is passed.",
+            ),
+            DeclareLaunchArgument(
+                "odom_local_start",
+                default_value="false",
+                description="Start the local odometry node.",
+            ),
             DeclareLaunchArgument(
                 "use_navsat_transform",
                 default_value="true",
