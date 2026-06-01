@@ -18,9 +18,13 @@ Usage:
   --max-depth-dev-m     Drop samples where depth exceeds the local rolling minimum by more
                         than this many meters (default: 0.01 = 1 cm).
 
-Produces two CSVs in the output directory:
-  measurements_raw.csv   – every valid sample while touching ice
-  measurements_av.csv    – one averaged row per (merged) touch session
+Produces three CSVs in the output directory:
+  measurements_raw.csv         – every kept sample while touching ice
+  measurements_av.csv          – one averaged row per (merged) touch session
+  measurements_unfiltered.csv  – same as raw but also includes samples
+                                 rejected by the attitude or depth-stability
+                                 filters, with a `rejection_reason` column
+                                 ("", "pitch", "roll", "depth_oscillation").
 
 Ice thickness formula (identical to archimedes_touch.py):
   gauge_pressure        = pressure_pa - surface_pressure_pa
@@ -100,6 +104,7 @@ RAW_FIELDS = [
     "depth_m", "roll_deg", "pitch_deg",
     "ice_thickness_m", "rho_ice",
 ]
+UNFILTERED_FIELDS = RAW_FIELDS + ["rejection_reason"]
 AV_FIELDS = [
     "bag", "grid_point_id", "grid_point_lat", "grid_point_lon",
     "distance_to_target_m", "session_start_s", "session_end_s", "duration_s",
@@ -140,8 +145,18 @@ def nearest_grid_point(lat, lon, grid_points):
 def calc_thickness(pressure_pa, surface_pressure_pa, pitch_deg, roll_deg,
                    pressure_to_contact_z_m, pressure_to_contact_x_m,
                    rho_water, rho_ice, g, max_pitch_deg, max_roll_deg):
-    if abs(pitch_deg) > max_pitch_deg or abs(roll_deg) > max_roll_deg:
-        return float("nan")
+    """Return (thickness_m, rejection_reason).
+
+    rejection_reason is "" if the sample passes attitude gates, otherwise
+    "pitch" or "roll". Thickness is always a real number; callers that need
+    the legacy behaviour (skip when attitude-rejected) treat ``reason != ""``
+    as the skip condition.
+    """
+    reason = ""
+    if abs(pitch_deg) > max_pitch_deg:
+        reason = "pitch"
+    elif abs(roll_deg) > max_roll_deg:
+        reason = "roll"
     gauge = pressure_pa - surface_pressure_pa
     depth_sensor = gauge / (rho_water * g)
     pitch_rad = math.radians(pitch_deg)
@@ -153,7 +168,8 @@ def calc_thickness(pressure_pa, surface_pressure_pa, pitch_deg, roll_deg,
     omega_corr = (pressure_to_contact_x_m * math.sin(pitch_rad)
                   + pressure_to_contact_z_m * math.cos(pitch_rad) * math.cos(roll_rad))
     depth_contact = depth_sensor - omega_corr
-    return depth_contact * rho_water / rho_ice
+    thickness = depth_contact * rho_water / rho_ice
+    return thickness, reason
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +245,17 @@ def extract_sessions(bag_path, grid_points,
     def close_session():
         if not session_raw:
             return
+        # Sessions with zero kept rows produce no usable measurement (original
+        # behaviour: they never got created). Drop the buffer and move on.
+        kept = [r for r in session_raw if not r["rejection_reason"]]
+        if not kept:
+            session_raw.clear()
+            return
         dur = session_end - session_start
-        avg_lat = float(np.mean([r["latitude"] for r in session_raw]))
-        avg_lon = float(np.mean([r["longitude"] for r in session_raw]))
+        # Anchor the grid-point assignment to KEPT samples only — matches the
+        # original behaviour where attitude-rejected rows did not exist.
+        avg_lat = float(np.mean([r["latitude"] for r in kept]))
+        avg_lon = float(np.mean([r["longitude"] for r in kept]))
         gp_id, dist = nearest_grid_point(avg_lat, avg_lon, grid_points)
         gp = next(p for p in grid_points if p["id"] == gp_id)
         # stamp every raw row with the session-level grid point
@@ -300,15 +324,21 @@ def extract_sessions(bag_path, grid_points,
                                     surface_pressure_pa, depth_m, roll_deg, pitch_deg]):
             continue
 
-        thickness = calc_thickness(
+        thickness, reason = calc_thickness(
             pressure_pa, surface_pressure_pa, pitch_deg, roll_deg,
             pressure_to_contact_z_m, pressure_to_contact_x_m,
             rho_water, rho_ice, g, max_pitch_deg, max_roll_deg,
         )
+        # Drop physically impossible (negative) thickness measurements
+        # regardless of attitude — they correspond to omega_corr exceeding
+        # the hydrostatic depth, i.e. the AUV is not actually touching ice.
         if math.isnan(thickness) or thickness < 0:
             continue
 
-        session_end = ts_s
+        # Only advance session_end on kept samples — preserves the original
+        # duration_s semantics so the min_duration filter behaves identically.
+        if not reason:
+            session_end = ts_s
         session_raw.append({
             "timestamp_s":         round(ts_s, 3),
             "bag":                 bag_name,
@@ -323,6 +353,7 @@ def extract_sessions(bag_path, grid_points,
             "pitch_deg":           round(pitch_deg, 4),
             "ice_thickness_m":     round(thickness, 4),
             "rho_ice":             rho_ice,
+            "rejection_reason":    reason,
         })
 
     # Bag ended while still touching
@@ -352,12 +383,18 @@ def filter_and_merge(sessions, min_duration_s, max_gap_s, min_depth_m):
     for bag_sessions in by_bag.values():
         bag_sessions.sort(key=lambda s: s["start_ts"])
 
-        # Step 1: filter short sessions and surface-contact tests
+        # Step 1: filter short sessions and surface-contact tests.
+        # Average depth is computed from kept (rejection_reason == "") rows
+        # only — matches original semantics where attitude-rejected rows
+        # never made it into the session.
         def _keep(s):
             if s["duration_s"] < min_duration_s:
                 return False
-            avg_depth = float(np.mean([r["depth_m"] for r in s["raw_rows"]]))
-            return avg_depth >= min_depth_m
+            kept_depths = [r["depth_m"] for r in s["raw_rows"]
+                           if not r["rejection_reason"]]
+            if not kept_depths:
+                return False
+            return float(np.mean(kept_depths)) >= min_depth_m
 
         bag_sessions = [s for s in bag_sessions if _keep(s)]
 
@@ -372,11 +409,13 @@ def filter_and_merge(sessions, min_duration_s, max_gap_s, min_depth_m):
                 prev["raw_rows"].extend(s["raw_rows"])
                 prev["end_ts"] = s["end_ts"]
                 prev["duration_s"] = prev["end_ts"] - prev["start_ts"]
-                # Re-average distance from merged average position
-                all_lat = [r["latitude"] for r in prev["raw_rows"]]
-                all_lon = [r["longitude"] for r in prev["raw_rows"]]
-                avg_lat = float(np.mean(all_lat))
-                avg_lon = float(np.mean(all_lon))
+                # Re-average distance from kept-rows position only (keeps
+                # parity with original behaviour, where rejected rows
+                # never participated in the average).
+                kept_rows = [r for r in prev["raw_rows"]
+                             if not r["rejection_reason"]] or prev["raw_rows"]
+                avg_lat = float(np.mean([r["latitude"] for r in kept_rows]))
+                avg_lon = float(np.mean([r["longitude"] for r in kept_rows]))
                 _, dist = nearest_grid_point(avg_lat, avg_lon,
                                              [{"id": prev["grid_point_id"],
                                                "lat": prev["grid_point_lat"],
@@ -395,49 +434,65 @@ def filter_and_merge(sessions, min_duration_s, max_gap_s, min_depth_m):
 # Depth stability filter
 # ---------------------------------------------------------------------------
 
-def apply_depth_stability_filter(sessions, threshold_m, window_s):
+def apply_depth_stability_filter(sessions, threshold_m, window_s,
+                                 pressure_to_contact_z_m,
+                                 pressure_to_contact_x_m):
     """
-    Within each session, keep only samples whose depth is within `threshold_m`
-    of the rolling minimum depth computed over a centred ±(window_s/2) window.
+    Within each session, keep only samples whose attitude-corrected contact
+    depth is within `threshold_m` of the rolling minimum corrected depth
+    computed over a centred ±(window_s/2) window.
 
-    The rolling minimum captures the local "true contact" depth — when the AUV
-    is genuinely pressed against the ice. Samples where depth rises above that
-    reference (AUV oscillated away from the ice) are discarded.
+    The corrected depth is `depth_sensor - omega_corr` — the depth of the
+    ice-contact point itself, invariant to pitch/roll about that point.
+    Filtering on the corrected depth (instead of raw pressure-sensor depth)
+    means attitude wobble during stable contact is not mistaken for the AUV
+    oscillating away from the ice. The rolling minimum captures the local
+    "true contact" depth; samples that rise above it are flagged with
+    rejection_reason == "depth_oscillation".
+
+    Attitude-rejected rows (rejection_reason already set) are excluded from
+    the rolling-min computation and left untouched.
     """
     half = window_s / 2.0
-    filtered = []
 
     for s in sessions:
         rows = s["raw_rows"]
         if not rows:
-            filtered.append(s)
             continue
 
-        timestamps = np.array([r["timestamp_s"] for r in rows])
-        depths = np.array([r["depth_m"] for r in rows])
+        kept_idx = [i for i, r in enumerate(rows) if not r["rejection_reason"]]
+        if not kept_idx:
+            print(f"    gp{s['grid_point_id']} ({s['bag'][-16:]}): "
+                  f"no kept rows before depth stability filter")
+            continue
 
-        keep_mask = np.zeros(len(rows), dtype=bool)
-        for i in range(len(rows)):
-            lo = np.searchsorted(timestamps, timestamps[i] - half)
-            hi = np.searchsorted(timestamps, timestamps[i] + half, side="right")
-            local_min = depths[lo:hi].min()
-            keep_mask[i] = depths[i] <= local_min + threshold_m
+        ts_kept    = np.array([rows[i]["timestamp_s"] for i in kept_idx])
+        depth_kept = np.array([rows[i]["depth_m"]    for i in kept_idx])
+        pitch_rad  = np.radians([rows[i]["pitch_deg"] for i in kept_idx])
+        roll_rad   = np.radians([rows[i]["roll_deg"]  for i in kept_idx])
+        omega_kept = (pressure_to_contact_x_m * np.sin(pitch_rad)
+                      + pressure_to_contact_z_m * np.cos(pitch_rad) * np.cos(roll_rad))
+        dc_kept    = depth_kept - omega_kept
 
-        kept = [r for r, k in zip(rows, keep_mask) if k]
-        dropped = len(rows) - len(kept)
+        dropped = 0
+        for local_i, global_i in enumerate(kept_idx):
+            t = ts_kept[local_i]
+            lo = np.searchsorted(ts_kept, t - half)
+            hi = np.searchsorted(ts_kept, t + half, side="right")
+            local_min = dc_kept[lo:hi].min()
+            if dc_kept[local_i] > local_min + threshold_m:
+                rows[global_i]["rejection_reason"] = "depth_oscillation"
+                dropped += 1
 
-        if kept:
-            s = dict(s)          # shallow copy so we don't mutate the original
-            s["raw_rows"] = kept
-            filtered.append(s)
-            if dropped:
-                print(f"    gp{s['grid_point_id']} ({s['bag'][-16:]}): "
-                      f"dropped {dropped}/{len(rows)} samples outside {threshold_m*100:.0f} cm depth band")
-        else:
+        remaining = len(kept_idx) - dropped
+        if dropped:
+            print(f"    gp{s['grid_point_id']} ({s['bag'][-16:]}): "
+                  f"dropped {dropped}/{len(kept_idx)} samples outside {threshold_m*100:.0f} cm corrected-depth band")
+        if remaining == 0:
             print(f"    gp{s['grid_point_id']} ({s['bag'][-16:]}): "
                   f"session entirely removed by depth stability filter")
 
-    return filtered
+    return sessions
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +500,11 @@ def apply_depth_stability_filter(sessions, threshold_m, window_s):
 # ---------------------------------------------------------------------------
 
 def build_av_row(session):
-    rows = session["raw_rows"]
-    avg = {k: float(np.mean([r[k] for r in rows]))
+    """Build the per-session average row, averaging over kept rows only."""
+    kept = [r for r in session["raw_rows"] if not r["rejection_reason"]]
+    if not kept:
+        return None
+    avg = {k: float(np.mean([r[k] for r in kept]))
            for k in NUMERIC_RAW}
     return {
         "bag":                  session["bag"],
@@ -457,8 +515,8 @@ def build_av_row(session):
         "session_start_s":      round(session["start_ts"], 3),
         "session_end_s":        round(session["end_ts"], 3),
         "duration_s":           round(session["duration_s"], 1),
-        "n_samples":            len(rows),
-        "rho_ice":              rows[0]["rho_ice"],
+        "n_samples":            len(kept),
+        "rho_ice":              kept[0]["rho_ice"],
         **{k: round(avg[k], 6) for k in NUMERIC_RAW},
     }
 
@@ -566,34 +624,54 @@ def main():
 
     print(f"\nApplying depth stability filter "
           f"(window={depth_win}s, max_dev={max_dev*100:.0f} cm)...")
-    sessions = apply_depth_stability_filter(sessions, max_dev, depth_win)
+    sessions = apply_depth_stability_filter(sessions, max_dev, depth_win,
+                                            sensor_z, sensor_x)
 
     # Write output
     raw_path = os.path.join(out_dir, "measurements_raw.csv")
     av_path = os.path.join(out_dir, "measurements_av.csv")
+    unf_path = os.path.join(out_dir, "measurements_unfiltered.csv")
 
-    with open(raw_path, "w", newline="") as rf, open(av_path, "w", newline="") as af:
+    total_kept = 0
+    total_unfiltered = 0
+    with open(raw_path, "w", newline="") as rf, \
+         open(av_path, "w", newline="") as af, \
+         open(unf_path, "w", newline="") as uf:
         raw_writer = csv.DictWriter(rf, fieldnames=RAW_FIELDS)
         av_writer = csv.DictWriter(af, fieldnames=AV_FIELDS)
+        unf_writer = csv.DictWriter(uf, fieldnames=UNFILTERED_FIELDS)
         raw_writer.writeheader()
         av_writer.writeheader()
+        unf_writer.writeheader()
 
         for s in sessions:
             for row in s["raw_rows"]:
-                raw_writer.writerow(row)
-            av_writer.writerow(build_av_row(s))
+                # Unfiltered: every candidate sample, with its label
+                unf_writer.writerow({k: row.get(k, "") for k in UNFILTERED_FIELDS})
+                total_unfiltered += 1
+                if not row["rejection_reason"]:
+                    # Strip the rejection_reason key for the raw CSV — kept-only,
+                    # same columns as before this change.
+                    raw_writer.writerow({k: row[k] for k in RAW_FIELDS})
+                    total_kept += 1
+            av_row = build_av_row(s)
+            if av_row is not None:
+                av_writer.writerow(av_row)
 
-    total_raw = sum(len(s["raw_rows"]) for s in sessions)
     print(f"\nDone.")
-    print(f"  Sessions : {len(sessions)}")
-    print(f"  Raw rows : {total_raw}")
-    print(f"  Raw CSV  : {raw_path}")
-    print(f"  Avg CSV  : {av_path}")
+    print(f"  Sessions       : {len(sessions)}")
+    print(f"  Kept rows      : {total_kept}")
+    print(f"  Total rows     : {total_unfiltered} (incl. attitude- and oscillation-rejected)")
+    print(f"  Raw CSV        : {raw_path}")
+    print(f"  Avg CSV        : {av_path}")
+    print(f"  Unfiltered CSV : {unf_path}")
     print()
     print(f"  {'bag':<16} {'gp':>3}  {'duration_s':>10}  {'thickness_m':>12}  {'dist_m':>8}  {'n_samples':>9}")
     print("  " + "-" * 70)
     for s in sessions:
         av = build_av_row(s)
+        if av is None:
+            continue
         print(f"  {s['bag'][-16:]:<16} {s['grid_point_id']:>3}  "
               f"{av['duration_s']:>10.1f}  {av['ice_thickness_m']:>12.4f}  "
               f"{av['distance_to_target_m']:>8.2f}  {av['n_samples']:>9}")

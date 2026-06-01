@@ -3,13 +3,25 @@
 Continuous ice-thickness heatmap from the top-mounted ultrasonic sensor.
 
 Per ultrasonic sample, compute Archimedes thickness from the pressure depth,
-the body-z offset between the pressure and ultrasonic sensors, and the
-attitude-corrected ultrasonic distance:
+the body-frame offsets between the pressure sensor and the ultrasonic
+transducer, and the attitude-corrected ultrasonic distance:
 
-    c                = cos(pitch) * cos(roll)
-    depth_ultrasonic = depth_pressure - pressure_to_ultrasonic_z_m * c
-    ice_draft        = depth_ultrasonic - d_ultrasonic * c
-    T_ice            = ice_draft * rho_water / rho_ice
+    c          = cos(pitch) * cos(roll)
+    omega_x    = pressure_to_ultrasonic_x_m * sin(pitch)
+    d_corr     = d_ultrasonic * sound_speed_actual / 1500   # 1500 m/s = sensor default
+    ice_draft  = depth_pressure - omega_x - (pressure_to_ultrasonic_z_m + d_corr) * c
+    T_ice      = ice_draft * rho_water / rho_ice
+
+The sound-speed correction uses Lubbers & Graaff (1998) for pure water at the
+configured temperature (default 2.02 °C → c ≈ 1414 m/s, ~6 % below the
+sensor's assumed 1500 m/s).
+
+The x term mirrors the omega_corr used by the pressure-touch pipeline
+(extract_zermatt_measurements.py / config.yaml): the pressure sensor sits
+~0.515 m forward of the contact point in body x, and the ultrasonic
+transducer is mounted at the contact point's x, so the same lever-arm
+applies. Without this term, pitched samples have a ~x_offset * sin(pitch)
+vertical bias (up to ~0.22 m at the 25° pitch gate).
 
 Samples are then placed on the map using the interpolated /waterlinked_ugps
 position. The trajectory is dense and the per-sample thickness is noisy, so
@@ -23,8 +35,7 @@ Usage:
 
 Reads:
     /top/ultrasonic/distance     (std_msgs/Float32)
-    /sensors/pressure/pose_enu   (geometry_msgs/PoseWithCovarianceStamped)
-    /odometry/filtered/local     (nav_msgs/Odometry)
+    /odometry/filtered/local     (nav_msgs/Odometry) — depth + attitude
     /waterlinked_ugps/navsatfix  (sensor_msgs/NavSatFix)
     /measurement_grid            (foxglove_msgs/GeoJSON) — optional, for planned-grid markers
 """
@@ -41,6 +52,7 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
+import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
@@ -62,7 +74,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 # ─── Topics ────────────────────────────────────────────────────────────────────
 TOPIC_ULTRA = "/top/ultrasonic/distance"
-TOPIC_DEPTH = "/sensors/pressure/pose_enu"
 TOPIC_ODOM  = "/odometry/filtered/local"
 TOPIC_GNSS  = "/waterlinked_ugps/navsatfix"
 TOPIC_GRID  = "/measurement_grid"
@@ -76,11 +87,29 @@ MAX_ROLL_DEG        = 10.0
 GNSS_MAX_ACCURACY_M = 4.0    # sqrt(position_covariance[0])
 MIN_THICKNESS_M     = 0.05   # physically plausible bounds for Schwarzsee
 MAX_THICKNESS_M     = 2.0
+MIN_SAMPLES_PER_BIN = 50     # bins with fewer ultrasonic returns are dropped — they
+                             # are usually 1-second-long transit fly-overs where a
+                             # single bad ping dominates the per-cell median.
+GRID_BUFFER_M       = 2.0    # buffer (m) around the convex hull of the planned
+                             # /measurement_grid points; samples and bins outside
+                             # this region are dropped before rendering.
 
 # ─── Archimedes constants (mirror config.yaml) ────────────────────────────────
 PRESSURE_TO_ULTRASONIC_Z_M = 0.062
+# Body-x lever-arm: pressure sensor is forward of the ultrasonic transducer by
+# the same amount it is forward of the contact point (the ultrasonic sits at
+# the contact point's x). Pitch projects this onto vertical.
+PRESSURE_TO_ULTRASONIC_X_M = 0.515
 RHO_WATER                  = 999.4
 RHO_ICE                    = 887.5
+
+# ─── Sound-speed correction ───────────────────────────────────────────────────
+# The transducer computes distance internally assuming c = 1500 m/s (saltwater
+# default). In cold fresh water the true sound speed is ~1410 m/s, so the
+# reported distance is ~6 % too long. Reported distances are rescaled by
+# c_actual / SENSOR_ASSUMED_SOUND_SPEED before the Archimedes formula.
+SENSOR_ASSUMED_SOUND_SPEED_M_S = 1500.0
+DEFAULT_WATER_TEMP_C           = 2.02
 
 # ─── Map style (mirror visualize_ice_measurements.py fig_map_heatmap) ──────────
 MAP_CRS          = "EPSG:3857"
@@ -89,7 +118,7 @@ CMAP_THICKNESS   = "plasma"
 ALPHA_HEATMAP    = 0.55
 MAP_PAD_M        = 12
 INTERP_RES       = 200
-DEFAULT_BIN_M    = 2.0   # spatial bin size for median-per-cell averaging
+DEFAULT_BIN_M    = 1.0   # spatial bin size for median-per-cell averaging
 BASEMAP_ZOOM     = 19    # max supported by SwissFederalGeoportal.SWISSIMAGE
 
 # Swisstopo WMTS — direct tile URL pattern (no contextily wrapper).
@@ -133,6 +162,18 @@ def wgs_to_mercator(lats, lons):
     return np.asarray(xs), np.asarray(ys)
 
 
+def sound_speed_lubbers_graaff(temp_c):
+    """Lubbers & Graaff (1998) speed of sound in pure water, m/s.
+
+    Uses their wider 10-40 °C fit (c = 1405.03 + 4.624 T - 0.0383 T^2). Valid
+    in-band to ~0.35 m/s; we extrapolate below 10 °C (Schwarzsee is ~2 °C).
+    Cross-checked against tabulated values: c(2°C) ≈ 1412 m/s (table), 1414
+    m/s (this formula) — within 0.15 %, which is well below the geometry
+    uncertainty in the ice-thickness budget.
+    """
+    return 1405.03 + 4.624 * temp_c - 0.0383 * temp_c * temp_c
+
+
 def load_config(path):
     if not path:
         return {}
@@ -156,7 +197,7 @@ def coactive_mask(ts_query, ts_other, max_dt=MAX_STALENESS_S):
 
 def extract_data(bag_paths):
     """Read all topics across all bags. Returns numpy arrays indexed by event type."""
-    topics = [TOPIC_ULTRA, TOPIC_DEPTH, TOPIC_ODOM, TOPIC_GNSS, TOPIC_GRID]
+    topics = [TOPIC_ULTRA, TOPIC_ODOM, TOPIC_GNSS, TOPIC_GRID]
 
     ultra_ts, ultra_dist = [], []
     depth_ts, depth_m = [], []
@@ -184,14 +225,7 @@ def extract_data(bag_paths):
                 t_rel = t_s - t_offset
                 msg = reader.deserialize(raw, conn.msgtype)
 
-                if conn.topic == TOPIC_DEPTH:
-                    d = -float(msg.pose.pose.position.z)
-                    latest_depth = d
-                    if d >= MIN_DEPTH_M:
-                        depth_ts.append(t_rel)
-                        depth_m.append(d)
-
-                elif conn.topic == TOPIC_ULTRA:
+                if conn.topic == TOPIC_ULTRA:
                     d_m = float(msg.data)
                     if d_m == 0.0 or d_m > MAX_ULTRA_M:
                         continue
@@ -209,6 +243,11 @@ def extract_data(bag_paths):
                     odom_ts.append(t_rel)
                     odom_roll.append(r)
                     odom_pitch.append(p)
+                    d = -float(msg.pose.pose.position.z)
+                    latest_depth = d
+                    if d >= MIN_DEPTH_M:
+                        depth_ts.append(t_rel)
+                        depth_m.append(d)
 
                 elif conn.topic == TOPIC_GNSS:
                     if msg.status.status < 0:
@@ -250,7 +289,8 @@ def extract_data(bag_paths):
 
 # ─── Per-sample thickness computation ──────────────────────────────────────────
 
-def compute_thickness_samples(data, p2u_offset, rho_water, rho_ice):
+def compute_thickness_samples(data, p2u_z_m, p2u_x_m, rho_water, rho_ice,
+                              sound_speed_m_s):
     """Return (lat, lon, T_m) arrays for all valid ultrasonic samples."""
     ts = data["ultra_ts"]
     u  = data["ultra"]
@@ -279,8 +319,13 @@ def compute_thickness_samples(data, p2u_offset, rho_water, rho_ice):
     lon   = np.interp(ts, data["gnss_ts"],  data["gnss_lon"])
     acc   = np.interp(ts, data["gnss_ts"],  data["gnss_acc"])
 
+    # Rescale reported ultrasonic distance from the transducer's assumed
+    # 1500 m/s to the actual sound speed in cold fresh water.
+    u_corrected = u * (sound_speed_m_s / SENSOR_ASSUMED_SOUND_SPEED_M_S)
+
     c = np.cos(pitch) * np.cos(roll)
-    draft = depth - (p2u_offset + u) * c
+    omega_x = p2u_x_m * np.sin(pitch)
+    draft = depth - omega_x - (p2u_z_m + u_corrected) * c
     T     = draft * (rho_water / rho_ice)
 
     valid = (
@@ -300,6 +345,29 @@ def compute_thickness_samples(data, p2u_offset, rho_water, rho_ice):
 
 
 # ─── Spatial binning ───────────────────────────────────────────────────────────
+
+def planned_grid_hull_mask(mx, my, grid_points, buffer_m):
+    """Boolean mask: True where (mx, my) sits inside the convex hull of the
+    planned-grid points, expanded outwards by `buffer_m`. Used to clip the
+    heatmap to the area the AUV was sent to survey, dropping incidental
+    samples collected far from the planned grid."""
+    if not grid_points or len(grid_points) < 3:
+        return np.ones(len(mx), dtype=bool)
+    gx, gy = wgs_to_mercator([p["lat"] for p in grid_points],
+                             [p["lon"] for p in grid_points])
+    pts = np.column_stack([gx, gy])
+    hull = Delaunay(pts).convex_hull  # edge index pairs
+    # Expand hull vertices radially around the centroid by buffer_m.
+    cx, cy = pts.mean(axis=0)
+    vx, vy = pts[:, 0] - cx, pts[:, 1] - cy
+    rad = np.hypot(vx, vy)
+    rad_safe = np.where(rad > 1e-9, rad, 1.0)
+    scale = (rad + buffer_m) / rad_safe
+    expanded = np.column_stack([cx + vx * scale, cy + vy * scale])
+    # Containment via Delaunay simplex lookup on the expanded hull.
+    tri = Delaunay(expanded)
+    return tri.find_simplex(np.column_stack([mx, my])) >= 0
+
 
 def bin_median(mx, my, vals, bin_m):
     """Bin (mx, my) onto a regular grid of `bin_m` metres; median value per cell."""
@@ -433,11 +501,31 @@ def prefetch_basemap(grid_points):
     print(f"Done. Tiles cached: {n_cached}  ({BASEMAP_CACHE_DIR})")
 
 
-def make_heatmap(lat, lon, T, bin_m, grid_points, out_path):
+def make_heatmap(lat, lon, T, bin_m, grid_points, out_path,
+                 vmin=None, vmax=None,
+                 min_samples_per_bin=MIN_SAMPLES_PER_BIN,
+                 grid_buffer_m=GRID_BUFFER_M):
     mx_all, my_all = wgs_to_mercator(lat, lon)
+
+    # Clip samples to the planned-grid hull (+ buffer) before binning.
+    inside = planned_grid_hull_mask(mx_all, my_all, grid_points, grid_buffer_m)
+    print(f"Planned-grid hull clip:   {inside.sum():,} / {len(inside):,} samples kept "
+          f"(buffer = {grid_buffer_m:.1f} m)")
+    mx_all, my_all, T = mx_all[inside], my_all[inside], T[inside]
+
     bx, by, bv, bn = bin_median(mx_all, my_all, T, bin_m)
     print(f"Spatial bins ({bin_m:.1f} m):     {len(bx):,}  "
           f"(median samples/bin = {int(np.median(bn))}, max = {int(bn.max())})")
+
+    # Drop bins with too few ultrasonic returns; a 1-m transit fly-over with
+    # 5–20 samples is dominated by individual bad pings, not by real signal.
+    keep = bn >= min_samples_per_bin
+    print(f"Bin-count gate (≥{min_samples_per_bin}):     "
+          f"{int(keep.sum()):,} / {len(bn):,} bins kept")
+    bx, by, bv, bn = bx[keep], by[keep], bv[keep], bn[keep]
+    if len(bx) == 0:
+        sys.exit("No bins survive the min-samples-per-bin gate — lower the threshold.")
+
     print(f"Per-bin thickness:        median={np.median(bv):.3f} m  "
           f"std={bv.std():.3f} m  range=[{bv.min():.3f}, {bv.max():.3f}] m")
 
@@ -465,7 +553,9 @@ def make_heatmap(lat, lon, T, bin_m, grid_points, out_path):
         inside = tri.find_simplex(np.column_stack([Xi.ravel(), Yi.ravel()])) >= 0
         Zi = np.ma.array(Zi, mask=~inside.reshape(Xi.shape))
 
-    norm = Normalize(vmin=np.nanmin(bv), vmax=np.nanmax(bv))
+    norm_vmin = vmin if vmin is not None else float(np.nanmin(bv))
+    norm_vmax = vmax if vmax is not None else float(np.nanmax(bv))
+    norm = Normalize(vmin=norm_vmin, vmax=norm_vmax)
     cmap = plt.get_cmap(CMAP_THICKNESS)
     ax.pcolormesh(Xi, Yi, Zi, cmap=cmap, norm=norm,
                   alpha=ALPHA_HEATMAP, zorder=3, shading="auto")
@@ -474,10 +564,16 @@ def make_heatmap(lat, lon, T, bin_m, grid_points, out_path):
     ax.scatter(bx, by, s=18, c=bv, cmap=cmap, norm=norm,
                edgecolors="white", linewidths=0.4, zorder=5)
 
-    # Planned grid markers (if available)
+    # Planned grid markers (if available) — large white-edged dots with ids.
     if grid_points:
-        ax.scatter(gx, gy, s=40, marker="x", color="lightgray",
-                   linewidths=1.0, alpha=0.7, zorder=4)
+        ax.scatter(gx, gy, s=110, marker="o", facecolor="white",
+                   edgecolor="black", linewidths=1.4, alpha=1.0, zorder=6)
+        for p, x, y in zip(grid_points, gx, gy):
+            ax.annotate(str(p["id"]), xy=(x, y),
+                        xytext=(6, 6), textcoords="offset points",
+                        color="white", fontsize=8, fontweight="bold", zorder=7,
+                        path_effects=[path_effects.withStroke(
+                            linewidth=2.0, foreground="black")])
 
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
@@ -513,11 +609,38 @@ def main():
                         help=f"Spatial bin size in metres (default: {DEFAULT_BIN_M})")
     parser.add_argument("--config", default=None, metavar="FILE",
                         help="config.yaml to source rho_water / rho_ice / "
-                             "pressure_to_ultrasonic_z_m")
+                             "pressure_to_ultrasonic_z_m / pressure_to_ultrasonic_x_m")
     parser.add_argument("--pressure-to-ultrasonic-z-m", type=float, default=None,
                         metavar="M",
                         help="Body-z offset (m), ultrasonic above pressure. "
                              "Overrides config and script default.")
+    parser.add_argument("--pressure-to-ultrasonic-x-m", type=float, default=None,
+                        metavar="M",
+                        help="Body-x lever-arm (m) between pressure sensor and "
+                             "ultrasonic transducer; pitch projects this onto "
+                             "vertical. Overrides config and script default.")
+    parser.add_argument("--water-temp-c", type=float, default=None, metavar="T",
+                        help="Water temperature (°C) for the Lubbers & Graaff "
+                             "sound-speed correction. Overrides config and "
+                             f"script default ({DEFAULT_WATER_TEMP_C} °C).")
+    parser.add_argument("--sound-speed-m-s", type=float, default=None, metavar="C",
+                        help="Override the computed sound speed directly (m/s); "
+                             "bypasses --water-temp-c.")
+    parser.add_argument("--min-samples-per-bin", type=int,
+                        default=MIN_SAMPLES_PER_BIN, metavar="N",
+                        help=f"Drop bins with fewer than N ultrasonic returns "
+                             f"(default: {MIN_SAMPLES_PER_BIN}).")
+    parser.add_argument("--grid-buffer-m", type=float,
+                        default=GRID_BUFFER_M, metavar="M",
+                        help=f"Buffer (m) around the convex hull of the planned "
+                             f"grid; samples and bins outside it are dropped "
+                             f"(default: {GRID_BUFFER_M}).")
+    parser.add_argument("--vmin", type=float, default=None, metavar="M",
+                        help="Lower bound of the thickness colorbar (m). "
+                             "Defaults to the minimum per-bin median.")
+    parser.add_argument("--vmax", type=float, default=None, metavar="M",
+                        help="Upper bound of the thickness colorbar (m). "
+                             "Defaults to the maximum per-bin median.")
     parser.add_argument("--prefetch-basemap", action="store_true",
                         help="Fetch SWISSIMAGE tiles for the survey extent into the "
                              "on-disk cache and exit (no heatmap rendering). "
@@ -526,13 +649,30 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    p2u_offset = (
+    p2u_z_m = (
         args.pressure_to_ultrasonic_z_m
         if args.pressure_to_ultrasonic_z_m is not None
         else float(cfg.get("pressure_to_ultrasonic_z_m", PRESSURE_TO_ULTRASONIC_Z_M))
     )
+    p2u_x_m = (
+        args.pressure_to_ultrasonic_x_m
+        if args.pressure_to_ultrasonic_x_m is not None
+        else float(cfg.get("pressure_to_ultrasonic_x_m", PRESSURE_TO_ULTRASONIC_X_M))
+    )
     rho_water  = float(cfg.get("rho_water", RHO_WATER))
     rho_ice    = float(cfg.get("rho_ice",   RHO_ICE))
+
+    water_temp_c = (
+        args.water_temp_c
+        if args.water_temp_c is not None
+        else float(cfg.get("water_temperature_c", DEFAULT_WATER_TEMP_C))
+    )
+    if args.sound_speed_m_s is not None:
+        sound_speed_m_s = float(args.sound_speed_m_s)
+    elif "sound_speed_m_s" in cfg:
+        sound_speed_m_s = float(cfg["sound_speed_m_s"])
+    else:
+        sound_speed_m_s = sound_speed_lubbers_graaff(water_temp_c)
 
     bag_paths = args.bags or DEFAULT_BAGS
     out_path = (
@@ -540,8 +680,12 @@ def main():
         else Path(__file__).parent / "ultrasonic_thickness_heatmap_zermatt.png"
     )
 
-    print(f"pressure_to_ultrasonic_z_m = {p2u_offset:.3f} m")
+    scale = sound_speed_m_s / SENSOR_ASSUMED_SOUND_SPEED_M_S
+    print(f"pressure_to_ultrasonic_z_m = {p2u_z_m:.3f} m")
+    print(f"pressure_to_ultrasonic_x_m = {p2u_x_m:.3f} m")
     print(f"rho_water = {rho_water:.1f}  rho_ice = {rho_ice:.1f}")
+    print(f"sound_speed = {sound_speed_m_s:.2f} m/s "
+          f"(T = {water_temp_c:.2f} °C, scale = {scale:.4f})")
     print(f"basemap cache dir = {BASEMAP_CACHE_DIR}")
 
     data = extract_data(bag_paths)
@@ -552,11 +696,16 @@ def main():
         prefetch_basemap(data["grid_points"])
         return
 
-    lat, lon, T = compute_thickness_samples(data, p2u_offset, rho_water, rho_ice)
+    lat, lon, T = compute_thickness_samples(
+        data, p2u_z_m, p2u_x_m, rho_water, rho_ice, sound_speed_m_s
+    )
     print(f"Per-sample thickness:     median={np.median(T):.3f} m  "
           f"std={T.std():.3f} m  range=[{T.min():.3f}, {T.max():.3f}] m")
 
-    make_heatmap(lat, lon, T, args.bin_m, data["grid_points"], out_path)
+    make_heatmap(lat, lon, T, args.bin_m, data["grid_points"], out_path,
+                 vmin=args.vmin, vmax=args.vmax,
+                 min_samples_per_bin=args.min_samples_per_bin,
+                 grid_buffer_m=args.grid_buffer_m)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ settings.json
 
 /recordings/
 /measurements/
+src/ice_estimates/zermatt_results/
+src/ice_estimates/scripts/.basemap_cache/
 # VS Code extension artifact
 .vscode/settings.json
 mavlink_logs/

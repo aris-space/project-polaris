@@ -257,8 +257,8 @@ def draw_entry_hole(ax, entry_latlon, fontsize=8, label_offset_m=4, show_label=T
 
 def fig_map_overview(all_grid_pts, measured_pts, av_rows, entry_hole=None):
     fig, ax = plt.subplots(figsize=(9, 8))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     # All 16 planned grid points
     plan_lats = [p["lat"] for p in all_grid_pts]
@@ -308,21 +308,6 @@ def fig_map_overview(all_grid_pts, measured_pts, av_rows, entry_hole=None):
         label="Planned grid point",
     )
 
-    # Label grid point IDs
-    for p in all_grid_pts:
-        gx, gy = wgs_to_mercator([p["lat"]], [p["lon"]])
-        ax.text(
-            gx[0],
-            gy[0] + 1.8,
-            str(p["id"]),
-            color="white",
-            fontsize=6.5,
-            ha="center",
-            va="bottom",
-            alpha=0.8,
-            zorder=4,
-        )
-
     # Measured actual positions (coloured by thickness)
     norm = Normalize(
         vmin=min(d["ice_thickness_m"] for d in measured_pts.values()),
@@ -364,9 +349,9 @@ def fig_map_overview(all_grid_pts, measured_pts, av_rows, entry_hole=None):
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.02)
-    cbar.set_label("Ice thickness (m)", color="white", fontsize=9)
-    cbar.ax.yaxis.set_tick_params(color="white")
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="white")
+    cbar.set_label("Ice thickness (m)", color="black", fontsize=9)
+    cbar.ax.yaxis.set_tick_params(color="black")
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="black")
 
     draw_entry_hole(ax, entry_hole, fontsize=7, label_offset_m=3)
 
@@ -375,7 +360,7 @@ def fig_map_overview(all_grid_pts, measured_pts, av_rows, entry_hole=None):
             [0],
             [0],
             marker="s",
-            color="w",
+            color="black",
             markerfacecolor="none",
             markersize=8,
             label="Planned point",
@@ -385,28 +370,29 @@ def fig_map_overview(all_grid_pts, measured_pts, av_rows, entry_hole=None):
             [0],
             [0],
             marker="o",
-            color="w",
+            color="black",
             markerfacecolor=cmap(0.6),
             markersize=8,
             label="Measured position",
             linestyle="none",
         ),
-        Line2D([0], [0], color="yellow", lw=1, alpha=0.8, label="Position offset"),
-        Line2D([0], [0], color="cyan", lw=2, label="Entry hole (gp0)"),
+        Line2D([0], [0], color="#cc8800", lw=1, alpha=0.9, label="Position offset"),
+        Line2D([0], [0], color="#0099cc", lw=2, label="Entry hole (gp0)"),
     ]
     ax.legend(
         handles=legend_elements,
         loc="upper right",
-        facecolor="#1a1a2e",
-        edgecolor="white",
-        labelcolor="white",
+        facecolor="white",
+        edgecolor="#cccccc",
+        labelcolor="black",
         fontsize=8,
+        framealpha=0.92,
     )
 
     latlon_label(ax)
     ax.set_title(
         "Zermatt Schwarzsee — Ice Survey Grid Overview",
-        color="white",
+        color="black",
         fontsize=12,
         pad=10,
     )
@@ -421,8 +407,8 @@ def fig_map_overview(all_grid_pts, measured_pts, av_rows, entry_hole=None):
 
 def fig_map_heatmap(all_grid_pts, measured_pts, entry_hole=None):
     fig, ax = plt.subplots(figsize=(9, 8))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     all_lats = [p["lat"] for p in all_grid_pts]
     all_lons = [p["lon"] for p in all_grid_pts]
@@ -500,14 +486,14 @@ def fig_map_heatmap(all_grid_pts, measured_pts, entry_hole=None):
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.02)
-    cbar.set_label("Ice thickness (m)", color="white", fontsize=9)
-    cbar.ax.yaxis.set_tick_params(color="white")
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="white")
+    cbar.set_label("Ice thickness (m)", color="black", fontsize=9)
+    cbar.ax.yaxis.set_tick_params(color="black")
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="black")
     latlon_label(ax)
     ax.set_title(
         "Zermatt Schwarzsee — Ice Thickness Heatmap\n"
         "(linear interpolation within measured convex hull)",
-        color="white",
+        color="black",
         fontsize=11,
         pad=10,
     )
@@ -529,13 +515,13 @@ def fig_distributions(measured_pts, raw_per_gp, av_rows):
     fig, axes = plt.subplots(
         nrows, ncols, figsize=(4.5 * ncols, 4 * nrows), squeeze=False
     )
-    fig.patch.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
 
     for idx, gp_id in enumerate(gp_ids):
         ax = axes[idx // ncols][idx % ncols]
-        ax.set_facecolor("#1a1a2e")
-        ax.spines[:].set_color("#444466")
-        ax.tick_params(colors="white")
+        ax.set_facecolor("white")
+        ax.spines[:].set_color("#cccccc")
+        ax.tick_params(colors="black")
 
         vals = np.array(raw_per_gp.get(gp_id, []))
         mean = vals.mean()
@@ -572,14 +558,14 @@ def fig_distributions(measured_pts, raw_per_gp, av_rows):
 
         ax.set_title(
             f"Grid point {gp_id}  (row {row}, col {col})",
-            color="white",
+            color="black",
             fontsize=9,
             pad=4,
         )
-        ax.set_xlabel("Ice thickness (m)", color="#aaaacc", fontsize=8)
-        ax.set_ylabel("Density", color="#aaaacc", fontsize=8)
-        ax.xaxis.label.set_color("#aaaacc")
-        ax.yaxis.label.set_color("#aaaacc")
+        ax.set_xlabel("Ice thickness (m)", color="#333333", fontsize=8)
+        ax.set_ylabel("Density", color="#333333", fontsize=8)
+        ax.xaxis.label.set_color("#333333")
+        ax.yaxis.label.set_color("#333333")
         ax.tick_params(labelsize=7)
 
         info = (
@@ -598,16 +584,16 @@ def fig_distributions(measured_pts, raw_per_gp, av_rows):
             va="bottom",
             ha="right",
             fontsize=6.5,
-            color="white",
-            bbox=dict(boxstyle="round,pad=0.3", fc=(0, 0, 0, 0.5), ec="none"),
+            color="black",
+            bbox=dict(boxstyle="round,pad=0.3", fc=(1, 1, 1, 0.85), ec="#cccccc"),
         )
 
         ax.legend(
             fontsize=7,
             loc="upper left",
-            facecolor="#0e1117",
-            edgecolor="#444466",
-            labelcolor="white",
+            facecolor="white",
+            edgecolor="#cccccc",
+            labelcolor="black",
         )
 
     # Hide unused subplots
@@ -615,7 +601,7 @@ def fig_distributions(measured_pts, raw_per_gp, av_rows):
         axes[idx // ncols][idx % ncols].set_visible(False)
 
     fig.suptitle(
-        "Per-Grid-Point Ice Thickness Distributions", color="white", fontsize=13, y=1.01
+        "Per-Grid-Point Ice Thickness Distributions", color="black", fontsize=13, y=1.01
     )
     fig.tight_layout()
     return fig
@@ -642,15 +628,15 @@ def fig_time_series(raw_rows, av_rows):
     ncols = 2
     nrows = math.ceil(n / ncols)
     fig, axes = plt.subplots(nrows, ncols, figsize=(10, 3.5 * nrows), squeeze=False)
-    fig.patch.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
 
     cmap = plt.get_cmap("tab10")
 
     for idx, ((bag, gp_id), rows) in enumerate(session_list):
         ax = axes[idx // ncols][idx % ncols]
-        ax.set_facecolor("#1a1a2e")
-        ax.spines[:].set_color("#444466")
-        ax.tick_params(colors="white", labelsize=7)
+        ax.set_facecolor("white")
+        ax.spines[:].set_color("#cccccc")
+        ax.tick_params(colors="black", labelsize=7)
 
         ts = np.array([float(r["timestamp_s"]) for r in rows])
         th = np.array([float(r["ice_thickness_m"]) for r in rows])
@@ -658,37 +644,37 @@ def fig_time_series(raw_rows, av_rows):
         ts -= t0
 
         color = cmap(idx % 10)
-        ax.plot(ts, th, lw=0.8, color=color, alpha=0.7)
+        ax.plot(ts, th, lw=0.8, color=color, alpha=0.85)
         ax.axhline(
             th.mean(),
-            color="white",
+            color="black",
             lw=1.2,
             ls="--",
             alpha=0.8,
             label=f"mean {th.mean():.4f} m",
         )
         ax.fill_between(
-            ts, th.mean() - th.std(), th.mean() + th.std(), alpha=0.2, color="white"
+            ts, th.mean() - th.std(), th.mean() + th.std(), alpha=0.15, color="black"
         )
 
-        ax.set_xlabel("Time since session start (s)", color="#aaaacc", fontsize=8)
-        ax.set_ylabel("Thickness (m)", color="#aaaacc", fontsize=8)
+        ax.set_xlabel("Time since session start (s)", color="#333333", fontsize=8)
+        ax.set_ylabel("Thickness (m)", color="#333333", fontsize=8)
         row, col = gp_row_col(int(gp_id))
         ax.set_title(
             f"gp{gp_id} (row {row} col {col}) — {bag[-20:]}",
-            color="white",
+            color="black",
             fontsize=8,
             pad=3,
         )
         ax.legend(
-            fontsize=7, facecolor="#0e1117", edgecolor="#444466", labelcolor="white"
+            fontsize=7, facecolor="white", edgecolor="#cccccc", labelcolor="black"
         )
 
     for idx in range(n, nrows * ncols):
         axes[idx // ncols][idx % ncols].set_visible(False)
 
     fig.suptitle(
-        "Ice Thickness Time Series — Per Touch Session", color="white", fontsize=13
+        "Ice Thickness Time Series — Per Touch Session", color="black", fontsize=13
     )
     fig.tight_layout()
     return fig
@@ -706,8 +692,8 @@ LAKE_PAD_M = 230  # metres from measurement centroid to show the full lake
 def fig_lake_context(all_grid_pts, measured_pts, entry_hole=None):
     """Satellite overview of the whole lake with the measurement area highlighted."""
     fig, ax = plt.subplots(figsize=(9, 9))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
 
     # Centre the view on the measurement centroid
     all_lats = [d["latitude"] for d in measured_pts.values()]
@@ -817,14 +803,14 @@ def fig_lake_context(all_grid_pts, measured_pts, entry_hole=None):
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
     cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.01, shrink=0.45)
-    cbar.set_label("Ice thickness (m)", color="white", fontsize=9)
-    cbar.ax.yaxis.set_tick_params(color="white")
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="white")
+    cbar.set_label("Ice thickness (m)", color="black", fontsize=9)
+    cbar.ax.yaxis.set_tick_params(color="black")
+    plt.setp(cbar.ax.yaxis.get_ticklabels(), color="black")
 
     latlon_label(ax)
     ax.set_title(
         "Schwarzsee — Lake Overview & Measurement Location",
-        color="white",
+        color="black",
         fontsize=13,
         pad=8,
     )
@@ -839,8 +825,8 @@ def fig_lake_context(all_grid_pts, measured_pts, entry_hole=None):
 
 def fig_stats_table(measured_pts, raw_per_gp, av_rows, cfg):
     fig, ax = plt.subplots(figsize=(13, 0.55 * (len(measured_pts) + 3) + 1.5))
-    fig.patch.set_facecolor("#0e1117")
-    ax.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
     ax.axis("off")
 
     headers = [
@@ -895,16 +881,16 @@ def fig_stats_table(measured_pts, raw_per_gp, av_rows, cfg):
     tbl.scale(1, 1.6)
 
     for (r, c), cell in tbl.get_celld().items():
-        cell.set_edgecolor("#444466")
+        cell.set_edgecolor("#cccccc")
         if r == 0:
-            cell.set_facecolor("#2a2a5e")
-            cell.set_text_props(color="white", fontweight="bold")
+            cell.set_facecolor("#dddddd")
+            cell.set_text_props(color="black", fontweight="bold")
         elif r % 2 == 1:
-            cell.set_facecolor("#1a1a3e")
-            cell.set_text_props(color="#ddddee")
+            cell.set_facecolor("#f4f4f4")
+            cell.set_text_props(color="black")
         else:
-            cell.set_facecolor("#111128")
-            cell.set_text_props(color="#ddddee")
+            cell.set_facecolor("white")
+            cell.set_text_props(color="black")
 
     # Overall stats footer
     all_vals = np.concatenate([raw_per_gp[g] for g in measured_pts if g in raw_per_gp])
@@ -917,7 +903,7 @@ def fig_stats_table(measured_pts, raw_per_gp, av_rows, cfg):
         f"n_total = {len(all_vals):,}"
     )
     ax.set_title(
-        "Per-Grid-Point Statistical Summary", color="white", fontsize=11, pad=14
+        "Per-Grid-Point Statistical Summary", color="black", fontsize=11, pad=14
     )
     ax.text(
         0.5,
@@ -926,7 +912,7 @@ def fig_stats_table(measured_pts, raw_per_gp, av_rows, cfg):
         transform=ax.transAxes,
         ha="center",
         va="top",
-        color="#aaaacc",
+        color="#333333",
         fontsize=8,
     )
 
@@ -941,9 +927,9 @@ def fig_stats_table(measured_pts, raw_per_gp, av_rows, cfg):
 
 def fig_title_page(av_rows, raw_rows, cfg):
     fig = plt.figure(figsize=(11, 8.5))
-    fig.patch.set_facecolor("#0e1117")
+    fig.patch.set_facecolor("white")
     ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_facecolor("#0e1117")
+    ax.set_facecolor("white")
     ax.axis("off")
 
     all_vals = [float(r["ice_thickness_m"]) for r in raw_rows]
@@ -962,7 +948,7 @@ def fig_title_page(av_rows, raw_rows, cfg):
         va="center",
         transform=ax.transAxes,
         fontsize=26,
-        color="white",
+        color="black",
         fontweight="bold",
     )
     ax.text(
@@ -973,7 +959,7 @@ def fig_title_page(av_rows, raw_rows, cfg):
         va="center",
         transform=ax.transAxes,
         fontsize=16,
-        color="#aaaaff",
+        color="#3355bb",
     )
     ax.text(
         0.5,
@@ -983,10 +969,10 @@ def fig_title_page(av_rows, raw_rows, cfg):
         va="center",
         transform=ax.transAxes,
         fontsize=13,
-        color="#888899",
+        color="#666666",
     )
 
-    ax.axhline(0.68, xmin=0.15, xmax=0.85, color="#333355", lw=1)
+    ax.axhline(0.68, xmin=0.15, xmax=0.85, color="#cccccc", lw=1)
 
     meta = [
         ("Bags processed", ", ".join(b[-30:] for b in bags)),
@@ -1030,7 +1016,7 @@ def fig_title_page(av_rows, raw_rows, cfg):
             va="center",
             transform=ax.transAxes,
             fontsize=10,
-            color="#8888bb",
+            color="#555577",
         )
         ax.text(
             0.30,
@@ -1040,7 +1026,7 @@ def fig_title_page(av_rows, raw_rows, cfg):
             va="center",
             transform=ax.transAxes,
             fontsize=10,
-            color="white",
+            color="black",
         )
         y -= 0.038
 
@@ -1053,7 +1039,7 @@ def fig_title_page(av_rows, raw_rows, cfg):
         va="center",
         transform=ax.transAxes,
         fontsize=8,
-        color="#555566",
+        color="#888888",
     )
     return fig
 
@@ -1065,10 +1051,10 @@ def fig_title_page(av_rows, raw_rows, cfg):
 
 def fig_ice_density(cfg):
     """Full-page explanation of the ice density estimate used in the analysis."""
-    BG = "#0e1117"
-    TXT = "white"
-    SUB = "#aaaacc"
-    DIM = "#666688"
+    BG = "white"
+    TXT = "black"
+    SUB = "#444466"
+    DIM = "#888888"
 
     rho_ice_used = cfg.get("rho_ice", 887.0)
 
@@ -1127,7 +1113,7 @@ def fig_ice_density(cfg):
     line = plt.Line2D(
         [0.06, 0.94],
         [0.925, 0.925],
-        color="#333355",
+        color="#cccccc",
         lw=1,
         transform=fig.transFigure,
         clip_on=False,
@@ -1155,7 +1141,7 @@ def fig_ice_density(cfg):
         "1.  Physical properties of lake ice",
         fontsize=12,
         fontweight="bold",
-        color="#aaddff",
+        color="#003a66",
     )
 
     body1 = (
@@ -1188,7 +1174,7 @@ def fig_ice_density(cfg):
         "2.  Schwarzsee layer thicknesses  (30 Apr 2026)",
         fontsize=12,
         fontweight="bold",
-        color="#aaddff",
+        color="#003a66",
     )
 
     tbl_data = [
@@ -1206,7 +1192,7 @@ def fig_ice_density(cfg):
             header,
             transform=ax_txt.transAxes,
             fontsize=9.5,
-            color="#aaddff",
+            color="#003a66",
             fontweight="bold",
             va="top",
         )
@@ -1216,7 +1202,7 @@ def fig_ice_density(cfg):
         plt.Line2D(
             [0.08, 0.88],
             [line_y, line_y],
-            color="#334466",
+            color="#cccccc",
             lw=0.8,
             transform=ax_txt.transAxes,
             clip_on=False,
@@ -1242,7 +1228,7 @@ def fig_ice_density(cfg):
         "3.  Weighted-average effective density",
         fontsize=12,
         fontweight="bold",
-        color="#aaddff",
+        color="#003a66",
     )
 
     formula_lines = [
@@ -1257,7 +1243,7 @@ def fig_ice_density(cfg):
         formula_lines[0],
         transform=ax_txt.transAxes,
         fontsize=13,
-        color="#ffffcc",
+        color="#664400",
         va="top",
         ha="left",
     )
@@ -1288,7 +1274,7 @@ def fig_ice_density(cfg):
         "4.  Value used in this analysis",
         fontsize=12,
         fontweight="bold",
-        color="#aaddff",
+        color="#003a66",
     )
 
     used_line = (
@@ -1332,7 +1318,7 @@ def fig_ice_density(cfg):
             bar_w,
             y_b_top - y_b_bot,
             facecolor="#1a6688",
-            edgecolor="white",
+            edgecolor="black",
             linewidth=1.0,
             zorder=2,
         )
@@ -1344,7 +1330,7 @@ def fig_ice_density(cfg):
             bar_w,
             y_w_top - y_b_top,
             facecolor="#ccddee",
-            edgecolor="white",
+            edgecolor="black",
             linewidth=1.0,
             zorder=2,
         )
@@ -1372,7 +1358,7 @@ def fig_ice_density(cfg):
         ha="center",
         va="center",
         fontsize=8.5,
-        color="#0e1117",
+        color="black",
         fontweight="bold",
         zorder=3,
     )
@@ -1383,7 +1369,7 @@ def fig_ice_density(cfg):
         "",
         xy=(bx, y_b_bot),
         xytext=(bx, y_w_top),
-        arrowprops=dict(arrowstyle="<->", color="white", lw=1.2),
+        arrowprops=dict(arrowstyle="<->", color="black", lw=1.2),
     )
     ax_diag.text(
         bx + 0.06,
@@ -1406,7 +1392,7 @@ def fig_ice_density(cfg):
         color=SUB,
     )
     ax_diag.axhline(
-        y_w_top, xmin=bar_x, xmax=bar_x + bar_w + 0.01, color="white", lw=1.2, ls="-"
+        y_w_top, xmin=bar_x, xmax=bar_x + bar_w + 0.01, color="black", lw=1.2, ls="-"
     )
 
     # Lake-water label
@@ -1481,11 +1467,11 @@ def fig_error_analysis(raw_rows, av_rows):
       Panel B – gp8: two sessions at slightly different ice positions
       Panel C – gp1: slow depth drift over a long session
     """
-    BG = "#0e1117"
-    AX = "#1a1a2e"
-    GRID = "#444466"
-    TXT = "white"
-    SUB = "#aaaacc"
+    BG = "white"
+    AX = "white"
+    GRID = "#cccccc"
+    TXT = "black"
+    SUB = "#333333"
 
     fig = plt.figure(figsize=(14, 13))
     fig.patch.set_facecolor(BG)
@@ -1551,7 +1537,7 @@ def fig_error_analysis(raw_rows, av_rows):
         va="bottom",
         fontsize=7.5,
         color=TXT,
-        bbox=dict(boxstyle="round,pad=0.3", fc=(0, 0, 0, 0.5), ec="none"),
+        bbox=dict(boxstyle="round,pad=0.3", fc=(1, 1, 1, 0.85), ec="#cccccc"),
     )
     cbar_a = fig.colorbar(sc, ax=ax_pitch, pad=0.01, fraction=0.035)
     cbar_a.set_label("thickness (cm)", color=TXT, fontsize=7)
@@ -1597,8 +1583,8 @@ def fig_error_analysis(raw_rows, av_rows):
     ax_gp8.axvspan(
         s1_t[-1],
         s2_t[0],
-        color="#ffffff",
-        alpha=0.06,
+        color="#888888",
+        alpha=0.10,
         label=f"Gap {s2_t[0]-s1_t[-1]:.0f} s",
     )
     # Annotate mean difference
@@ -1608,7 +1594,7 @@ def fig_error_analysis(raw_rows, av_rows):
         "",
         xy=(mid_t, y_hi),
         xytext=(mid_t, y_lo),
-        arrowprops=dict(arrowstyle="<->", color="white", lw=1.3),
+        arrowprops=dict(arrowstyle="<->", color="black", lw=1.3),
     )
     ax_gp8.text(
         mid_t + 3,
@@ -1631,54 +1617,18 @@ def fig_error_analysis(raw_rows, av_rows):
     # ── Panel C: gp1 – long-session drift ──────────────────────────────────
     rows1 = sorted(by_gp[1], key=lambda r: float(r["timestamp_s"]))
     ts1 = np.array([float(r["timestamp_s"]) for r in rows1])
-    T1 = np.array([float(r["ice_thickness_m"]) for r in rows1])
+    D1 = np.array([float(r["depth_m"]) for r in rows1])
     ts1 -= ts1[0]
-    m1, b1 = np.polyfit(ts1, T1, 1)
 
     ax_drift.plot(
-        ts1, T1 * 100, color="#5577ff", lw=0.7, alpha=0.6, label="Raw thickness"
+        ts1, D1, color="#5577ff", lw=0.7, alpha=0.8, label="depth"
     )
-    # 30-sample rolling mean for clarity
-    win = 30
-    T1_rm = np.convolve(T1, np.ones(win) / win, mode="valid")
-    ts_rm = ts1[win // 2 : win // 2 + len(T1_rm)]
-    ax_drift.plot(
-        ts_rm,
-        T1_rm * 100,
-        color="#aabbff",
-        lw=1.4,
-        alpha=0.9,
-        label=f"Rolling mean ({win} samples)",
-    )
-    drift_line = (m1 * ts1 + b1) * 100
-    ax_drift.plot(
-        ts1,
-        drift_line,
-        color="#ff5555",
-        lw=2,
-        ls="--",
-        label=f"Linear drift  {m1*100*60:.4f} cm/min",
-    )
-    ax_drift.fill_between(ts1, drift_line, T1 * 100, alpha=0.08, color="#ff5555")
+    ax_drift.invert_yaxis()
 
-    total_drift = drift_line[-1] - drift_line[0]
-    ax_drift.text(
-        0.99,
-        0.95,
-        f"Duration: {ts1[-1]:.0f} s   |   "
-        f"Total drift: {total_drift:.2f} cm   |   "
-        f"n = {len(T1):,}",
-        transform=ax_drift.transAxes,
-        ha="right",
-        va="top",
-        fontsize=8.5,
-        color=TXT,
-        bbox=dict(boxstyle="round,pad=0.3", fc=(0, 0, 0, 0.5), ec="none"),
-    )
     ax_drift.set_xlabel("Time since session start (s)", fontsize=9)
-    ax_drift.set_ylabel("Ice thickness (cm)", fontsize=9)
+    ax_drift.set_ylabel("Depth (m, downward positive)", fontsize=9)
     ax_drift.set_title(
-        f"C — gp1: Slow depth drift over long session  (σ = {T1.std()*100:.2f} cm)",
+        f"C — gp1: Slow depth drift over long session  (σ = {D1.std()*100:.2f} cm)",
         color=TXT,
         fontsize=10,
         pad=5,
@@ -1705,7 +1655,7 @@ def fig_error_analysis(raw_rows, av_rows):
         ha="center",
         va="bottom",
         fontsize=8,
-        color="#888899",
+        color="#444444",
         wrap=True,
     )
     return fig
