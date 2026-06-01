@@ -24,9 +24,9 @@ import numpy as np
 
 GRID_ROWS = 4
 
-DEFAULT_UNF = Path(__file__).resolve().parent.parent / "zermatt_results" / "measurements_unfiltered.csv"
-DEFAULT_AV  = Path(__file__).resolve().parent.parent / "zermatt_results" / "measurements_av.csv"
-DEFAULT_OUT = Path(__file__).resolve().parent.parent / "zermatt_results" / "plots" / "per_gridpoint"
+DEFAULT_UNF = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "measurements_unfiltered.csv"
+DEFAULT_AV  = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "measurements_av.csv"
+DEFAULT_OUT = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "plots" / "per_gridpoint"
 
 
 def load_csv(path):

@@ -17,9 +17,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-CSV_DEFAULT = (Path(__file__).resolve().parent.parent
+CSV_DEFAULT = (Path(__file__).resolve().parent.parent.parent
                / "zermatt_results" / "measurements_unfiltered.csv")
-OUT_DEFAULT = (Path(__file__).resolve().parent.parent
+OUT_DEFAULT = (Path(__file__).resolve().parent.parent.parent
                / "zermatt_results" / "plots" / "thickness_drift_gp{gp}.png")
 
 

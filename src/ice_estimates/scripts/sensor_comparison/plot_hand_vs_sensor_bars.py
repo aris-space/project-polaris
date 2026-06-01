@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hand vs sensor ice-thickness scatter for the 29 Zermatt grid points."""
+"""Grouped bar chart: sensor vs reference ice thickness per grid point."""
 
 import argparse
 from pathlib import Path
@@ -20,7 +20,7 @@ DATA = [
     (16.702, 16.650),
 ]
 
-DEFAULT_OUT = Path(__file__).resolve().parent.parent / "zermatt_results" / "plots" / "hand_vs_sensor.png"
+DEFAULT_OUT = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "plots" / "hand_vs_sensor_bars.png"
 
 
 def main():
@@ -30,26 +30,20 @@ def main():
 
     sensor = np.array([d[0] for d in DATA])
     hand   = np.array([d[1] for d in DATA])
+    gp     = np.arange(1, len(DATA) + 1)
 
-    lo = min(hand.min(), sensor.min()) - 0.5
-    hi = max(hand.max(), sensor.max()) + 0.5
+    width = 0.4
+    fig, ax = plt.subplots(figsize=(13, 5))
+    ax.bar(gp - width/2, hand,   width, color="#888888", label="Reference")
+    ax.bar(gp + width/2, sensor, width, color="#5577ff", label="Sensor")
 
-    envelope_cm = 1.0  # ±1 cm tolerance band; adjust as needed
-
-    fig, ax = plt.subplots(figsize=(6.5, 6.5))
-    diag = np.array([lo, hi])
-    ax.fill_between(diag, diag - envelope_cm, diag + envelope_cm,
-                    color="#ffaa33", alpha=0.20,
-                    label=f"±{envelope_cm:.0f} cm")
-    ax.plot([lo, hi], [lo, hi], color="#888888", ls="--", lw=1.0)
-    ax.scatter(hand, sensor, s=45, color="#5577ff", edgecolor="#3355cc", linewidth=0.5)
+    ax.set_xticks(gp)
+    ax.set_xticklabels([str(g) for g in gp], fontsize=8)
+    ax.set_xlabel("Grid point")
+    ax.set_ylabel("Ice thickness (cm)")
+    ax.set_ylim(min(hand.min(), sensor.min()) - 1.0, max(hand.max(), sensor.max()) + 1.0)
+    ax.grid(True, axis="y", color="#eeeeee", linewidth=0.6)
     ax.legend(loc="upper left", frameon=False)
-    ax.set_xlim(lo, hi)
-    ax.set_ylim(lo, hi)
-    ax.set_aspect("equal")
-    ax.set_xlabel("Reference ice thickness (cm)")
-    ax.set_ylabel("Sensor-measured ice thickness (cm)")
-    ax.grid(True, color="#eeeeee", linewidth=0.6)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

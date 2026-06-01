@@ -21,11 +21,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-CSV_DEFAULT = (Path(__file__).resolve().parent.parent
+CSV_DEFAULT = (Path(__file__).resolve().parent.parent.parent
                / "zermatt_results" / "measurements_unfiltered.csv")
-AV_DEFAULT  = (Path(__file__).resolve().parent.parent
+AV_DEFAULT  = (Path(__file__).resolve().parent.parent.parent
                / "zermatt_results" / "measurements_av.csv")
-OUT_DEFAULT = (Path(__file__).resolve().parent.parent
+OUT_DEFAULT = (Path(__file__).resolve().parent.parent.parent
                / "zermatt_results" / "plots" / "horizontal_drift_gp{gp}.png")
 
 # Metres per degree at ~46° N. SBL accuracy dominates the horizontal error;

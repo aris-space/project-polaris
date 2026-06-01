@@ -84,9 +84,9 @@ def split_sessions(rows, max_gap_s=2.0):
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     default_unf = os.path.abspath(os.path.join(
-        here, "../zermatt_results/measurements_unfiltered.csv"))
+        here, "../../zermatt_results/measurements_unfiltered.csv"))
     default_out = os.path.abspath(os.path.join(
-        here, "../zermatt_results/plots"))
+        here, "../../zermatt_results/plots"))
 
     p = argparse.ArgumentParser()
     p.add_argument("--unfiltered", default=default_unf)

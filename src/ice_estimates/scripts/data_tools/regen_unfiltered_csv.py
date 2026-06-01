@@ -16,7 +16,8 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
+SCRIPTS_ROOT = os.path.dirname(HERE)
+sys.path.insert(0, SCRIPTS_ROOT)
 
 import extract_zermatt_measurements as ext  # noqa: E402
 

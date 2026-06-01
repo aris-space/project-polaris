@@ -6,6 +6,32 @@ Companion to `ice_estimates/archimedes_touch.py`, which runs the same thickness 
 
 ---
 
+## Repository layout
+
+The canonical pipeline lives at the root of this folder; diagnostic plots are grouped by topic in subfolders.
+
+```
+scripts/
+├── extract_zermatt_measurements.py   # 1. extraction — reads bags, writes CSVs (see below)
+├── visualize_ice_measurements.py     # 2. visualization — turns CSVs into summary.pdf
+├── config.yaml                       #    parameters for both
+│
+├── data_tools/                       # CSV post-processing utilities
+│   ├── add_pressure_sample_count.py
+│   └── regen_unfiltered_csv.py
+│
+├── sensor_comparison/                # cross-sensor diagnostic plots (ping, DVL, ultrasonic, hand-measured)
+├── drift_stability/                  # session-level drift / oscillation / pitch plots
+├── filter_diagnostics/               # depth-stability filter examples and failure-mode analysis
+├── per_gridpoint/                    # per-gridpoint distributions and session diagnostics
+├── thickness_map/                    # spatial heatmap over the lake surface
+└── attic/                            # orphan artefacts kept for reference
+```
+
+Each subfolder is self-contained: a `plot_*.py` script and the PNGs it produces sit side by side. All plot scripts default to reading from `../zermatt_results/` (one level above `scripts/`) and accept `--unfiltered` / `--av` / `--out` overrides.
+
+---
+
 ## Setup (devcontainer — run once)
 
 The devcontainer's default `python3` resolves to `/ros2_ws/.venv/bin/python3`, which does not have the required packages. Use the **system Python** (`/usr/bin/python3`) instead for this script.

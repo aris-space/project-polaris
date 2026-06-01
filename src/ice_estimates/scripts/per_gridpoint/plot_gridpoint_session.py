@@ -28,8 +28,8 @@ MAX_PITCH_DEG       = 25.0
 MAX_ROLL_DEG        = 10.0
 GNSS_MAX_ACC_M      = 4.0
 
-DEFAULT_UNF = Path(__file__).resolve().parent.parent / "zermatt_results" / "measurements_unfiltered.csv"
-DEFAULT_OUT = Path(__file__).resolve().parent.parent / "zermatt_results" / "gridpoint_sessions"
+DEFAULT_UNF = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "measurements_unfiltered.csv"
+DEFAULT_OUT = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "gridpoint_sessions"
 
 
 def load_unfiltered(path):

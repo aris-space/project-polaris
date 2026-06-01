@@ -19,8 +19,8 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
-DEFAULT_UNF = Path(__file__).resolve().parent.parent / "zermatt_results" / "measurements_unfiltered.csv"
-DEFAULT_AV  = Path(__file__).resolve().parent.parent / "zermatt_results" / "measurements_av.csv"
+DEFAULT_UNF = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "measurements_unfiltered.csv"
+DEFAULT_AV  = Path(__file__).resolve().parent.parent.parent / "zermatt_results" / "measurements_av.csv"
 
 
 def main():
