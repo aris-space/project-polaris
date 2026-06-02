@@ -169,25 +169,52 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     from matplotlib.patches import Circle
     from matplotlib.lines import Line2D
 
-    WAYPOINT_RADIUS = 0.8
+    WAYPOINT_RADIUS = 0.8   # = goal_checker xy_goal_tolerance in nav2_params.yaml
     WAYPOINT_COLOR = 'orange'
+    # The controller's closest-point trace is NOT the reference path: it is the
+    # foot-point projection and jumps discontinuously at each leg handoff. Off by
+    # default; enable only as a tracking-debug overlay.
+    SHOW_FOOTPOINT = False
 
     fig4, ax4 = plt.subplots(figsize=(9, 9))
 
-    # Deduplicated reference path (consecutive duplicates dropped)
-    path_xy = df[['closest_x_m', 'closest_y_m']]
-    path_mask = (path_xy != path_xy.shift()).any(axis=1)
-    path_xy = path_xy[path_mask]
-    ax4.plot(path_xy['closest_x_m'], path_xy['closest_y_m'],
-             '--', color='black', linewidth=1.5, label=r'Reference path')
+    # Reference path = the actual planned legs from /plan (planned_path.csv),
+    # written by export_tracking_bag_csv.py. One dashed line per leg.
+    plan_csv = os.path.join(out_dir, 'planned_path.csv')
+    if os.path.isfile(plan_csv):
+        plan_df = pd.read_csv(plan_csv)
+        first = True
+        for _, leg in plan_df.groupby('leg_index'):
+            ax4.plot(leg['plan_x_m'], leg['plan_y_m'], '--', color='black',
+                     linewidth=1.5, zorder=3,
+                     label=(r'Reference path (/plan)' if first else None))
+            first = False
+    else:
+        print(f'WARNING: {plan_csv} not found — re-run export_tracking_bag_csv.py '
+              'for the truthful reference path. Skipping it.')
 
-    # Predefined waypoint: orange '+' plus a circle of radius WAYPOINT_RADIUS.
-    waypoints = [(5.5, -1.0), (10.4,-9.25)]
+    # Waypoints = the goals sent to Nav2 (mission_waypoints.csv) — never hardcoded.
+    wp_csv = os.path.join(out_dir, 'mission_waypoints.csv')
+    if os.path.isfile(wp_csv):
+        wp_df = pd.read_csv(wp_csv)
+        waypoints = list(zip(wp_df['wp_x_m'], wp_df['wp_y_m']))
+    else:
+        waypoints = []
+        print(f'WARNING: {wp_csv} not found — re-run export_tracking_bag_csv.py. '
+              'No waypoint markers will be drawn.')
     for (wx, wy) in waypoints:
         ax4.plot(wx, wy, marker='+', color=WAYPOINT_COLOR, markersize=14,
                  markeredgewidth=2.5, linestyle='None', zorder=6)
         ax4.add_patch(Circle((wx, wy), WAYPOINT_RADIUS, fill=False,
                              edgecolor=WAYPOINT_COLOR, linewidth=1.8, zorder=6))
+
+    # Optional diagnostic: controller closest-point (foot-point) trace.
+    if SHOW_FOOTPOINT:
+        foot = df[['closest_x_m', 'closest_y_m']]
+        foot = foot[(foot != foot.shift()).any(axis=1)]
+        ax4.plot(foot['closest_x_m'], foot['closest_y_m'], ':', color='gray',
+                 linewidth=1.0, alpha=0.7, zorder=2,
+                 label=r'Controller foot-point (diagnostic)')
 
     # Robot trajectory colored by absolute cross-track error
     rx = df['robot_x_m'].to_numpy()
@@ -233,14 +260,14 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
                       markersize=14, markeredgewidth=2.5,
-                      linestyle='None', label=r'Predefined waypoints')
+                      linestyle='None', label=r'Mission waypoints (Nav2 goals)')
     # Proxy for the robot's actual (driven) trajectory — the viridis-colored line.
     # Uses a mid-colormap color since the real line is colored by cross-track error.
     traj_proxy = Line2D([0], [0], color=plt.get_cmap('viridis')(0.5),
                         linewidth=2, label=r'Actual path (AUV)')
     handles, labels = ax4.get_legend_handles_labels()
     ax4.legend(handles + [traj_proxy, wp_proxy],
-               labels + [r'Actual path (AUV)', r'Predefined waypoints'],
+               labels + [r'Actual path (AUV)', r'Mission waypoints (Nav2 goals)'],
                loc='best')
 
     fig4.tight_layout()
