@@ -51,157 +51,157 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     t0 = df['time_sec'].iloc[0]
     time = df['time_sec'] - t0
 
-    # -------------------------------------------------------------------
-    # GROUP 1: TRACKING ERRORS
-    # Using exact names: cross_track_xy_m, vertical_error_m, yaw_error_rad
-    # -------------------------------------------------------------------
-    fig1, axes1 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+    # # -------------------------------------------------------------------
+    # # GROUP 1: TRACKING ERRORS
+    # # Using exact names: cross_track_xy_m, vertical_error_m, yaw_error_rad
+    # # -------------------------------------------------------------------
+    # fig1, axes1 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
     
-    axes1[0].plot(time, df['cross_track_xy_m'], color='#1f77b4', label='Cross Track Error')
-    axes1[0].set_ylabel('XY Error [m]')
-    axes1[0].set_title('Controller Tracking Errors')
+    # axes1[0].plot(time, df['cross_track_xy_m'], color='#1f77b4', label='Cross Track Error')
+    # axes1[0].set_ylabel('XY Error [m]')
+    # axes1[0].set_title('Controller Tracking Errors')
     
-    axes1[1].plot(time, df['vertical_error_m'], color='#2ca02c', label='Vertical Error')
-    axes1[1].set_ylabel('Vertical Error [m]')
+    # axes1[1].plot(time, df['vertical_error_m'], color='#2ca02c', label='Vertical Error')
+    # axes1[1].set_ylabel('Vertical Error [m]')
     
-    axes1[2].plot(time, df['yaw_error_rad'], color='#d62728', label='Yaw Error')
-    axes1[2].set_ylabel('Yaw Error [rad]')
-    axes1[2].set_xlabel('Time [s]')
+    # axes1[2].plot(time, df['yaw_error_rad'], color='#d62728', label='Yaw Error')
+    # axes1[2].set_ylabel('Yaw Error [rad]')
+    # axes1[2].set_xlabel('Time [s]')
 
-    for ax in axes1:
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='upper right')
+    # for ax in axes1:
+    #     ax.grid(True, linestyle='--', alpha=0.6)
+    #     ax.legend(loc='upper right')
     
-    fig1.tight_layout()
-    fig1.savefig(os.path.join(out_dir, 'tracking_errors.png'))
+    # fig1.tight_layout()
+    # fig1.savefig(os.path.join(out_dir, 'tracking_errors.png'))
 
-    # -------------------------------------------------------------------
-    # GROUP 2: POSE COMPARISON (Robot vs. Path)
-    # Using exact names: robot_x_m, closest_x_m, etc.
-    # -------------------------------------------------------------------
-    fig2, axes2 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+    # # -------------------------------------------------------------------
+    # # GROUP 2: POSE COMPARISON (Robot vs. Path)
+    # # Using exact names: robot_x_m, closest_x_m, etc.
+    # # -------------------------------------------------------------------
+    # fig2, axes2 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
     
-    # X Position
-    axes2[0].plot(time, df['robot_x_m'], label='Robot x')
-    axes2[0].plot(time, df['closest_x_m'], '--', label='Path x')
-    axes2[0].set_ylabel('X [m]')
-    axes2[0].set_title('Robot Position vs. Closest Path Point')
+    # # X Position
+    # axes2[0].plot(time, df['robot_x_m'], label='Robot x')
+    # axes2[0].plot(time, df['closest_x_m'], '--', label='Path x')
+    # axes2[0].set_ylabel('X [m]')
+    # axes2[0].set_title('Robot Position vs. Closest Path Point')
     
-    # Y Position
-    axes2[1].plot(time, df['robot_y_m'], color='orange', label='Robot y')
-    axes2[1].plot(time, df['closest_y_m'], '--', color='brown', label='Path y')
-    axes2[1].set_ylabel('Y [m]')
+    # # Y Position
+    # axes2[1].plot(time, df['robot_y_m'], color='orange', label='Robot y')
+    # axes2[1].plot(time, df['closest_y_m'], '--', color='brown', label='Path y')
+    # axes2[1].set_ylabel('Y [m]')
     
-    # Z Position
-    axes2[2].plot(time, df['robot_z_m'], color='purple', label='Robot z')
-    axes2[2].plot(time, df['closest_z_m'], '--', color='black', label='Path z')
-    axes2[2].set_ylabel('Z [m]')
-    axes2[2].set_xlabel('Time [s]')
+    # # Z Position
+    # axes2[2].plot(time, df['robot_z_m'], color='purple', label='Robot z')
+    # axes2[2].plot(time, df['closest_z_m'], '--', color='black', label='Path z')
+    # axes2[2].set_ylabel('Z [m]')
+    # axes2[2].set_xlabel('Time [s]')
 
-    for ax in axes2:
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='upper right')
+    # for ax in axes2:
+    #     ax.grid(True, linestyle='--', alpha=0.6)
+    #     ax.legend(loc='upper right')
 
-    fig2.tight_layout()
-    fig2.savefig(os.path.join(out_dir, 'pose_comparison.png'))
+    # fig2.tight_layout()
+    # fig2.savefig(os.path.join(out_dir, 'pose_comparison.png'))
 
-    # -------------------------------------------------------------------
-    # GROUP 3: ROBOT TWISTS (Velocities)
-    # Using exact names: twist_linear_x, twist_angular_z, etc.
-    # -------------------------------------------------------------------
-    fig3, axes3 = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
+    # # -------------------------------------------------------------------
+    # # GROUP 3: ROBOT TWISTS (Velocities)
+    # # Using exact names: twist_linear_x, twist_angular_z, etc.
+    # # -------------------------------------------------------------------
+    # fig3, axes3 = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
     
-    axes3[0].plot(time, df['twist_linear_x'], label='vx (Forward)')
-    axes3[0].plot(time, df['twist_linear_y'], label='vy (Strafe)')
-    axes3[0].plot(time, df['twist_linear_z'], label='vz (Vertical)')
-    axes3[0].set_ylabel('Linear Vel [m/s]')
-    axes3[0].set_title('Robot Body Twists')
+    # axes3[0].plot(time, df['twist_linear_x'], label='vx (Forward)')
+    # axes3[0].plot(time, df['twist_linear_y'], label='vy (Strafe)')
+    # axes3[0].plot(time, df['twist_linear_z'], label='vz (Vertical)')
+    # axes3[0].set_ylabel('Linear Vel [m/s]')
+    # axes3[0].set_title('Robot Body Twists')
     
-    axes3[1].plot(time, df['twist_angular_z'], color='red', label='Angular z (Yaw)')
-    axes3[1].set_ylabel('Angular Vel [rad/s]')
-    axes3[1].set_xlabel('Time [s]')
+    # axes3[1].plot(time, df['twist_angular_z'], color='red', label='Angular z (Yaw)')
+    # axes3[1].set_ylabel('Angular Vel [rad/s]')
+    # axes3[1].set_xlabel('Time [s]')
 
-    for ax in axes3:
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='upper right')
+    # for ax in axes3:
+    #     ax.grid(True, linestyle='--', alpha=0.6)
+    #     ax.legend(loc='upper right')
 
-    fig3.tight_layout()
-    fig3.savefig(os.path.join(out_dir, 'robot_twists.png'))
+    # fig3.tight_layout()
+    # fig3.savefig(os.path.join(out_dir, 'robot_twists.png'))
 
-    print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
+    # print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
 
-    # -------------------------------------------------------------------
-    # GROUP 4: XY VIEW (ROS ENU frame) — reference path + robot trajectory
-    # -------------------------------------------------------------------
-    from matplotlib.collections import LineCollection
-    from matplotlib.patches import Circle
-    from matplotlib.lines import Line2D
+    # # -------------------------------------------------------------------
+    # # GROUP 4: XY VIEW (ROS ENU frame) — reference path + robot trajectory
+    # # -------------------------------------------------------------------
+    # from matplotlib.collections import LineCollection
+    # from matplotlib.patches import Circle
+    # from matplotlib.lines import Line2D
 
-    WAYPOINT_RADIUS = 0.8
-    WAYPOINT_COLOR = 'orange'
+    # WAYPOINT_RADIUS = 0.8
+    # WAYPOINT_COLOR = 'orange'
 
-    fig4, ax4 = plt.subplots(figsize=(9, 9))
+    # fig4, ax4 = plt.subplots(figsize=(9, 9))
 
-    # Deduplicated reference path (consecutive duplicates dropped)
-    path_xy = df[['closest_x_m', 'closest_y_m']]
-    path_mask = (path_xy != path_xy.shift()).any(axis=1)
-    path_xy = path_xy[path_mask]
-    ax4.plot(path_xy['closest_x_m'], path_xy['closest_y_m'],
-             '--', color='black', linewidth=1.5, label='Reference path')
+    # # Deduplicated reference path (consecutive duplicates dropped)
+    # path_xy = df[['closest_x_m', 'closest_y_m']]
+    # path_mask = (path_xy != path_xy.shift()).any(axis=1)
+    # path_xy = path_xy[path_mask]
+    # ax4.plot(path_xy['closest_x_m'], path_xy['closest_y_m'],
+    #          '--', color='black', linewidth=1.5, label='Reference path')
 
-    # Predefined waypoint: orange '+' plus a circle of radius WAYPOINT_RADIUS.
-    waypoints = [(6.25, -1.5)]
-    for (wx, wy) in waypoints:
-        ax4.plot(wx, wy, marker='+', color=WAYPOINT_COLOR, markersize=14,
-                 markeredgewidth=2.5, linestyle='None', zorder=6)
-        ax4.add_patch(Circle((wx, wy), WAYPOINT_RADIUS, fill=False,
-                             edgecolor=WAYPOINT_COLOR, linewidth=1.8, zorder=6))
+    # # Predefined waypoint: orange '+' plus a circle of radius WAYPOINT_RADIUS.
+    # waypoints = [(6.25, -1.5)]
+    # for (wx, wy) in waypoints:
+    #     ax4.plot(wx, wy, marker='+', color=WAYPOINT_COLOR, markersize=14,
+    #              markeredgewidth=2.5, linestyle='None', zorder=6)
+    #     ax4.add_patch(Circle((wx, wy), WAYPOINT_RADIUS, fill=False,
+    #                          edgecolor=WAYPOINT_COLOR, linewidth=1.8, zorder=6))
 
-    # Robot trajectory colored by absolute cross-track error
-    rx = df['robot_x_m'].to_numpy()
-    ry = df['robot_y_m'].to_numpy()
-    err = np.abs(df['cross_track_xy_m'].to_numpy())
-    # Per-segment color = mean error of its two endpoints (length = N-1).
-    err_seg = 0.5 * (err[:-1] + err[1:])
-    points = np.array([rx, ry]).T.reshape(-1, 1, 2)
-    segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    lc = LineCollection(segments, cmap='viridis',
-                        norm=plt.Normalize(0.0, err.max()), linewidth=2)
-    lc.set_array(err_seg)
-    ax4.add_collection(lc)
-    cbar = fig4.colorbar(lc, ax=ax4, orientation='horizontal',
-                         shrink=0.85, pad=0.1)
-    cbar.set_label('|Cross-track error| [m]')
+    # # Robot trajectory colored by absolute cross-track error
+    # rx = df['robot_x_m'].to_numpy()
+    # ry = df['robot_y_m'].to_numpy()
+    # err = np.abs(df['cross_track_xy_m'].to_numpy())
+    # # Per-segment color = mean error of its two endpoints (length = N-1).
+    # err_seg = 0.5 * (err[:-1] + err[1:])
+    # points = np.array([rx, ry]).T.reshape(-1, 1, 2)
+    # segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    # lc = LineCollection(segments, cmap='viridis',
+    #                     norm=plt.Normalize(0.0, err.max()), linewidth=2)
+    # lc.set_array(err_seg)
+    # ax4.add_collection(lc)
+    # cbar = fig4.colorbar(lc, ax=ax4, orientation='horizontal',
+    #                      shrink=0.85, pad=0.1)
+    # cbar.set_label('|Cross-track error| [m]')
 
-    # Start / end markers
-    ax4.plot(rx[0], ry[0], 'o', color='green', markersize=10,
-             markeredgecolor='black', label='Start', zorder=5)
-    ax4.plot(rx[-1], ry[-1], 's', color='red', markersize=10,
-             markeredgecolor='black', label='End', zorder=5)
+    # # Start / end markers
+    # ax4.plot(rx[0], ry[0], 'o', color='green', markersize=10,
+    #          markeredgecolor='black', label='Start', zorder=5)
+    # ax4.plot(rx[-1], ry[-1], 's', color='red', markersize=10,
+    #          markeredgecolor='black', label='End', zorder=5)
 
-    ax4.set_xlabel('East / X [m]')
-    ax4.set_ylabel('North / Y [m]')
-    ax4.set_title('X-Y Plane View (ROS ENU) — Robot Trajectory vs Reference Path')
-    ax4.set_aspect('equal', adjustable='box')
-    ax4.set_ylim(-4, 1)
-    ax4.xaxis.set_major_locator(plt.MultipleLocator(0.5))
-    ax4.yaxis.set_major_locator(plt.MultipleLocator(0.5))
-    ax4.grid(True, linestyle='--', alpha=0.6)
+    # ax4.set_xlabel('East / X [m]')
+    # ax4.set_ylabel('North / Y [m]')
+    # ax4.set_title('X-Y Plane View (ROS ENU) — Robot Trajectory vs Reference Path')
+    # ax4.set_aspect('equal', adjustable='box')
+    # ax4.set_ylim(-4, 1)
+    # ax4.xaxis.set_major_locator(plt.MultipleLocator(0.5))
+    # ax4.yaxis.set_major_locator(plt.MultipleLocator(0.5))
+    # ax4.grid(True, linestyle='--', alpha=0.6)
 
-    wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
-                      markersize=14, markeredgewidth=2.5,
-                      linestyle='None', label='Predefined waypoints')
-    handles, labels = ax4.get_legend_handles_labels()
-    ax4.legend(handles + [wp_proxy], labels + ['Predefined waypoints'],
-               loc='best')
+    # wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
+    #                   markersize=14, markeredgewidth=2.5,
+    #                   linestyle='None', label='Predefined waypoints')
+    # handles, labels = ax4.get_legend_handles_labels()
+    # ax4.legend(handles + [wp_proxy], labels + ['Predefined waypoints'],
+    #            loc='best')
 
-    fig4.tight_layout()
-    fig4.savefig(os.path.join(out_dir, 'xy_view.png'))
+    # fig4.tight_layout()
+    # fig4.savefig(os.path.join(out_dir, 'xy_view.png'))
 
-    print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, xy_view.png")
+    # print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, xy_view.png")
 
-    # Single blocking show so all four figures stay on screen until you close them.
-    plt.show()
+    # # Single blocking show so all four figures stay on screen until you close them.
+    # plt.show()
 
     # -------------------------------------------------------------------
     # GROUP 5: XY ANIMATION (ROS ENU) — moving robot + yaw stick + time bar
@@ -492,7 +492,7 @@ def plot_gps_track_satellite_png(csv_path,
 
 
 if __name__ == "__main__":
-    csv_path = "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/move_to_goal_lake_17_2026_05_26-15_08_48/csv_export/tracking_errors_wide.csv"
+    csv_path = "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/autonomy_multiple_01_2026_05_26-15_22_41/csv_export/tracking_errors_wide.csv"
 
     # ----- Waypoints (fill in lat/lon for each) -----
     # Add as many as you like; each gets an orange marker + acceptance circle.

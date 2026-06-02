@@ -53,114 +53,114 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     t0 = df['time_sec'].iloc[0]
     time = df['time_sec'] - t0
 
-    # -------------------------------------------------------------------
-    # GROUP 1: TRACKING ERRORS
-    # Using exact names: cross_track_xy_m, vertical_error_m, yaw_error_rad
-    # -------------------------------------------------------------------
-    fig1, axes1 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+    # # -------------------------------------------------------------------
+    # # GROUP 1: TRACKING ERRORS
+    # # Using exact names: cross_track_xy_m, vertical_error_m, yaw_error_rad
+    # # -------------------------------------------------------------------
+    # fig1, axes1 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
     
-    axes1[0].plot(time, df['cross_track_xy_m'], color='#1f77b4', label=r'Cross-track error')
-    axes1[0].set_ylabel(r'XY error [\textrm{m}]')
-    axes1[0].set_title(r'\textbf{Controller tracking errors}')
+    # axes1[0].plot(time, df['cross_track_xy_m'], color='#1f77b4', label=r'Cross-track error')
+    # axes1[0].set_ylabel(r'XY error [\textrm{m}]')
+    # axes1[0].set_title(r'\textbf{Controller tracking errors}')
 
-    axes1[1].plot(time, df['vertical_error_m'], color='#2ca02c', label=r'Vertical error')
-    axes1[1].set_ylabel(r'Vertical error [\textrm{m}]')
+    # axes1[1].plot(time, df['vertical_error_m'], color='#2ca02c', label=r'Vertical error')
+    # axes1[1].set_ylabel(r'Vertical error [\textrm{m}]')
 
-    axes1[2].plot(time, df['yaw_error_rad'], color='#d62728', label=r'Yaw error')
-    axes1[2].set_ylabel(r'Yaw error [\textrm{rad}]')
-    axes1[2].set_xlabel(r'Time [\textrm{s}]')
+    # axes1[2].plot(time, df['yaw_error_rad'], color='#d62728', label=r'Yaw error')
+    # axes1[2].set_ylabel(r'Yaw error [\textrm{rad}]')
+    # axes1[2].set_xlabel(r'Time [\textrm{s}]')
 
-    for ax in axes1:
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='upper right')
+    # for ax in axes1:
+    #     ax.grid(True, linestyle='--', alpha=0.6)
+    #     ax.legend(loc='upper right')
     
-    fig1.tight_layout()
-    fig1.savefig(os.path.join(out_dir, 'tracking_errors.png'))
+    # fig1.tight_layout()
+    # fig1.savefig(os.path.join(out_dir, 'tracking_errors.png'))
 
-    # -------------------------------------------------------------------
-    # GROUP 2: POSE COMPARISON (Robot vs. Path)
-    # Using exact names: robot_x_m, closest_x_m, etc.
-    # -------------------------------------------------------------------
-    fig2, axes2 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+    # # -------------------------------------------------------------------
+    # # GROUP 2: POSE COMPARISON (Robot vs. Path)
+    # # Using exact names: robot_x_m, closest_x_m, etc.
+    # # -------------------------------------------------------------------
+    # fig2, axes2 = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
     
-    # X Position
-    axes2[0].plot(time, df['robot_x_m'], label=r'Robot $x$')
-    axes2[0].plot(time, df['closest_x_m'], '--', label=r'Path $x$')
-    axes2[0].set_ylabel(r'$X$ [\textrm{m}]')
-    axes2[0].set_title(r'\textbf{Robot position vs. closest path point}')
+    # # X Position
+    # axes2[0].plot(time, df['robot_x_m'], label=r'Robot $x$')
+    # axes2[0].plot(time, df['closest_x_m'], '--', label=r'Path $x$')
+    # axes2[0].set_ylabel(r'$X$ [\textrm{m}]')
+    # axes2[0].set_title(r'\textbf{Robot position vs. closest path point}')
 
-    # Y Position
-    axes2[1].plot(time, df['robot_y_m'], color='orange', label=r'Robot $y$')
-    axes2[1].plot(time, df['closest_y_m'], '--', color='brown', label=r'Path $y$')
-    axes2[1].set_ylabel(r'$Y$ [\textrm{m}]')
+    # # Y Position
+    # axes2[1].plot(time, df['robot_y_m'], color='orange', label=r'Robot $y$')
+    # axes2[1].plot(time, df['closest_y_m'], '--', color='brown', label=r'Path $y$')
+    # axes2[1].set_ylabel(r'$Y$ [\textrm{m}]')
 
-    # Z Position
-    axes2[2].plot(time, df['robot_z_m'], color='purple', label=r'Robot $z$')
-    axes2[2].plot(time, df['closest_z_m'], '--', color='black', label=r'Path $z$')
-    axes2[2].set_ylabel(r'$Z$ [\textrm{m}]')
-    axes2[2].set_xlabel(r'Time [\textrm{s}]')
+    # # Z Position
+    # axes2[2].plot(time, df['robot_z_m'], color='purple', label=r'Robot $z$')
+    # axes2[2].plot(time, df['closest_z_m'], '--', color='black', label=r'Path $z$')
+    # axes2[2].set_ylabel(r'$Z$ [\textrm{m}]')
+    # axes2[2].set_xlabel(r'Time [\textrm{s}]')
 
-    for ax in axes2:
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='upper right')
+    # for ax in axes2:
+    #     ax.grid(True, linestyle='--', alpha=0.6)
+    #     ax.legend(loc='upper right')
 
-    fig2.tight_layout()
-    fig2.savefig(os.path.join(out_dir, 'pose_comparison.png'))
+    # fig2.tight_layout()
+    # fig2.savefig(os.path.join(out_dir, 'pose_comparison.png'))
 
-    # -------------------------------------------------------------------
-    # GROUP 3: ROBOT TWISTS (Velocities)
-    # Using exact names: twist_linear_x, twist_angular_z, etc.
-    # -------------------------------------------------------------------
-    fig3, axes3 = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
+    # # -------------------------------------------------------------------
+    # # GROUP 3: ROBOT TWISTS (Velocities)
+    # # Using exact names: twist_linear_x, twist_angular_z, etc.
+    # # -------------------------------------------------------------------
+    # fig3, axes3 = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
     
-    axes3[0].plot(time, df['twist_linear_x'], label=r'$v_x$ (forward)')
-    axes3[0].plot(time, df['twist_linear_y'], label=r'$v_y$ (strafe)')
-    axes3[0].plot(time, df['twist_linear_z'], label=r'$v_z$ (vertical)')
-    axes3[0].set_ylabel(r'Linear vel.\ [\textrm{m/s}]')
-    axes3[0].set_title(r'\textbf{Robot body twists}')
+    # axes3[0].plot(time, df['twist_linear_x'], label=r'$v_x$ (forward)')
+    # axes3[0].plot(time, df['twist_linear_y'], label=r'$v_y$ (strafe)')
+    # axes3[0].plot(time, df['twist_linear_z'], label=r'$v_z$ (vertical)')
+    # axes3[0].set_ylabel(r'Linear vel.\ [\textrm{m/s}]')
+    # axes3[0].set_title(r'\textbf{Robot body twists}')
 
-    axes3[1].plot(time, df['twist_angular_z'], color='red', label=r'$\omega_z$ (yaw)')
-    axes3[1].set_ylabel(r'Angular vel.\ [\textrm{rad/s}]')
-    axes3[1].set_xlabel(r'Time [\textrm{s}]')
+    # axes3[1].plot(time, df['twist_angular_z'], color='red', label=r'$\omega_z$ (yaw)')
+    # axes3[1].set_ylabel(r'Angular vel.\ [\textrm{rad/s}]')
+    # axes3[1].set_xlabel(r'Time [\textrm{s}]')
 
-    for ax in axes3:
-        ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(loc='upper right')
+    # for ax in axes3:
+    #     ax.grid(True, linestyle='--', alpha=0.6)
+    #     ax.legend(loc='upper right')
 
-    fig3.tight_layout()
-    fig3.savefig(os.path.join(out_dir, 'robot_twists.png'))
+    # fig3.tight_layout()
+    # fig3.savefig(os.path.join(out_dir, 'robot_twists.png'))
 
-    print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
+    # print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
 
-    # -------------------------------------------------------------------
-    # GROUP 3b: MEASURED vs COMMANDED VELOCITIES (single plot)
-    # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
-    # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
-    # -------------------------------------------------------------------
-    if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
-        fig3b, ax3b = plt.subplots(figsize=(9, 5))
+    # # -------------------------------------------------------------------
+    # # GROUP 3b: MEASURED vs COMMANDED VELOCITIES (single plot)
+    # # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
+    # # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
+    # # -------------------------------------------------------------------
+    # if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
+    #     fig3b, ax3b = plt.subplots(figsize=(9, 5))
 
-        ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
-                  label=r'$v_x$ measured [\textrm{m/s}]')
-        ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
-                  label=r'$v_x$ commanded [\textrm{m/s}]')
-        ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-                  label=r'$\omega_z$ measured [\textrm{rad/s}]')
-        ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
-                  label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+    #     ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
+    #               label=r'$v_x$ measured [\textrm{m/s}]')
+    #     ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
+    #               label=r'$v_x$ commanded [\textrm{m/s}]')
+    #     ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
+    #               label=r'$\omega_z$ measured [\textrm{rad/s}]')
+    #     ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
+    #               label=r'$\omega_z$ commanded [\textrm{rad/s}]')
 
-        ax3b.set_xlabel(r'Time [\textrm{s}]')
-        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
-        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
-        ax3b.grid(True, linestyle='--', alpha=0.6)
-        ax3b.legend(loc='upper right')
+    #     ax3b.set_xlabel(r'Time [\textrm{s}]')
+    #     ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+    #     ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
+    #     ax3b.grid(True, linestyle='--', alpha=0.6)
+    #     ax3b.legend(loc='upper right')
 
-        fig3b.tight_layout()
-        fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
-        print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
-    else:
-        print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
-              "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
+    #     fig3b.tight_layout()
+    #     fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
+    #     print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
+    # else:
+    #     print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
+    #           "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
 
     # -------------------------------------------------------------------
     # GROUP 4: XY VIEW (ROS ENU frame) — reference path + robot trajectory
@@ -182,7 +182,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
              '--', color='black', linewidth=1.5, label=r'Reference path')
 
     # Predefined waypoint: orange '+' plus a circle of radius WAYPOINT_RADIUS.
-    waypoints = [(6.25, -1.5)]
+    waypoints = [(6.25, -1.5), (0,0)]
     for (wx, wy) in waypoints:
         ax4.plot(wx, wy, marker='+', color=WAYPOINT_COLOR, markersize=14,
                  markeredgewidth=2.5, linestyle='None', zorder=6)
@@ -226,7 +226,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
     ax4.set_title(r'\textbf{$X$--$Y$ plane view (ROS ENU) --- robot trajectory vs.\ reference path}')
     ax4.set_aspect('equal', adjustable='box')
-    ax4.set_ylim(-4, 1)
+    # ax4.set_ylim(-4, 1)
     ax4.xaxis.set_major_locator(plt.MultipleLocator(0.5))
     ax4.yaxis.set_major_locator(plt.MultipleLocator(0.5))
     ax4.grid(True, linestyle='--', alpha=0.6)
@@ -257,7 +257,7 @@ if __name__ == "__main__":
     # the cropped window will then be in CSV-elapsed seconds instead.
     plot_data(
         csv_path,
-        start_time=6.569712344,
-        end_time=42.806242311,
-        foxglove_offset=0.0,
+        start_time=None,   # None = plot the entire recording (no cropping)
+        end_time=None,
+        foxglove_offset=15.6643,  # = csv_first_sample - bag_start (from metadata.yaml)
     )
