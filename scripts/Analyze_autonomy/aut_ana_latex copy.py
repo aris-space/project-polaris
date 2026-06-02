@@ -133,6 +133,36 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
 
     # -------------------------------------------------------------------
+    # GROUP 3b: MEASURED vs COMMANDED VELOCITIES (single plot)
+    # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
+    # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
+    # -------------------------------------------------------------------
+    if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
+        fig3b, ax3b = plt.subplots(figsize=(9, 5))
+
+        ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
+                  label=r'$v_x$ measured [\textrm{m/s}]')
+        ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
+                  label=r'$v_x$ commanded [\textrm{m/s}]')
+        ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
+                  label=r'$\omega_z$ measured [\textrm{rad/s}]')
+        ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
+                  label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+
+        ax3b.set_xlabel(r'Time [\textrm{s}]')
+        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
+        ax3b.grid(True, linestyle='--', alpha=0.6)
+        ax3b.legend(loc='upper right')
+
+        fig3b.tight_layout()
+        fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
+        print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
+    else:
+        print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
+              "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
+
+    # -------------------------------------------------------------------
     # GROUP 4: XY VIEW (ROS ENU frame) — reference path + robot trajectory
     # -------------------------------------------------------------------
     from matplotlib.collections import LineCollection

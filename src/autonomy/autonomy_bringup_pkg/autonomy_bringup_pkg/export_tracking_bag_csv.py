@@ -16,6 +16,7 @@ Also supported if present in the bag:
 
   geometry_msgs/Vector3: ocean current m/s (``/ocean_current``, sim bridge or ``current_vector_node``)
   sensor_msgs/NavSatFix: filtered global GPS fix (``/gps/filtered/global``, navsat_transform output)
+  geometry_msgs/Twist: commanded velocity to the Pixhawk (``/pixhawk/cmd_vel``, controller output)
 
 Outputs:
 
@@ -47,6 +48,7 @@ TOPIC_POSE = '/pure_pursuit_robot_pose_map'
 TOPIC_TWIST = '/pure_pursuit_robot_twist'
 TOPIC_OCEAN_CURRENT = '/ocean_current'
 TOPIC_GPS_FILTERED = '/gps/filtered/global'
+TOPIC_CMD_VEL = '/pixhawk/cmd_vel'
 
 TOPICS_FLOAT = (TOPIC_CROSS, TOPIC_VERT, TOPIC_YAW)
 LONG_HEADER = [
@@ -79,7 +81,7 @@ def _storage_id_from_metadata(bag_dir: Path) -> str:
 
 
 def _read_bag_mixed(bag_dir: Path):
-    from geometry_msgs.msg import PointStamped, PoseStamped, TwistStamped, Vector3
+    from geometry_msgs.msg import PointStamped, PoseStamped, Twist, TwistStamped, Vector3
     from rclpy.serialization import deserialize_message
     from rosbag2_py import ConverterOptions, SequentialReader, StorageOptions
     from sensor_msgs.msg import NavSatFix
@@ -94,6 +96,7 @@ def _read_bag_mixed(bag_dir: Path):
         TOPIC_TWIST,
         TOPIC_OCEAN_CURRENT,
         TOPIC_GPS_FILTERED,
+        TOPIC_CMD_VEL,
     }
     sid = _storage_id_from_metadata(bag_dir)
     storage_options = StorageOptions(uri=str(bag_dir), storage_id=sid)
@@ -111,6 +114,7 @@ def _read_bag_mixed(bag_dir: Path):
     twist: List[Tuple[float, Tuple[float, ...]]] = []
     ocean_current: List[Tuple[float, Tuple[float, float, float]]] = []
     gps_filtered: List[Tuple[float, Tuple[float, float, float]]] = []
+    cmd_vel: List[Tuple[float, Tuple[float, ...]]] = []
 
     while reader.has_next():
         topic, data, t_ns = reader.read_next()
@@ -156,9 +160,17 @@ def _read_bag_mixed(bag_dir: Path):
             gps_filtered.append((t_sec, (lat, lon, alt)))
             row = [t_sec, topic, 'navsatfix', lat, lon, alt] + [''] * 10
             long_rows.append(row)
+        elif topic == TOPIC_CMD_VEL:
+            msg = deserialize_message(data, Twist)
+            l = msg.linear
+            a = msg.angular
+            tup = (l.x, l.y, l.z, a.x, a.y, a.z)
+            cmd_vel.append((t_sec, tup))
+            row = [t_sec, topic, 'twist', *tup] + [''] * 7
+            long_rows.append(row)
 
     long_rows.sort(key=lambda r: r[0])
-    return long_rows, float_scalar, closest, pose, twist, ocean_current, gps_filtered
+    return long_rows, float_scalar, closest, pose, twist, ocean_current, gps_filtered, cmd_vel
 
 
 def _asof_backward(
@@ -215,6 +227,7 @@ def _write_wide_csv(
     twist: List[Tuple[float, Tuple[float, ...]]],
     ocean_current: List[Tuple[float, Tuple[float, float, float]]],
     gps_filtered: List[Tuple[float, Tuple[float, float, float]]],
+    cmd_vel: List[Tuple[float, Tuple[float, ...]]],
 ) -> None:
     master = sorted(by_float.get(TOPIC_CROSS, []), key=lambda x: x[0])
     vert = sorted(by_float.get(TOPIC_VERT, []), key=lambda x: x[0])
@@ -248,6 +261,8 @@ def _write_wide_csv(
         'gps_latitude',
         'gps_longitude',
         'gps_altitude',
+        'cmd_vel_linear_x',
+        'cmd_vel_angular_z',
     ]
 
     def fmt_num(x: float) -> object:
@@ -267,8 +282,11 @@ def _write_wide_csv(
         tcol = _asof_backward_tuple(master, twist, 6)
         ocol = _asof_backward_tuple(master, ocean_current, 3)
         gcol = _asof_backward_tuple(master, gps_filtered, 3)
+        cvcol = _asof_backward_tuple(master, cmd_vel, 6)
 
-        for (t, cx), v, y, c3, p7, t6, o3, g3 in zip(master, vcol, ycol, ccol, pcol, tcol, ocol, gcol):
+        for (t, cx), v, y, c3, p7, t6, o3, g3, cv6 in zip(
+            master, vcol, ycol, ccol, pcol, tcol, ocol, gcol, cvcol,
+        ):
             w.writerow(
                 [
                     t,
@@ -297,6 +315,8 @@ def _write_wide_csv(
                     fmt_num(g3[0]),
                     fmt_num(g3[1]),
                     fmt_num(g3[2]),
+                    fmt_num(cv6[0]),
+                    fmt_num(cv6[5]),
                 ],
             )
 
@@ -325,13 +345,14 @@ tracking_errors_long.csv
     float64 - v0 is scalar error (.data)
     point   - v0,v1,v2 = closest path point x,y,z (map frame, see bag headers)
     pose    - v0..v6 = position x,y,z and orientation quaternion x,y,z,w (map)
-    twist   - v0..v5 = linear x,y,z then angular x,y,z (Nav2-reported body twist)
+    twist   - v0..v5 = linear x,y,z then angular x,y,z (Nav2 body twist, or /pixhawk/cmd_vel command)
     vector3 - v0,v1,v2 = ocean current x,y,z (m/s, /ocean_current)
 
 tracking_errors_wide.csv
-  One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current/gps columns
-  use the last sample at or before that time (same controller tick -> aligned).
+  One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current/gps/cmd_vel
+  columns use the last sample at or before that time (same controller tick -> aligned).
   GPS columns: gps_latitude, gps_longitude, gps_altitude (from /gps/filtered/global).
+  cmd_vel columns: cmd_vel_linear_x, cmd_vel_angular_z (from /pixhawk/cmd_vel).
 
 gps_filtered_global.csv
   One row per /gps/filtered/global (NavSatFix) sample. Columns: time_sec, latitude, longitude, altitude.
@@ -391,7 +412,7 @@ def main() -> int:
         return 1
 
     try:
-        long_rows, by_float, closest, pose, twist, ocean_current, gps_filtered = _read_bag_mixed(bag_dir)
+        long_rows, by_float, closest, pose, twist, ocean_current, gps_filtered, cmd_vel = _read_bag_mixed(bag_dir)
     except Exception as e:
         print(f'Failed to read bag: {e}', file=sys.stderr)
         print('Source ROS 2 setup (rosbag2_py, rclpy, geometry_msgs).', file=sys.stderr)
@@ -406,7 +427,7 @@ def main() -> int:
     readme_path = out_dir / 'tracking_export_README.txt'
 
     _write_long_csv(long_path, long_rows)
-    _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current, gps_filtered)
+    _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current, gps_filtered, cmd_vel)
     _write_gps_csv(gps_path, gps_filtered)
     _write_readme(readme_path, bag_dir)
 
