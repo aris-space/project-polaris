@@ -499,17 +499,18 @@ if __name__ == "__main__":
     WAYPOINT_RADIUS_M = 0.8
     waypoints = [
         # (latitude, longitude),
-        (47.32889922, 8.572742),
-        # (47.328940, 8.572620),
+        (47.328869649,8.572702784),
+        (47.328789102,8.57275605),        # (47.328940, 8.572620),
     ]
+
 
     # Satellite map (PNG) from /gps/filtered/global, read from the wide CSV.
     plot_gps_track_satellite_png(
         csv_path,
         lat_col='gps_latitude',
         lon_col='gps_longitude',
-        start_time=6.569712344,
-        end_time=42.806242311,
+        start_time=10.764,   # None = plot the entire recording (no cropping)
+        end_time=100.847,
         waypoints_latlon=waypoints,
         waypoint_radius_m=WAYPOINT_RADIUS_M,
     )
@@ -521,7 +522,7 @@ if __name__ == "__main__":
     # the cropped window will then be in CSV-elapsed seconds instead.
     plot_data(
         csv_path,
-        start_time=6.569712344,
-        end_time=42.806242311,
-        foxglove_offset=0.0,
+        start_time=15.764,   # None = plot the entire recording (no cropping)
+        end_time=82.847,
+        foxglove_offset=15.6643,
     )

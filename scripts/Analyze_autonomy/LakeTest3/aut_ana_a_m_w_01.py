@@ -132,35 +132,35 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     # print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
 
-    # # -------------------------------------------------------------------
-    # # GROUP 3b: MEASURED vs COMMANDED VELOCITIES (single plot)
-    # # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
-    # # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
-    # # -------------------------------------------------------------------
-    # if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
-    #     fig3b, ax3b = plt.subplots(figsize=(9, 5))
+    # -------------------------------------------------------------------
+    # GROUP 3b: MEASURED vs COMMANDED VELOCITIES (single plot)
+    # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
+    # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
+    # -------------------------------------------------------------------
+    if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
+        fig3b, ax3b = plt.subplots(figsize=(9, 5))
 
-    #     ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
-    #               label=r'$v_x$ measured [\textrm{m/s}]')
-    #     ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
-    #               label=r'$v_x$ commanded [\textrm{m/s}]')
-    #     ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-    #               label=r'$\omega_z$ measured [\textrm{rad/s}]')
-    #     ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
-    #               label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+        ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
+                  label=r'$v_x$ measured [\textrm{m/s}]')
+        ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
+                  label=r'$v_x$ commanded [\textrm{m/s}]')
+        ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
+                  label=r'$\omega_z$ measured [\textrm{rad/s}]')
+        ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
+                  label=r'$\omega_z$ commanded [\textrm{rad/s}]')
 
-    #     ax3b.set_xlabel(r'Time [\textrm{s}]')
-    #     ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
-    #     ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
-    #     ax3b.grid(True, linestyle='--', alpha=0.6)
-    #     ax3b.legend(loc='upper right')
+        ax3b.set_xlabel(r'Time [\textrm{s}]')
+        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
+        ax3b.grid(True, linestyle='--', alpha=0.6)
+        ax3b.legend(loc='upper right')
 
-    #     fig3b.tight_layout()
-    #     fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
-    #     print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
-    # else:
-    #     print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
-    #           "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
+        fig3b.tight_layout()
+        fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
+        print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
+    else:
+        print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
+              "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
 
     # -------------------------------------------------------------------
     # GROUP 4: XY VIEW (ROS ENU frame) — reference path + robot trajectory
@@ -182,7 +182,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
              '--', color='black', linewidth=1.5, label=r'Reference path')
 
     # Predefined waypoint: orange '+' plus a circle of radius WAYPOINT_RADIUS.
-    waypoints = [(6.25, -1.5), (0,0)]
+    waypoints = [(5.5, -1.0), (10.4,-9.25)]
     for (wx, wy) in waypoints:
         ax4.plot(wx, wy, marker='+', color=WAYPOINT_COLOR, markersize=14,
                  markeredgewidth=2.5, linestyle='None', zorder=6)
@@ -234,8 +234,13 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
                       markersize=14, markeredgewidth=2.5,
                       linestyle='None', label=r'Predefined waypoints')
+    # Proxy for the robot's actual (driven) trajectory — the viridis-colored line.
+    # Uses a mid-colormap color since the real line is colored by cross-track error.
+    traj_proxy = Line2D([0], [0], color=plt.get_cmap('viridis')(0.5),
+                        linewidth=2, label=r'Actual path (AUV)')
     handles, labels = ax4.get_legend_handles_labels()
-    ax4.legend(handles + [wp_proxy], labels + [r'Predefined waypoints'],
+    ax4.legend(handles + [traj_proxy, wp_proxy],
+               labels + [r'Actual path (AUV)', r'Predefined waypoints'],
                loc='best')
 
     fig4.tight_layout()
@@ -257,7 +262,7 @@ if __name__ == "__main__":
     # the cropped window will then be in CSV-elapsed seconds instead.
     plot_data(
         csv_path,
-        start_time=None,   # None = plot the entire recording (no cropping)
-        end_time=None,
+        start_time=15.764,   # None = plot the entire recording (no cropping)
+        end_time=82.847,
         foxglove_offset=15.6643,  # = csv_first_sample - bag_start (from metadata.yaml)
     )
