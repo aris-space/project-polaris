@@ -193,6 +193,17 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     rx = df['robot_x_m'].to_numpy()
     ry = df['robot_y_m'].to_numpy()
     err = np.abs(df['cross_track_xy_m'].to_numpy())
+
+    # RMSE of the cross-track error + completion time over the cropped window.
+    t = time.to_numpy()
+    title = os.path.basename(os.path.dirname(out_dir)) or out_dir
+    rmse_err = float(np.sqrt(np.mean(err ** 2)))
+    duration_sec = float(t[-1])
+    minutes = int(duration_sec // 60)
+    seconds = duration_sec - minutes * 60
+    print(f"[{title}] RMSE(e_track) = {rmse_err:.4f} m | "
+          f"completion time = {minutes} min {seconds:.1f} s")
+
     # Per-segment color = mean error of its two endpoints (length = N-1).
     err_seg = 0.5 * (err[:-1] + err[1:])
     points = np.array([rx, ry]).T.reshape(-1, 1, 2)
