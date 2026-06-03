@@ -793,7 +793,10 @@ namespace orca_nav2
       has_reached_xy_tolerance_ = false;
       is_rotating_to_path_ = false;
       was_rotating_to_path_ = false;
-      prev_vel_ = geometry_msgs::msg::Twist{};
+      // prev_vel_ is intentionally NOT reset on replan: zeroing it forces the
+      // acceleration limiter to clamp the next command from 0, which makes
+      // surge ramp from scratch on every replan. Start-from-rest is handled
+      // by deactivate().
     }
 
     void setSpeedLimit(const double &, const bool &) override
