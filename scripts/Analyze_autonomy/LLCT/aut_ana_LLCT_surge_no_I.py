@@ -370,7 +370,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # print(f"Animation saved: {gif_path}")
 
 if __name__ == "__main__":
-    csv_path = "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/move_to_goal_lake_17_2026_05_26-15_08_48/csv_export/tracking_errors_wide.csv"
+    csv_path = "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/move_to_goal_lake_17_2026_05_26-15_08_48/csv_export/velocity_cmd_vs_measured.csv"
     # Foxglove markers (elapsed seconds since bag start):
     #   start = 6.569712344 s
     #   end   = 42.806242311 s

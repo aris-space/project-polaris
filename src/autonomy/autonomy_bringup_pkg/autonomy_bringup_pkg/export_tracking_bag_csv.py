@@ -17,6 +17,7 @@ Also supported if present in the bag:
   geometry_msgs/Vector3: ocean current m/s (``/ocean_current``, sim bridge or ``current_vector_node``)
   sensor_msgs/NavSatFix: filtered global GPS fix (``/gps/filtered/global``, navsat_transform output)
   geometry_msgs/Twist: commanded velocity to the Pixhawk (``/pixhawk/cmd_vel``, controller output)
+  nav_msgs/Odometry: measured body twist from the local EKF (``/odometry/filtered/local``)
   nav_msgs/Path: planned reference path, one msg per leg (``/plan``)
   geometry_msgs/PoseArray: mission waypoints / Nav2 goals (``/mission_waypoints_enu``, latched)
 
@@ -25,6 +26,7 @@ Outputs:
   tracking_errors_long.csv - unified long format (see README in export folder)
   tracking_errors_wide.csv - one row per cross-track sample; errors + closest + pose + twist + ocean_current (as-of merged)
   gps_filtered_global.csv  - time_sec, latitude, longitude, altitude from /gps/filtered/global
+  velocity_cmd_vs_measured.csv - measured (/odometry/filtered/local) vs commanded (/pixhawk/cmd_vel) twist; works without Nav2
   mission_waypoints.csv    - the goals sent to Nav2 (from /mission_waypoints_enu) - truthful waypoint markers
   planned_path.csv         - every /plan leg - the truthful reference path (NOT the closest-point trace)
   tracking_export_README.txt
@@ -53,6 +55,11 @@ TOPIC_TWIST = '/pure_pursuit_robot_twist'
 TOPIC_OCEAN_CURRENT = '/ocean_current'
 TOPIC_GPS_FILTERED = '/gps/filtered/global'
 TOPIC_CMD_VEL = '/pixhawk/cmd_vel'
+# Measured body velocity from the local EKF (odom -> base_link). This is the
+# vehicle's actual twist, available even when Nav2 is NOT running (e.g. surge/yaw
+# controller-characterization runs). The Nav2 TWIST topic above only exists while
+# PurePursuit is active, so it cannot be the measured source for those runs.
+TOPIC_ODOM_LOCAL = '/odometry/filtered/local'
 # Ground-truth geometry: the goals sent to Nav2 and the path the controller tracks.
 # Exported to dedicated sidecar CSVs (not the long/wide tables) so analysis plots
 # never have to hardcode waypoints or mistake the closest-point trace for the plan.
@@ -91,6 +98,7 @@ def _storage_id_from_metadata(bag_dir: Path) -> str:
 
 def _read_bag_mixed(bag_dir: Path):
     from geometry_msgs.msg import PointStamped, PoseArray, PoseStamped, Twist, TwistStamped, Vector3
+    from nav_msgs.msg import Odometry
     from nav_msgs.msg import Path as PathMsg
     from rclpy.serialization import deserialize_message
     from rosbag2_py import ConverterOptions, SequentialReader, StorageOptions
@@ -107,6 +115,7 @@ def _read_bag_mixed(bag_dir: Path):
         TOPIC_OCEAN_CURRENT,
         TOPIC_GPS_FILTERED,
         TOPIC_CMD_VEL,
+        TOPIC_ODOM_LOCAL,
         TOPIC_PLAN,
         TOPIC_WAYPOINTS,
     }
@@ -127,6 +136,8 @@ def _read_bag_mixed(bag_dir: Path):
     ocean_current: List[Tuple[float, Tuple[float, float, float]]] = []
     gps_filtered: List[Tuple[float, Tuple[float, float, float]]] = []
     cmd_vel: List[Tuple[float, Tuple[float, ...]]] = []
+    # odom_twist: measured body twist (linear x,y,z, angular x,y,z) from the local EKF.
+    odom_twist: List[Tuple[float, Tuple[float, ...]]] = []
     # plans: one entry per /plan message (a leg). Each is (t_sec, [(x,y,z), ...]).
     plans: List[Tuple[float, List[Tuple[float, float, float]]]] = []
     # waypoints: one entry per /mission_waypoints_enu message (latched -> usually 1).
@@ -184,6 +195,14 @@ def _read_bag_mixed(bag_dir: Path):
             cmd_vel.append((t_sec, tup))
             row = [t_sec, topic, 'twist', *tup] + [''] * 7
             long_rows.append(row)
+        elif topic == TOPIC_ODOM_LOCAL:
+            msg = deserialize_message(data, Odometry)
+            l = msg.twist.twist.linear
+            a = msg.twist.twist.angular
+            tup = (l.x, l.y, l.z, a.x, a.y, a.z)
+            odom_twist.append((t_sec, tup))
+            row = [t_sec, topic, 'odom_twist', *tup] + [''] * 7
+            long_rows.append(row)
         elif topic == TOPIC_PLAN:
             msg = deserialize_message(data, PathMsg)
             pts = [(p.pose.position.x, p.pose.position.y, p.pose.position.z) for p in msg.poses]
@@ -198,7 +217,7 @@ def _read_bag_mixed(bag_dir: Path):
     long_rows.sort(key=lambda r: r[0])
     return (
         long_rows, float_scalar, closest, pose, twist,
-        ocean_current, gps_filtered, cmd_vel, plans, waypoints,
+        ocean_current, gps_filtered, cmd_vel, odom_twist, plans, waypoints,
     )
 
 
@@ -350,6 +369,61 @@ def _write_wide_csv(
             )
 
 
+def _write_velocity_csv(
+    path: Path,
+    odom_twist: List[Tuple[float, Tuple[float, ...]]],
+    cmd_vel: List[Tuple[float, Tuple[float, ...]]],
+) -> int:
+    """Measured (local-EKF) body twist vs commanded /pixhawk/cmd_vel.
+
+    Keyed on the odometry samples (NOT cross-track), so it is populated even when
+    Nav2 is not running -- the use case for surge/yaw controller-characterization
+    runs. cmd_vel is as-of (backward) merged onto each odometry timestamp.
+
+    Column names match what the analysis scripts already read from the wide CSV
+    (twist_*, cmd_vel_*), so those plot scripts work unchanged when pointed here.
+    Returns the number of rows written.
+    """
+    master = sorted(odom_twist, key=lambda x: x[0])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = [
+        'time_sec',
+        'twist_linear_x',
+        'twist_linear_y',
+        'twist_linear_z',
+        'twist_angular_x',
+        'twist_angular_y',
+        'twist_angular_z',
+        'cmd_vel_linear_x',
+        'cmd_vel_angular_z',
+    ]
+
+    def fmt_num(x: float) -> object:
+        return '' if isinstance(x, float) and math.isnan(x) else x
+
+    with path.open('w', newline='', encoding='utf-8') as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        if not master:
+            return 0
+        cvcol = _asof_backward_tuple(master, cmd_vel, 6)
+        for (t, m6), cv6 in zip(master, cvcol):
+            w.writerow(
+                [
+                    t,
+                    fmt_num(m6[0]),
+                    fmt_num(m6[1]),
+                    fmt_num(m6[2]),
+                    fmt_num(m6[3]),
+                    fmt_num(m6[4]),
+                    fmt_num(m6[5]),
+                    fmt_num(cv6[0]),
+                    fmt_num(cv6[5]),
+                ],
+            )
+        return len(master)
+
+
 def _write_gps_csv(
     path: Path,
     gps_filtered: List[Tuple[float, Tuple[float, float, float]]],
@@ -426,6 +500,14 @@ gps_filtered_global.csv
   One row per /gps/filtered/global (NavSatFix) sample. Columns: time_sec, latitude, longitude, altitude.
   Independent of the controller cadence (not as-of merged into the wide CSV).
 
+velocity_cmd_vs_measured.csv
+  Measured body twist (from /odometry/filtered/local, the local EKF) vs commanded
+  /pixhawk/cmd_vel. One row per odometry sample; cmd_vel is as-of (backward) merged.
+  Columns: time_sec, twist_linear_x/y/z, twist_angular_x/y/z, cmd_vel_linear_x, cmd_vel_angular_z.
+  USE THIS for surge/yaw controller-characterization runs where Nav2 is NOT running
+  (the wide CSV is empty there because it is keyed on the cross-track error series).
+  Column names match the wide CSV, so the cmd-vs-measured plot scripts work unchanged.
+
 mission_waypoints.csv
   The goals sent to Nav2 (from /mission_waypoints_enu, latched -> last set).
   Columns: wp_index, wp_x_m, wp_y_m, wp_z_m (map/ENU frame).
@@ -494,7 +576,7 @@ def main() -> int:
     try:
         (
             long_rows, by_float, closest, pose, twist,
-            ocean_current, gps_filtered, cmd_vel, plans, waypoints,
+            ocean_current, gps_filtered, cmd_vel, odom_twist, plans, waypoints,
         ) = _read_bag_mixed(bag_dir)
     except Exception as e:
         print(f'Failed to read bag: {e}', file=sys.stderr)
@@ -507,6 +589,7 @@ def main() -> int:
     long_path = out_dir / 'tracking_errors_long.csv'
     wide_path = out_dir / 'tracking_errors_wide.csv'
     gps_path = out_dir / 'gps_filtered_global.csv'
+    velocity_path = out_dir / 'velocity_cmd_vs_measured.csv'
     waypoints_path = out_dir / 'mission_waypoints.csv'
     planned_path = out_dir / 'planned_path.csv'
     readme_path = out_dir / 'tracking_export_README.txt'
@@ -514,6 +597,7 @@ def main() -> int:
     _write_long_csv(long_path, long_rows)
     _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current, gps_filtered, cmd_vel)
     _write_gps_csv(gps_path, gps_filtered)
+    n_vel = _write_velocity_csv(velocity_path, odom_twist, cmd_vel)
     n_wp = _write_waypoints_csv(waypoints_path, waypoints)
     n_legs = _write_planned_path_csv(planned_path, plans)
     _write_readme(readme_path, bag_dir)
@@ -521,6 +605,7 @@ def main() -> int:
     print(f'Wrote {len(long_rows)} long rows -> {long_path}')
     print(f'Wide CSV -> {wide_path}')
     print(f'GPS CSV ({len(gps_filtered)} samples) -> {gps_path}')
+    print(f'Velocity CSV ({n_vel} odom samples) -> {velocity_path}')
     print(f'Waypoints CSV ({n_wp} waypoints) -> {waypoints_path}')
     print(f'Planned path CSV ({n_legs} legs) -> {planned_path}')
     print(f'Notes -> {readme_path}')
