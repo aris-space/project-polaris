@@ -56,6 +56,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 
+from action_msgs.msg import GoalStatus, GoalStatusArray
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseArray, Twist
 from lifecycle_msgs.msg import State as LifecycleState
@@ -84,6 +85,14 @@ _CSV_LOAD_GRACE_SEC = 5.0
 
 _CMD_VEL_KEY = 'cmd_vel_output'
 _CMD_VEL_TOPIC = '/pixhawk/cmd_vel'
+
+# Goal-completion row: informational only. Watches the waypoint_follower
+# action server's status topic so we can report whether the current mission
+# goal is executing / succeeded / aborted / canceled. Deliberately excluded
+# from worst_level and active_count — an aborted goal is operationally
+# important but the autonomy *stack* itself is still healthy.
+_GOAL_STATUS_KEY = 'goal_status'
+_GOAL_STATUS_TOPIC = '/follow_waypoints/_action/status'
 # Freshness window: if no Twist arrived in the last _CMD_VEL_FRESH_SEC, the
 # controller has stopped publishing. Nav2 controller_server typically runs at
 # 20 Hz, so 1 s is comfortably above the period.
@@ -276,6 +285,42 @@ class _CmdVelTracker:
         return 'waiting (stack not active)'
 
 
+@dataclass
+class _GoalStatusTracker:
+    """Tracks the latest /follow_waypoints goal via its action status topic.
+
+    Action servers publish a GoalStatusArray on `<action>/_action/status`; we
+    pick the most-recently-updated entry and surface its terminal/active
+    state. Purely informational — never contributes to the parent rollup.
+    """
+
+    last_status: Optional[int] = None
+
+    def on_status(self, msg: GoalStatusArray) -> None:
+        if not msg.status_list:
+            return
+        # status_list can carry several goals (succeeded ones linger briefly);
+        # the freshest stamp wins so we always reflect the active mission.
+        latest = max(
+            msg.status_list,
+            key=lambda s: (s.goal_info.stamp.sec, s.goal_info.stamp.nanosec),
+        )
+        self.last_status = latest.status
+
+    def label(self) -> str:
+        if self.last_status is None:
+            return 'no goal yet'
+        return {
+            GoalStatus.STATUS_UNKNOWN: 'unknown',
+            GoalStatus.STATUS_ACCEPTED: 'accepted',
+            GoalStatus.STATUS_EXECUTING: 'executing',
+            GoalStatus.STATUS_CANCELING: 'canceling',
+            GoalStatus.STATUS_SUCCEEDED: 'succeeded',
+            GoalStatus.STATUS_CANCELED: 'canceled',
+            GoalStatus.STATUS_ABORTED: 'aborted',
+        }.get(self.last_status, f'status={self.last_status}')
+
+
 class Nav2LifecycleDiagnostics(Node):
 
     def __init__(self) -> None:
@@ -333,6 +378,17 @@ class Nav2LifecycleDiagnostics(Node):
             self._cmd_vel.on_twist,
             10,
             callback_group=cmd_vel_cb_group,
+        )
+
+        # Action status topics use the default action QoS profile (RELIABLE,
+        # depth 1, VOLATILE) — default subscriber QoS is compatible.
+        self._goal_status = _GoalStatusTracker()
+        self.create_subscription(
+            GoalStatusArray,
+            _GOAL_STATUS_TOPIC,
+            self._goal_status.on_status,
+            10,
+            callback_group=cb_group,
         )
 
         self._diag_pub = self.create_publisher(DiagnosticArray, _DIAG_TOPIC, 10)
@@ -413,11 +469,18 @@ class Nav2LifecycleDiagnostics(Node):
         # cmd_vel output check at the very bottom (it's the outcome of the
         # rows above doing their job).
         nav2_rows.sort(key=lambda kv: kv.key)
+        # goal_status is informational only — not counted in active_count,
+        # not factored into worst_level, and not in `total`. Appended last so
+        # the operator can still see mission outcome at a glance.
+        goal_status_row = KeyValue(
+            key=_GOAL_STATUS_KEY, value=self._goal_status.label()
+        )
         parent.values = [
             KeyValue(key='active_count', value=f'{active_count}/{total}'),
             *nav2_rows,
             loader_row,
             cmd_vel_row,
+            goal_status_row,
         ]
 
         msg = DiagnosticArray()
