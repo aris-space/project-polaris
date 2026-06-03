@@ -209,7 +209,7 @@ namespace orca_nav2
         // regardless of controller_frequency (20 Hz).
         auto transform = tf_->lookupTransform(
             target_frame, in_pose.header.frame_id,
-            tf2::TimePointZero, tf2::durationFromSec(transform_tolerance_));
+            in_pose.header.stamp, tf2::durationFromSec(transform_tolerance_));
         tf2::doTransform(in_pose, out_pose, transform);
         return true;
       }
