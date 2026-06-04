@@ -258,7 +258,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     ax4.add_collection(lc)
     cbar = fig4.colorbar(lc, ax=ax4, orientation='horizontal',
                          shrink=0.85, pad=0.1)
-    cbar.set_label(r'$|e_{xy}|$ \,---\, cross-track error [\textrm{m}]')
+    cbar.set_label(r'$|e_{\mathrm{track}}|$ \,---\, cross-track error [\textrm{m}]')
 
     # Start / end markers
     ax4.plot(rx[0], ry[0], 'o', color='green', markersize=10,
