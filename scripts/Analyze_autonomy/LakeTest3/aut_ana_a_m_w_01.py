@@ -2,6 +2,20 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
+
+# Sea-current glyphs, matching the two-cycle figures: same colour (#1f77b4).
+CURRENT_COLOR = '#1f77b4'
+
+
+def draw_current_arrows(ax):
+    # Row of single-headed arrows pointing up (+Y), each spanning Y = -12 -> -10,
+    # placed at every X from 2 to 10 in 2 m steps.
+    for x in np.arange(2, 10 + 0.001, 2):
+        ax.add_patch(FancyArrowPatch((x, -12), (x, -10),
+                                     arrowstyle='-|>', mutation_scale=20,
+                                     color=CURRENT_COLOR, linewidth=3.0,
+                                     alpha=0.45, zorder=8))
 
 # 1. Matplotlib Configuration (LaTeX rendering, serif/Palatino via mathpazo)
 # Requires a working LaTeX install. On Linux:
@@ -178,6 +192,9 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     fig4, ax4 = plt.subplots(figsize=(9, 9))
 
+    # Sea-current glyphs: a row of upward arrows below the grid.
+    draw_current_arrows(ax4)
+
     # Reference path = the actual planned legs from /plan (planned_path.csv),
     # written by export_tracking_bag_csv.py. One dashed line per leg.
     plan_csv = os.path.join(out_dir, 'planned_path.csv')
@@ -251,11 +268,12 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     ax4.set_xlabel(r'East / $X$ [\textrm{m}]')
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
-    ax4.set_title(r'\textbf{$X$--$Y$ plane view (ROS ENU) --- AUV path vs.\ reference path}')
+    ax4.set_title(r'\textbf{$X$--$Y$ plane view --- AUV path vs.\ reference path}')
     ax4.set_aspect('equal', adjustable='box')
-    # ax4.set_ylim(-4, 1)
-    ax4.xaxis.set_major_locator(plt.MultipleLocator(0.5))
-    ax4.yaxis.set_major_locator(plt.MultipleLocator(0.5))
+    ax4.set_xlim(2, 12)
+    ax4.set_ylim(bottom=-12.5)  # keep the current-arrow row in view
+    ax4.xaxis.set_major_locator(plt.MultipleLocator(2))
+    ax4.yaxis.set_major_locator(plt.MultipleLocator(2))
     ax4.grid(True, linestyle='--', alpha=0.6)
 
     wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
@@ -265,13 +283,20 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # Uses a mid-colormap color since the real line is colored by cross-track error.
     traj_proxy = Line2D([0], [0], color=plt.get_cmap('viridis')(0.5),
                         linewidth=2, label=r'Actual path (AUV)')
+    # Proxy for the water-current glyph (blue arrow with a head).
+    cur_proxy = Line2D([0], [0], color=CURRENT_COLOR, linewidth=3,
+                       marker='^', markersize=9, linestyle='-',
+                       label=r'Water current')
     handles, labels = ax4.get_legend_handles_labels()
-    ax4.legend(handles + [traj_proxy, wp_proxy],
-               labels + [r'Actual path (AUV)', r'Mission waypoints (Nav2 goals)'],
-               loc='best')
+    # Legend below the plot and below the horizontal cross-track-error colorbar.
+    ax4.legend(handles + [traj_proxy, wp_proxy, cur_proxy],
+               labels + [r'Actual path (AUV)', r'Mission waypoints (Nav2 goals)',
+                         r'Water current'],
+               loc='upper center', bbox_to_anchor=(0.5, -0.28),
+               ncol=3, frameon=True, columnspacing=1.6, handlelength=2.2)
 
     fig4.tight_layout()
-    fig4.savefig(os.path.join(out_dir, 'xy_view_latex.png'))
+    fig4.savefig(os.path.join(out_dir, 'xy_view_latex.png'), bbox_inches='tight')
     fig4.savefig(os.path.join(out_dir, 'xy_view_latex.pdf'), bbox_inches='tight')
 
     print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, xy_view.png")
