@@ -276,9 +276,9 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     ax4.set_xlabel(r'East / $X$ [\textrm{m}]')
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
-    ax4.set_title(r'\textbf{$X$--$Y$ plane view 40\,\textrm{m} by 40\,\textrm{m} Grid --- AUV path vs.\ reference path}')
+    ax4.set_title(r'\textbf{$X$--$Y$ plane view of 20\,\textrm{m} by 20\,\textrm{m} Grid --- AUV path vs.\ reference path}')
     ax4.set_aspect('equal', adjustable='box')
-    # ax4.set_ylim(-4, 1)
+    ax4.set_xlim(-24, 7)
     ax4.xaxis.set_major_locator(plt.MultipleLocator(2))
     ax4.yaxis.set_major_locator(plt.MultipleLocator(2))
     ax4.grid(True, linestyle='--', alpha=0.6)

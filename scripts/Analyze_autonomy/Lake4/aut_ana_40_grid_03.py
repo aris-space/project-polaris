@@ -276,7 +276,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     ax4.set_xlabel(r'East / $X$ [\textrm{m}]')
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
-    ax4.set_title(r'\textbf{$X$--$Y$ plane view 40\,\textrm{m} by 40\,\textrm{m} Grid --- AUV path vs.\ reference path}')
+    ax4.set_title(r'\textbf{$X$--$Y$ plane view of 40\,\textrm{m} by 40\,\textrm{m} Grid --- AUV path vs.\ reference path}')
     ax4.set_aspect('equal', adjustable='box')
     ax4.set_ylim(-50, 10)
     ax4.set_xlim(-50, 10)
@@ -301,7 +301,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     extra_handles.append(wp_proxy)
     extra_labels.append(r'Mission waypoints (Nav2 goals)')
     handles, labels = ax4.get_legend_handles_labels()
-    ax4.legend(handles + extra_handles, labels + extra_labels, loc='best')
+    ax4.legend(handles + extra_handles, labels + extra_labels, loc='lower left')
 
     fig4.tight_layout()
     fig4.savefig(os.path.join(out_dir, 'xy_view_latex.png'))
@@ -323,6 +323,6 @@ if __name__ == "__main__":
     plot_data(
         csv_path,
         start_time=None,   # None = plot the entire recording (no cropping)
-        end_time=None,
+        end_time=1690,
         foxglove_offset=0.0,  # = csv_first_sample - bag_start (from metadata.yaml)
     )
