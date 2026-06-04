@@ -137,30 +137,63 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
     # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
     # -------------------------------------------------------------------
-    # if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
-    #     fig3b, ax3b = plt.subplots(figsize=(9, 5))
+    if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
+        from matplotlib.collections import LineCollection
+        from matplotlib.lines import Line2D
 
-    #     ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
-    #               label=r'$v_x$ measured [\textrm{m/s}]')
-    #     ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
-    #               label=r'$v_x$ commanded [\textrm{m/s}]')
-    #     ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-    #               label=r'$\omega_z$ measured [\textrm{rad/s}]')
-    #     ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
-    #               label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+        fig3b, ax3b = plt.subplots(figsize=(9, 5))
 
-    #     ax3b.set_xlabel(r'Time [\textrm{s}]')
-    #     ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
-    #     ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
-    #     ax3b.grid(True, linestyle='--', alpha=0.6)
-    #     ax3b.legend(loc='upper right')
+        # vx measured drawn as colored segments: red where it leaves the
+        # [VX_LO, VX_HI] band OR during a localization glitch (a physically
+        # impossible position jump between consecutive samples), blue otherwise.
+        VX_LO, VX_HI = -0.2, 0.5
+        GLITCH_STEP_M = 2.0
+        tt = time.to_numpy()
+        vx = df['twist_linear_x'].to_numpy()
+        rx = df['robot_x_m'].to_numpy()
+        ry = df['robot_y_m'].to_numpy()
+        glitch_seg = np.hypot(np.diff(rx), np.diff(ry)) > GLITCH_STEP_M
+        oor = (vx < VX_LO) | (vx > VX_HI)
+        anom_seg = oor[:-1] | oor[1:] | glitch_seg   # per-segment (length N-1)
 
-    #     fig3b.tight_layout()
-    #     fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
-    #     print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
-    # else:
-    #     print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
-    #           "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
+        pts = np.array([tt, vx]).T.reshape(-1, 1, 2)
+        segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+        vx_colors = np.where(anom_seg, 'red', '#1f77b4')
+        ax3b.add_collection(LineCollection(segs, colors=vx_colors, linewidth=1.5))
+
+        ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
+                  label=r'$v_x$ commanded [\textrm{m/s}]')
+        ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
+                  label=r'$\omega_z$ measured [\textrm{rad/s}]')
+        ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
+                  label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+
+        ax3b.set_xlabel(r'Time [\textrm{s}]')
+        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+        ax3b.set_ylim(-0.2, 0.5)
+        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
+        ax3b.grid(True, linestyle='--', alpha=0.6)
+
+        # LineCollection isn't auto-legendable — add proxies for the vx line.
+        vx_ok = Line2D([0], [0], color='#1f77b4', linewidth=1.5,
+                       label=r'$v_x$ measured [\textrm{m/s}]')
+        vx_bad = Line2D([0], [0], color='red', linewidth=1.5,
+                        label=(r'$v_x$ anomalous (out of $[%.1f, %.1f]$ / glitch)'
+                               % (VX_LO, VX_HI)))
+        n_anom = int(anom_seg.sum())
+        print(f"velocity plot: {n_anom} anomalous vx segments "
+              f"(out of [{VX_LO}, {VX_HI}] m/s or step > {GLITCH_STEP_M:g} m)")
+        handles, labels = ax3b.get_legend_handles_labels()
+        ax3b.legend([vx_ok, vx_bad] + handles,
+                    [vx_ok.get_label(), vx_bad.get_label()] + labels,
+                    loc='upper right')
+
+        fig3b.tight_layout()
+        fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
+        print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
+    else:
+        print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
+              "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
 
     # -------------------------------------------------------------------
     # GROUP 3c: SCHMITT TRIGGER VIEW
@@ -337,7 +370,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
 
 if __name__ == "__main__":
-    csv_path = "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/move_to_goal_lake_17_2026_05_26-15_08_48/csv_export/tracking_errors_wide.csv"
+    csv_path = "/home/polaris_pz/Downloads/recordings_final_autonomy_lake4/aut_no_z_surface_grid_01_2026_06_03-13_23_08/csv_export/tracking_errors_wide.csv"
     # Foxglove markers (elapsed seconds since bag start):
     #   start = 6.569712344 s
     #   end   = 42.806242311 s
@@ -345,7 +378,7 @@ if __name__ == "__main__":
     # the cropped window will then be in CSV-elapsed seconds instead.
     plot_data(
         csv_path,
-        start_time=None,   # None = plot the entire recording (no cropping)
-        end_time=15.0,
+        start_time=430,   # None = plot the entire recording (no cropping)
+        end_time=490,
         foxglove_offset=0.0,  # = csv_first_sample - bag_start (from metadata.yaml)
     )

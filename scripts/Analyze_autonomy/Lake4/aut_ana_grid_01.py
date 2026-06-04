@@ -137,30 +137,30 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
     # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
     # -------------------------------------------------------------------
-    if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
-        fig3b, ax3b = plt.subplots(figsize=(9, 5))
+    # if {'cmd_vel_linear_x', 'cmd_vel_angular_z'}.issubset(df.columns):
+    #     fig3b, ax3b = plt.subplots(figsize=(9, 5))
 
-        ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
-                  label=r'$v_x$ measured [\textrm{m/s}]')
-        ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
-                  label=r'$v_x$ commanded [\textrm{m/s}]')
-        ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-                  label=r'$\omega_z$ measured [\textrm{rad/s}]')
-        ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
-                  label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+    #     ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
+    #               label=r'$v_x$ measured [\textrm{m/s}]')
+    #     ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
+    #               label=r'$v_x$ commanded [\textrm{m/s}]')
+    #     ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
+    #               label=r'$\omega_z$ measured [\textrm{rad/s}]')
+    #     ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
+    #               label=r'$\omega_z$ commanded [\textrm{rad/s}]')
 
-        ax3b.set_xlabel(r'Time [\textrm{s}]')
-        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
-        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
-        ax3b.grid(True, linestyle='--', alpha=0.6)
-        ax3b.legend(loc='upper right')
+    #     ax3b.set_xlabel(r'Time [\textrm{s}]')
+    #     ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+    #     ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
+    #     ax3b.grid(True, linestyle='--', alpha=0.6)
+    #     ax3b.legend(loc='upper right')
 
-        fig3b.tight_layout()
-        fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
-        print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
-    else:
-        print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
-              "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
+    #     fig3b.tight_layout()
+    #     fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))
+    #     print(f"Plot saved in {out_dir}: velocity_cmd_vs_measured.png")
+    # else:
+    #     print("cmd_vel columns not in CSV — skipping velocity_cmd_vs_measured.png "
+    #           "(re-run export_tracking_bag_csv.py to include /pixhawk/cmd_vel).")
 
     # -------------------------------------------------------------------
     # GROUP 4: XY VIEW (ROS ENU frame) — reference path + robot trajectory
@@ -221,27 +221,52 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     ry = df['robot_y_m'].to_numpy()
     err = np.abs(df['cross_track_xy_m'].to_numpy())
 
+    # Flag localization-glitch segments: a physically impossible jump between
+    # consecutive samples (median real step is ~0.01 m). These are drawn solid
+    # red and kept out of the error-colored trajectory so a single >20 m jump
+    # doesn't wash out the colormap (or inflate the RMSE).
+    GLITCH_STEP_M = 2.0
+    step = np.hypot(np.diff(rx), np.diff(ry))
+    glitch = step > GLITCH_STEP_M
+    # A sample is "clean" if neither of its adjacent segments is a glitch.
+    pt_glitch = np.zeros(len(rx), dtype=bool)
+    pt_glitch[:-1] |= glitch
+    pt_glitch[1:] |= glitch
+    clean = ~pt_glitch
+
     # RMSE of the cross-track error + completion time over the cropped window.
     t = time.to_numpy()
     title = os.path.basename(os.path.dirname(out_dir)) or out_dir
     rmse_err = float(np.sqrt(np.mean(err ** 2)))
+    rmse_clean = float(np.sqrt(np.mean(err[clean] ** 2)))
     duration_sec = float(t[-1])
     minutes = int(duration_sec // 60)
     seconds = duration_sec - minutes * 60
-    print(f"[{title}] RMSE(e_track) = {rmse_err:.4f} m | "
+    print(f"[{title}] RMSE(e_track) = {rmse_err:.4f} m (all) | "
+          f"{rmse_clean:.4f} m (de-glitched, {int(pt_glitch.sum())} pts dropped) | "
           f"completion time = {minutes} min {seconds:.1f} s")
 
     # Per-segment color = mean error of its two endpoints (length = N-1).
     err_seg = 0.5 * (err[:-1] + err[1:])
     points = np.array([rx, ry]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    lc = LineCollection(segments, cmap='viridis',
-                        norm=plt.Normalize(0.0, err.max()), linewidth=2)
-    lc.set_array(err_seg)
+
+    # Cross-track error colored, clamped to [0, 1] m (extend='max' flags clamping).
+    lc = LineCollection(segments[~glitch], cmap='viridis',
+                        norm=plt.Normalize(0.0, 1.0), linewidth=2)
+    lc.set_array(err_seg[~glitch])
     ax4.add_collection(lc)
     cbar = fig4.colorbar(lc, ax=ax4, orientation='horizontal',
-                         shrink=0.85, pad=0.1)
+                         shrink=0.85, pad=0.1, extend='max')
     cbar.set_label(r'$|e_{xy}|$ \,---\, cross-track error [\textrm{m}]')
+
+    # Localization glitches (drawn on top, solid red).
+    if glitch.any():
+        glc = LineCollection(segments[glitch], colors='red', linewidth=2,
+                             zorder=4)
+        ax4.add_collection(glc)
+        print(f"[{title}] flagged {int(glitch.sum())} localization-glitch "
+              f"segments (step > {GLITCH_STEP_M:g} m)")
 
     # Start / end markers
     ax4.plot(rx[0], ry[0], 'o', color='green', markersize=10,
@@ -251,11 +276,11 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     ax4.set_xlabel(r'East / $X$ [\textrm{m}]')
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
-    ax4.set_title(r'\textbf{$X$--$Y$ plane view (ROS ENU) --- AUV path vs.\ reference path}')
+    ax4.set_title(r'\textbf{$X$--$Y$ plane view 40\,\textrm{m} by 40\,\textrm{m} Grid --- AUV path vs.\ reference path}')
     ax4.set_aspect('equal', adjustable='box')
     # ax4.set_ylim(-4, 1)
-    ax4.xaxis.set_major_locator(plt.MultipleLocator(0.5))
-    ax4.yaxis.set_major_locator(plt.MultipleLocator(0.5))
+    ax4.xaxis.set_major_locator(plt.MultipleLocator(2))
+    ax4.yaxis.set_major_locator(plt.MultipleLocator(2))
     ax4.grid(True, linestyle='--', alpha=0.6)
 
     wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
@@ -265,10 +290,17 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # Uses a mid-colormap color since the real line is colored by cross-track error.
     traj_proxy = Line2D([0], [0], color=plt.get_cmap('viridis')(0.5),
                         linewidth=2, label=r'Actual path (AUV)')
+    extra_handles = [traj_proxy]
+    extra_labels = [r'Actual path (AUV)']
+    if glitch.any():
+        glitch_proxy = Line2D([0], [0], color='red', linewidth=2,
+                              label=r'Localization glitch')
+        extra_handles.append(glitch_proxy)
+        extra_labels.append(r'Localization glitch')
+    extra_handles.append(wp_proxy)
+    extra_labels.append(r'Mission waypoints (Nav2 goals)')
     handles, labels = ax4.get_legend_handles_labels()
-    ax4.legend(handles + [traj_proxy, wp_proxy],
-               labels + [r'Actual path (AUV)', r'Mission waypoints (Nav2 goals)'],
-               loc='best')
+    ax4.legend(handles + extra_handles, labels + extra_labels, loc='best')
 
     fig4.tight_layout()
     fig4.savefig(os.path.join(out_dir, 'xy_view_latex.png'))
