@@ -149,11 +149,83 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
                  label=r'$\bar{\omega}_z$ commanded [\textrm{rad/s}]')
 
-        ax3b.set_xlabel(r'Time [\textrm{s}]')   
+        # -----------------------------------------------------------------
+        # SETTLING TIME of the measured yaw rate w.r.t. its commanded step.
+        # Convention: band = +/- SETTLE_TOL of the commanded steady-state
+        # value, measured from step onset. The 30 Hz gyro signal is lightly
+        # smoothed (moving average) so the criterion reflects controller
+        # dynamics rather than measurement noise.
+        # -----------------------------------------------------------------
+        SETTLE_TOL = 0.02        # +/- fraction of the steady-state target
+        SETTLE_SMOOTH_S = 0.2    # moving-average window [s] for the criterion
+
+        cmd = df['cmd_vel_angular_z'].to_numpy()
+        meas = df['twist_angular_z'].to_numpy()
+        tnp = time.to_numpy()
+        dt = float(np.median(np.diff(tnp)))
+
+        # Step target = command value on its longest constant plateau.
+        k = int(np.argmax(np.abs(cmd)))
+        target = cmd[k]
+        band = SETTLE_TOL * abs(target)
+
+        on_plateau = np.abs(cmd - target) <= band
+        plat_idx = np.where(on_plateau)[0]
+        runs = np.split(plat_idx, np.where(np.diff(plat_idx) > 1)[0] + 1)
+        run = max(runs, key=len)
+        p0, p1 = run[0], run[-1]
+
+        # Step onset = first non-zero command leading into that plateau.
+        pre = np.where(np.abs(cmd[:p0 + 1]) > 0.02 * abs(target))[0]
+        onset = pre[0] if len(pre) else p0
+        t_onset = tnp[onset]
+
+        # Smoothed measured signal for the settling criterion.
+        win = max(1, int(round(SETTLE_SMOOTH_S / dt)))
+        meas_s = pd.Series(meas).rolling(win, center=True, min_periods=1).mean().to_numpy()
+
+        # Last time (within [onset, plateau end]) the response leaves the band.
+        seg = np.arange(onset, p1 + 1)
+        outside = np.abs(meas_s[seg] - target) > band
+        if outside.any():
+            last_out = seg[outside][-1]
+            settled = last_out < seg[-1]   # did it re-enter before the plateau ends?
+            s_idx = min(last_out + 1, len(tnp) - 1)
+        else:
+            settled = True
+            s_idx = onset
+        t_settle = tnp[s_idx] - t_onset
+
+        if settled:
+            print(f"[yaw rate] settling time = {t_settle:.2f} s "
+                  f"(+/-{SETTLE_TOL*100:.0f}% of {target:.3f} rad/s, "
+                  f"from step onset t={t_onset:.2f} s)")
+        else:
+            print(f"[yaw rate] does NOT settle within +/-{SETTLE_TOL*100:.0f}% "
+                  f"(+/-{band:.4f} rad/s) of {target:.3f} rad/s before the "
+                  f"plateau ends -- steady-state ripple exceeds the band. "
+                  f"Loosen SETTLE_TOL (e.g. 0.05) for a meaningful value.")
+
+        # Annotate the plot: target line, +/- band, onset, settling marker.
+        ax3b.axhspan(target - band, target + band, color='grey', alpha=0.15,
+                     zorder=0,
+                     label=rf'$\pm{int(SETTLE_TOL*100)}\%$ band')
+        ax3b.axhline(target, color='grey', linestyle=':', linewidth=1.0, zorder=1)
+        ax3b.axvline(t_onset, color='black', linestyle=':', linewidth=1.0, zorder=1)
+        if settled:
+            ts_abs = tnp[s_idx]
+            ax3b.axvline(ts_abs, color='#d62728', linestyle='-.', linewidth=1.5,
+                         zorder=2)
+            ax3b.annotate(rf'$t_s = {t_settle:.2f}\,$s',
+                          xy=(ts_abs, target),
+                          xytext=(ts_abs + 0.3, target - 0.10),
+                          color='#d62728', fontsize=13)
+
+        ax3b.set_xlabel(r'Time [\textrm{s}]')
         ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
         ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities, Only yaw rate}')
         ax3b.grid(True, linestyle='--', alpha=0.6)
-        ax3b.legend(loc='lower right')  
+        ax3b.legend(loc='lower right')
 
         fig3b.tight_layout()
         fig3b.savefig(os.path.join(out_dir, 'velocity_cmd_vs_measured.png'))

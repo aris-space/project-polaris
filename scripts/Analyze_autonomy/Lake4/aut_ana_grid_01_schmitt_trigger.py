@@ -143,6 +143,9 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
         fig3b, ax3b = plt.subplots(figsize=(9, 5))
 
+        # Grey highlight band over t in [6, 15] s, full height.
+        ax3b.axvspan(6, 15, color='gray', alpha=0.2, zorder=0)
+
         # vx measured drawn as colored segments: red where it leaves the
         # [VX_LO, VX_HI] band OR during a localization glitch (a physically
         # impossible position jump between consecutive samples), blue otherwise.
@@ -162,11 +165,11 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         ax3b.add_collection(LineCollection(segs, colors=vx_colors, linewidth=1.5))
 
         ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
-                  label=r'$v_x$ commanded [\textrm{m/s}]')
+                  label=r'$\bar{v}_x$ commanded [\textrm{m/s}]')
         ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
                   label=r'$\omega_z$ measured [\textrm{rad/s}]')
         ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
-                  label=r'$\omega_z$ commanded [\textrm{rad/s}]')
+                  label=r'$\bar{\omega}_z$ commanded [\textrm{rad/s}]')
 
         ax3b.set_xlabel(r'Time [\textrm{s}]')
         ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
@@ -178,8 +181,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         vx_ok = Line2D([0], [0], color='#1f77b4', linewidth=1.5,
                        label=r'$v_x$ measured [\textrm{m/s}]')
         vx_bad = Line2D([0], [0], color='red', linewidth=1.5,
-                        label=(r'$v_x$ anomalous (out of $[%.1f, %.1f]$ / glitch)'
-                               % (VX_LO, VX_HI)))
+                        label=r'$v_x$ glitched [\textrm{m/s}]')
         n_anom = int(anom_seg.sum())
         print(f"velocity plot: {n_anom} anomalous vx segments "
               f"(out of [{VX_LO}, {VX_HI}] m/s or step > {GLITCH_STEP_M:g} m)")
@@ -209,6 +211,10 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         YAW_ERR_LOW = None    # e.g. 0.10 — error must drop below this to switch OFF
 
         fig3c, axes3c = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+
+        # Grey highlight band over t in [6, 15] s, full height (both subplots).
+        for ax in axes3c:
+            ax.axvspan(6, 15, color='gray', alpha=0.2, zorder=0)
 
         # --- Top: yaw error ---
         axes3c[0].plot(time, df['yaw_error_rad'], color='#d62728',
