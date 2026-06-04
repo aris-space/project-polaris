@@ -151,7 +151,8 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
         ax3b.set_xlabel(r'Time [\textrm{s}]')   
         ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
-        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities, Only surge (PID Controller)}')
+        ax3b.set_ylim(-0.2, 0.5)  # zoom in on surge velocity
+        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities, Only surge}')
         ax3b.grid(True, linestyle='--', alpha=0.6)
         ax3b.legend(loc='upper right')  
 
@@ -370,7 +371,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # print(f"Animation saved: {gif_path}")
 
 if __name__ == "__main__":
-    csv_path = "/home/polaris_pz/Downloads/OneDrive_2026-05-28/Important Ones/move_to_goal_lake_17_2026_05_26-15_08_48/csv_export/velocity_cmd_vs_measured.csv"
+    csv_path = "/home/polaris_pz/Downloads/recordings_final_autonomy_lake4/aut_no_z_below_rectangle_04_2026_06_03-13_05_50/csv_export/velocity_cmd_vs_measured.csv"
     # Foxglove markers (elapsed seconds since bag start):
     #   start = 6.569712344 s
     #   end   = 42.806242311 s
@@ -378,7 +379,7 @@ if __name__ == "__main__":
     # the cropped window will then be in CSV-elapsed seconds instead.
     plot_data(
         csv_path,
-        start_time=6.569712344,
-        end_time=42.806242311,
+        start_time=220,
+        end_time=300,
         foxglove_offset=0.0,
     )
