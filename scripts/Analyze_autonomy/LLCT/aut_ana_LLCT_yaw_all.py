@@ -145,14 +145,14 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         # ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
         #           label=r'$\bar{v}_x$ commanded [\textrm{m/s}]')
         ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-                 label=r'$\omega_z$ measured [\textrm{rad/s}]')
+                 label=r'$\omega_z$ estimated [\textrm{rad/s}]')
         ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
                  label=r'$\bar{\omega}_z$ commanded [\textrm{rad/s}]')
 
         # -----------------------------------------------------------------
-        # SETTLING TIME of the measured yaw rate w.r.t. its commanded step.
+        # SETTLING TIME of the estimated yaw rate w.r.t. its commanded step.
         # Convention: band = +/- SETTLE_TOL of the commanded steady-state
-        # value, measured from step onset. The 30 Hz gyro signal is lightly
+        # value, estimated from step onset. The 30 Hz gyro signal is lightly
         # smoothed (moving average) so the criterion reflects controller
         # dynamics rather than measurement noise.
         # -----------------------------------------------------------------
@@ -180,7 +180,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         onset = pre[0] if len(pre) else p0
         t_onset = tnp[onset]
 
-        # Smoothed measured signal for the settling criterion.
+        # Smoothed estimated signal for the settling criterion.
         win = max(1, int(round(SETTLE_SMOOTH_S / dt)))
         meas_s = pd.Series(meas).rolling(win, center=True, min_periods=1).mean().to_numpy()
 
@@ -222,8 +222,8 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
                           color='#d62728', fontsize=13)
 
         ax3b.set_xlabel(r'Time [\textrm{s}]')
-        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
-        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities, Only yaw rate}')
+        ax3b.set_ylabel(r'Yaw rate [\textrm{rad/s}]')
+        #ax3b.set_title(r'\textbf{estimated vs.\ commanded velocities, Only yaw rate}')
         ax3b.grid(True, linestyle='--', alpha=0.6)
         ax3b.legend(loc='lower right')
 

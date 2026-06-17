@@ -133,7 +133,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # print(f"Plots saved in {out_dir}: tracking_errors.png, pose_comparison.png, robot_twists.png")
 
     # -------------------------------------------------------------------
-    # GROUP 3b: MEASURED vs COMMANDED VELOCITIES (single plot)
+    # GROUP 3b: estimated vs COMMANDED VELOCITIES (single plot)
     # vx, commanded vx, yaw rate, commanded yaw rate all on one axes.
     # Commanded columns come from /pixhawk/cmd_vel (added to the CSV export).
     # -------------------------------------------------------------------
@@ -141,18 +141,18 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         fig3b, ax3b = plt.subplots(figsize=(9, 5))
 
         ax3b.plot(time, df['twist_linear_x'], color='#1f77b4',
-                  label=r'$v_x$ measured [\textrm{m/s}]')
+                  label=r'$v_x$ estimated [\textrm{m/s}]')
         ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
                   label=r'$\bar{v}_x$ commanded [\textrm{m/s}]')
         #ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-        #          label=r'$\omega_z$ measured [\textrm{rad/s}]')
+        #          label=r'$\omega_z$ estimated [\textrm{rad/s}]')
         #ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
         #          label=r'$\bar{\omega}_z$ commanded [\textrm{rad/s}]')
 
         ax3b.set_xlabel(r'Time [\textrm{s}]')   
-        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+        ax3b.set_ylabel(r'Surge Velocity [\textrm{m/s}]')
         ax3b.set_ylim(-0.2, 0.5)  # zoom in on surge velocity
-        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities, Only surge}')
+        #ax3b.set_title(r'\textbf{estimated vs.\ commanded velocities, Only surge}')
         ax3b.grid(True, linestyle='--', alpha=0.6)
         ax3b.legend(loc='upper right')  
 

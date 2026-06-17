@@ -204,7 +204,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         for _, leg in plan_df.groupby('leg_index'):
             ax4.plot(leg['plan_x_m'], leg['plan_y_m'], '--', color='black',
                      linewidth=1.5, zorder=3,
-                     label=(r'Reference path (/plan)' if first else None))
+                     label=(r'Reference path' if first else None))
             first = False
     else:
         print(f'WARNING: {plan_csv} not found — re-run export_tracking_bag_csv.py '
@@ -293,8 +293,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     ax4.set_xlabel(r'East / $X$ [\textrm{m}]')
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
-    ax4.set_title(r'\textbf{$X$--$Y$ plane view of 40\,\textrm{m} by 40\,\textrm{m} Grid --- AUV path vs.\ reference path}',
-                  pad=20)
+    #ax4.set_title(r'\textbf{$X$--$Y$ plane view of 40\,\textrm{m} by 40\,\textrm{m} Grid --- AUV path vs.\ reference path}',             pad=20)
     ax4.set_aspect('equal', adjustable='box')
     ax4.set_ylim(-50.5, 10)  # keep the current-arrow row in view
     ax4.set_xlim(-50, 10)
@@ -304,20 +303,20 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
                       markersize=14, markeredgewidth=2.5,
-                      linestyle='None', label=r'Mission waypoints (Nav2 goals)')
+                      linestyle='None', label=r'Mission waypoints')
     # Proxy for the robot's actual (driven) trajectory — the viridis-colored line.
     # Uses a mid-colormap color since the real line is colored by cross-track error.
     traj_proxy = Line2D([0], [0], color=plt.get_cmap('viridis')(0.5),
-                        linewidth=2, label=r'Actual path (AUV)')
+                        linewidth=2, label=r'Estimated path (AUV)')
     extra_handles = [traj_proxy]
-    extra_labels = [r'Actual path (AUV)']
+    extra_labels = [r'Estimated path (AUV)']
     if glitch.any():
         glitch_proxy = Line2D([0], [0], color='red', linewidth=2,
                               label=r'Localization glitch')
         extra_handles.append(glitch_proxy)
         extra_labels.append(r'Localization glitch')
     extra_handles.append(wp_proxy)
-    extra_labels.append(r'Mission waypoints (Nav2 goals)')
+    extra_labels.append(r'Mission waypoints')
     # Proxy for the water-current glyph (blue arrow with a head).
     cur_proxy = Line2D([0], [0], color=CURRENT_COLOR, linewidth=3,
                        marker='^', markersize=9, linestyle='-',

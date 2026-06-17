@@ -146,7 +146,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         # Grey highlight band over t in [6, 15] s, full height.
         ax3b.axvspan(6, 15, color='gray', alpha=0.2, zorder=0)
 
-        # vx measured drawn as colored segments: red where it leaves the
+        # vx estimated drawn as colored segments: red where it leaves the
         # [VX_LO, VX_HI] band OR during a localization glitch (a physically
         # impossible position jump between consecutive samples), blue otherwise.
         VX_LO, VX_HI = -0.2, 0.5
@@ -167,19 +167,19 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         ax3b.plot(time, df['cmd_vel_linear_x'], '--', color='#2ca02c',
                   label=r'$\bar{v}_x$ commanded [\textrm{m/s}]')
         ax3b.plot(time, df['twist_angular_z'], color='#ffbf00',
-                  label=r'$\omega_z$ measured [\textrm{rad/s}]')
+                  label=r'$\omega_z$ estimated [\textrm{rad/s}]')
         ax3b.plot(time, df['cmd_vel_angular_z'], '--', color='#9467bd',
                   label=r'$\bar{\omega}_z$ commanded [\textrm{rad/s}]')
 
         ax3b.set_xlabel(r'Time [\textrm{s}]')
-        ax3b.set_ylabel(r'Velocity [\textrm{m/s}, \textrm{rad/s}]')
+        ax3b.set_ylabel(r'Twist [\textrm{m/s}, \textrm{rad/s}]')
         ax3b.set_ylim(-0.2, 0.5)
-        ax3b.set_title(r'\textbf{Measured vs.\ commanded velocities}')
+        #ax3b.set_title(r'\textbf{estimated vs.\ commanded velocities}')
         ax3b.grid(True, linestyle='--', alpha=0.6)
 
         # LineCollection isn't auto-legendable — add proxies for the vx line.
         vx_ok = Line2D([0], [0], color='#1f77b4', linewidth=1.5,
-                       label=r'$v_x$ measured [\textrm{m/s}]')
+                       label=r'$v_x$ estimated [\textrm{m/s}]')
         vx_bad = Line2D([0], [0], color='red', linewidth=1.5,
                         label=r'$v_x$ glitched [\textrm{m/s}]')
         n_anom = int(anom_seg.sum())
@@ -202,7 +202,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     # Top:    yaw error vs time, with the hysteresis band drawn in.
     # Bottom: commanded yaw rate (the trigger output) vs the actual yaw
     #         rate (the plant response). The cmd snaps on/off as the error
-    #         leaves/enters the band; the measured rate lags and follows.
+    #         leaves/enters the band; the estimated rate lags and follows.
     # -------------------------------------------------------------------
     if {'yaw_error_rad', 'cmd_vel_angular_z'}.issubset(df.columns):
         # Hysteresis thresholds of the Schmitt trigger [rad]. Set to the
@@ -216,30 +216,32 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
         for ax in axes3c:
             ax.axvspan(6, 15, color='gray', alpha=0.2, zorder=0)
 
-        # --- Top: yaw error ---
-        axes3c[0].plot(time, df['yaw_error_rad'], color='#d62728',
+        # --- Top: yaw error (converted rad -> deg) ---
+        yaw_err_deg = np.degrees(df['yaw_error_rad'])
+        axes3c[0].plot(time, yaw_err_deg, color='#d62728',
                        label=r'Yaw error $e_\psi$')
         if YAW_ERR_HIGH is not None:
             for sign in (1, -1):
-                axes3c[0].axhline(sign * YAW_ERR_HIGH, color='gray',
+                axes3c[0].axhline(sign * np.degrees(YAW_ERR_HIGH), color='gray',
                                   linestyle='--', linewidth=1.0)
         if YAW_ERR_LOW is not None:
             for sign in (1, -1):
-                axes3c[0].axhline(sign * YAW_ERR_LOW, color='gray',
+                axes3c[0].axhline(sign * np.degrees(YAW_ERR_LOW), color='gray',
                                   linestyle=':', linewidth=1.0)
         if YAW_ERR_HIGH is not None and YAW_ERR_LOW is not None:
-            axes3c[0].axhspan(YAW_ERR_LOW, YAW_ERR_HIGH, color='gray', alpha=0.12)
-            axes3c[0].axhspan(-YAW_ERR_HIGH, -YAW_ERR_LOW, color='gray', alpha=0.12,
-                              label=r'Hysteresis band')
+            axes3c[0].axhspan(np.degrees(YAW_ERR_LOW), np.degrees(YAW_ERR_HIGH),
+                              color='gray', alpha=0.12)
+            axes3c[0].axhspan(-np.degrees(YAW_ERR_HIGH), -np.degrees(YAW_ERR_LOW),
+                              color='gray', alpha=0.12, label=r'Hysteresis band')
         axes3c[0].axhline(0.0, color='black', linewidth=0.6, alpha=0.5)
-        axes3c[0].set_ylabel(r'Yaw error [\textrm{rad}]')
-        axes3c[0].set_title(r'\textbf{Schmitt trigger: yaw error and yaw-rate response}')
+        axes3c[0].set_ylabel(r'Yaw error [\textrm{deg}]')
+        #axes3c[0].set_title(r'\textbf{Schmitt trigger: yaw error and yaw-rate response}')
 
         # --- Bottom: commanded vs actual yaw rate ---
         axes3c[1].plot(time, df['cmd_vel_angular_z'], color='#9467bd',
-                       label=r'$\bar{\omega}_z$ commanded (trigger output)')
+                       label=r'$\bar{\omega}_z$ commanded')
         axes3c[1].plot(time, df['twist_angular_z'], color='#ffbf00',
-                       label=r'$\omega_z$ measured (plant response)')
+                       label=r'$\omega_z$ estimated ')
         axes3c[1].axhline(0.0, color='black', linewidth=0.6, alpha=0.5)
         axes3c[1].set_ylabel(r'Yaw rate [\textrm{rad/s}]')
         axes3c[1].set_xlabel(r'Time [\textrm{s}]')

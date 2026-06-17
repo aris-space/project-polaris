@@ -268,7 +268,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     ax4.set_xlabel(r'East / $X$ [\textrm{m}]')
     ax4.set_ylabel(r'North / $Y$ [\textrm{m}]')
-    ax4.set_title(r'\textbf{$X$--$Y$ plane view --- AUV path vs.\ reference path}')
+    #ax4.set_title(r'\textbf{$X$--$Y$ plane view --- AUV path vs.\ reference path}')
     ax4.set_aspect('equal', adjustable='box')
     ax4.set_xlim(2, 12)
     ax4.set_ylim(bottom=-12.5)  # keep the current-arrow row in view
@@ -278,11 +278,11 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
 
     wp_proxy = Line2D([0], [0], marker='+', color=WAYPOINT_COLOR,
                       markersize=14, markeredgewidth=2.5,
-                      linestyle='None', label=r'Mission waypoints (Nav2 goals)')
+                      linestyle='None', label=r'Mission waypoints')
     # Proxy for the robot's actual (driven) trajectory — the viridis-colored line.
     # Uses a mid-colormap color since the real line is colored by cross-track error.
     traj_proxy = Line2D([0], [0], color=plt.get_cmap('viridis')(0.5),
-                        linewidth=2, label=r'Actual path (AUV)')
+                        linewidth=2, label=r'Estimated path (AUV)')
     # Proxy for the water-current glyph (blue arrow with a head).
     cur_proxy = Line2D([0], [0], color=CURRENT_COLOR, linewidth=3,
                        marker='^', markersize=9, linestyle='-',
@@ -290,7 +290,7 @@ def plot_data(csv_file_path, start_time=None, end_time=None, foxglove_offset=0.0
     handles, labels = ax4.get_legend_handles_labels()
     # Legend below the plot and below the horizontal cross-track-error colorbar.
     ax4.legend(handles + [traj_proxy, wp_proxy, cur_proxy],
-               labels + [r'Actual path (AUV)', r'Mission waypoints (Nav2 goals)',
+               labels + [r'Estimated path (AUV)', r'Mission waypoints',
                          r'Water current'],
                loc='upper center', bbox_to_anchor=(0.5, -0.28),
                ncol=3, frameon=True, columnspacing=1.6, handlelength=2.2)
