@@ -946,9 +946,24 @@ class MavlinkBridgeReceiver(Node):
 
         # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
         # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
-        surge    = float(msg.linear.x)   # FLU forward -> negative vx
-        heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
-        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
+        #   +linear.x = forward, +linear.y = left, +linear.z = up,
+        #   +angular.z = yaw CCW (left).
+        # ArduSub 4.5.7 interprets SET_POSITION_TARGET_LOCAL_NED with BODY_FRD
+        # spec-correctly for z (down positive) and yaw (CW positive), but the
+        # x axis is empirically inverted (forward needs negative vx). Verified
+        # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
+        # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
+        # Deadband: thrusters can't produce sub-threshold commands, so zero them
+        # out to avoid jitter / integrator wind-up in the ArduSub low-level loop.
+        LIN_DEADBAND = 0.01   # m/s
+        ANG_DEADBAND = 0.015   # rad/s
+        lx = float(msg.linear.x)  if abs(msg.linear.x)  >= LIN_DEADBAND else 0.0
+        lz = float(msg.linear.z)  if abs(msg.linear.z)  >= LIN_DEADBAND else 0.0
+        az = float(msg.angular.z) if abs(msg.angular.z) >= ANG_DEADBAND else 0.0
+
+        surge    = lx    # FLU forward -> negative vx
+        heave    = -lz   # FLU up      -> -down (FRD spec)
+        yaw_rate = -az   # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
