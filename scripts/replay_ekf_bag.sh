@@ -2,26 +2,51 @@
 # Replay a single rosbag with a fresh EKF and record the output.
 # Run INSIDE the Docker container: docker exec -it jetson-container bash
 #
-# Usage: bash scripts/replay_ekf_bag.sh <bag_dir> [rate]
-#   bag_dir  path to bag directory (contains metadata.yaml + *.mcap)
-#   rate     playback multiplier, default 2.0
+# Usage: bash scripts/replay_ekf_bag.sh <bag_dir> [rate] [launch_file] [extra_launch_args...]
+#   bag_dir            path to bag directory (contains metadata.yaml + *.mcap)
+#   rate               playback multiplier, default 2.0
+#   launch_file        one of:
+#                        offline_ekf_replay.launch.py   (default — global EKF stack)
+#                        offline_anchored_replay.launch.py   (gnss_anchored_pose stack)
+#   extra_launch_args  additional 'key:=value' args passed to ros2 launch.
+#                      e.g. imu_yaw_offset_deg:=-140  yaw_offset_deg:=0
+#
+# Outputs (per run):
+#   <bag_dir>/ekf_replay/<bag_name>_<run_label>/        recorded bag (MCAP)
+#   <bag_dir>/ekf_replay/<bag_name>_<run_label>.log     EKF stack log
+#   <bag_dir>/ekf_replay/<bag_name>_<run_label>_diag/   diagnostic CSV (diag.csv)
+#
+# RUN_LABEL is computed as <launch_basename>_rate<rate> (e.g.
+# offline_ekf_replay_rate2.0). Override via env: RUN_LABEL=foo bash scripts/...
 
 set -eo pipefail
 
-BAG_DIR="${1:?Usage: $0 <bag_dir> [rate]}"
+BAG_DIR="${1:?Usage: $0 <bag_dir> [rate] [launch_file] [extra_launch_args...]}"
 RATE="${2:-2.0}"
+LAUNCH_FILE="${3:-offline_ekf_replay.launch.py}"
+# Everything after position 3 is forwarded verbatim to ros2 launch. Empty
+# if not provided. Used for things like imu_yaw_offset_deg:=-140.
+EXTRA_LAUNCH_ARGS=("${@:4}")
 
 # Strip trailing slash for consistent basename
 BAG_DIR="${BAG_DIR%/}"
 BAG_NAME="$(basename "$BAG_DIR")"
-OUT_DIR="${BAG_DIR}/ekf_replay/${BAG_NAME}_ekf"
+LAUNCH_LABEL="${LAUNCH_FILE%.launch.py}"
+RUN_LABEL="${RUN_LABEL:-${LAUNCH_LABEL}_rate${RATE}}"
+OUT_DIR="${BAG_DIR}/ekf_replay/${BAG_NAME}_${RUN_LABEL}"
+DIAG_DIR="${BAG_DIR}/ekf_replay/${BAG_NAME}_${RUN_LABEL}_diag"
 
 source /opt/ros/humble/setup.bash
 source /ros2_ws/install/setup.bash
 
-echo "[replay_ekf_bag] Bag:  $BAG_DIR"
-echo "[replay_ekf_bag] Out:  $OUT_DIR"
-echo "[replay_ekf_bag] Rate: ${RATE}x"
+echo "[replay_ekf_bag] Bag:    $BAG_DIR"
+echo "[replay_ekf_bag] Out:    $OUT_DIR"
+echo "[replay_ekf_bag] Diag:   $DIAG_DIR"
+echo "[replay_ekf_bag] Rate:   ${RATE}x"
+echo "[replay_ekf_bag] Launch: $LAUNCH_FILE"
+if [ ${#EXTRA_LAUNCH_ARGS[@]} -gt 0 ]; then
+    echo "[replay_ekf_bag] Extra:  ${EXTRA_LAUNCH_ARGS[*]}"
+fi
 
 # --- Build topic whitelist (exclude stale EKF outputs from the bag) -----------
 # Write the helper to a temp file first to avoid bash parser issues that arise
@@ -95,10 +120,43 @@ echo "[replay_ekf_bag] h_acc gate: disabled (offline replay)"
 # Kill any EKF/navsat processes lingering from a previous bag run.
 # A diverged /odometry/filtered/local from a prior run stays on the DDS bus and
 # corrupts navsat_transform's datum anchor the moment the next run starts.
-pkill -f "ekf_node" 2>/dev/null || true
-pkill -f "navsat_transform_node" 2>/dev/null || true
-pkill -f "gnss_datum_watchdog" 2>/dev/null || true
-pkill -f "navsat_global_ekf.launch" 2>/dev/null || true
+# The list must cover ALL nodes that publish on /odometry/filtered/* or
+# /gps/filtered/* — any leftover publisher creates a duplicate stream that
+# the recorder + ekf_offline_diagnostic interleave into the new run's data,
+# producing inflated bbox / path-length numbers (observed: 30 m vs 14 m
+# real bbox on rect_01 because a stale gnss_anchored_pose from a prior
+# replay was still publishing alongside the fresh one).
+# IMPORTANT: do NOT pkill -f on "offline_ekf_replay.launch" or
+# "offline_anchored_replay.launch" -- those substrings appear in THIS
+# script's own argv (we were invoked as "bash scripts/replay_ekf_bag.sh
+# ... offline_ekf_replay.launch.py ..."), and pkill -f matches the full
+# command line, so the script would SIGTERM itself. Killing the node
+# executables below is sufficient; the parent "ros2 launch" exits on its
+# own when its children are gone.
+#
+# Self-protection: pgrep -v with $$ filters anything matched against this
+# pid out of the kill set. Belt-and-braces in case a future pattern is
+# also too loose.
+_self_pid=$$
+_safe_pkill() {
+    local pattern="$1"
+    # Find PIDs matching the pattern, excluding self.
+    local pids
+    pids=$(pgrep -f "$pattern" 2>/dev/null | grep -v "^${_self_pid}$" || true)
+    if [ -n "$pids" ]; then
+        # shellcheck disable=SC2086
+        kill $pids 2>/dev/null || true
+    fi
+}
+_safe_pkill "ekf_node"
+_safe_pkill "navsat_transform_node"
+_safe_pkill "gnss_datum_watchdog"
+_safe_pkill "navsat_global_ekf.launch"
+_safe_pkill "gnss_anchored_pose"
+_safe_pkill "imu_yaw_correction"
+_safe_pkill "odometry_validator"
+_safe_pkill "ekf_offline_diagnostic"
+_safe_pkill "global_ekf_to_navsatfix"
 sleep 1
 
 # --- Start recorder -----------------------------------------------------------
@@ -162,9 +220,12 @@ sleep 3
 
 # --- Launch EKF ---------------------------------------------------------------
 # /clock is now at the bag timestamp; EKF initialises with a realistic dt.
-EKF_LOG="${OUT_DIR}/../ekf_replay.log"
-ros2 launch ekf_localization_pkg offline_ekf_replay.launch.py \
-    gps_fix_topic:="$GPS_TOPIC" >"$EKF_LOG" 2>&1 &
+mkdir -p "$DIAG_DIR"
+EKF_LOG="${BAG_DIR}/ekf_replay/${BAG_NAME}_${RUN_LABEL}.log"
+ros2 launch ekf_localization_pkg "$LAUNCH_FILE" \
+    gps_fix_topic:="$GPS_TOPIC" \
+    diag_output_dir:="$DIAG_DIR" \
+    "${EXTRA_LAUNCH_ARGS[@]}" >"$EKF_LOG" 2>&1 &
 EKF_PID=$!
 echo "[replay_ekf_bag] EKF PID: $EKF_PID — logging to $EKF_LOG"
 
@@ -175,24 +236,31 @@ echo "[replay_ekf_bag] Playback complete — killing EKF stack before /clock die
 # CRITICAL ORDER: kill publishers (EKF + navsat) IMMEDIATELY after bag ends,
 # BEFORE any flush sleep.
 #
-# When `ros2 bag play` exits, /clock stops being published. Any node still
-# running with `use_sim_time=true` then falls back to wall-clock for
-# `ros::Time::now()`. For the EKF that means the next 30 Hz periodic predict
-# computes `dt = wall_clock_now - last_sim_time` ≈ 3 days for offline replay
-# of a recent bag, integrates velocity over that bogus dt, blows up its
-# state to millions of metres, and publishes that garbage out — which the
-# recorder happily captures and the diagnostic summary then reports as a
-# `[DIAG] >10 km divergence` at the very end of every run.
-# (Confirmed via debug log: a single predict-step delta of 315 544 s carrying
-# an `odom0_twist` measurement with today's wall-clock stamp instead of bag
-# sim-time.)
+# When ros2 bag play exits, /clock stops being published. Any node still
+# running with use_sim_time=true then falls back to wall-clock for
+# rclcpp::Clock::now(). For the EKF that means the next 30 Hz periodic
+# predict computes dt = wall_clock_now - last_sim_time ~= 3 days for offline
+# replay of a recent bag, integrates velocity over that bogus dt, blows up
+# its state to millions of metres, and publishes that garbage out -- which
+# the recorder happily captures and the diagnostic summary then reports as
+# a [DIAG] >10 km divergence at the very end of every run.
+# (Confirmed via debug log: a single predict-step delta of 315544 s
+# carrying an odom0_twist measurement with todays wall-clock stamp instead
+# of bag sim-time.)
 #
 # Killing publishers first stops the bad messages at the source. Recorder
 # then drains its buffer with the last in-bag (good) messages only.
+#
+# Default kill (SIGTERM): each Python node installs a SIGTERM handler
+# in main() that converts it into a KeyboardInterrupt, so the existing
+# try/finally: destroy_node clause runs -- flushing the diag CSV and
+# printing the final-summary log lines. SIGINT to ros2 launch works too
+# but is much slower (graceful tree-walk through every child); SIGTERM
+# with the handler in place gives us fast-and-graceful.
 kill "$EKF_PID" 2>/dev/null || true
 pkill -f "navsat_global_ekf.launch" 2>/dev/null || true
 wait "$EKF_PID" 2>/dev/null || true
-sleep 2   # recorder drains in-flight buffered messages — none from EKF after this point
+sleep 2   # recorder drains in-flight buffered messages
 kill "$REC_PID" 2>/dev/null || true
 wait "$REC_PID" 2>/dev/null || true
 
@@ -207,9 +275,22 @@ grep "\[GPS odom\]" "$EKF_LOG" 2>/dev/null | head -4 | sed 's/^/    /' \
 echo "  [DIAG-onset] crossings (first time global EKF crosses 100 m / 1 km / 10 km):"
 grep "\[DIAG-onset\]" "$EKF_LOG" 2>/dev/null | sed 's/^/    /' \
     || echo "    (none — global EKF stayed within 100 m of map origin)"
+echo "  [DIAG-summary] watchdog final counters:"
+grep "\[DIAG-summary\]" "$EKF_LOG" 2>/dev/null | tail -1 | sed 's/^/    /' \
+    || echo "    (none — watchdog summary did not fire; check that node was running)"
 echo "  [DIAG] late-stage warnings (>10 km divergence):"
 grep "\[DIAG\] " "$EKF_LOG" 2>/dev/null | tail -3 | sed 's/^/    /' \
     || echo "    (none)"
+echo "  [odom_validator] final stamp-jump counts:"
+grep "\[odom_validator\] final" "$EKF_LOG" 2>/dev/null | tail -1 | sed 's/^/    /' \
+    || echo "    (none — validator did not log final summary)"
+echo "  ekf_offline_diagnostic CSV size:"
+if [ -f "$DIAG_DIR/diag.csv" ]; then
+    wc -l "$DIAG_DIR/diag.csv" | sed 's/^/    /'
+else
+    echo "    (no diag.csv at $DIAG_DIR)"
+fi
 echo "[replay_ekf_bag] Full EKF log: $EKF_LOG"
+echo "[replay_ekf_bag] Diag CSV:    $DIAG_DIR/diag.csv"
 echo ""
 echo "[replay_ekf_bag] Done. Output: $OUT_DIR"
