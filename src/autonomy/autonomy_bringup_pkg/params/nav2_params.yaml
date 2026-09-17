@@ -89,22 +89,22 @@ controller_server:
     goal_checker:
       plugin: "orca_nav2/GoalChecker3D"
       xy_goal_tolerance: 0.8
-      z_goal_tolerance: 0.4
+      z_goal_tolerance: 20.0
 
     # Controller parameters
     LongStraightLine:
       plugin: "orca_nav2/PurePursuitController3D"
-      lookahead_dist: 2.5
+      lookahead_dist: 1.7 #2.1
       transform_tolerance: 1.0
-      goal_tolerance: 0.3
+      goal_tolerance: 0.15
       tick_rate: 20.0
 
       x_vel: 0.4
-      x_accel: 0.2 #See protocal from lake3: 0.01
+      x_accel: 0.04 #0.2
       z_vel: 0.25
       z_accel: 0.2
       yaw_vel: 0.3
-      yaw_accel: 0.35
+      yaw_accel: 0.2
 
       # Tracking topics: 3x Float64 + PointStamped + PoseStamped + TwistStamped (see README)
       publish_tracking_error: true
@@ -119,8 +119,10 @@ controller_server:
       #   1. Publishes False  on /pixhawk/arm_cmd  → disarm
       #   2. Publishes MANUAL on /pixhawk/mode_cmd → manual mode
       #   3. Throws ControllerException            → aborts navigation
-      max_velocity_divergence_rad: 1.22  # 70 deg — fires symmetrically for both into and away from path
-      min_speed_divergence_check: 0.5  # m/s — skip check when nearly stopped
+      # Master enable for the check above — set false to disable the disarm+MANUAL trip entirely.
+      enable_velocity_divergence_emergency: false
+      max_velocity_divergence_rad: 1.4  # 82 deg — fires symmetrically for both into and away from path
+      min_speed_divergence_check: 0.35  # m/s — skip check when nearly stopped 0.5
 
       # ── Regulated Pure Pursuit ──────────────────────────────────────────────
       # Rotate-to-heading: stop translating and rotate in place when the heading
@@ -128,13 +130,13 @@ controller_server:
       # Hysteresis: engages at min_angle, releases only at the smaller release_angle
       # to prevent premature exit and the cross-track drift that follows.
       use_rotate_to_heading: true
-      rotate_to_heading_angular_vel: 0.2 #0.3  # rad/s — max rotation speed
-      rotate_to_heading_min_angle: 1.3 #1.22    # rad (70 deg) — only rotate-in-place for sharp turns
-      rotate_to_heading_release_angle: 0.1 # rad (~3 deg) — MUST be < v²/(2*decel) = 0.1²/(2*0.05) = 0.1 rad
+      rotate_to_heading_angular_vel: 0.25  # rad/s — max rotation speed
+      rotate_to_heading_min_angle: 1.3    # rad (75 deg) — only rotate-in-place for sharp turns
+      rotate_to_heading_release_angle: 0.5 #0.1 # rad (~10 deg) — MUST be < v²/(2*decel) = 0.1²/(2*0.05) = 0.1 rad
       # Real AUV angular braking capability (rad/s²) — used in sqrt decel formula.
       # Much lower than yaw_accel (ramp rate) because water drag limits actual decel.
       # Braking starts at dist = v²/(2*decel) from target. With v=0.1, decel=0.05 → 0.1 rad.
-      rotate_to_heading_decel: 0.05
+      rotate_to_heading_decel: 0.1 #0.05
 
       # Stateful goal heading: once within XY goal tolerance, stay in heading-align
       # mode even if the robot drifts slightly back out of tolerance.
@@ -150,7 +152,7 @@ controller_server:
       # Fixed curvature lookahead: measure curvature at this fixed distance regardless
       # of the main lookahead. Breaks the slow→short lookahead→high curvature feedback loop.
       use_fixed_curvature_lookahead: true
-      curvature_lookahead_dist: 2.5  # m — matched to lookahead_dist
+      curvature_lookahead_dist: 1.7  # 2.5 m — matched to lookahead_dist
 
       # Curvature-regulated linear velocity: scale forward speed down when the turning
       # radius falls below regulated_linear_scaling_min_radius.
@@ -160,8 +162,8 @@ controller_server:
 
       # Approach velocity: ramp forward speed down over the last N metres to goal.
       min_approach_linear_velocity: 0.0
-      approach_velocity_scaling_dist: 3.75
-      K_descelerate: 0.9 #0.35
+      approach_velocity_scaling_dist: 7.0
+      K_descelerate: 1.0 #0.9 #0.35
 
     SharpTurn:
       plugin: "orca_nav2/SharpTurnController3D"

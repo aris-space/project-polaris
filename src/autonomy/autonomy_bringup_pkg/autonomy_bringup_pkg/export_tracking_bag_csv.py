@@ -15,11 +15,13 @@ PurePursuit topics (recorded when ``publish_tracking_error`` is true on PurePurs
 Also supported if present in the bag:
 
   geometry_msgs/Vector3: ocean current m/s (``/ocean_current``, sim bridge or ``current_vector_node``)
+  sensor_msgs/NavSatFix: filtered global GPS fix (``/gps/filtered/global``, navsat_transform output)
 
 Outputs:
 
   tracking_errors_long.csv - unified long format (see README in export folder)
   tracking_errors_wide.csv - one row per cross-track sample; errors + closest + pose + twist + ocean_current (as-of merged)
+  gps_filtered_global.csv  - time_sec, latitude, longitude, altitude from /gps/filtered/global
   tracking_export_README.txt
 
 Usage:
@@ -44,6 +46,7 @@ TOPIC_CLOSEST = '/pure_pursuit_closest_point_map'
 TOPIC_POSE = '/pure_pursuit_robot_pose_map'
 TOPIC_TWIST = '/pure_pursuit_robot_twist'
 TOPIC_OCEAN_CURRENT = '/ocean_current'
+TOPIC_GPS_FILTERED = '/gps/filtered/global'
 
 TOPICS_FLOAT = (TOPIC_CROSS, TOPIC_VERT, TOPIC_YAW)
 LONG_HEADER = [
@@ -79,6 +82,7 @@ def _read_bag_mixed(bag_dir: Path):
     from geometry_msgs.msg import PointStamped, PoseStamped, TwistStamped, Vector3
     from rclpy.serialization import deserialize_message
     from rosbag2_py import ConverterOptions, SequentialReader, StorageOptions
+    from sensor_msgs.msg import NavSatFix
     from std_msgs.msg import Float64
 
     want = {
@@ -89,6 +93,7 @@ def _read_bag_mixed(bag_dir: Path):
         TOPIC_POSE,
         TOPIC_TWIST,
         TOPIC_OCEAN_CURRENT,
+        TOPIC_GPS_FILTERED,
     }
     sid = _storage_id_from_metadata(bag_dir)
     storage_options = StorageOptions(uri=str(bag_dir), storage_id=sid)
@@ -105,6 +110,7 @@ def _read_bag_mixed(bag_dir: Path):
     pose: List[Tuple[float, Tuple[float, ...]]] = []
     twist: List[Tuple[float, Tuple[float, ...]]] = []
     ocean_current: List[Tuple[float, Tuple[float, float, float]]] = []
+    gps_filtered: List[Tuple[float, Tuple[float, float, float]]] = []
 
     while reader.has_next():
         topic, data, t_ns = reader.read_next()
@@ -144,9 +150,15 @@ def _read_bag_mixed(bag_dir: Path):
             ocean_current.append((t_sec, (x, y, z)))
             row = [t_sec, topic, 'vector3', x, y, z] + [''] * 10
             long_rows.append(row)
+        elif topic == TOPIC_GPS_FILTERED:
+            msg = deserialize_message(data, NavSatFix)
+            lat, lon, alt = msg.latitude, msg.longitude, msg.altitude
+            gps_filtered.append((t_sec, (lat, lon, alt)))
+            row = [t_sec, topic, 'navsatfix', lat, lon, alt] + [''] * 10
+            long_rows.append(row)
 
     long_rows.sort(key=lambda r: r[0])
-    return long_rows, float_scalar, closest, pose, twist, ocean_current
+    return long_rows, float_scalar, closest, pose, twist, ocean_current, gps_filtered
 
 
 def _asof_backward(
@@ -202,6 +214,7 @@ def _write_wide_csv(
     pose: List[Tuple[float, Tuple[float, ...]]],
     twist: List[Tuple[float, Tuple[float, ...]]],
     ocean_current: List[Tuple[float, Tuple[float, float, float]]],
+    gps_filtered: List[Tuple[float, Tuple[float, float, float]]],
 ) -> None:
     master = sorted(by_float.get(TOPIC_CROSS, []), key=lambda x: x[0])
     vert = sorted(by_float.get(TOPIC_VERT, []), key=lambda x: x[0])
@@ -232,6 +245,9 @@ def _write_wide_csv(
         'ocean_current_x_m_s',
         'ocean_current_y_m_s',
         'ocean_current_z_m_s',
+        'gps_latitude',
+        'gps_longitude',
+        'gps_altitude',
     ]
 
     def fmt_num(x: float) -> object:
@@ -250,8 +266,9 @@ def _write_wide_csv(
         pcol = _asof_backward_tuple(master, pose, 7)
         tcol = _asof_backward_tuple(master, twist, 6)
         ocol = _asof_backward_tuple(master, ocean_current, 3)
+        gcol = _asof_backward_tuple(master, gps_filtered, 3)
 
-        for (t, cx), v, y, c3, p7, t6, o3 in zip(master, vcol, ycol, ccol, pcol, tcol, ocol):
+        for (t, cx), v, y, c3, p7, t6, o3, g3 in zip(master, vcol, ycol, ccol, pcol, tcol, ocol, gcol):
             w.writerow(
                 [
                     t,
@@ -277,8 +294,23 @@ def _write_wide_csv(
                     fmt_num(o3[0]),
                     fmt_num(o3[1]),
                     fmt_num(o3[2]),
+                    fmt_num(g3[0]),
+                    fmt_num(g3[1]),
+                    fmt_num(g3[2]),
                 ],
             )
+
+
+def _write_gps_csv(
+    path: Path,
+    gps_filtered: List[Tuple[float, Tuple[float, float, float]]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('w', newline='', encoding='utf-8') as f:
+        w = csv.writer(f)
+        w.writerow(['time_sec', 'latitude', 'longitude', 'altitude'])
+        for t, (lat, lon, alt) in sorted(gps_filtered, key=lambda r: r[0]):
+            w.writerow([t, lat, lon, alt])
 
 
 def _write_readme(path: Path, bag_dir: Path) -> None:
@@ -297,8 +329,13 @@ tracking_errors_long.csv
     vector3 - v0,v1,v2 = ocean current x,y,z (m/s, /ocean_current)
 
 tracking_errors_wide.csv
-  One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current columns
+  One row per cross-track sample (time_sec). vertical/yaw/closest/pose/twist/ocean_current/gps columns
   use the last sample at or before that time (same controller tick -> aligned).
+  GPS columns: gps_latitude, gps_longitude, gps_altitude (from /gps/filtered/global).
+
+gps_filtered_global.csv
+  One row per /gps/filtered/global (NavSatFix) sample. Columns: time_sec, latitude, longitude, altitude.
+  Independent of the controller cadence (not as-of merged into the wide CSV).
 
 Plain UTF-8; no ROS needed to analyze. Produced by export_tracking_bag_csv.py
 """
@@ -354,7 +391,7 @@ def main() -> int:
         return 1
 
     try:
-        long_rows, by_float, closest, pose, twist, ocean_current = _read_bag_mixed(bag_dir)
+        long_rows, by_float, closest, pose, twist, ocean_current, gps_filtered = _read_bag_mixed(bag_dir)
     except Exception as e:
         print(f'Failed to read bag: {e}', file=sys.stderr)
         print('Source ROS 2 setup (rosbag2_py, rclpy, geometry_msgs).', file=sys.stderr)
@@ -365,14 +402,17 @@ def main() -> int:
 
     long_path = out_dir / 'tracking_errors_long.csv'
     wide_path = out_dir / 'tracking_errors_wide.csv'
+    gps_path = out_dir / 'gps_filtered_global.csv'
     readme_path = out_dir / 'tracking_export_README.txt'
 
     _write_long_csv(long_path, long_rows)
-    _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current)
+    _write_wide_csv(wide_path, by_float, closest, pose, twist, ocean_current, gps_filtered)
+    _write_gps_csv(gps_path, gps_filtered)
     _write_readme(readme_path, bag_dir)
 
     print(f'Wrote {len(long_rows)} long rows -> {long_path}')
     print(f'Wide CSV -> {wide_path}')
+    print(f'GPS CSV ({len(gps_filtered)} samples) -> {gps_path}')
     print(f'Notes -> {readme_path}')
 
     if args.plot:

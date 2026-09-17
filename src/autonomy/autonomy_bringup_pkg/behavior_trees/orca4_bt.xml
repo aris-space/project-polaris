@@ -5,28 +5,27 @@
   Starting point: navigate_w_replanning_and_recovery.xml
 -->
 
+<!-- This is the behvaiour Tree for only tuning Regulated & PurePursuiteontroller!!! -->
 <!-- <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
     <RecoveryNode number_of_retries="10" name="NavigateRecovery">
       
       <PipelineSequence name="NavigateWithReplanning">
         
-        <RateController hz="1.0"> 
-            <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
-        </RateController>
-        
-        <FollowPath path="{path}" controller_id="LongStraightLine" goal_checker_id="goal_checker"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
+
+        <FollowPath path="{path}" controller_id="LongStraightLine" goal_checker_id="goal_checker"/>               
       
       </PipelineSequence>
       
       <ReactiveFallback name="RecoveryFallback">
         <GoalUpdated/>
-        <Wait wait_duration="2"/>
+        <Wait wait_duration="3"/>
       </ReactiveFallback>
       
     </RecoveryNode>
   </BehaviorTree>
-</root>  -->
+</root> -->
 
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -34,9 +33,9 @@
       
       <PipelineSequence name="NavigateWithReplanning">
         
-        <RateController hz="1.0"> 
+        <RateController hz="2.0"> 
           <Fallback>
-            <IsStraightPathValid path="{path}" max_dist="0.9" goal="{goal}"/>
+            <IsStraightPathValid path="{path}" max_xy_dist="0.9" max_z_dist="20.0" goal="{goal}" xy_goal_tolerance="0.8" z_goal_tolerance="20.0"/>
             <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
           </Fallback>
         </RateController>
@@ -47,13 +46,12 @@
       
       <ReactiveFallback name="RecoveryFallback">
         <GoalUpdated/>
-        <Wait wait_duration="2"/>
+        <Wait wait_duration="1.5"/>
       </ReactiveFallback>
       
     </RecoveryNode>
   </BehaviorTree>
 </root>
-
 
 
 <!-- <root main_tree_to_execute="MainTree">
@@ -64,7 +62,7 @@
         
         <RateController hz="1.0"> 
           <Fallback>
-            <IsStraightPathValid path="{path}" max_dist="1.5" goal="{goal}"/>
+            <IsStraightPathValid path="{path}" max_xy_dist="1.5" max_z_dist="20.0" goal="{goal}" xy_goal_tolerance="0.8" z_goal_tolerance="20.0"/>
             <ComputePathToPose goal="{goal}" path="{path}" planner_id="StraightLine"/>
           </Fallback>
         </RateController>
