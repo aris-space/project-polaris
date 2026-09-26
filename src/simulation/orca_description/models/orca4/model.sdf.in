@@ -1,0 +1,435 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  WARNING: thruster geometry is still BlueROV2, not Polaris.
+  Forces and torques in this sim do NOT match the real vehicle.
+  Do not transfer PID or PSC tuning from this sim to hardware.
+  See docs/SIM_MERGE_PLAN.md Phase 4.
+  model.sdf is GENERATED from this file: python3 scripts/generate_model.py model.sdf.in model.sdf 0
+-->
+<sdf version="1.6">
+  <model name="orca4">
+    <pose>0 0 0 0 0 0</pose>
+
+    <!-- BlueROV2 thruster reference: http://www.ardusub.com/introduction/features.html -->
+    <!-- fluid_density: @fluid_density -->
+    <!-- displaced_mass: @displaced_mass -->
+
+    <link name="base_link">
+      <inertial>
+        <pose>0 0 @mass_z 0 0 0</pose>
+        <mass>@mass</mass>
+        <inertia>
+          <ixx>@ixx</ixx>
+          <ixy>@ixy</ixy>
+          <ixz>@ixz</ixz>
+          <iyy>@iyy</iyy>
+          <iyz>@iyz</iyz>
+          <izz>@izz</izz>
+        </inertia>
+      </inertial>
+
+      <visual name="base_link_visual">
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/bluerov2.dae</uri>
+            <scale>0.025 0.025 0.025</scale>
+          </mesh>
+        </geometry>
+      </visual>
+
+      <!-- Compact box for buoyancy (gz + terrain contact): long cylinder collision was
+           intersecting the world and freezing the model (no /odom, no JSON to ArduSub).
+           Hydrodynamic *drag* still uses hull cylinder dimensions in generate_model.py. -->
+      <collision name="base_link_collision">
+        <pose>0 0 @volume_z 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>@collision_x @collision_y @collision_z</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <!-- IMU sensor gyro and accel data will be sent to ArduSub -->
+      <sensor name="imu_sensor" type="imu">
+        <!-- Transform from the Gazebo body frame (x-forward, y-left, z-up)
+             to the ArduPilot body frame (x-forward, y-right, z-down) -->
+        <pose>0 0 0 @d180 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>1000.0</update_rate>
+      </sensor>
+
+    </link>
+
+    <!-- Hydrodynamics plugin -->
+    <plugin
+        filename="gz-sim-hydrodynamics-system"
+        name="gz::sim::systems::Hydrodynamics">
+      <link_name>base_link</link_name>
+      <water_density>@fluid_density</water_density>
+      <!-- Added mass: small coeffs in generate_model.py (large Ma + finite-diff accel is unstable). -->
+      <xDotU>@xDotU</xDotU>
+      <yDotV>@yDotV</yDotV>
+      <zDotW>@zDotW</zDotW>
+      <kDotP>@kDotP</kDotP>
+      <mDotQ>@mDotQ</mDotQ>
+      <nDotR>@nDotR</nDotR>
+      <!-- First order stability derivative: -->
+      <xU>@xU</xU>
+      <yV>@yV</yV>
+      <zW>@zW</zW>
+      <kP>@kP</kP>
+      <mQ>@mQ</mQ>
+      <nR>@nR</nR>
+      <!-- Second order stability derivative: -->
+      <xUabsU>@xUabsU</xUabsU>
+      <yVabsV>@yVabsV</yVabsV>
+      <zWabsW>@zWabsW</zWabsW>
+      <kPabsP>@kPabsP</kPabsP>
+      <mQabsQ>@mQabsQ</mQabsQ>
+      <nRabsR>@nRabsR</nRabsR>
+    </plugin>
+
+    <link name="thruster1">
+      <pose>@t1_x @t1_y @t1_z @t1_R @t1_P @t1_Y</pose>
+      <visual name="thruster_prop_visual">
+        <pose>0 0 0 @d90 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/t200-cw-prop.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <inertial>
+        <mass>@propeller_mass</mass>
+        <inertia>
+          <ixx>@propeller_ixx</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>@propeller_iyy</iyy>
+          <iyz>0</iyz>
+          <izz>@propeller_izz</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <link name="thruster2">
+      <pose>@t2_x @t2_y @t2_z @t2_R @t2_P @t2_Y</pose>
+      <visual name="thruster_prop_visual">
+        <pose>0 0 0 -@d90 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/t200-ccw-prop.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <inertial>
+        <mass>@propeller_mass</mass>
+        <inertia>
+          <ixx>@propeller_ixx</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>@propeller_iyy</iyy>
+          <iyz>0</iyz>
+          <izz>@propeller_izz</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <link name="thruster3">
+      <pose>@t3_x @t3_y @t3_z @t3_R @t3_P @t3_Y</pose>
+      <visual name="thruster_prop_visual">
+        <pose>0 0 0 -@d90 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/t200-ccw-prop.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <inertial>
+        <mass>@propeller_mass</mass>
+        <inertia>
+          <ixx>@propeller_ixx</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>@propeller_iyy</iyy>
+          <iyz>0</iyz>
+          <izz>@propeller_izz</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <link name="thruster4">
+      <pose>@t4_x @t4_y @t4_z @t4_R @t4_P @t4_Y</pose>
+      <visual name="thruster_prop_visual">
+        <pose>0 0 0 @d90 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/t200-cw-prop.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <inertial>
+        <mass>@propeller_mass</mass>
+        <inertia>
+          <ixx>@propeller_ixx</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>@propeller_iyy</iyy>
+          <iyz>0</iyz>
+          <izz>@propeller_izz</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <link name="thruster5">
+      <pose>@t5_x @t5_y @t5_z @t5_R @t5_P @t5_Y</pose>
+      <visual name="thruster_prop_visual">
+        <pose>0 0 0 -@d90 0 @d90</pose>
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/t200-ccw-prop.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <inertial>
+        <mass>@propeller_mass</mass>
+        <inertia>
+          <ixx>@propeller_ixx</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>@propeller_iyy</iyy>
+          <iyz>0</iyz>
+          <izz>@propeller_izz</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <link name="thruster6">
+      <pose>@t6_x @t6_y @t6_z @t6_R @t6_P @t6_Y</pose>
+      <visual name="thruster_prop_visual">
+        <pose>0 0 0 @d90 0 @d90</pose>
+        <geometry>
+          <mesh>
+            <uri>model://orca4/meshes/t200-cw-prop.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <inertial>
+        <mass>@propeller_mass</mass>
+        <inertia>
+          <ixx>@propeller_ixx</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>@propeller_iyy</iyy>
+          <iyz>0</iyz>
+          <izz>@propeller_izz</izz>
+        </inertia>
+      </inertial>
+    </link>
+
+    <joint name="thruster1_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>thruster1</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+      </axis>
+    </joint>
+
+    <joint name="thruster2_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>thruster2</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+      </axis>
+    </joint>
+
+    <joint name="thruster3_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>thruster3</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+      </axis>
+    </joint>
+
+    <joint name="thruster4_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>thruster4</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+      </axis>
+    </joint>
+
+    <joint name="thruster5_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>thruster5</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+      </axis>
+    </joint>
+
+    <joint name="thruster6_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>thruster6</child>
+      <axis>
+        <xyz>0 0 -1</xyz>
+      </axis>
+    </joint>
+
+    <plugin
+        filename="gz-sim-thruster-system"
+        name="gz::sim::systems::Thruster">
+      <namespace>orca4</namespace>
+      <joint_name>thruster1_joint</joint_name>
+      <thrust_coefficient>@thrust_coefficient</thrust_coefficient>
+      <fluid_density>@fluid_density</fluid_density>
+      <propeller_diameter>@propeller_diameter</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>@use_angvel_cmd</use_angvel_cmd>
+    </plugin>
+
+    <plugin
+        filename="gz-sim-thruster-system"
+        name="gz::sim::systems::Thruster">
+      <namespace>orca4</namespace>
+      <joint_name>thruster2_joint</joint_name>
+      <thrust_coefficient>@thrust_coefficient</thrust_coefficient>
+      <fluid_density>@fluid_density</fluid_density>
+      <propeller_diameter>@propeller_diameter</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>@use_angvel_cmd</use_angvel_cmd>
+    </plugin>
+
+    <plugin
+        filename="gz-sim-thruster-system"
+        name="gz::sim::systems::Thruster">
+      <namespace>orca4</namespace>
+      <joint_name>thruster3_joint</joint_name>
+      <thrust_coefficient>@thrust_coefficient</thrust_coefficient>
+      <fluid_density>@fluid_density</fluid_density>
+      <propeller_diameter>@propeller_diameter</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>@use_angvel_cmd</use_angvel_cmd>
+    </plugin>
+
+    <plugin
+        filename="gz-sim-thruster-system"
+        name="gz::sim::systems::Thruster">
+      <namespace>orca4</namespace>
+      <joint_name>thruster4_joint</joint_name>
+      <thrust_coefficient>@thrust_coefficient</thrust_coefficient>
+      <fluid_density>@fluid_density</fluid_density>
+      <propeller_diameter>@propeller_diameter</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>@use_angvel_cmd</use_angvel_cmd>
+    </plugin>
+
+    <plugin
+        filename="gz-sim-thruster-system"
+        name="gz::sim::systems::Thruster">
+      <namespace>orca4</namespace>
+      <joint_name>thruster5_joint</joint_name>
+      <thrust_coefficient>@thrust_coefficient</thrust_coefficient>
+      <fluid_density>@fluid_density</fluid_density>
+      <propeller_diameter>@propeller_diameter</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>@use_angvel_cmd</use_angvel_cmd>
+    </plugin>
+
+    <plugin
+        filename="gz-sim-thruster-system"
+        name="gz::sim::systems::Thruster">
+      <namespace>orca4</namespace>
+      <joint_name>thruster6_joint</joint_name>
+      <thrust_coefficient>@thrust_coefficient</thrust_coefficient>
+      <fluid_density>@fluid_density</fluid_density>
+      <propeller_diameter>@propeller_diameter</propeller_diameter>
+      <velocity_control>true</velocity_control>
+      <use_angvel_cmd>@use_angvel_cmd</use_angvel_cmd>
+    </plugin>
+
+    <plugin name="ArduPilotPlugin" filename="libArduPilotPlugin.so">
+      <!-- Port settings -->
+      <fdm_addr>127.0.0.1</fdm_addr>
+      <fdm_port_in>9002</fdm_port_in>
+      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <lock_step>1</lock_step>
+
+      <!-- Transform from the Gazebo body frame (x-forward, y-left, z-up)
+           to the ArduPilot body frame (x-forward, y-right, z-down) -->
+      <modelXYZToAirplaneXForwardZDown>0 0 0 @d180 0 0</modelXYZToAirplaneXForwardZDown>
+
+      <!-- Transform from the Gazebo world frame (ENU)
+           to the ArduPilot world frame (NED) -->
+      <gazeboXYZToNED>0 0 0 @d180 0 @d90</gazeboXYZToNED>
+
+      <!-- Sensors -->
+      <imuName>imu_sensor</imuName>
+
+      <!-- Thrusters -->
+      <control channel="0">
+        <jointName>thruster1_joint</jointName>
+        <servo_min>@servo_min</servo_min>
+        <servo_max>@servo_max</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>@thruster1_topic</cmd_topic>
+        <offset>@control_offset</offset>
+        <multiplier>@ccw_control_multiplier</multiplier>
+      </control>
+      <control channel="1">
+        <jointName>thruster2_joint</jointName>
+        <servo_min>@servo_min</servo_min>
+        <servo_max>@servo_max</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>@thruster2_topic</cmd_topic>
+        <offset>@control_offset</offset>
+        <multiplier>@ccw_control_multiplier</multiplier>
+      </control>
+      <control channel="2">
+        <jointName>thruster3_joint</jointName>
+        <servo_min>@servo_min</servo_min>
+        <servo_max>@servo_max</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>@thruster3_topic</cmd_topic>
+        <offset>@control_offset</offset>
+        <multiplier>@cw_control_multiplier</multiplier>
+      </control>
+      <control channel="3">
+        <jointName>thruster4_joint</jointName>
+        <servo_min>@servo_min</servo_min>
+        <servo_max>@servo_max</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>@thruster4_topic</cmd_topic>
+        <offset>@control_offset</offset>
+        <multiplier>@cw_control_multiplier</multiplier>
+      </control>
+      <control channel="4">
+        <jointName>thruster5_joint</jointName>
+        <servo_min>@servo_min</servo_min>
+        <servo_max>@servo_max</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>@thruster5_topic</cmd_topic>
+        <offset>@control_offset</offset>
+        <multiplier>@ccw_control_multiplier</multiplier>
+      </control>
+      <control channel="5">
+        <jointName>thruster6_joint</jointName>
+        <servo_min>@servo_min</servo_min>
+        <servo_max>@servo_max</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>@thruster6_topic</cmd_topic>
+        <offset>@control_offset</offset>
+        <multiplier>@cw_control_multiplier</multiplier>
+      </control>
+    </plugin>
+
+    <!-- Publish the ground-truth pose for rviz -->
+    <plugin
+        filename="gz-sim-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>map</odom_frame>
+      <robot_base_frame>orca4</robot_base_frame>
+      <dimensions>3</dimensions>
+    </plugin>
+
+  </model>
+</sdf>
