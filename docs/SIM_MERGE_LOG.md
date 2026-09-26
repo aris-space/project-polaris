@@ -38,3 +38,13 @@ contradicted the plan, and what was done instead. Newest entries at the bottom.
   re-raises, i.e. hardware behaviour is unchanged. Note pymavlink 2.4.49 `mavtcp` already retries
   6× internally; the outer loop is for SITL starting late.
 - Hardware sign-off (bench check per `CHECK_AXIS.md`, heartbeat + arm/disarm) still OUTSTANDING.
+
+## 2026-09-27 — T0.4 / T0.5 / T0.6
+
+- T0.5 VERIFY-FIRST: `autonomy_bringup_pkg/missions/` has the four files the plan lists, and the
+  sim repo's `default_mission_origin.json` is byte-identical to it. Vendored only
+  `smaller_square.csv` (≈11 m square at the default origin, parses with the real
+  `load_wgs84_points_to_waypoints.process_mission`). `straight_line_mission.csv` not taken: it
+  has a single active waypoint and adds nothing over `goldbach_straightline_wgs84_mission.csv`.
+- §1.2 VERIFY-FIRST: `git ls-remote` confirms `polaris-pressure-filter` = `0a75bdf`,
+  `polaris-custom-frame` = `fa43d26`, `master` = `c593f04`. Pin unchanged.
