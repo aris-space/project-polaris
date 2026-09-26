@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+
+  <name>orca_sim_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Polaris Gazebo + ArduSub SITL bringup. Simulation-only: never built on the Jetson
+    (src/simulation/COLCON_IGNORE). Launches the real autonomy stack; owns no Nav2 params.
+  </description>
+
+  <maintainer email="noel.buehler@aris-space.ch">Noel Buehler</maintainer>
+  <license>MIT</license>
+
+  <author>Clyde McQueen</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>orca_description</exec_depend>
+  <exec_depend>autonomy_bringup_pkg</exec_depend>
+  <exec_depend>mavlink_bridge</exec_depend>
+  <exec_depend>ekf_localization_pkg</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>
