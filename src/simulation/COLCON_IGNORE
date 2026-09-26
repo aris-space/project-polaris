@@ -1,0 +1,4 @@
+Simulation packages are x86/dev-machine only and must never be built on the Jetson.
+This file keeps them out of every default colcon/rosdep run. Do NOT delete it.
+The :sim image builds them by passing the package directories explicitly as
+--base-paths (see entrypoint.sh and docker/colcon_sim_defaults.yaml).

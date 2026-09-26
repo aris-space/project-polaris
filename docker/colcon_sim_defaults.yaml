@@ -1,0 +1,11 @@
+# colcon defaults for the :sim image only (Dockerfile.sim sets COLCON_DEFAULTS_FILE to this file).
+# src/simulation/COLCON_IGNORE hides the sim packages from recursive discovery; listing their
+# directories explicitly as base paths builds them without deleting that file.
+# '.' (not 'src') matches colcon's default discovery, which also finds ping-python and
+# top_station's recorder node. Paths are relative to the workspace root (/ros2_ws). Add new sim packages here.
+build:
+  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup]
+list:
+  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup]
+test:
+  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup]

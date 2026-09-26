@@ -48,3 +48,29 @@ contradicted the plan, and what was done instead. Newest entries at the bottom.
   has a single active waypoint and adds nothing over `goldbach_straightline_wgs84_mission.csv`.
 - §1.2 VERIFY-FIRST: `git ls-remote` confirms `polaris-pressure-filter` = `0a75bdf`,
   `polaris-custom-frame` = `fa43d26`, `master` = `c593f04`. Pin unchanged.
+
+## 2026-09-27 — T1.1 – T1.5
+
+- T1.1: `model.sdf` is reproduced exactly by `generate_model.py model.sdf.in model.sdf 0`
+  (thrust-force mode); regenerated with that after adding the banner. Banner is an XML comment
+  after the `<?xml?>` declaration and contains no `@` (the generator substitutes `@word`).
+- T1.2: `cmd_vel_ramp.py` not vendored (exists at repo-root `scripts/`). `odom_to_tf.py` gained an
+  optional `republish_topic` — see the T2.5 entry for why.
+- T1.3: plan keeps `ardupilot_gazebo` in `simulation.repos` *and* clones it separately in T2.1.
+  Only one is needed: it is a colcon package, so it is built with the other sim deps in
+  `/opt/sim_deps` (as in Paul's Dockerfile). Plugin path is therefore
+  `/opt/sim_deps/install/ardupilot_gazebo/lib/ardupilot_gazebo`, not `/opt/ardupilot_gazebo/build`.
+- **T1.4 deviation (mechanism 1).** The plan deletes the committed `src/simulation/COLCON_IGNORE`
+  in sim mode. That dirties the git tree of every sim container (the workspace is bind-mounted),
+  and an accidental commit of the deletion silently removes the Jetson gate. Instead the file is
+  never touched: sim mode passes the sim package directories explicitly as colcon
+  `--base-paths` (verified: colcon only honours `COLCON_IGNORE` during recursive discovery, so an
+  explicit base path pointing *at* a package is still found). For interactive `colcon build` in
+  the sim container, `Dockerfile.sim` sets `COLCON_DEFAULTS_FILE=/ros2_ws/docker/colcon_sim_defaults.yaml`.
+- **T1.4 regression found by testing, avoided.** colcon's default base path is `.`, not `src`:
+  `colcon list` finds 37 packages, `colcon list --base-paths src` only 35 (it drops `ping-python`
+  and `top_station/.../recorder_controller_node`). The non-sim path therefore passes no
+  `--base-paths` at all; the sim path uses `--base-paths . <sim pkgs>`. Verified in
+  `project-polaris-docker:dev-x64`: POLARIS_SIM unset → 37 packages, 0 sim; POLARIS_SIM=1 → 39.
+- T1.4 mechanism 2: rosdep (via catkin_pkg) also honours `COLCON_IGNORE`; verified that
+  `rosdep keys --from-paths src` does not see `ros_gz_*`. Skip keys added anyway as planned.

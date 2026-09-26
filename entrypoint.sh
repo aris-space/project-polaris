@@ -111,6 +111,26 @@ fi
 
 cd "${ROS_WS}"
 
+# 1.2) Simulation packages are x86/dev-machine only. Only the :sim image sets POLARIS_SIM=1.
+# src/simulation/COLCON_IGNORE (committed) hides them from every default colcon/rosdep run;
+# in sim mode they are added explicitly as base paths instead of deleting that file.
+# Non-sim builds pass no --base-paths at all, so colcon's default discovery is unchanged.
+SIM_BASE_PATHS=()
+COLCON_BASE_PATH_ARGS=()
+if [ "${POLARIS_SIM:-0}" = "1" ]; then
+  for sim_pkg in "${ROS_WS}"/src/simulation/*/; do
+    [ -f "${sim_pkg}package.xml" ] && SIM_BASE_PATHS+=("src/simulation/$(basename "${sim_pkg}")")
+  done
+  COLCON_BASE_PATH_ARGS=(--base-paths . "${SIM_BASE_PATHS[@]}")
+  export GZ_VERSION=harmonic
+  export GZ_SIM_SYSTEM_PLUGIN_PATH="/opt/sim_deps/install/ardupilot_gazebo/lib/ardupilot_gazebo:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
+  export PATH="/opt/ardupilot/build/sitl/bin:${PATH}"
+  echo "[entrypoint] Simulation packages ENABLED (POLARIS_SIM=1): ${SIM_BASE_PATHS[*]}"
+else
+  ROSDEP_SKIP_KEYS="${ROSDEP_SKIP_KEYS} ros_gz_bridge ros_gz_sim"
+  echo "[entrypoint] Simulation packages ignored (POLARIS_SIM unset)."
+fi
+
 # 1.5) Initialize and repair submodules if git is available.
 if command -v git >/dev/null 2>&1 && [ -f "${ROS_WS}/setup_submodules.sh" ]; then
   # Ensure the script is executable.
@@ -134,7 +154,7 @@ if [ "${ROSDEP_INSTALL}" = "1" ]; then
         rosdep-install-workspace "${ROS_WS}"
       else
         echo "[entrypoint] Installing dependencies with rosdep..."
-        rosdep install --from-paths src --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
+        rosdep install --from-paths src "${SIM_BASE_PATHS[@]}" --ignore-src -r -y --skip-keys "${ROSDEP_SKIP_KEYS}"
       fi
     else
       echo "[entrypoint] No internet access — skipping apt-get update, rosdep update, and rosdep install."
@@ -173,7 +193,7 @@ if [ "${AUTO_BUILD}" = "1" ]; then
     rm -rf "${ROS_WS}/build/dvl_a50" "${ROS_WS}/install/dvl_a50"
   fi
 
-  colcon build --symlink-install
+  colcon build --symlink-install "${COLCON_BASE_PATH_ARGS[@]}"
   echo "[POLARIS] BUILD COMPLETE"
 fi
 
