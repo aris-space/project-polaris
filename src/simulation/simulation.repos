@@ -1,0 +1,15 @@
+# External simulation dependencies. Consumed ONLY by docker/Dockerfile.sim, which imports them
+# into /opt/sim_deps (outside the workspace) — never by setup_submodules.sh, never on the Jetson.
+repositories:
+  bluerov2_gz:
+    type: git
+    url: https://github.com/clydemcqueen/bluerov2_gz
+    version: main
+  ros2_shared:
+    type: git
+    url: https://github.com/ptrmu/ros2_shared
+    version: master
+  ardupilot_gazebo:
+    type: git
+    url: https://github.com/ArduPilot/ardupilot_gazebo
+    version: 4b30a3d8
