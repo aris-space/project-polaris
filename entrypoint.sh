@@ -122,6 +122,9 @@ if [ "${POLARIS_SIM:-0}" = "1" ]; then
     [ -f "${sim_pkg}package.xml" ] && SIM_BASE_PATHS+=("src/simulation/$(basename "${sim_pkg}")")
   done
   COLCON_BASE_PATH_ARGS=(--base-paths . "${SIM_BASE_PATHS[@]}")
+  if [ -f /opt/sim_deps/install/setup.bash ]; then
+    source_with_relaxed_nounset /opt/sim_deps/install/setup.bash
+  fi
   export GZ_VERSION=harmonic
   export GZ_SIM_SYSTEM_PLUGIN_PATH="/opt/sim_deps/install/ardupilot_gazebo/lib/ardupilot_gazebo:${GZ_SIM_SYSTEM_PLUGIN_PATH:-}"
   export PATH="/opt/ardupilot/build/sitl/bin:${PATH}"

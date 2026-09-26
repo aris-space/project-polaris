@@ -1,0 +1,211 @@
+# Polaris simulation image (:sim) — Gazebo Harmonic + ArduSub SITL on top of the :dev toolchain.
+#
+# Build from the repo root:   docker/build_sim.sh      (or: docker build -f docker/Dockerfile.sim .)
+# Only src/simulation/simulation.repos is sent as build context (Dockerfile.sim.dockerignore).
+#
+# Based on ros:humble-ros-base (multi-arch: linux/amd64 and linux/arm64, e.g. Apple Silicon).
+# NEVER base this on Dockerfile.arm64 / the :dev arm64 variant — that is the Jetson L4T image.
+# The :dev manifest's arm64 half IS that L4T image, which is why this file does not
+# `FROM project-polaris-docker:dev` but duplicates the Dockerfile.x64 blocks below.
+#
+# POLARIS_SIM=1 is set only here. It is what enables the simulation packages in
+# entrypoint.sh and what permits use_sim_time in autonomy.launch.py.
+
+ARG ROS_DISTRO=humble
+FROM ros:${ROS_DISTRO}-ros-base
+ARG ROS_DISTRO
+
+# ---------------------------------------------------------------------------
+# 1. Same toolchain as aris-space/project-polaris-docker Dockerfile.x64
+#    (keep in sync by hand when that file changes).
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+RUN npm install -g @anthropic-ai/claude-code
+
+ENV ROS_DISTRO=${ROS_DISTRO}
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    ROS_WS=/ros2_ws \
+    MAVLINK20=1 \
+    APT_FLAGS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+
+SHELL ["/bin/bash", "-lc"]
+
+RUN apt-get ${APT_FLAGS} update && apt-get ${APT_FLAGS} install -y --no-install-recommends \
+    python3-pip \
+    python3-dev \
+    python3-numpy \
+    python3-serial \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-vcstool \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    nlohmann-json3-dev \
+    libeigen3-dev \
+    ca-certificates \
+    usbutils \
+    libusb-1.0-0 \
+    libusb-1.0-0-dev \
+    libcurl4 \
+    libcurl4-openssl-dev \
+    iproute2 \
+    iputils-ping \
+    openssh-client \
+    nano \
+    vim \
+    screen \
+    tmux \
+    htop \
+    less \
+    tree \
+    udev \
+    wget \
+    ros-${ROS_DISTRO}-joy \
+    ros-${ROS_DISTRO}-mavros-msgs \
+    ros-${ROS_DISTRO}-nmea-msgs \
+    ros-${ROS_DISTRO}-rtcm-msgs \
+    ros-${ROS_DISTRO}-usb-cam \
+    ros-${ROS_DISTRO}-image-transport-plugins \
+    ros-${ROS_DISTRO}-v4l2-camera \
+    ros-${ROS_DISTRO}-diagnostic-updater \
+    ros-${ROS_DISTRO}-rosbag2-storage-mcap \
+    ros-${ROS_DISTRO}-marine-acoustic-msgs \
+    ros-${ROS_DISTRO}-robot-localization \
+    ros-${ROS_DISTRO}-tf2-ros \
+    ros-${ROS_DISTRO}-tf2-tools \
+    ros-${ROS_DISTRO}-tf2-geometry-msgs \
+    ros-${ROS_DISTRO}-tf2-sensor-msgs \
+    ros-${ROS_DISTRO}-rclcpp-lifecycle \
+    ros-${ROS_DISTRO}-lifecycle-msgs \
+    ros-${ROS_DISTRO}-rclcpp-components \
+    ros-${ROS_DISTRO}-navigation2 \
+    ros-${ROS_DISTRO}-nav2-core \
+    ros-${ROS_DISTRO}-nav2-util \
+    ros-${ROS_DISTRO}-nav2-bringup \
+    ros-${ROS_DISTRO}-nav2-common \
+    ros-${ROS_DISTRO}-nav2-costmap-2d \
+    ros-${ROS_DISTRO}-nav2-controller \
+    ros-${ROS_DISTRO}-nav2-planner \
+    ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
+    ros-${ROS_DISTRO}-tf-transformations \
+    ros-${ROS_DISTRO}-foxglove-bridge \
+    ros-${ROS_DISTRO}-gscam \
+    && (rosdep init || true) \
+    && rosdep update \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -s $(python3 -c "import numpy; print(numpy.get_include())")/numpy /usr/include/numpy
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir \
+    pymavlink \
+    MAVProxy \
+    loguru \
+    future \
+    pyproj \
+    pyserial \
+    keller-protocol \
+    dalybms \
+    pandas \
+    matplotlib \
+    seaborn \
+    scipy \
+    plotly \
+    contextily \
+    rasterio
+
+# ---------------------------------------------------------------------------
+# 2. Gazebo Harmonic for ROS 2 Humble (non-default pairing, from packages.osrfoundation.org)
+#    Ref: https://gazebosim.org/docs/harmonic/ros_installation/
+# ---------------------------------------------------------------------------
+RUN wget -q https://packages.osrfoundation.org/gazebo.gpg -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+      > /etc/apt/sources.list.d/gazebo-stable.list \
+ && apt-get ${APT_FLAGS} update && apt-get ${APT_FLAGS} install -y --no-install-recommends \
+      gz-harmonic \
+      ros-${ROS_DISTRO}-ros-gzharmonic \
+ && wget -q https://raw.githubusercontent.com/osrf/osrf-rosdep/master/gz/00-gazebo.list \
+      -O /etc/ros/rosdep/sources.list.d/00-gazebo.list \
+ && rosdep update \
+ && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# 3. GL/X11 runtime: headless EGL everywhere, GUI on native Linux (gzclient:=True).
+#    ardupilot_gazebo build prereqs (JSON + GStreamer camera plugin).
+# ---------------------------------------------------------------------------
+RUN apt-get ${APT_FLAGS} update && apt-get ${APT_FLAGS} install -y --no-install-recommends \
+      libglvnd0 libgl1 libglx0 libegl1 libxext6 libx11-6 \
+      rapidjson-dev \
+      libopencv-dev \
+      libgstreamer1.0-dev \
+      libgstreamer-plugins-base1.0-dev \
+      gstreamer1.0-plugins-bad \
+      gstreamer1.0-libav \
+      gstreamer1.0-gl \
+ && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# 4. ArduSub SITL from the Polaris fork, pinned by SHA.
+#    polaris-pressure-filter carries the SUB_FRAME_CUSTOM mixer; master does NOT
+#    (its CUSTOM case falls through to SIMPLEROV_3). At boot ArduSub must print
+#    "Frame: CUSTOM". Kept before any workspace content so autonomy changes never
+#    retrigger this build.
+#    Prereqs are installed explicitly instead of via install-prereqs-ubuntu.sh,
+#    which refuses to run as root; the waf SITL build needs only these.
+# ---------------------------------------------------------------------------
+RUN apt-get ${APT_FLAGS} update && apt-get ${APT_FLAGS} install -y --no-install-recommends \
+      gawk libtool libxml2-dev libxslt1-dev ccache \
+ && rm -rf /var/lib/apt/lists/* \
+ && python3 -m pip install --no-cache-dir "empy==3.3.4" pexpect lxml dronecan ptyprocess
+
+ARG ARDUSUB_BRANCH=polaris-pressure-filter
+ARG ARDUSUB_SHA=0a75bdfb8bdd5a6eda4ca1087e2b83a3a7dc8e30
+RUN git clone -b ${ARDUSUB_BRANCH} https://github.com/aris-space/project-polaris-ardusub.git /opt/ardupilot \
+ && cd /opt/ardupilot && git checkout ${ARDUSUB_SHA} \
+ && git submodule update --init --recursive \
+ && ./waf configure --board sitl \
+ && ./waf build --target bin/ardusub \
+ && rm -rf /opt/ardupilot/build/sitl/{ArduSub,libraries,modules} /root/.ccache
+
+# ---------------------------------------------------------------------------
+# 5./6. External sim dependencies (bluerov2_gz, ros2_shared, ardupilot_gazebo) in their own
+#    colcon workspace outside /ros2_ws, so they are not rebuilt with the workspace.
+#    ardupilot_gazebo builds the Gazebo system plugin libArduPilotPlugin.so.
+# ---------------------------------------------------------------------------
+ENV GZ_VERSION=harmonic
+# setuptools 80+ removed `setup.py develop` flags that colcon still passes for ament_python.
+RUN python3 -m pip install --no-cache-dir "setuptools<80"
+
+COPY src/simulation/simulation.repos /opt/sim_deps/simulation.repos
+RUN mkdir -p /opt/sim_deps/src && cd /opt/sim_deps \
+ && vcs import src < simulation.repos \
+ && apt-get ${APT_FLAGS} update \
+ && rosdep install -y --from-paths src --ignore-src -r \
+ && rm -rf /var/lib/apt/lists/* \
+ && source /opt/ros/${ROS_DISTRO}/setup.bash \
+ && colcon build --event-handlers console_direct- \
+ && rm -rf build log
+
+# ---------------------------------------------------------------------------
+# 8. Environment. POLARIS_SIM=1 exists ONLY in this image.
+# ---------------------------------------------------------------------------
+ENV POLARIS_SIM=1 \
+    GZ_SIM_SYSTEM_PLUGIN_PATH=/opt/sim_deps/install/ardupilot_gazebo/lib/ardupilot_gazebo \
+    PATH=/opt/ardupilot/build/sitl/bin:${PATH} \
+    COLCON_DEFAULTS_FILE=/ros2_ws/docker/colcon_sim_defaults.yaml
+
+WORKDIR ${ROS_WS}
+
+# Interactive shells: ROS, then sim deps, then the workspace overlay.
+RUN printf '%s\n' \
+      'if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then source "/opt/ros/${ROS_DISTRO}/setup.bash"; fi' \
+      'if [ -f "/opt/sim_deps/install/setup.bash" ]; then source "/opt/sim_deps/install/setup.bash"; fi' \
+      'if [ -f "${ROS_WS}/install/setup.bash" ]; then source "${ROS_WS}/install/setup.bash"; fi' \
+      'export ROS_WS="${ROS_WS}"' > /etc/profile.d/ros_setup.sh \
+ && echo 'source /etc/profile.d/ros_setup.sh' >> /root/.bashrc
+
+CMD ["bash", "-lc", "cd ${ROS_WS} && bash"]

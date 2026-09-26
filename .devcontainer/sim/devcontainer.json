@@ -1,0 +1,76 @@
+// .devcontainer/sim/devcontainer.json — Gazebo + ArduSub SITL (docs/SIM_MERGE_PLAN.md T2.3)
+// Build the image first: docker/build_sim.sh
+{
+    "name": "Polaris SIM",
+    // Local tag from docker/build_sim.sh; switch to the ghcr tag once someone publishes one.
+    "image": "polaris:sim",
+    // Where the workspace lives *inside* the container
+    "workspaceFolder": "/ros2_ws",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
+    // Extra docker run args you normally pass
+    "runArgs": [
+        "--network=host",
+        "--privileged",
+        "-e",
+        "ROS_DOMAIN_ID=37",
+        "--env=DISPLAY",
+        "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "-e",
+        "CLEAN_BUILD=0",
+        "-e",
+        "ROSDEP_INSTALL=1",
+        // Also baked into the image; repeated so the intent is visible here.
+        "-e",
+        "POLARIS_SIM=1",
+        // ArduSub SITL: one MAVLink client per TCP port (SERIAL0 5760, SERIAL1 5762, SERIAL2 5763).
+        "-e",
+        "MAVLINK_PUBLISHER_URL=tcp:127.0.0.1:5760",
+        "-e",
+        "MAVLINK_RECEIVER_URL=tcp:127.0.0.1:5762",
+        "-e",
+        "MAVLINK_GCS_URL=tcp:127.0.0.1:5763",
+        "-e",
+        "MAVLINK_CONNECT_RETRIES=90"
+        // add --device=/dev/ttyUSB0 etc. here if needed
+    ],
+    // VS Code will run this once after the container is created
+    "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
+    // You’re using root in the image
+    "forwardPorts": [8765],
+    "remoteUser": "root",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                // C/C++
+                "ms-vscode.cpptools-themes", // C/C++ Themes :contentReference[oaicite:0]{index=0}
+                "ms-vscode.cpptools", // C/C++ :contentReference[oaicite:1]{index=1}
+                "ms-vscode.cpptools-extension-pack", // C/C++ Extension Pack :contentReference[oaicite:2]{index=2}
+                "ms-vscode.cmake-tools", // CMake Tools :contentReference[oaicite:3]{index=3}
+                // Dev containers / Docker
+                "ms-vscode-remote.remote-containers", // Dev Containers :contentReference[oaicite:4]{index=4}
+                "ms-azuretools.vscode-containers", // Container Tools :contentReference[oaicite:5]{index=5}
+                "ms-azuretools.vscode-docker", // Docker :contentReference[oaicite:6]{index=6}
+                // Git / GitHub
+                "mhutchie.git-graph", // Git Graph :contentReference[oaicite:7]{index=7}
+                "eamodio.gitlens", // GitLens :contentReference[oaicite:8]{index=8}
+                "GitHub.vscode-pull-request-github", // GitHub Pull Requests & Issues :contentReference[oaicite:9]{index=9}
+                "GitHub.vscode-github-actions", // GitHub Actions :contentReference[oaicite:10]{index=10}
+                // Python
+                "ms-python.python", // Python :contentReference[oaicite:11]{index=11}
+                "ms-python.vscode-pylance", // Pylance :contentReference[oaicite:12]{index=12}
+                "ms-python.debugpy", // Python Debugger :contentReference[oaicite:13]{index=13}
+                "ms-python.vscode-python-envs", // Python Environments :contentReference[oaicite:14]{index=14}
+                "ms-python.black-formatter", // Black Formatter :contentReference[oaicite:15]{index=15}
+                // Claude Code
+                "anthropic.claude-code", // Claude Code :contentReference[oaicite:16]{index=16}
+                "andrepimenta.claude-code-chat", // Chat for Claude Code
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter"
+                },
+                "editor.formatOnSave": true
+            }
+        }
+    }
+}

@@ -1,0 +1,4 @@
+# Build context for Dockerfile.sim: only the external sim dependency list.
+# The workspace itself is bind-mounted at runtime, never baked in.
+*
+!src/simulation/simulation.repos
