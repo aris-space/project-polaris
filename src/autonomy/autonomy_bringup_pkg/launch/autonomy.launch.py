@@ -44,7 +44,18 @@ def generate_launch_description():
 
     # use_sim_time is ALWAYS False for hardware - not exposed as an arg
     # so it can never be accidentally set to True on the real vehicle.
-    use_sim_time = 'False'
+    # It defaults to False and can only be True inside the simulation
+    # image, which is the only place POLARIS_SIM=1 is ever set. A hardware
+    # launch that somehow requests True fails loudly instead of freezing every
+    # node on a /clock that will never publish. sim_launch.py sets
+    # POLARIS_USE_SIM_TIME=1; see docs/SIM_MERGE_PLAN.md T2.4.
+    _requested_sim_time = os.getenv('POLARIS_USE_SIM_TIME', '0') == '1'
+    if _requested_sim_time and os.getenv('POLARIS_SIM') != '1':
+        raise RuntimeError(
+            'POLARIS_USE_SIM_TIME=1 outside the simulation image. Refusing to '
+            'start: use_sim_time=True on hardware freezes every node.'
+        )
+    use_sim_time = 'True' if _requested_sim_time else 'False'
 
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
@@ -159,7 +170,7 @@ def generate_launch_description():
         name='lifecycle_manager_navigation',
         output='screen',
         parameters=[{
-            'use_sim_time': False,
+            'use_sim_time': use_sim_time == 'True',
             'autostart': False,
             'node_names': [
                 'controller_server',
@@ -180,6 +191,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "use_navsat_transform": "false",
+            "use_sim_time": use_sim_time.lower(),
         }.items(),
         condition=IfCondition(LaunchConfiguration("odom_local_start")),
     )

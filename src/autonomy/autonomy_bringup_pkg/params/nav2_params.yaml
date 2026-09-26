@@ -1,6 +1,6 @@
 # SINGLE SOURCE OF TRUTH for controller tuning, hardware and simulation alike.
-# Simulation overrides only use_sim_time and odom_topic, via RewrittenYaml in
-# src/simulation/orca_sim_bringup/launch/sim_launch.py.
+# Simulation overrides only use_sim_time (autonomy.launch.py's RewrittenYaml, gated
+# on POLARIS_USE_SIM_TIME set by src/simulation/orca_sim_bringup/launch/sim_launch.py).
 # If you are about to add a sim-only value here, or copy a value out of here
 # into a sim file, stop and read docs/SIM_MERGE_PLAN.md §T0.4.
 

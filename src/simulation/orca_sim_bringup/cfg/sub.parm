@@ -113,3 +113,7 @@ SERIAL1_PROTOCOL 2
 
 # Polaris custom frame: SUB_FRAME_CUSTOM = 7 (mixer in fork's AP_Motors6DOF.cpp:179-187).
 FRAME_CONFIG 7
+
+# SITL third UART: MAVLink on TCP 5763 (SERIAL2) for mavlink_bridge's separate GCS-heartbeat
+# connection (ros2_receiver._gcs_port, MAVLINK_GCS_URL). SITL serves one client per port.
+SERIAL2_PROTOCOL 2
