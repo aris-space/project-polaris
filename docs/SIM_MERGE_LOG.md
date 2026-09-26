@@ -24,3 +24,17 @@ contradicted the plan, and what was done instead. Newest entries at the bottom.
 - The three salvaged docs contained a "live tuning" block copied from the sim repo's
   `nav2_params.yaml`. Removed / relabelled as historical rather than updated, so no tuning
   values are duplicated outside `nav2_params.yaml` (invariant 5).
+
+## 2026-09-27 — T0.3
+
+- VERIFY-FIRST: only three `mavlink_connection` call sites use `MAVLINK_ROUTER_TCP` /
+  `JETSON_IP_ADDRESS` (receiver `self.port`, receiver `self._gcs_port`, publisher `self.port`).
+- **Plan gap:** `_gcs_port` also defaults to `tcp:127.0.0.1:5760`. SITL accepts one client per
+  serial port, so with only `MAVLINK_RECEIVER_URL`/`MAVLINK_PUBLISHER_URL` set (as T2.3 lists),
+  the GCS connection would collide with the publisher on 5760. T2.3 therefore also sets
+  `MAVLINK_GCS_URL=tcp:127.0.0.1:5763` (SITL SERIAL2).
+- The retry loop lives in a new `mavlink_bridge/connection.py` (one helper instead of three
+  copies). With no env vars it makes exactly one `mavutil.mavlink_connection(<default>)` call and
+  re-raises, i.e. hardware behaviour is unchanged. Note pymavlink 2.4.49 `mavtcp` already retries
+  6× internally; the outer loop is for SITL starting late.
+- Hardware sign-off (bench check per `CHECK_AXIS.md`, heartbeat + arm/disarm) still OUTSTANDING.

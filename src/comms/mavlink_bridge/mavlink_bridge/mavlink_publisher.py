@@ -23,6 +23,7 @@ from config_pkg.constants import Comms
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 
 from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
+from .connection import connect as mavlink_connect
 
 # specifies the directory where logs are saved and the name of the log files
 log_dir = os.path.expanduser("~/polaris_logs")
@@ -83,8 +84,9 @@ class MavlinkBridgeSender(Node):
 
         self.logger = DualLogger(self.ros_logger, self._file_logger)
 
-        self.port = mavutil.mavlink_connection(
-            f"{Comms.JETSON_IP_ADDRESS}:14600"
+        # Default is the vehicle's UDP endpoint. Override for SITL via env var.
+        self.port = mavlink_connect(
+            "MAVLINK_PUBLISHER_URL", f"{Comms.JETSON_IP_ADDRESS}:14600"
         )  # UDP connection to companion computer (BlueOS)
         # self.serial_port = mavutil.mavlink_connection(
         #     Comms.MAVLINK_ROUTER_TCP

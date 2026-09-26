@@ -23,6 +23,7 @@ from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 #
 from rclpy.parameter import Parameter as RclpyParameter
 from .pid_param_map import PID_PARAM_MAP, normalize_mavlink_param_id
+from .connection import connect as mavlink_connect
 
 log_dir = os.path.expanduser(Logs.LOG_DIR)
 os.makedirs(log_dir, exist_ok=True)
@@ -59,8 +60,9 @@ class MavlinkBridgeReceiver(Node):
         )
 
         # configures serial port the pixhawk is connected to and the baud rate
-        self.port = mavutil.mavlink_connection(
-            Comms.MAVLINK_ROUTER_TCP
+        # Default is the vehicle's mavlink-router. Override for SITL via env var.
+        self.port = mavlink_connect(
+            "MAVLINK_RECEIVER_URL", Comms.MAVLINK_ROUTER_TCP
         )  # For sending commands to Pixhawk via mavlink-router
 
         # Wait for a heartbeat so we know the target system IDs. Code can get stuck here meaning we didn't receive any heartbeat
@@ -73,7 +75,7 @@ class MavlinkBridgeReceiver(Node):
         # does not contaminate odometry/command messages.
         # ArduSub FS_GCS_ENABLE watches for MAV_TYPE_GCS heartbeats; if they stop
         # (e.g. Jetson crashes), ArduSub triggers its GCS failsafe automatically.
-        self._gcs_port = mavutil.mavlink_connection(Comms.MAVLINK_ROUTER_TCP)
+        self._gcs_port = mavlink_connect("MAVLINK_GCS_URL", Comms.MAVLINK_ROUTER_TCP)
         self._gcs_port.mav.srcSystem = 255
         self._gcs_port.mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
         self.create_timer(1.0, self._gcs_heartbeat_cb)
