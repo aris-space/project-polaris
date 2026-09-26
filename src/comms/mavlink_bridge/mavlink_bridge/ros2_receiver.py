@@ -992,8 +992,8 @@ class MavlinkBridgeReceiver(Node):
             0.0,
             0.0,  # Position (ignored)
             surge, # surge
-            0.0,
-            0.0,  # heave
+            0.0,  # vy
+            0.0,  # vz: hard-coded 0 on purpose — vertical control disabled (feature/a_no_vertical); `heave` above is unused
             0.0,
             0.0,
             0.0,  # Acceleration (ignored)
