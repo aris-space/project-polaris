@@ -117,3 +117,8 @@ FRAME_CONFIG 7
 # SITL third UART: MAVLink on TCP 5763 (SERIAL2) for mavlink_bridge's separate GCS-heartbeat
 # connection (ros2_receiver._gcs_port, MAVLINK_GCS_URL). SITL serves one client per port.
 SERIAL2_PROTOCOL 2
+
+# SITL SERIAL5: MAVLink for a human GCS (MAVProxy / QGroundControl). sim_launch.py points it at
+# udpclient:127.0.0.1:14550, the port QGC and MAVProxy listen on by default. SERIAL0-2 are
+# all taken by mavlink_bridge (one client per TCP port).
+SERIAL5_PROTOCOL 2

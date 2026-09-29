@@ -22,8 +22,9 @@ ground_truth:=True (Phase 2 default)
     forwards /odometry/filtered/local to ArduSub as MAVLink ODOMETRY (external
     nav, see cfg/sub.parm EK3_SRC1_*).
 
-WARNING: thruster geometry is still BlueROV2. Do not transfer any tuning from
-this sim to the vehicle (docs/SIM_MERGE_PLAN.md Phase 4).
+WARNING: the Polaris thruster geometry in orca_description is not yet
+independently verified. Do not transfer any tuning from this sim to the vehicle
+(docs/SIM_MERGE_PLAN.md Phase 4).
 
 Derived from orca4 (Clyde McQueen, MIT) via project-polaris-simulation-personal.
 """
@@ -100,14 +101,20 @@ def generate_launch_description():
             description='True: Gazebo odometry drives TF and /odometry/filtered/local. '
                         'False: the real EKF does (Phase 3).'),
         DeclareLaunchArgument(
+            'gcs_url', default_value='udpclient:127.0.0.1:14550',
+            description='ArduSub SITL SERIAL5 device for a human GCS (MAVProxy / QGroundControl).'),
+        DeclareLaunchArgument(
             'foxglove', default_value='True',
             description='Launch foxglove_bridge on port 8765?'),
 
         # ArduSub SITL with the JSON physics backend (Gazebo ArduPilotPlugin on 9002).
         # -w wipes eeprom so sub.parm always applies; yaw in --home is ignored (Gazebo owns it).
+        # SERIAL0-2 (TCP 5760/5762/5763) belong to mavlink_bridge; SERIAL5 sends to UDP 14550
+        # for a human GCS (MAVProxy / QGroundControl), see cfg/sub.parm.
         ExecuteProcess(
             cmd=['ardusub', '-S', '-w', '-M', 'JSON', '--defaults', ardusub_params_file,
-                 '-I0', '--home', ardusub_home],
+                 '-I0', '--home', ardusub_home,
+                 '--serial5', LaunchConfiguration('gcs_url')],
             cwd=ardusub_cwd,
             output='screen',
             sigterm_timeout='15',

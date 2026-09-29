@@ -147,3 +147,18 @@ contradicted the plan, and what was done instead. Newest entries at the bottom.
   and `src/simulation/README.md` now say "Polaris, unverified" instead of "BlueROV2". The no-tuning-transfer
   rule is unchanged. Plan Phase 4 is rewritten from "BLOCKED on CAD" to "verify" (T4.1 confirm source with
   Paul, T4.2 mixer cross-check, T4.3 SITL axis check, T4.4 mesh). `POLARIS_FRAME_INTEGRATION.md` header is updated.
+
+## 2026-09-29 — GCS access to SITL, sim README (part of T5.3)
+
+- With the bridge holding SITL SERIAL0–2 (TCP 5760/5762/5763), there was no free port for MAVProxy
+  or QGroundControl. Added SITL SERIAL5 as a MAVLink link to `udpclient:127.0.0.1:14550`: a
+  `gcs_url` launch arg in `sim_launch.py` plus `SERIAL5_PROTOCOL 2` in `sub.parm`. Sim-only, bridge untouched.
+  Verified in an isolated `polaris:sim` container (domain 87, no host network): heartbeat on 14550,
+  `FRAME_CONFIG` = 7, the bridge still connected on all three TCP ports, GUIDED + arm via
+  `/pixhawk/*_cmd`, `nav2_activate`, and a 2 m `NavigateToPose` → SUCCEEDED. QGC on the host is not tested.
+- `src/simulation/README.md` rewritten as the run / usage guide (build, launch args, driving via
+  Nav2 and cmd_vel, GCS access, topics, gz topics, Foxglove, ports, troubleshooting). This is the
+  usage part of T5.3. It recommends a `ROS_DOMAIN_ID` other than 37, in line with the open question in the T2.3 entry.
+- Noticed, not fixed (invariant 6): `ros2_receiver` never reads from its `_gcs_port` socket (5763).
+  Its receive queue grew to ~57 KB within a minute of the test run. This is pre-existing and the same on
+  hardware (mavlink-router). Worth checking whether it can eventually stall that link.
