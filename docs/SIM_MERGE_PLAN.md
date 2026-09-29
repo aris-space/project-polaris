@@ -280,6 +280,7 @@ cp -r <sim_repo>/orca_description src/simulation/orca_description
 2. Keep the package name `orca_description`.
 3. Confirm the hooks that export `GZ_SIM_RESOURCE_PATH` survived the copy (`orca_description/hooks/`).
 4. Leave `models/orca4/model.sdf` as the BlueROV2 geometry for now. **Add a banner at the top of `model.sdf.in`:**
+   *(Correction 2026-09-29: the geometry was already Polaris when vendored — see `SIM_MERGE_LOG.md`. The banner now says "unverified", not "BlueROV2".)*
    ```
    WARNING: thruster geometry is still BlueROV2, not Polaris.
    Forces and torques in this sim do NOT match the real vehicle.
@@ -536,7 +537,7 @@ An env var rather than a launch argument, so no one can set it from a command li
 8. Arm + GUIDED, send a `NavigateToPose` 2 m ahead; `/pixhawk/cmd_vel` is non-zero and thruster commands appear on `/model/orca4/joint/thrusterN_joint/cmd_thrust`.
 9. **Jetson regression:** on a `:dev` container, `colcon build` produces the same package set as `origin/autonomy/main`.
 
-Expect the vehicle to move *incorrectly* — the geometry is still BlueROV2. Phase 2 tests wiring, not physics.
+Phase 2 tests wiring, not physics. *(Correction 2026-09-29: the geometry is Polaris, not BlueROV2, but its numbers are unverified — see Phase 4.)*
 
 ---
 
@@ -620,44 +621,51 @@ This is what makes the real mission path work in sim: `/gnss_datum` latches → 
 
 ---
 
-## Phase 4 — Polaris thruster geometry — **BLOCKED**
+## Phase 4 — Verify the Polaris thruster geometry
 
-Do not start. Blocked on CAD data that is not currently available in clean form.
+> **Correction 2026-09-29.** This phase was originally written as "rewrite the SDF from CAD — BLOCKED on CAD data". That was based on the outdated `POLARIS_FRAME_INTEGRATION.md`. The Polaris geometry was already in the simulation repo's `main` (`aaa8878`, 2026-05-04) and was vendored in T1.1: `orca_description/scripts/generate_model.py` defines all six thruster poses individually, with Polaris CAD mass and inertia. The phase is now about **verifying** those numbers, not writing them. See `SIM_MERGE_LOG.md`.
 
-Until this phase is complete, the simulation reproduces the *control and software wiring* of the vehicle but **not its dynamics**. Forces and torques are BlueROV2's. Therefore:
+Until this phase is complete, the simulation reproduces the *control and software wiring* of the vehicle, but its dynamics are **unverified**. Therefore:
 
 > **No PSC, ATC or PID value may be transferred from this sim to the real vehicle.** That includes the Tier-1 "paste from SITL `sub.parm`" table in `DEBUG_GUIDED.md`, whose premise is that SITL is a trusted reference. It is not yet.
 
 Put that sentence in `src/simulation/README.md` as well.
 
-### Data needed, per thruster MOT_1..MOT_6
+### What is in the model today
 
-```
-frame convention: x-forward, y-???, z-???     (state it explicitly)
-origin:           CoG, or state the offset
+| Item | State | Where |
+|---|---|---|
+| Thruster positions and thrust directions, MOT_1..MOT_6 | Polaris values, labelled "Polaris CAD", origin at CoG, Gazebo FLU | `generate_model.py` `t1_*`..`t6_*` |
+| Dry mass, inertia | Polaris values (32.412 kg). `iyy`/`izz` are scaled ×1.5 relative to the sheet, per the inline comments | `generate_model.py` top |
+| Drag | Estimated from a hull cylinder (1.78 m × 0.16 m radius, `cd_axial 0.85`, `cd_cross 0.68`) | `generate_model.py` |
+| Added mass | Deliberately small fractions of the vehicle sheet, for simulator stability | `generate_model.py` |
+| Buoyancy collision box, visual mesh | Still BlueROV2-sized | `generate_model.py`, `meshes/` |
 
-MOT_n  position = [x, y, z] m        (from CoG)
-       thrust_axis = [ax, ay, az]    (unit vector, direction of positive thrust on the hull)
-```
-Plus: dry mass (kg); inertia tensor about CoG in the same frame; displaced volume or net buoyancy (N, fresh water); CoB position relative to CoG; thruster model with max forward and reverse thrust (N) at the operating voltage.
+### T4.1 — Confirm the source of the numbers
 
-### T4.1 — Mixer cross-check (do this *before* touching the SDF)
+Ask Paul (author of `aaa8878`) where the thruster poses came from: which CAD export, which revision, and whether the frame is really CoG-origin FLU. Record the answer in `SIM_MERGE_LOG.md`. If the CAD has changed since May, it has to be re-exported.
 
-From the CAD numbers, recompute each motor's contribution: force term is the thrust axis; torque term is `r × axis`; then normalise the columns the way ArduSub does. Compare against the fork's actual factors in Appendix A.
+### T4.2 — Mixer cross-check
 
-The distinctive numbers to land on are `0.775` (MOT_2 yaw) and `0.833` (MOT_3/MOT_4 pitch). If the recomputed ratios do not reproduce those, **either the CAD numbers or the firmware is wrong**, and that must be resolved before any sim work. This check costs an hour and can invalidate a week.
+From the poses in `generate_model.py`, recompute each motor's contribution: the force term is the thrust direction, the torque term is `r × direction`. Convert to ArduSub's body frame (x-forward, y-right, z-down), then normalise the columns the way ArduSub does. Compare against the fork's factors in Appendix A.
 
-### T4.2 — Rewrite the SDF geometry
+A first pass on 2026-09-29 already lands close. For yaw, 0.537 / 0.695 = **0.773** against `0.775` (MOT_2 vs MOT_6). For pitch, 0.493 / 0.600 = **0.82** against `0.833` (MOT_3/4 vs MOT_5). The yaw signs also match the mixer as it is now. Do the full check, including roll and throttle and the ±0.035 m z-offsets of MOT_3/MOT_4. If any row disagrees, **either the CAD numbers or the firmware is wrong**, and that must be resolved before the sim is trusted for dynamics.
 
-Follow `docs/POLARIS_FRAME_INTEGRATION.md` Phase 2 and 3, which are already written and correct in approach. Key points that remain true:
-- `model.sdf` is generated — edit `model.sdf.in` and `generate_model.py`, never the output.
-- Keep `<axis>0 0 -1</axis>` and encode direction in link `<pose>` rpy.
+Note that the yaw-sign agreement bears on Appendix C.2. If the geometry is right, the mixer's yaw column is consistent with it, and the proposed fix in `DEBUG_GUIDED.md` would be the thing that inverts yaw. Resolve that on the bench, not here.
+
+### T4.3 — Behavioural check in SITL
+
+Run single-axis GUIDED commands (surge, sway, yaw) and confirm that the Gazebo vehicle moves along the commanded axis, with the correct sign and without cross-coupling. If there is a sign error, follow the rules from `POLARIS_FRAME_INTEGRATION.md`, which still apply:
+- `model.sdf` is generated. Edit `model.sdf.in` and `generate_model.py`, never the output.
+- Keep `<axis>0 0 -1</axis>` and encode direction in the link `<pose>` rpy.
 - Do not touch the `modelXYZToAirplaneXForwardZDown` / `gazeboXYZToNED` transform blocks.
-- Do not paper over sign errors with `MOT_n_DIRECTION` — fix the SDF.
+- Do not paper over sign errors with `MOT_n_DIRECTION`. Fix the SDF.
 
-### T4.3 — Optional mesh
+Once T4.1–T4.3 pass, the warning banner in `model.sdf.in` and the README can drop "not yet verified". The rule against transferring tuning stays until the hydrodynamics (drag, added mass) have also been checked against real-vehicle data.
 
-A STEP or decimated STL converted to `.dae` gives the sim a Polaris-shaped hull instead of a BlueROV2. Cosmetic, but it stops people misreading screenshots. Independent of T4.1/T4.2 and can be done at any time.
+### T4.4 — Optional mesh
+
+A STEP or decimated STL converted to `.dae` gives the sim a Polaris-shaped hull instead of a BlueROV2. Cosmetic, but it stops people misreading screenshots. Independent of T4.1–T4.3 and can be done at any time.
 
 ---
 
@@ -767,7 +775,7 @@ T0.1 branch
                             T5.3 docs
                             T5.4 AUTONOMY_CONTROL.md
 
-Phase 4 — BLOCKED on CAD. Independent of Phase 5.
+Phase 4 — verify geometry (not blocked; see correction). Independent of Phase 5.
 ```
 
 ---

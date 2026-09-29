@@ -1,6 +1,13 @@
 > **Status (2026-09-27, merged into `project-polaris` on `autonomy/sim`):**
 > - Phase 1 is done: `FRAME_CONFIG 7` is in `src/simulation/orca_sim_bringup/cfg/sub.parm`.
-> - Phase 2 (SDF thruster geometry) is **blocked on CAD data** — see `docs/SIM_MERGE_PLAN.md` Phase 4.
+> - Phase 2 (SDF thruster geometry) is **already done** in the simulation repo: `aaa8878` (2026-05-04),
+>   "Added also a new thruster configuration in the model", which is on its `main` and was vendored here.
+>   `generate_model.py` now defines the six Polaris thruster poses individually (`t1_*`..`t6_*`). The
+>   `thruster_x` / `vert_thruster_*` constants and line numbers in the Phase 2 section below are from before
+>   that commit and no longer exist. What remains is verifying the numbers — see `docs/SIM_MERGE_PLAN.md` Phase 4.
+> - The hydrodynamics caveat at the end is also stale: drag uses a Polaris hull cylinder (1.78 m × 0.16 m radius)
+>   and added mass is a fraction of the vehicle sheet. Both are estimates, not BlueROV2 values. The visual mesh
+>   and buoyancy box are still BlueROV2-sized.
 > - The fork SHA named below (`41b8a10e8d`) is stale. The pinned commit is `0a75bdf` on `polaris-pressure-filter`.
 > - File paths below refer to the original simulation repo layout (`orca_bringup/`, `orca_description/` at repo root); here they live under `src/simulation/`.
 

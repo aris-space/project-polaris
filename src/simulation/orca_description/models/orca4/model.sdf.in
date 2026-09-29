@@ -1,7 +1,8 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <!--
-  WARNING: thruster geometry is still BlueROV2, not Polaris.
-  Forces and torques in this sim do NOT match the real vehicle.
+  WARNING: thruster geometry, mass and inertia are Polaris values from Paul's
+  CAD numbers (scripts/generate_model.py), NOT yet independently verified.
+  Drag and added mass are hand estimates; the hull mesh is still BlueROV2.
   Do not transfer PID or PSC tuning from this sim to hardware.
   See docs/SIM_MERGE_PLAN.md Phase 4.
   model.sdf is GENERATED from this file: python3 scripts/generate_model.py model.sdf.in model.sdf 0

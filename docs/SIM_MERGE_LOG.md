@@ -126,3 +126,24 @@ contradicted the plan, and what was done instead. Newest entries at the bottom.
   the `src/comms/foxglove_bridge` submodule needs `ament_index_cpp/version.h`, absent from
   current Humble apt. Both are unrelated to simulation; the sim uses the apt `foxglove_bridge`.
   Built with `--packages-skip xsens_mti_ros2_driver foxglove_bridge`.
+
+## 2026-09-29 — Correction: thruster geometry is already Polaris (affects T1.1, T2.6, Phase 4)
+
+- The plan (Phase 4, T1.1 banner, T2.6 note) and `POLARIS_FRAME_INTEGRATION.md` say the SDF
+  thruster geometry is still BlueROV2 and Phase 4 is blocked on CAD. **Wrong.** The simulation repo's
+  `main` got Polaris geometry in `aaa8878` (paulzambelli, 2026-05-04, "Added also a new thruster
+  configuration in the model"), and T1.1 vendored that: `generate_model.py` is byte-identical to the
+  sim repo @ `59e9468`. It defines `t1_*`..`t6_*` individually ("Polaris CAD, body frame ≡ CoG, Gazebo
+  FLU"). The BlueROV2 constants that `POLARIS_FRAME_INTEGRATION.md` Phase 2 says to replace no longer exist.
+- Checked every branch of `paulzambelli/project-polaris-simulation-personal`. None has newer geometry than
+  `main`. `feature/GoUp` and `tuning/PurePursuiteController3D` still have the old BlueROV2 layout (they
+  predate `aaa8878`). `feature/Polaris-ardusub` only changes the spawn pose in `sand.world`.
+- Also stale: drag is not BlueROV2-derived. It uses a Polaris hull cylinder (1.78 m × 0.16 m radius), and
+  added mass is a fraction of the vehicle sheet. The visual mesh and buoyancy collision box are still BlueROV2-sized.
+- First-pass mixer consistency, from the poses: yaw 0.537/0.695 = 0.773 (mixer 0.775), pitch 0.493/0.600
+  = 0.82 (mixer 0.833). Yaw signs agree with the *current* (un-"fixed") mixer after the FLU→FRD
+  conversion. Not a full check. The full check is T4.2.
+- Changes: `model.sdf.in` banner (and regenerated `model.sdf`, banner-only diff), `sim_launch.py` docstring
+  and `src/simulation/README.md` now say "Polaris, unverified" instead of "BlueROV2". The no-tuning-transfer
+  rule is unchanged. Plan Phase 4 is rewritten from "BLOCKED on CAD" to "verify" (T4.1 confirm source with
+  Paul, T4.2 mixer cross-check, T4.3 SITL axis check, T4.4 mesh). `POLARIS_FRAME_INTEGRATION.md` header is updated.
