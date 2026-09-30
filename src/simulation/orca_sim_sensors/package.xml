@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>orca_sim_sensors</name>
+  <version>0.1.0</version>
+  <description>Synthetic sensors for the Polaris simulation (GNSS/RTK; DVL to follow). Simulation-only.</description>
+  <maintainer email="noel.buehler@aris-space.ch">Noel Buehler</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>ublox_ubx_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>autonomy_bringup_pkg</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
