@@ -56,15 +56,4 @@ else
     || echo "[setup_submodules] Warning: Some submodules may not be initialized (offline)."
 fi
 
-# Apply sparse-checkout logic for Foxglove Bridge
-if [ -d "src/comms/foxglove_bridge" ]; then
-    echo "[setup_submodules] Configuring Foxglove Bridge sparse-checkout (ros only)..."
-    (
-        cd src/comms/foxglove_bridge
-        git sparse-checkout init --cone
-        git sparse-checkout set ros
-        git reset --hard HEAD
-    )
-fi
-
 echo "[setup_submodules] Submodules are successfully initialized and configured."
