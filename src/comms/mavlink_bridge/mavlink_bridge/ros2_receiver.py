@@ -2,7 +2,12 @@ import queue
 import threading
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from rcl_interfaces.msg import SetParametersResult
 import logging, os
 import math
@@ -252,7 +257,7 @@ class MavlinkBridgeReceiver(Node):
             UBXNavHPPosLLH,
             "/ubx_nav_hp_pos_llh",
             self.geoid_sep_cb,
-            Comms.SUB_QOS_DEPTH,
+            qos_profile_sensor_data,  # best effort: matches reliable and best-effort publishers
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
