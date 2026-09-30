@@ -15,6 +15,9 @@ from rclpy.qos import (
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
+from pyproj import Transformer
+
+from ekf_localization_pkg.global_ekf_to_navsatfix import _utm_epsg
 
 _DEG2RAD = math.pi / 180.0
 _EARTH_R_M = 6_371_000.0
@@ -54,11 +57,27 @@ class GnssDatumWatchdog(Node):
       - |lat| > 0.1° and |lon| > 0.1°   (null-island guard)
       - UBX-NAV-HPPOSLLH h_acc > 0 and <= h_acc_max_m
 
+    Fallback: if no fix passes the h_acc gate within h_acc_fallback_after_s of
+    the first fix that passes the status and null-island checks, the gate
+    widens to h_acc_fallback_max_m and a WARNING is logged. A datum locked this
+    way shifts the whole mission by up to that accuracy.
+
+    At lock it publishes, latched (TRANSIENT_LOCAL):
+      /gnss_datum    the locked fix = map-frame origin (mission_waypoint_loader)
+      /odom_origin   lat/lon/alt of odom-frame (0, 0, 0) = datum minus the local
+                     EKF position at lock (ros2_receiver -> Pixhawk
+                     GPS_GLOBAL_ORIGIN, since ArduSub is fed odom-frame poses).
+                     Assumes the odom frame is ENU-aligned, like the global EKF
+                     path (map_yaw_offset_rad = 0).
+
     Parameters
     ----------
     fix_topic            NavSatFix topic                      (default /gps/selected)
     h_acc_topic          UBXNavHPPosLLH accuracy topic        (default /ubx_nav_hp_pos_llh)
     h_acc_max_m          Max acceptable horizontal accuracy   (default 0.50 m)
+    h_acc_fallback_max_m Widened h_acc gate after the timeout (default 5.0 m)
+    h_acc_fallback_after_s  Time without an h_acc_max_m fix before widening
+                         (default 300 s — fits an NTRIP cold start)
     max_fix_distance_m   Max haversine distance from datum    (default 100000 m = 100 km)
     imu_topic            IMU topic forwarded to navsat        (default /imu/data_corrected)
     odom_topic           Local odom forwarded to navsat       (default /odometry/filtered/local)
@@ -79,6 +98,8 @@ class GnssDatumWatchdog(Node):
         self.declare_parameter("fix_topic", "/gps/selected")
         self.declare_parameter("h_acc_topic", "/ubx_nav_hp_pos_llh")
         self.declare_parameter("h_acc_max_m", 0.50)
+        self.declare_parameter("h_acc_fallback_max_m", 5.0)
+        self.declare_parameter("h_acc_fallback_after_s", 300.0)
         self.declare_parameter("max_fix_distance_m", 100_000.0)
         self.declare_parameter("imu_topic", "/imu/data_corrected")
         self.declare_parameter("odom_topic", "/odometry/filtered/local")
@@ -100,6 +121,16 @@ class GnssDatumWatchdog(Node):
         fix_topic: str = self.get_parameter("fix_topic").value
         h_acc_topic: str = self.get_parameter("h_acc_topic").value
         self._h_acc_max_m: float = self.get_parameter("h_acc_max_m").value
+        self._h_acc_fallback_max_m: float = float(
+            self.get_parameter("h_acc_fallback_max_m").value
+        )
+        self._h_acc_fallback_after_s: float = float(
+            self.get_parameter("h_acc_fallback_after_s").value
+        )
+        # Set by the first fix that passes status + null-island; starts the
+        # fallback timer. _fallback_active flips once, when the gate widens.
+        self._t_first_valid_fix_s: float | None = None
+        self._fallback_active = False
         self._max_fix_distance_m: float = self.get_parameter("max_fix_distance_m").value
         self._imu_topic: str = self.get_parameter("imu_topic").value
         self._odom_topic: str = self.get_parameter("odom_topic").value
@@ -182,6 +213,11 @@ class GnssDatumWatchdog(Node):
         self._datum_pub = self.create_publisher(
             NavSatFix, "/gnss_datum", latched_qos
         )
+        # Same instant, same fix, shifted to the odom-frame origin. Consumed by
+        # ros2_receiver for the Pixhawk GPS_GLOBAL_ORIGIN.
+        self._odom_origin_pub = self.create_publisher(
+            NavSatFix, "/odom_origin", latched_qos
+        )
 
         # Diagnostic monitors — warn the moment a position exceeds 10 km (way beyond
         # any lake test) to identify whether GPS or global EKF causes the crash.
@@ -255,15 +291,63 @@ class GnssDatumWatchdog(Node):
         if abs(fix.latitude) < 0.1 and abs(fix.longitude) < 0.1:
             return
 
-        # h_acc gate
+        # h_acc gate, widened to h_acc_fallback_max_m after the timeout.
         if self._h_acc_sub is not None:
+            now_s = self.get_clock().now().nanoseconds * 1e-9
+            if self._t_first_valid_fix_s is None:
+                self._t_first_valid_fix_s = now_s
+            waited_s = now_s - self._t_first_valid_fix_s
+            if not self._fallback_active and waited_s >= self._h_acc_fallback_after_s:
+                self._fallback_active = True
+                self.get_logger().warn(
+                    f"No fix with h_acc <= {self._h_acc_max_m:.2f} m after {waited_s:.0f} s "
+                    f"(latest h_acc={self._fmt_h_acc()}). Widening the datum gate to "
+                    f"{self._h_acc_fallback_max_m:.2f} m: the mission and Pixhawk origin "
+                    f"will be off by up to that much."
+                )
+            h_acc_max = (
+                self._h_acc_fallback_max_m if self._fallback_active else self._h_acc_max_m
+            )
             if self._latest_h_acc_m is None:
                 return
-            if self._latest_h_acc_m <= 0.0 or self._latest_h_acc_m > self._h_acc_max_m:
+            if self._latest_h_acc_m <= 0.0 or self._latest_h_acc_m > h_acc_max:
                 return
+            if self._fallback_active:
+                self.get_logger().warn(
+                    f"Locking datum on fallback gate: h_acc={self._fmt_h_acc()} "
+                    f"(> {self._h_acc_max_m:.2f} m RTK threshold, "
+                    f"<= {self._h_acc_fallback_max_m:.2f} m fallback)"
+                )
 
         self._launched = True
         self._spawn_navsat_and_global(fix)
+
+    def _fmt_h_acc(self) -> str:
+        if self._latest_h_acc_m is None:
+            return "none"
+        return f"{self._latest_h_acc_m:.2f} m"
+
+    def _odom_origin_fix(self, datum: NavSatFix) -> NavSatFix:
+        """lat/lon/alt of odom (0, 0, 0): the datum minus the local anchor.
+
+        Same UTM projection as global_ekf_to_navsatfix, ENU-aligned odom frame.
+        """
+        epsg = _utm_epsg(datum.latitude, datum.longitude)
+        to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+        from_utm = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
+        datum_e, datum_n = to_utm.transform(datum.longitude, datum.latitude)
+        lon, lat = from_utm.transform(
+            datum_e - self._local_anchor_x, datum_n - self._local_anchor_y
+        )
+        origin = NavSatFix()
+        origin.header = datum.header
+        origin.status = datum.status
+        origin.latitude = lat
+        origin.longitude = lon
+        origin.altitude = datum.altitude - self._local_anchor_z
+        origin.position_covariance = datum.position_covariance
+        origin.position_covariance_type = datum.position_covariance_type
+        return origin
 
     def _validate_and_republish(self, msg: NavSatFix) -> None:
         # Log every incoming fix so we can see exactly what arrives near the crash.
@@ -434,6 +518,21 @@ class GnssDatumWatchdog(Node):
         self.get_logger().info(
             f"Published datum on /gnss_datum (latched): "
             f"lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° alt={fix.altitude:.1f} m"
+        )
+
+        if not self._local_anchor_valid:
+            self.get_logger().warn(
+                f"No local odom on '{self._odom_topic}' at datum lock: publishing the "
+                "datum itself as /odom_origin. The Pixhawk origin is only right if the "
+                "vehicle has not moved since the local EKF started."
+            )
+        origin = self._odom_origin_fix(fix)
+        self._odom_origin_pub.publish(origin)
+        self.get_logger().info(
+            f"Published odom origin on /odom_origin (latched): "
+            f"lat={origin.latitude:.7f}° lon={origin.longitude:.7f}° "
+            f"alt={origin.altitude:.1f} m (datum minus local anchor "
+            f"x={self._local_anchor_x:.2f} m y={self._local_anchor_y:.2f} m)"
         )
 
         # Write a minimal YAML with just the datum; loaded second in the launch

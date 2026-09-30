@@ -2,12 +2,13 @@ import queue
 import threading
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from rcl_interfaces.msg import SetParametersResult
 import logging, os
 import math
 import time
 from datetime import datetime
-from config_pkg.constants import Logs, Comms, Ports, GpsOriginConditions
+from config_pkg.constants import Logs, Comms, Ports
 
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
@@ -15,6 +16,7 @@ from std_msgs.msg import String
 from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import NavSatFix
 
 #
 from geometry_msgs.msg import Twist
@@ -102,14 +104,14 @@ class MavlinkBridgeReceiver(Node):
         self._odom_reset_counter = 0
         self._external_odom_last_send_ns = 0
 
+        # Pixhawk GPS_GLOBAL_ORIGIN. gnss_datum_watchdog is the only node that
+        # selects a GNSS fix; it publishes the lat/lon of the odom-frame origin
+        # on /odom_origin, which is exactly what ArduSub's local (0, 0) is,
+        # because ekf_odom_cb forwards odom-frame positions. We only convert
+        # its ellipsoidal altitude to MSL (geoid separation from UBX) and send.
         self._gps_origin_sent = False
-        self._gps_origin_valid_count = 0
-        # RTK gate state — mirrors gnss_datum_watchdog so map->odom and the
-        # Pixhawk origin become valid under the same conditions. Track first-
-        # message time so we can fall back to the old bits-only check if
-        # h_acc never satisfies the threshold within _GPS_ORIGIN_FALLBACK_S.
-        self._gps_origin_first_valid_bits_t = 0.0
-        self._gps_origin_fallback_warned = False
+        self._odom_origin: NavSatFix | None = None
+        self._geoid_sep_m: float | None = None  # ellipsoid height - MSL height
 
         # Depth monitoring state (populated by MAVLink drain loop)
         self._vfrhud_alt = float(
@@ -233,10 +235,23 @@ class MavlinkBridgeReceiver(Node):
         self._cmd_vel_was_active = False
         self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
 
-        self.gps_fix_subscriber = self.create_subscription(
+        # Latched (TRANSIENT_LOCAL) to match gnss_datum_watchdog's publisher, so
+        # the origin arrives even if this node starts after the lock.
+        latched_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self.odom_origin_subscriber = self.create_subscription(
+            NavSatFix,
+            "/odom_origin",
+            self.odom_origin_cb,
+            latched_qos,
+        )
+        self.geoid_sep_subscriber = self.create_subscription(
             UBXNavHPPosLLH,
             "/ubx_nav_hp_pos_llh",
-            self.gps_origin_cb,
+            self.geoid_sep_cb,
             Comms.SUB_QOS_DEPTH,
         )
 
@@ -835,74 +850,36 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info(f"Queued ArduSub param write for {mav_param_id}")
 
-    # RTK gate — mirrors gnss_datum_watchdog (decides when map->odom becomes
-    # active) and ros2_receiver (decides when Pixhawk GPS_GLOBAL_ORIGIN is set),
-    # so the mission CSV's ENU origin lands on the same lat/lon as those two.
-    # UBX-NAV-HPPOSLLH h_acc is in 0.1 mm units.
-    _GPS_ORIGIN_H_ACC_MAX_M = GpsOriginConditions.GPS_ORIGIN_H_ACC_MAX_M
-    _GPS_ORIGIN_H_ACC_TO_M = GpsOriginConditions.GPS_ORIGIN_H_ACC_TO_M
-    _GPS_ORIGIN_NULL_ISLAND_E7 = GpsOriginConditions.GPS_ORIGIN_NULL_ISLAND_E7
-    _GPS_ORIGIN_FALLBACK_S = GpsOriginConditions.GPS_ORIGIN_FALLBACK_S
+    def odom_origin_cb(self, msg: NavSatFix):
+        self._odom_origin = msg
+        self._try_send_gps_origin()
 
-
-    def gps_origin_cb(self, msg: UBXNavHPPosLLH):
-        if self._gps_origin_sent:
+    def geoid_sep_cb(self, msg: UBXNavHPPosLLH):
+        # Only the geoid separation is used from UBX; fix selection happens in
+        # gnss_datum_watchdog. height and hmsl are both in mm.
+        if self._gps_origin_sent or msg.invalid_hmsl or msg.invalid_height:
             return
-        if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
-            self._gps_origin_valid_count = 0
-            return
+        self._geoid_sep_m = (int(msg.height) - int(msg.hmsl)) * 1e-3
+        self._try_send_gps_origin()
 
-        # Null-island guard — UBX lat/lon are already in 1e-7 deg.
-        if (
-            abs(int(msg.lat)) < self._GPS_ORIGIN_NULL_ISLAND_E7
-            and abs(int(msg.lon)) < self._GPS_ORIGIN_NULL_ISLAND_E7
-        ):
-            self._gps_origin_valid_count = 0
+    def _try_send_gps_origin(self):
+        if self._gps_origin_sent or self._odom_origin is None:
+            return
+        if self._geoid_sep_m is None:
+            self.get_logger().info(
+                "GPS origin received on /odom_origin; waiting for /ubx_nav_hp_pos_llh "
+                "to convert its altitude to MSL",
+                throttle_duration_sec=10.0,
+            )
             return
 
-        # First message with clean bits + non-null position — start the
-        # fallback timer.
-        now_s = self.get_clock().now().nanoseconds * 1e-9
-        if self._gps_origin_first_valid_bits_t == 0.0:
-            self._gps_origin_first_valid_bits_t = now_s
+        origin = self._odom_origin
+        lat_e7 = int(round(origin.latitude * 1e7))
+        lon_e7 = int(round(origin.longitude * 1e7))
+        # NavSatFix.altitude is above the WGS84 ellipsoid; MAVLink wants MSL.
+        alt_mm = int(round((origin.altitude - self._geoid_sep_m) * 1e3))
 
-        # Primary gate: h_acc must be present and within 0.50 m, exactly like
-        # gnss_datum_watchdog. Same field, same conversion, same threshold.
-        h_acc_m = float(msg.h_acc) * self._GPS_ORIGIN_H_ACC_TO_M
-        rtk_ok = 0.0 < h_acc_m <= self._GPS_ORIGIN_H_ACC_MAX_M
-
-        if not rtk_ok:
-            # Fallback after 30 s of clean-bits-but-no-RTK: revert to the old
-            # "5 consecutive valid-bits messages" criterion so the Pixhawk still
-            # gets a home even if RTK never converges. Warn once.
-            elapsed = now_s - self._gps_origin_first_valid_bits_t
-            if elapsed < self._GPS_ORIGIN_FALLBACK_S:
-                return
-            if not self._gps_origin_fallback_warned:
-                self.get_logger().warn(
-                    f"GPS origin: h_acc still > {self._GPS_ORIGIN_H_ACC_MAX_M:.2f} m "
-                    f"after {elapsed:.0f}s (h_acc={h_acc_m:.2f}m); falling back to "
-                    "bits-only check (5 consecutive valid messages). Pixhawk origin "
-                    "will not match the EKF datum quality threshold."
-                )
-                self._file_logger.warning(
-                    f"GPS origin fallback after {elapsed:.0f}s without RTK h_acc "
-                    f"(latest h_acc={h_acc_m:.2f}m, threshold={self._GPS_ORIGIN_H_ACC_MAX_M:.2f}m)"
-                )
-                self._gps_origin_fallback_warned = True
-            self._gps_origin_valid_count += 1
-            if self._gps_origin_valid_count < 5:
-                return
-            # fall through to send
-
-        # UBX-NAV-HPPOSLLH units:
-        #   lat, lon:  deg * 1e7 (already MAVLink degE7 scale)
-        #   hmsl:      mm, height above mean sea level (already MAVLink altitude scale)
-        lat_e7 = int(msg.lat)
-        lon_e7 = int(msg.lon)
-        alt_mm = int(msg.hmsl)
-
-        time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
+        time_usec = (origin.header.stamp.sec * 10**9 + origin.header.stamp.nanosec) // 1000
         self.port.mav.set_gps_global_origin_send(
             self.port.target_system,
             lat_e7,
@@ -925,18 +902,13 @@ class MavlinkBridgeReceiver(Node):
             time_usec,
         )
         self._gps_origin_sent = True
-        lat_deg = lat_e7 * 1e-7
-        lon_deg = lon_e7 * 1e-7
-        alt_m = alt_mm * 1e-3
-        gate = 'RTK' if rtk_ok else 'fallback'
-        self.get_logger().info(
-            f"GPS_GLOBAL_ORIGIN sent (MSL, {gate}): lat={lat_deg:.7f}, lon={lon_deg:.7f}, "
-            f"alt={alt_m:.2f}m, h_acc={h_acc_m:.2f}m"
+        msg = (
+            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL, odom origin from gnss_datum_watchdog): "
+            f"lat={origin.latitude:.7f}, lon={origin.longitude:.7f}, "
+            f"alt={alt_mm * 1e-3:.2f}m (geoid sep {self._geoid_sep_m:.2f}m)"
         )
-        self._file_logger.info(
-            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL, {gate}): lat={lat_deg:.7f}, "
-            f"lon={lon_deg:.7f}, alt={alt_m:.2f}m, h_acc={h_acc_m:.2f}m"
-        )
+        self.get_logger().info(msg)
+        self._file_logger.info(msg)
 
     def cmd_vel_cb(self, msg):
         # msg is geometry_msgs.msg.Twist
