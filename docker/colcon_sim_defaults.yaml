@@ -4,8 +4,9 @@
 # '.' (not 'src') matches colcon's default discovery, which also finds ping-python and
 # top_station's recorder node. Paths are relative to the workspace root (/ros2_ws). Add new sim packages here.
 build:
-  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup]
+  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup, src/simulation/orca_sim_sensors]
+  packages-skip: [foxglove_bridge]
 list:
-  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup]
+  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup, src/simulation/orca_sim_sensors]
 test:
-  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup]
+  base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup, src/simulation/orca_sim_sensors]
