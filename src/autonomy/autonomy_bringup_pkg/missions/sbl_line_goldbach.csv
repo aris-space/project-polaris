@@ -1,0 +1,11 @@
+lat,lon,alt,up_down,delta_z_m,hold_s
+# SBL range-sweep line - Goldbach steg. 5 waypoints at 10/20/30/40/50 m from the
+# antenna (topside), along the steg axis 191 deg ENU (= 259 deg compass) = lakeward.
+# alt is WGS-84 ELLIPSOIDAL (HAE), NOT MSL. up_down/delta_z_m/hold_s are parsed but
+# NOT executed by the current stack (leave blank). Regenerate on the day from the
+# measured antenna RTK position: python scripts/make_sbl_line.py --antenna <lat> <lon>
+47.3286549,8.5725609,453.0,0,,
+47.3286377,8.5724308,453.0,0,,
+47.3286206,8.5723007,453.0,0,,
+47.3286034,8.5721706,453.0,0,,
+47.3285863,8.5720405,453.0,0,,
