@@ -1,0 +1,48 @@
+# POLARIS identified dynamic model — single working copy.
+# Fit scripts update it through model_io.update_parameters(); validation scripts load it and
+# record the version tag. Git history keeps every earlier state.
+# `source` is one of: measured | fitted | assumed | sim.  `value: null` means not yet determined.
+# Note: update_parameters() rewrites this file with PyYAML, which drops comments.
+
+model:
+  name: polaris_sysid
+  version: 0.0.1
+  date: 2026-10-05
+  frame: base_link
+  description: Initial skeleton, no parameters determined yet.
+  fitted_from: []   # rosbags used for the fitted parameters
+  notes: ""
+
+parameters:
+  rigid_body:
+    m:     {value: null, unit: kg,      source: measured, uncertainty: null}
+    I_xx:  {value: null, unit: kg m^2,  source: measured, uncertainty: null}
+    I_yy:  {value: null, unit: kg m^2,  source: measured, uncertainty: null}
+    I_zz:  {value: null, unit: kg m^2,  source: measured, uncertainty: null}
+
+  added_mass:
+    X_udot: {value: null, unit: kg,      source: fitted, uncertainty: null}
+    K_pdot: {value: null, unit: kg m^2,  source: fitted, uncertainty: null}
+    M_qdot: {value: null, unit: kg m^2,  source: fitted, uncertainty: null}
+    N_rdot: {value: null, unit: kg m^2,  source: fitted, uncertainty: null}
+
+  damping_linear:
+    X_u: {value: null, unit: N s/m,      source: fitted, uncertainty: null}
+    K_p: {value: null, unit: N m s/rad,  source: fitted, uncertainty: null}
+    M_q: {value: null, unit: N m s/rad,  source: fitted, uncertainty: null}
+    N_r: {value: null, unit: N m s/rad,  source: fitted, uncertainty: null}
+
+  damping_quadratic:
+    X_uu: {value: null, unit: N s^2/m^2,      source: fitted, uncertainty: null}
+    K_pp: {value: null, unit: N m s^2/rad^2,  source: fitted, uncertainty: null}
+    M_qq: {value: null, unit: N m s^2/rad^2,  source: fitted, uncertainty: null}
+    N_rr: {value: null, unit: N m s^2/rad^2,  source: fitted, uncertainty: null}
+
+  restoring:
+    K_phi:   {value: null, unit: N m/rad, source: fitted, uncertainty: null}   # roll stiffness
+    M_theta: {value: null, unit: N m/rad, source: fitted, uncertainty: null}   # pitch stiffness
+
+  thrust:
+    gain_fwd: {value: null, unit: N per command unit, source: fitted, uncertainty: null}
+    gain_rev: {value: null, unit: N per command unit, source: fitted, uncertainty: null}
+    deadband: {value: null, unit: command units,      source: fitted, uncertainty: null}
