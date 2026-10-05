@@ -1,0 +1,8 @@
+services:
+  development-container:
+    extends:
+      file: docker-compose.yaml
+      service: jetson-container
+    image: ghcr.io/aris-space/project-polaris-docker:dev-x64
+    runtime: runc
+
