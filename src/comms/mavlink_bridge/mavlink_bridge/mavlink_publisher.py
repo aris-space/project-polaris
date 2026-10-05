@@ -171,7 +171,9 @@ class MavlinkBridgeSender(Node):
         if self.get_parameter("sync_fc_pid_to_receiver").value:
             self._pid_sync_timer = self.create_timer(0.5, self._deferred_pid_sync_cb)
         else:
-            self.logger.info("sync_fc_pid_to_receiver=false; ros2_receiver keeps PID defaults")
+            self.logger.info(
+                "sync_fc_pid_to_receiver=false; ros2_receiver keeps PID defaults"
+            )
 
         # Request MANUAL_CONTROL messages at 10 Hz
         # self.logger.info("Requesting MANUAL_CONTROL message stream from Pixhawk...")
@@ -249,11 +251,17 @@ class MavlinkBridgeSender(Node):
             0,
             pid_tuning_msg_id,
             100000,  # 100ms = 10 Hz
-            0, 0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
+            0,
         )
-        self.logger.info(f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=100ms)")
+        self.logger.info(
+            f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=100ms)"
+        )
 
-        # Request SERVO_OUTPUT_RAW messages at 10 Hz
+        # Request SERVO_OUTPUT_RAW messages at 30 Hz
         self.logger.info("Requesting SERVO_OUTPUT_RAW message stream from Pixhawk...")
         self.port.mav.command_long_send(
             self.port.target_system,
@@ -261,8 +269,12 @@ class MavlinkBridgeSender(Node):
             mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
             0,  # confirmation
             mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,  # message ID = 36
-            100000,  # interval in microseconds (100ms = 10Hz)
-            0, 0, 0, 0, 0,
+            33333,  # interval in microseconds (33ms = 30Hz)
+            0,
+            0,
+            0,
+            0,
+            0,
         )
         self.logger.info("SERVO_OUTPUT_RAW request sent (interval=100ms)")
 
@@ -340,7 +352,9 @@ class MavlinkBridgeSender(Node):
             # Params that could not be fetched get a high sentinel so failures are obvious in Foxglove.
             for ros_name in PID_PARAM_MAP:
                 if ros_name not in fetched:
-                    fl.error(f"PID fetch FAILED for {PID_PARAM_MAP[ros_name]} ({ros_name}); setting sentinel 9999.0")
+                    fl.error(
+                        f"PID fetch FAILED for {PID_PARAM_MAP[ros_name]} ({ros_name}); setting sentinel 9999.0"
+                    )
                     fetched[ros_name] = 9999.0
 
         except Exception as e:
@@ -384,7 +398,9 @@ class MavlinkBridgeSender(Node):
 
         names = list(fetched.keys())
         chunk = max(1, int(self.get_parameter("receiver_pid_push_chunk_size").value))
-        self._pid_chunk_batches = [names[i: i + chunk] for i in range(0, len(names), chunk)]
+        self._pid_chunk_batches = [
+            names[i : i + chunk] for i in range(0, len(names), chunk)
+        ]
         self._pid_chunk_values = fetched
         self._pid_chunk_receiver = receiver_node
         self._pid_pending_fetched = None
