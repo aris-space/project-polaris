@@ -38,9 +38,14 @@ on the Jetson (`COLCON_IGNORE` is committed in this directory).
    ├─ TCP 5763 ── ros2_receiver (GCS heartbeat)
    └─ UDP →14550 ─ free for you: MAVProxy / QGroundControl
 
- ros_gz_bridge:  /clock, /odom (Gazebo ground truth), /ocean_current
+ ros_gz_bridge:  /clock, /odom (Gazebo ground truth), /ocean_current, /sim/xsens/imu_raw
+ orca_sim_sensors: synthetic DVL, IMU, GNSS, SBL on the vehicle's raw topics + sensor TFs
+ vehicle converters: odometry_covariance_node, imu_yaw_correction, pressure_z_ned_to_pose,
+                   SBL translator + selector                            (always)
  odom_to_tf:     /odom → TF odom→base_link + /odometry/filtered/local   (ground_truth:=True)
  static TF:      map→odom                                                (ground_truth:=True)
+ ekf_localization.launch.py: ekf_local, gnss_datum_watchdog → navsat + ekf_global,
+                 ekf_truth_error                                         (ground_truth:=False)
  autonomy.launch.py (after 5 s): Nav2, BT navigator, mission loader, arm watchdog
  foxglove_bridge on ws://localhost:8765
 ```
@@ -48,6 +53,12 @@ on the Jetson (`COLCON_IGNORE` is committed in this directory).
 With `ground_truth:=True` (the current default), Gazebo's true pose stands in for the EKF.
 It is published on the same topic the vehicle's EKF uses, so `ros2_receiver` forwards it to
 ArduSub as external navigation exactly as on the boat.
+
+With `ground_truth:=False`, the vehicle's real localization stack runs on the synthetic sensors
+(DVL with dropouts and outliers, spiky IMU, noisy Bar30, GNSS that only fixes at the surface, and
+range-scaled SBL). See **[`orca_sim_sensors/README.md`](orca_sim_sensors/README.md)** for what
+each sensor models, and [`orca_sim_sensors/STATUS.md`](orca_sim_sensors/STATUS.md) for the
+decisions and test results.
 
 ---
 
@@ -113,7 +124,9 @@ ros2 launch orca_sim_bringup sim_launch.py gzclient:=True   # with Gazebo GUI (n
 | `gzclient` | `False` | Gazebo GUI. Needs X11 (`DISPLAY` + `/tmp/.X11-unix` mounted). |
 | `ardusub` | `True` | Start ArduSub SITL. |
 | `nav` | `True` | Start Nav2 via the vehicle's `autonomy.launch.py` (unconfigured, like on the boat). |
-| `ground_truth` | `True` | `True`: Gazebo pose stands in for the EKF. `False`: the real EKF (Phase 3, in progress). |
+| `ground_truth` | `True` | `True`: Gazebo pose stands in for the EKF. `False`: the real EKF on the synthetic sensors. |
+| `ice_layer` | `False` | GNSS under ice: each surfacing randomly gets late RTK, float only, or nothing. `False`: RTK within a few seconds of every surfacing. |
+| `sensor_seed` | `-1` | Random seed for the synthetic sensors (`-1` = different every run). |
 | `gcs_url` | `udpclient:127.0.0.1:14550` | ArduSub SERIAL5 device for a human GCS. |
 | `foxglove` | `True` | `foxglove_bridge` on port 8765. |
 
@@ -147,8 +160,10 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   `nav2_arm_watchdog` then deactivates Nav2 by itself, as on the vehicle.
 - **Deactivate Nav2 by hand:** `ros2 run autonomy_bringup_pkg nav2_deactivate`.
 - **Mode names** for `/pixhawk/mode_cmd`: `MANUAL`, `STABILIZE`, `ALT_HOLD`, `GUIDED`, `POSHOLD`, `SURFACE`, …
-- **`wgs84_mission_starter` does not work yet.** It waits for `/gnss_datum` (RTK lock), which the
-  sim doesn't produce until the synthetic GNSS lands (Phase 3). Use `NavigateToPose` goals for now.
+- **`wgs84_mission_starter` needs `ground_truth:=False`.** It waits for `/gnss_datum`, which only
+  `gnss_datum_watchdog` (part of the real EKF stack) publishes. In that mode the synthetic GNSS
+  guarantees an RTK fix at startup, so the datum locks about 30 s after launch, once the selector's
+  IMU heading gate opens.
 - **No vertical motion under autonomy.** `vz` is hard-coded to 0 in the bridge (intentional,
   `docs/SIM_MERGE_PLAN.md` Appendix C.3).
 
@@ -209,6 +224,8 @@ mavproxy.py --master=udpin:0.0.0.0:14550
 | `/tf`, `/tf_static` | | `map → odom → base_link` |
 | `/clock` | `rosgraph_msgs/Clock` | sim time; every node runs with `use_sim_time: True` |
 | `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it) |
+| `/imu/data`, `/sensors/dvl/velocity`, `/fix`, `/waterlinked_ugps/navsatfix`, `/gps/selected` | | synthetic sensors and the vehicle's selector (see `orca_sim_sensors/README.md`) |
+| `/sim/ekf_error/{local,global}/horizontal` | `std_msgs/Float64` | EKF error against ground truth (`ground_truth:=False`) |
 
 Useful checks:
 
@@ -256,8 +273,8 @@ SITL serves **one client per TCP port**. If you point a GCS at 5760/5762/5763, y
 
 | Missing | Consequence | Tracked in |
 |---|---|---|
-| IMU, DVL, GNSS/RTK sensor streams | the real EKF can't run; `ground_truth:=True` replaces it | `docs/SIM_MERGE_PLAN.md` Phase 3 |
-| `/gnss_datum` | `wgs84_mission_starter` can't run; use `NavigateToPose` | T3.3 |
+| DVL dead reckoning, seafloor shape | the DVL assumes a flat bottom at z = −10 m | `orca_sim_sensors/STATUS.md` |
+| `thruster_velocity_estimator` | not started in the sim (no `use_sim_time`, being retired) | `orca_sim_sensors/STATUS.md` D9 |
 | Verified dynamics | don't transfer tuning (see top of this file) | Phase 4 |
 | Polaris hull mesh | the model still *looks* like a BlueROV2 | T4.4 |
 
@@ -283,7 +300,7 @@ SITL serves **one client per TCP port**. If you point a GCS at 5760/5762/5763, y
 |---|---|
 | `orca_description/` | Gazebo model (`models/orca4`, generated from `model.sdf.in` by `scripts/generate_model.py`) and `worlds/sand.world` |
 | `orca_sim_bringup/` | `launch/sim_launch.py`, `cfg/sub.parm` (ArduSub SITL params), `odom_to_tf.py`, `current_vector_node.py` |
-| `orca_sim_sensors/` | synthetic sensors for Phase 3 (in progress) |
+| `orca_sim_sensors/` | synthetic DVL, IMU, GNSS, SBL + `ekf_truth_error`; see its `README.md` and `STATUS.md` |
 | `simulation.repos` | external sim deps baked into the image (`bluerov2_gz`, `ros2_shared`, `ardupilot_gazebo`) |
 
 `model.sdf` is generated. Edit `model.sdf.in` / `generate_model.py`, then run

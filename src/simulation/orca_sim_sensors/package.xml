@@ -3,14 +3,23 @@
 <package format="3">
   <name>orca_sim_sensors</name>
   <version>0.1.0</version>
-  <description>Synthetic sensors for the Polaris simulation (GNSS/RTK; DVL to follow). Simulation-only.</description>
+  <description>Synthetic DVL, IMU, GNSS/RTK and SBL for the Polaris simulation, plus an EKF-vs-truth error monitor. Simulation-only.</description>
   <maintainer email="noel.buehler@aris-space.ch">Noel Buehler</maintainer>
   <license>MIT</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>geographic_msgs</exec_depend>
+  <exec_depend>marine_acoustic_msgs</exec_depend>
   <exec_depend>ublox_ubx_msgs</exec_depend>
+  <exec_depend>dvl_a50_pkg</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>autonomy_bringup_pkg</exec_depend>
 

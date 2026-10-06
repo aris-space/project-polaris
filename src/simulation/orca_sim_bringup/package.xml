@@ -22,6 +22,11 @@
   <exec_depend>autonomy_bringup_pkg</exec_depend>
   <exec_depend>mavlink_bridge</exec_depend>
   <exec_depend>ekf_localization_pkg</exec_depend>
+  <exec_depend>orca_sim_sensors</exec_depend>
+  <exec_depend>dvl_a50_pkg</exec_depend>
+  <exec_depend>pressure_pose_pkg</exec_depend>
+  <exec_depend>uwgpsg2_translator</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>

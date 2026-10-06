@@ -100,8 +100,15 @@ COMPASS_USE2 0        # Disable compass 2
 COMPASS_USE3 0        # Disable compass 3
 EK3_SRC1_YAW 6        # External nav
 
-# Reduce simulated barometer noise
-SIM_BARO_RND 0.02
+# Bar30 depth noise (orca_sim_sensors/README.md, "Bar30"). The Bar30 is the Pixhawk's second
+# barometer on the vehicle; mavlink_publisher turns its SCALED_PRESSURE2 into
+# /pixhawk/scaled_pressure. SITL adds uniform noise of +-SIM_BARx_RND metres of depth per sample
+# (AP_Baro_SITL: noise * rand_float(), rand_float in [-1, 1]), so std = RND / sqrt(3).
+# Both baros get the same noise so ArduSub's depth hold and ROS see the same sensor class.
+# Default std 5 mm (Bar30 resolution is 0.2 mbar = 2 mm; pressure_z_ned_to_pose assumes 2 mm).
+#   std 2 mm -> RND 0.0035      std 5 mm -> RND 0.0087      std 1 cm -> RND 0.0173
+SIM_BARO_RND 0.0087
+SIM_BAR2_RND 0.0087
 
 # Huge negative SCALED_PRESSURE on primary baro = bad SITL altitude in AP_Baro_SITL (JSON/Gazebo
 # FDM), not ROS. Fix the plugin/frame (see ArduPilot JSON SITL docs) or try: SIM_BARO_DISABLE 1

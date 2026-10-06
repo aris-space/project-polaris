@@ -59,6 +59,17 @@
         <update_rate>1000.0</update_rate>
       </sensor>
 
+      <!-- Xsens Sirius stand-in for ROS (/imu/data via orca_sim_sensors/sim_imu_node).
+           Mounted like base_link -> imu_link on the vehicle (xsens_mti_node.launch.py), FLU,
+           100 Hz = the Xsens output_data_rate. Noise, bias and spikes are added in
+           sim_imu_node, so Gazebo's own noise stays off. -->
+      <sensor name="xsens_imu" type="imu">
+        <pose>0.049 -0.0088 0.076 0 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>100.0</update_rate>
+        <topic>xsens_imu</topic>
+      </sensor>
+
     </link>
 
     <!-- Hydrodynamics plugin -->
