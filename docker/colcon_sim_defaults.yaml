@@ -5,7 +5,7 @@
 # top_station's recorder node. Paths are relative to the workspace root (/ros2_ws). Add new sim packages here.
 build:
   base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup, src/simulation/orca_sim_sensors]
-  packages-skip: [foxglove_bridge]
+  packages-skip: [xsens_mti_ros2_driver, foxglove_bridge]
 list:
   base-paths: [., src/simulation/orca_description, src/simulation/orca_sim_bringup, src/simulation/orca_sim_sensors]
 test:

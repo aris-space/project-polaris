@@ -208,4 +208,22 @@ RUN printf '%s\n' \
       'export ROS_WS="${ROS_WS}"' > /etc/profile.d/ros_setup.sh \
  && echo 'source /etc/profile.d/ros_setup.sh' >> /root/.bashrc
 
+# ---------------------------------------------------------------------------
+# 9. Non-root user. The workspace is bind-mounted, so anything root writes in it
+#    (git, colcon build/ install/ log/) ends up root-owned on the host.
+#    build_sim.sh passes the host UID/GID; VS Code's updateRemoteUserUID remaps it
+#    anyway. Last layer, so changing it never rebuilds ArduSub or the sim deps.
+# ---------------------------------------------------------------------------
+ARG USERNAME=polaris
+ARG USER_UID=1000
+ARG USER_GID=${USER_UID}
+RUN groupadd --gid ${USER_GID} ${USERNAME} \
+ && useradd --uid ${USER_UID} --gid ${USER_GID} --create-home --shell /bin/bash \
+      --groups dialout,video ${USERNAME} \
+ && echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
+ && chmod 0440 /etc/sudoers.d/${USERNAME} \
+ && echo 'source /etc/profile.d/ros_setup.sh' >> /home/${USERNAME}/.bashrc
+
+USER ${USERNAME}
+
 CMD ["bash", "-lc", "cd ${ROS_WS} && bash"]

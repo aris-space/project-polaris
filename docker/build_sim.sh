@@ -12,4 +12,7 @@ ctx="$(mktemp -d)"
 trap 'rm -rf "$ctx"' EXIT
 mkdir -p "$ctx/src/simulation"
 cp "$repo/src/simulation/simulation.repos" "$ctx/src/simulation/"
-docker build -f "$repo/docker/Dockerfile.sim" -t "$TAG" "$@" "$ctx"
+# The container user gets the host UID/GID, so files it writes to the mounted workspace are yours.
+docker build -f "$repo/docker/Dockerfile.sim" -t "$TAG" \
+  --build-arg USER_UID="$(id -u)" --build-arg USER_GID="$(id -g)" \
+  "$@" "$ctx"

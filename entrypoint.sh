@@ -86,6 +86,12 @@ has_internet() {
   timeout 3 bash -c 'echo >/dev/tcp/8.8.8.8/53' 2>/dev/null
 }
 
+# apt needs root. The vehicle images run as root; the sim image runs as a normal user with sudo.
+SUDO=""
+if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+fi
+
 # --- Config defaults ---
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 ROS_WS="${ROS_WS:-/ros2_ws}"
@@ -148,7 +154,7 @@ if [ "${ROSDEP_INSTALL}" = "1" ]; then
     rosdep fix-permissions
     if has_internet; then
       echo "[entrypoint] Updating package lists..."
-      apt-get update
+      ${SUDO} apt-get update
 
       echo "[entrypoint] Updating rosdep rules..."
       rosdep update || true

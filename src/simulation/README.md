@@ -73,8 +73,22 @@ workspace is mounted at runtime. For details and the multi-arch publish path, se
 docker run -it --rm --network=host --privileged \
   -e ROS_DOMAIN_ID=38 \
   -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
+  -v "$XAUTHORITY":/tmp/.Xauthority:ro -e XAUTHORITY=/tmp/.Xauthority \
+  --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e QT_X11_NO_MITSHM=1 \
   -v "$PWD":/ros2_ws polaris:sim
 ```
+
+- **Runs as `polaris`, not root.** `docker/build_sim.sh` gives it your UID/GID, so files it writes to the
+  mounted workspace (`build/`, `install/`, `log/`, git) stay yours. It has password-less `sudo`.
+- **Gazebo GUI** needs the X auth cookie (`$XAUTHORITY`) as well as `DISPLAY` and the X socket;
+  without it: `unable to open display`. The cookie changes on every desktop login, so restart the
+  container after logging in again.
+- **`--gpus all`** needs an NVIDIA GPU and the NVIDIA container toolkit. Drop it (and
+  `NVIDIA_DRIVER_CAPABILITIES`) otherwise; Gazebo then renders on the CPU (`llvmpipe`), slowly.
+  The devcontainer adds it only where a GPU exists (`hostRequirements.gpu: optional`).
+- **Don't add `--ipc=host`.** It shares the host's `/dev/shm` with the container, and Fast DDS
+  shared-memory ports left there by killed processes can make new nodes hang (typically
+  `ros2 topic list` stuck in the ros2 daemon). Without it, `/dev/shm` is fresh on every restart.
 
 > **Do not use `ROS_DOMAIN_ID=37`** (the vehicle's) on a network the vehicle is on. With
 > `--network=host`, the sim's `/pixhawk/cmd_vel`, `/pixhawk/arm_cmd` etc. would land in the
@@ -110,7 +124,7 @@ ros2 launch orca_sim_bringup sim_launch.py gzclient:=True   # with Gazebo GUI (n
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `gzclient` | `False` | Gazebo GUI. Needs X11 (`DISPLAY` + `/tmp/.X11-unix` mounted). |
+| `gzclient` | `False` | Gazebo GUI. Needs X11: `DISPLAY`, `/tmp/.X11-unix` and `$XAUTHORITY` mounted (section 2). |
 | `ardusub` | `True` | Start ArduSub SITL. |
 | `nav` | `True` | Start Nav2 via the vehicle's `autonomy.launch.py` (unconfigured, like on the boat). |
 | `ground_truth` | `True` | `True`: Gazebo pose stands in for the EKF. `False`: the real EKF (Phase 3, in progress). |
