@@ -51,7 +51,9 @@
     // (updateRemoteUserUID), so the mounted workspace never gets root-owned files.
     "remoteUser": "polaris",
     "updateRemoteUserUID": true,
-    "forwardPorts": [8765],
+    // No "forwardPorts": with --network=host the container's ports already are the host's.
+    // Forwarding 8765 makes VS Code bind 127.0.0.1:8765 on the host first, and
+    // foxglove_bridge then aborts with "Address already in use".
     // Adds --gpus all only where the host has an NVIDIA GPU and the container toolkit.
     "hostRequirements": {
         "gpu": "optional"
