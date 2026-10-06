@@ -18,6 +18,34 @@ Starting point is Fossen's 6-DOF equation, with `nu_r = nu - nu_c` (velocity rel
   **MANUAL** mode. Open loop through the ArduSub mixer. Do **not** use `/pixhawk/cmd_vel`: that is a
   GUIDED velocity setpoint and puts ArduSub's controller inside the loop.
 
+### What can be commanded separately
+
+All six axes are independently commandable in one message, `data = [x, y, z, r, s, t]`:
+
+| index | axis | range | neutral |
+|---|---|---|---|
+| 0 | `x` surge  | -1000 … 1000 | 0 |
+| 1 | `y` sway   | -1000 … 1000 | 0 |
+| 2 | `z` heave  | 0 … 1000     | 500 |
+| 3 | `r` yaw    | -1000 … 1000 | 0 |
+| 4 | `s` roll   | -1000 … 1000 | 0 |
+| 5 | `t` pitch  | -1000 … 1000 | 0 |
+
+In practice commanded values are capped at +-500.
+
+The vehicle is **symmetric about the xz plane** (port-starboard mirror symmetry). For a
+vehicle with that symmetry the 6-DOF system splits into two groups that are dynamically
+decoupled to first order:
+
+- **longitudinal:** surge, heave, pitch
+- **lateral:** sway, roll, yaw
+
+The cross terms between the two groups vanish under this symmetry, which is what makes the
+one-axis-at-a-time plan in section 2 valid: exciting surge alone does not feed sway, roll or
+yaw, so each group can be identified from its own maneuvers without solving the full coupled
+system. Coupling that survives the symmetry (mainly surge-yaw, section 2.6) still has to be
+checked separately.
+
 
 ## 2. Commanded maneuvers to excite terms
 
@@ -97,4 +125,26 @@ does not oscillate; yaw is covered by the dynamic maneuvers below.
 The following script plots and comapares a propagation of a identified model against given mcap rosbag runs. 
 Hereby we read the relevant mcap file to synchronize timestamps etc, then the model is integrated forward and the relevant estimates are publsihed to /sysid/odom (state estimate), and to /sysid/model (to check the version of the model used). 
 
+### Reading the results: free-run vs re-init
 
+Use `--reinit-s 0` (free rollout over the whole bag) to judge whether the model is actually
+right — a wrong thrust scale, drag or mass shows up as steadily growing error and nothing
+hides it. Short re-init periods measure something narrower (how well the model predicts N
+seconds ahead from a known state), and they keep the EKF reference trustworthy, since the
+reference drifts too over long horizons.
+
+Keep the re-init runs as a **diagnostic**, not the verdict: re-initialising gives many
+independent samples instead of one, and the shape of the error-vs-horizon curve says which
+parameter is wrong.
+
+- error growing **linearly** with horizon → velocity bias → thrust scale or drag is off
+- error growing **quadratically** → acceleration error → mass / added mass is off
+
+Caveat: a single free rollout is one realisation, so a current or a bad patch of DVL can
+dominate it. Compare a few bags rather than trusting one long number.
+
+
+
+## 4. Important Points
+
+The T500 thrust curves are from the T500 documentation. Interpolation was used between the curves at voltages 12, 14, 16 and 18V. The force reconstruction hence uses both pwm and the current voltage readings. 
