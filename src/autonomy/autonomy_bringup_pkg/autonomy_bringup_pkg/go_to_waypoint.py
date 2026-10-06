@@ -22,6 +22,7 @@ Usage:
 
 import argparse
 import sys
+import json
 import time
 
 import rclpy
@@ -55,11 +56,27 @@ def _fmt(p: PoseStamped) -> str:
     return f'x={q.x:.2f}m  y={q.y:.2f}m  z={q.z:.2f}m'
 
 
+def _load_waypoint_file(path: str) -> PoseStamped:
+    """Load a single waypoint captured by capture_waypoint (JSON, map-frame x,y,z)."""
+    with open(path, 'r', encoding='utf-8') as f:
+        d = json.load(f)
+    ps = PoseStamped()
+    ps.header.frame_id = str(d.get('frame_id', 'map'))
+    ps.pose.position.x = float(d['x'])
+    ps.pose.position.y = float(d['y'])
+    ps.pose.position.z = float(d['z'])
+    ps.pose.orientation.w = 1.0
+    return ps
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--index', type=int, required=True,
-                        help='1-based waypoint index to go to (1 = first point of the loaded line).')
+    parser.add_argument('--index', type=int, default=None,
+                        help='1-based waypoint index into the loaded line (1 = first point).')
+    parser.add_argument('--waypoint-file', type=str, default=None,
+                        help='Go to a single waypoint captured in a JSON file (map-frame x,y,z) by '
+                             'capture_waypoint. Bypasses the mission loader (pool/field tests).')
     parser.add_argument('--no-hold', action='store_true',
                         help='Disarm + MANUAL on arrival (default: stay armed+GUIDED and hold).')
     parser.add_argument('--origin', type=parse_origin, default=None,
@@ -70,7 +87,10 @@ def main() -> None:
     if (args.origin is None) != (args.file is None):
         print('Manual override requires BOTH --origin and --file (or neither).', file=sys.stderr)
         sys.exit(1)
-    if args.index < 1:
+    if (args.waypoint_file is None) == (args.index is None):
+        print('Provide exactly one of --index N or --waypoint-file PATH.', file=sys.stderr)
+        sys.exit(1)
+    if args.index is not None and args.index < 1:
         print('--index is 1-based and must be >= 1.', file=sys.stderr)
         sys.exit(1)
 
@@ -96,27 +116,35 @@ def main() -> None:
         node.create_subscription(PixhawkHeartbeat, '/pixhawk/heartbeat',
                                  make_heartbeat_callback(hb_state), 10)
 
-        # Get the full line, then pick ONE pose.
-        if args.origin is not None:
-            lat0, lon0, alt0 = args.origin
-            print(f'Manual override: origin={args.origin}  file={args.file}')
+        # Pick the single target pose: captured-file mode, or index into the loaded line.
+        if args.waypoint_file is not None:
             try:
-                poses = process_coordinates(args.file, lat0, lon0, alt0)
-            except (OSError, ValueError) as e:
-                print(f'Error loading mission: {e}', file=sys.stderr)
+                target = _load_waypoint_file(args.waypoint_file)
+            except (OSError, ValueError, KeyError) as e:
+                print(f'Error reading --waypoint-file {args.waypoint_file}: {e}', file=sys.stderr)
                 sys.exit(1)
+            print(f'Going to captured waypoint from {args.waypoint_file}  '
+                  f'[{target.header.frame_id}]  {_fmt(target)}')
         else:
-            poses = wait_for_mission_waypoints(executor, node)
-            if poses is None:
-                print('No latched waypoints from mission_waypoint_loader; exiting.', file=sys.stderr)
+            if args.origin is not None:
+                lat0, lon0, alt0 = args.origin
+                print(f'Manual override: origin={args.origin}  file={args.file}')
+                try:
+                    poses = process_coordinates(args.file, lat0, lon0, alt0)
+                except (OSError, ValueError) as e:
+                    print(f'Error loading mission: {e}', file=sys.stderr)
+                    sys.exit(1)
+            else:
+                poses = wait_for_mission_waypoints(executor, node)
+                if poses is None:
+                    print('No latched waypoints from mission_waypoint_loader; exiting.', file=sys.stderr)
+                    sys.exit(1)
+            n = len(poses)
+            if args.index > n:
+                print(f'--index {args.index} out of range: only {n} waypoints loaded (1..{n}).', file=sys.stderr)
                 sys.exit(1)
-
-        n = len(poses)
-        if args.index > n:
-            print(f'--index {args.index} out of range: only {n} waypoints loaded (1..{n}).', file=sys.stderr)
-            sys.exit(1)
-        target = poses[args.index - 1]
-        print(f'Going to waypoint {args.index}/{n}:  {_fmt(target)}')
+            target = poses[args.index - 1]
+            print(f'Going to waypoint {args.index}/{n}:  {_fmt(target)}')
 
         goal = FollowWaypoints.Goal()
         goal.poses = [target]
