@@ -32,6 +32,8 @@ class Model:
     path: Path
     meta: dict[str, Any]
     params: dict[str, dict[str, Any]]  # "group.name" -> {value, unit, source, uncertainty}
+    thrust: dict[str, Any] = field(default_factory=dict)
+    dofs: dict[str, str] = field(default_factory=dict)
     sha256: str = ""
     git: str = field(default="unknown")
 
@@ -44,8 +46,28 @@ class Model:
     def missing(self) -> list[str]:
         return [k for k, p in self.params.items() if p["value"] is None]
 
+    def missing_for(self, keys: list[str]) -> list[str]:
+        """Subset of `keys` that is still null - used to fail fast with a readable list."""
+        return [k for k in keys if self.params.get(k, {}).get("value") is None]
+
+    def curve_path(self) -> Path:
+        """Thruster curve CSV, resolved relative to the model file."""
+        rel = self.thrust.get("curve_file")
+        if not rel:
+            raise ValueError(f"{self.path.name} has no thrust.curve_file entry.")
+        return (self.path.parent / rel).resolve()
+
+    def curve_sha256(self) -> str:
+        try:
+            return hashlib.sha256(self.curve_path().read_bytes()).hexdigest()
+        except (OSError, ValueError):
+            return "missing"
+
     def version_tag(self) -> str:
-        return f"{self.meta['name']} v{self.meta['version']} (sha256 {self.sha256[:8]}, git {self.git})"
+        tag = f"{self.meta['name']} v{self.meta['version']} (sha256 {self.sha256[:8]}, git {self.git}"
+        if self.thrust.get("curve_file"):
+            tag += f", curve {self.curve_sha256()[:8]}"
+        return tag + ")"
 
 
 def _git_state(path: Path) -> str:
@@ -75,6 +97,8 @@ def load_model(path: str | Path = DEFAULT_MODEL_PATH) -> Model:
         path=path,
         meta=doc["model"],
         params=params,
+        thrust=doc.get("thrust", {}),
+        dofs=doc.get("dofs", {}),
         sha256=hashlib.sha256(raw).hexdigest(),
         git=_git_state(path),
     )
