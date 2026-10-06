@@ -222,7 +222,7 @@ mavproxy.py --master=udpin:0.0.0.0:14550
 | `/odometry/filtered/local` | `nav_msgs/Odometry` | what Nav2 and ArduSub use as the vehicle pose (= `/odom` while `ground_truth:=True`) |
 | `/tf`, `/tf_static` | | `map → odom → base_link` |
 | `/clock` | `rosgraph_msgs/Clock` | sim time; every node runs with `use_sim_time: True` |
-| `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it) |
+| `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it, see [5.7](#57-ocean-current)) |
 
 Useful checks:
 
@@ -250,6 +250,59 @@ stay headless and use Foxglove.
 
 Open Foxglove → *Open connection* → `ws://localhost:8765`. The bridge runs inside the sim and
 uses sim time. Add a 3D panel with the `map` fixed frame to see TF and the Nav2 path.
+
+### 5.7 Ocean current
+
+```
+you / current_vector_node.py ─ROS /ocean_current─▶ ros_gz_bridge ─gz /ocean_current─▶ Hydrodynamics plugin (orca4)
+```
+
+- **What it does:** the Gazebo Hydrodynamics plugin (`model.sdf.in`) computes drag and added mass
+  from the vehicle's velocity **relative to the water**. A current therefore pushes the vehicle
+  along with it, by an amount set by the drag coefficients in `generate_model.py`. Buoyancy and
+  thrust are unaffected.
+- **Message:** the vector is a water velocity in **m/s, world frame** (Gazebo ENU: x east,
+  y north, z up), not body frame.
+- **Direction:** the bridge is ROS → Gazebo only. Nothing publishes on `/ocean_current`; you do.
+- **The last value sticks.** The plugin keeps applying the last current it received. Stopping
+  the publisher does not stop the current, so publish zeros to clear it.
+- **QoS:** the bridge subscribes with `transient_local` durability. A default (volatile)
+  publisher won't connect, so pass `--qos-durability transient_local`.
+
+Constant current, set by hand:
+
+```bash
+ros2 topic pub --once --qos-durability transient_local /ocean_current geometry_msgs/msg/Vector3 "{x: 0.3, y: 0.0, z: 0.0}"
+ros2 topic pub --once --qos-durability transient_local /ocean_current geometry_msgs/msg/Vector3 "{}"   # clear
+```
+
+Time-varying current: `current_vector_node.py` publishes at 20 Hz. `sim_launch.py` does **not**
+start it, so run it yourself:
+
+```bash
+ros2 run orca_sim_bringup current_vector_node.py --ros-args \
+  -p direction:=con_x -p amplitude:=0.3 -p noise_stddev:=0.05
+ros2 param set /current_vector amplitude 0.5                       # change while running
+```
+
+| `direction` | Profile on the named axes |
+|---|---|
+| `con_x` `con_y` `con_z` `con_xy` `con_xz` `con_yz` `con_xyz` | constant `amplitude` |
+| `dir_x` `dir_y` `dir_z` `xy` `xz` `yz` `xyz` | sine: `amplitude · sin(2π t / period)` |
+| `ramp_x` … `ramp_xyz` | ramp: `amplitude/10 · t` (unbounded, keeps growing) |
+| `''` (default) | zero |
+
+| Param | Default | Meaning |
+|---|---|---|
+| `amplitude` | `0.0` | m/s |
+| `period` | `0.0` | s, sine profiles only (`0` → no oscillation) |
+| `noise_stddev` | `0.08` | m/s, first-order Gauss-Markov noise; only on axes whose letter appears in `direction`. `0` disables it |
+| `noise_time_constant` | `1.5` | s, noise correlation time (`0` → white noise) |
+
+When you stop the node, the last value it sent stays in effect, so clear it with the zero
+publish above. Use the current for qualitative robustness tests, e.g. holding a line against a
+cross-current. Compare `/odom` with the Nav2 path and watch `/pixhawk/servo_output_raw`. Drag is
+hand-estimated, so the drift it produces is not a real disturbance-rejection number.
 
 ---
 
