@@ -35,3 +35,8 @@ services:
     tty: true
     command: [ "bash", "-lc", "sleep infinity" ]
     restart: unless-stopped
+
+  development-container:
+    extends: jetson-container
+    image: ghcr.io/aris-space/project-polaris-docker:dev-x64
+    runtime: runc
