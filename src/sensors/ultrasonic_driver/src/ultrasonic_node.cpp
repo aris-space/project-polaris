@@ -198,7 +198,7 @@ private:
 
     if (distance_m < 0.0f)
     {
-      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::STALE;
       status.message = "Sensor not connected / no data";
       kv.value = "N/A";
     }
