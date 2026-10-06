@@ -63,10 +63,22 @@ class Model:
         except (OSError, ValueError):
             return "missing"
 
+    def thrust_maps(self) -> dict[int, Path]:
+        """Per-channel force tables over PWM and battery voltage (thrust.maps), resolved
+        relative to the model file. Channels not listed have no curve yet."""
+        maps = self.thrust.get("maps") or {}
+        return {int(ch): (self.path.parent / rel).resolve() for ch, rel in maps.items() if rel}
+
     def version_tag(self) -> str:
         tag = f"{self.meta['name']} v{self.meta['version']} (sha256 {self.sha256[:8]}, git {self.git}"
         if self.thrust.get("curve_file"):
             tag += f", curve {self.curve_sha256()[:8]}"
+        for ch, path in sorted(self.thrust_maps().items()):
+            try:
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+            except OSError:
+                digest = "missing"
+            tag += f", map ch{ch} {digest}"
         return tag + ")"
 
 

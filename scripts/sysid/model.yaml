@@ -46,16 +46,22 @@ parameters:
     phi_0:   {value: null, unit: rad, source: measured, uncertainty: null}     # roll trim
     theta_0: {value: null, unit: rad, source: measured, uncertainty: null}     # pitch trim
 
-# Actuation. Not fitted: the thruster curve comes from the manufacturer datasheet and the
-# channel/neutral/sign describe how servo_output_raw maps onto surge force.
-# curve_file is relative to this file; columns pwm_us, force_kgf. Still to be exported from
-# the manufacturer spreadsheet — propagation refuses to run while it is null.
+# Actuation. Not fitted: the thruster curves come from the manufacturer datasheet (later the
+# load cell) and the channel/neutral/sign describe how servo_output_raw maps onto surge force.
+# Paths are relative to this file.
 thrust:
   channel: 0                  # index into /pixhawk/servo_output_raw; MOT_1 is the surge thruster
   pwm_neutral: 1500
   servo_delay_s: 0.0          # subtracted from servo log_time before pairing with the EKF
   sign: 1                     # flip to -1 if PWM > neutral drives the vehicle backwards
-  curve_file: null
+  # Per servo channel: force table over PWM and battery voltage (columns pwm_us,
+  # force_kgf_<V>V), evaluated with thruster_map.ThrusterMap at the BMS voltage. Takes
+  # precedence over curve_file. Channels not listed have no curve yet and are reported as
+  # unknown (NaN), never as zero thrust.
+  maps:
+    0: thruster_curves/t500_force_vs_voltage.csv   # MOT_1 surge, Blue Robotics T500 datasheet
+  voltage_fallback_v: null    # used only when a bag has no BMS voltage on /diagnostics
+  curve_file: null            # single-voltage table (pwm_us, force_kgf); used by dummy models
   source: manufacturer datasheet
 
   # Per-axis thruster allocation. `channel` is the index into servo_output_raw (MOT_n -> n-1).

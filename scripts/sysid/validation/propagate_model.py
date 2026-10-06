@@ -10,9 +10,13 @@ What it does:
   1. loads the model (model.yaml) and refuses to run while a needed coefficient is null;
   2. reads the EKF odometry and the raw servo PWM, and verifies that their two time bases
      are monotonic, overlapping and free of large gaps (reported, never silently fixed);
-  3. integrates (m - X_udot) du/dt = T(pwm) - X_u*u - X_uu*|u|*u over the EKF grid, taking
-     heading, sway and depth from the EKF, re-initialising from the EKF every --reinit-s;
-  4. writes the augmented bag plus a <stem>_summary.txt with RMS errors per horizon bin.
+  3. integrates (m - X_udot) du/dt = T(pwm, V) - X_u*u - X_uu*|u|*u over the EKF grid, taking
+     heading, sway and depth from the EKF, re-initialising from the EKF every --reinit-s.
+     T comes from the channel's PWM x battery-voltage table (thrust.maps, voltage from the
+     BMS on /diagnostics) or, failing that, from the single-voltage thrust.curve_file;
+  4. writes the augmented bag plus a <stem>_summary.txt with RMS errors per horizon bin. The
+     bag also carries /sysid/thruster_forces (all six channels, NaN where no curve exists yet)
+     and /sysid/battery_voltage, so the thrust input itself can be checked in Foxglove.
 
 Dependencies: pip install rosbags numpy scipy pyyaml pyproj
 
@@ -33,11 +37,13 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bag_io import (  # noqa: E402
+    DEFAULT_DIAG_TOPIC,
     DEFAULT_EKF_TOPIC,
     DEFAULT_SERVO_TOPIC,
     OutputSeries,
     fit_geo_anchor,
     read_tracks,
+    read_voltage,
     verify_timestamps,
     write_augmented_bag,
 )
@@ -49,6 +55,9 @@ from dynamics import (  # noqa: E402
     steady_state_speed,
 )
 from model_io import load_model  # noqa: E402
+from thruster_map import ThrusterMap  # noqa: E402
+
+N_SERVO_CHANNELS = 6
 
 REQUIRED = [
     "rigid_body.m",
@@ -70,16 +79,79 @@ def default_pwm_stale_s(servo_log_t: np.ndarray) -> float:
     return max(0.5, 3.0 * med)
 
 
-def _thrust_at(curve: ThrusterCurve, pwm: float, neutral: float, sign: int) -> float:
-    """Evaluate the curve, mirroring the PWM about neutral when the thruster sign is flipped.
+def _mirror(pwm: float, neutral: float, sign: int) -> float:
+    """Mirror the PWM about neutral when the thruster sign is flipped.
 
     Mirroring rather than negating the force keeps an asymmetric forward/reverse curve correct.
     """
-    return float(curve.force_n(neutral + sign * (pwm - neutral)))
+    return neutral + sign * (pwm - neutral)
 
 
-def propagate(odom, servo, curve, params, *, channel, neutral, sign, reinit_s, dt,
-              with_baseline, pwm_stale_s, zero_sway=False):
+class ThrustSource:
+    """Force per servo channel from the held PWM and the battery voltage.
+
+    A channel listed in thrust.maps uses its PWM x voltage table (ThrusterMap). Otherwise the
+    surge channel falls back to the single-voltage thrust.curve_file (ThrusterCurve), which is
+    what the dummy model uses. Every other channel has no curve yet and returns NaN, so a
+    missing curve can never pass as zero thrust. Only the surge channel's sign is configured
+    (thrust.sign); other channels are evaluated as tabulated until theirs are known.
+    """
+
+    def __init__(self, model, surge_channel: int, neutral: float, sign: int) -> None:
+        self.surge_channel = surge_channel
+        self.neutral = neutral
+        self.sign = sign
+        self.map_paths = model.thrust_maps()
+        self.maps = {ch: ThrusterMap.from_csv(p) for ch, p in self.map_paths.items()}
+        self.curve = None
+        self.curve_name = None
+        if surge_channel not in self.maps and model.thrust.get("curve_file"):
+            self.curve = ThrusterCurve.from_csv(model.curve_path())
+            self.curve_name = model.curve_path().name
+
+    @property
+    def needs_voltage(self) -> bool:
+        return bool(self.maps)
+
+    def has(self, ch: int) -> bool:
+        return ch in self.maps or (ch == self.surge_channel and self.curve is not None)
+
+    def force(self, ch: int, pwm: float, volts: float | None) -> float:
+        p = _mirror(pwm, self.neutral, self.sign) if ch == self.surge_channel else pwm
+        if ch in self.maps:
+            return self.maps[ch].force_n(p, volts)
+        if ch == self.surge_channel and self.curve is not None:
+            return float(self.curve.force_n(p))
+        return float("nan")
+
+    def describe(self) -> str:
+        parts = [f"ch{ch} map {self.map_paths[ch].name} "
+                 f"({m.volts[0]:g}-{m.volts[-1]:g} V)" for ch, m in sorted(self.maps.items())]
+        if self.curve is not None:
+            parts.append(f"ch{self.surge_channel} curve {self.curve_name}")
+        unknown = [ch for ch in range(N_SERVO_CHANNELS) if not self.has(ch)]
+        if unknown:
+            parts.append("unknown " + ",".join(f"ch{ch}" for ch in unknown))
+        return "; ".join(parts)
+
+
+def forces_on_grid(t_grid, servo, source: ThrustSource, volt_at, pwm_stale_s: float):
+    """Force of every servo channel at each grid time, from the held PWM. NaN where the channel
+    has no curve or the PWM sample is stale."""
+    idx = np.searchsorted(servo.log_t, t_grid, side="right") - 1
+    out = np.full((t_grid.size, N_SERVO_CHANNELS), np.nan)
+    known = [ch for ch in range(N_SERVO_CHANNELS) if source.has(ch)]
+    for k, i in enumerate(idx):
+        if i < 0 or t_grid[k] - servo.log_t[i] > pwm_stale_s:
+            continue
+        v = volt_at(t_grid[k])
+        for ch in known:
+            out[k, ch] = source.force(ch, float(servo.pwm[i, ch]), v)
+    return out
+
+
+def propagate(odom, servo, source: ThrustSource, volt_at, params, *, channel, neutral, sign,
+              reinit_s, dt, with_baseline, pwm_stale_s, zero_sway=False):
     """Integrate the model over the EKF grid. Returns arrays on that grid plus a gap count."""
     t_grid = odom.t
     yaw_unwrapped = np.unwrap(odom.yaw)
@@ -127,7 +199,7 @@ def propagate(odom, servo, curve, params, *, channel, neutral, sign, reinit_s, d
                 t_sub = t_prev + j * h
                 pwm, stale = pwm_at(t_sub)
                 stale_here |= stale
-                thrust = _thrust_at(curve, pwm, neutral, sign)
+                thrust = source.force(channel, pwm, volt_at(t_sub))
                 yaw_sub = float(np.interp(t_sub, t_grid, yaw_unwrapped))
                 v_sub = float(np.interp(t_sub, t_grid, sway))
                 c, s = np.cos(yaw_sub), np.sin(yaw_sub)
@@ -210,6 +282,11 @@ def main(argv=None) -> int:
     ap.add_argument("--dt", type=float, default=0.01, help="internal integration step [s]")
     ap.add_argument("--ekf-topic", default=DEFAULT_EKF_TOPIC)
     ap.add_argument("--servo-topic", default=DEFAULT_SERVO_TOPIC)
+    ap.add_argument("--diag-topic", default=DEFAULT_DIAG_TOPIC,
+                    help="DiagnosticArray topic carrying the BMS 'Battery: Voltage' status")
+    ap.add_argument("--voltage", type=float, default=None,
+                    help="evaluate the thrust maps at this fixed battery voltage [V] instead of "
+                         "the BMS reading (overrides thrust.voltage_fallback_v as well)")
     ap.add_argument("--no-baseline", action="store_true",
                     help="skip the deployed power-law comparison")
     ap.add_argument("--zero-sway", action="store_true",
@@ -243,13 +320,6 @@ def main(argv=None) -> int:
               "exercise the pipeline with literature values.", file=sys.stderr)
         return 1
 
-    if not model.thrust.get("curve_file"):
-        print(f"\nCannot propagate - {args.model.name} has thrust.curve_file: null.\n"
-              "Export the manufacturer curve to scripts/sysid/thruster_curves/ and set the "
-              "path, or use --model scripts/sysid/dummy_bluerov2_heavy.yaml.", file=sys.stderr)
-        return 1
-
-    curve = ThrusterCurve.from_csv(model.curve_path())
     params = SurgeParams(
         m_tot=model.get("rigid_body.m") - model.get("added_mass.X_udot"),
         X_u=model.get("damping_linear.X_u"),
@@ -260,14 +330,17 @@ def main(argv=None) -> int:
     sign = int(model.thrust.get("sign", 1))
     delay = float(model.thrust.get("servo_delay_s", 0.0))
 
+    source = ThrustSource(model, channel, neutral, sign)
+    if not source.has(channel):
+        print(f"\nCannot propagate - {args.model.name} gives the surge channel ch{channel} no "
+              "thrust: list it under thrust.maps (PWM x voltage table) or set "
+              "thrust.curve_file, or use --model scripts/sysid/dummy_bluerov2_heavy.yaml.",
+              file=sys.stderr)
+        return 1
+
     print(f"[model] m_tot={params.m_tot:g} kg  X_u={params.X_u:g}  X_uu={params.X_uu:g}  "
           f"channel={channel}  neutral={neutral:g}  sign={sign:+d}  delay={delay:g}s")
-    print(f"[model] curve: {model.curve_path().name}  "
-          f"({curve.pwm_us[0]:.0f}-{curve.pwm_us[-1]:.0f} us, "
-          f"{curve.force_table_n[0]:+.1f}..{curve.force_table_n[-1]:+.1f} N)")
-    for pwm in (neutral + 100, neutral + 200, neutral + 400):
-        print(f"           steady state @ {pwm:.0f} us: "
-              f"{steady_state_speed(_thrust_at(curve, pwm, neutral, sign), params):.3f} m/s")
+    print(f"[model] thrust: {source.describe()}")
 
     print(f"\n[bag] {args.input}")
     odom, servo = read_tracks(args.input, args.ekf_topic, args.servo_topic)
@@ -276,6 +349,47 @@ def main(argv=None) -> int:
     print(f"[bag] servo {args.servo_topic}: {len(servo)} msgs, "
           f"ch{channel} range {servo.pwm[:, channel].min():.0f}-"
           f"{servo.pwm[:, channel].max():.0f} us")
+
+    # Battery voltage: read whenever available (it is also written out for inspection), but
+    # only the PWM x voltage maps actually use it. A fixed voltage (--voltage, or
+    # thrust.voltage_fallback_v when the bag has no BMS data) replaces it explicitly.
+    voltage = read_voltage(args.input, args.diag_topic)
+    fixed_v = args.voltage
+    if fixed_v is None and voltage is None and source.needs_voltage:
+        fixed_v = model.thrust.get("voltage_fallback_v")
+        if fixed_v is None:
+            print(f"\nCannot propagate - the thrust maps need a battery voltage, {args.input.name} "
+                  "has no BMS voltage, and thrust.voltage_fallback_v is null. Pass --voltage V.",
+                  file=sys.stderr)
+            return 1
+    if fixed_v is not None:
+        fixed_v = float(fixed_v)
+        volt_at = lambda t: fixed_v  # noqa: E731
+        volt_desc = f"V=fixed {fixed_v:g} V"
+        print(f"[voltage] using a fixed {fixed_v:g} V")
+    elif voltage is not None:
+        volt_at = lambda t: float(voltage.at(t))  # noqa: E731
+        volt_desc = f"V=BMS {voltage.volts.min():.2f}-{voltage.volts.max():.2f} V"
+        print(f"[voltage] BMS {args.diag_topic}: {len(voltage)} samples, "
+              f"{voltage.volts.min():.2f}-{voltage.volts.max():.2f} V "
+              f"(median {np.median(voltage.volts):.2f} V)")
+    else:
+        volt_at = lambda t: None  # noqa: E731
+        volt_desc = "V=unused"
+    for ch, tmap in sorted(source.maps.items()):
+        vs = voltage.volts if (voltage is not None and fixed_v is None) else np.array([fixed_v])
+        outside = (vs < tmap.volts[0]) | (vs > tmap.volts[-1])
+        if outside.any():
+            print(f"[voltage] WARN {100*outside.mean():.0f}% of samples lie outside the ch{ch} "
+                  f"table ({tmap.volts[0]:g}-{tmap.volts[-1]:g} V) and are clamped to its edge")
+
+    v_ref = volt_at(0.0) if fixed_v is not None else (
+        float(np.median(voltage.volts)) if voltage is not None else None)
+    for pwm in (neutral + 100, neutral + 200, neutral + 400):
+        thrust = source.force(channel, pwm, v_ref)
+        at_v = f" @ {v_ref:.2f} V" if (v_ref is not None and source.needs_voltage) else ""
+        print(f"[model] thrust {thrust:+6.1f} N{at_v} at {pwm:.0f} us -> steady state "
+              f"{steady_state_speed(thrust, params):.3f} m/s")
 
     servo.log_t = servo.log_t - delay
     report = verify_timestamps(odom, servo)
@@ -325,7 +439,7 @@ def main(argv=None) -> int:
 
     with_baseline = not args.no_baseline
     mpos, myaw, msurge, horizon, bpos, bsurge, gaps = propagate(
-        odom, servo, curve, params,
+        odom, servo, source, volt_at, params,
         channel=channel, neutral=neutral, sign=sign,
         reinit_s=args.reinit_s, dt=args.dt, with_baseline=with_baseline,
         pwm_stale_s=stale_s, zero_sway=args.zero_sway,
@@ -340,8 +454,16 @@ def main(argv=None) -> int:
         b_err_pos = np.linalg.norm(bpos[:, :2] - odom.pos[:, :2], axis=1)
         b_err_surge = bsurge - odom.vel_body[:, 0]
 
+    thruster_forces = forces_on_grid(odom.t, servo, source, volt_at, stale_s)
+    if fixed_v is not None:
+        battery_voltage = np.full(odom.t.size, fixed_v)
+    elif voltage is not None:
+        battery_voltage = np.asarray(voltage.at(odom.t), dtype=np.float64)
+    else:
+        battery_voltage = None
+
     info = (f"{model.version_tag()} | m_tot={params.m_tot:g} kg, X_u={params.X_u:g} N s/m, "
-            f"X_uu={params.X_uu:g} N s^2/m^2 | curve={model.curve_path().name} | "
+            f"X_uu={params.X_uu:g} N s^2/m^2 | thrust: {source.describe()} | {volt_desc} | "
             f"channel={channel} neutral={neutral:g} sign={sign:+d} "
             f"servo_delay={delay:g}s | reinit={args.reinit_s:g}s dt={args.dt:g}s "
             f"pwm_stale={stale_s:.2f}s"
@@ -370,6 +492,7 @@ def main(argv=None) -> int:
         base_pos=bpos, base_yaw=myaw if with_baseline else None, base_surge=bsurge,
         base_err_pos=b_err_pos, base_err_surge=b_err_surge,
         model_lat=model_lat, model_lon=model_lon, model_alt=model_alt,
+        thruster_forces=thruster_forces, battery_voltage=battery_voltage,
     )
     written = write_augmented_bag(args.input, out_path, series,
                                   odom.frame_id, odom.child_frame_id)
@@ -379,7 +502,8 @@ def main(argv=None) -> int:
     print(f"\n[out] bag:     {written}")
     print(f"[out] summary: {summary_path}")
     print("\nPlot in Foxglove: /sysid/model_odom vs /odometry/filtered/local (XY),\n"
-          "  /sysid/error/surge_mps and /sysid/error/position_m against /sysid/horizon_s.")
+          "  /sysid/error/surge_mps and /sysid/error/position_m against /sysid/horizon_s,\n"
+          f"  /sysid/thruster_forces.data[{channel}] (surge thrust, N) and /sysid/battery_voltage.")
     return 0
 
 

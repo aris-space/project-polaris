@@ -5,7 +5,8 @@ scripts. Wraps `rosbags` so the rest of scripts/sysid/ stays numpy-only.
 
 Reading: pulls the EKF odometry and the raw servo PWM into numpy arrays. The servo topic
 (`std_msgs/Int16MultiArray`) carries no header, so its MCAP log_time is the only time
-source available for it; the EKF uses header.stamp.
+source available for it; the EKF uses header.stamp. The BMS pack voltage is read separately
+from /diagnostics (read_voltage), also on log_time.
 
 Verification: before any propagation, check that the two time bases are usable together -
 monotonic, overlapping, free of large gaps, and that header.stamp does not drift from
@@ -76,6 +77,12 @@ _allow_empty_mcap_profile()
 
 DEFAULT_EKF_TOPIC = "/odometry/filtered/local"
 DEFAULT_SERVO_TOPIC = "/pixhawk/servo_output_raw"
+DEFAULT_DIAG_TOPIC = "/diagnostics"
+
+# bms_node publishes the pack voltage once per second as a DiagnosticStatus with this name,
+# carrying the value as text (e.g. "14.70V") under the key "voltage".
+BMS_VOLTAGE_STATUS = "Battery: Voltage"
+BMS_VOLTAGE_KEY = "voltage"
 
 # NavSatFix tracks the odom -> UTM anchor is fitted against, best first. /gps/filtered is
 # navsat_transform re-projecting the local EKF; the June bags have it, the April ones only
@@ -111,6 +118,64 @@ class ServoTrack:
 
     def __len__(self) -> int:
         return self.log_t.size
+
+
+@dataclass
+class VoltageTrack:
+    """Battery pack voltage from the BMS diagnostics, ~1 Hz, on MCAP log_time like the servo."""
+
+    log_t: np.ndarray  # MCAP log_time [s]
+    volts: np.ndarray  # (N,) [V]
+
+    def __len__(self) -> int:
+        return self.log_t.size
+
+    def at(self, t: float | np.ndarray) -> float | np.ndarray:
+        """Zero-order hold. Before the first sample the first value is used: the pack voltage
+        changes over minutes, so holding it backwards for a second is harmless."""
+        i = np.clip(np.searchsorted(self.log_t, t, side="right") - 1, 0, self.log_t.size - 1)
+        return self.volts[i]
+
+
+def parse_bms_voltage(text: str) -> float | None:
+    """'14.70V' -> 14.7. Returns None for anything that is not a number with an optional V."""
+    try:
+        return float(text.strip().rstrip("Vv").strip())
+    except ValueError:
+        return None
+
+
+def read_voltage(bag: Path, topic: str = DEFAULT_DIAG_TOPIC) -> VoltageTrack | None:
+    """Read the BMS pack voltage from /diagnostics. Returns None (with a printed reason) when
+    the topic or the BMS status is absent, so the caller can fall back to a fixed voltage."""
+    log_t, volts = [], []
+    unparsable = 0
+    with AnyReader([bag]) as reader:
+        conns = [c for c in reader.connections if c.topic == topic]
+        if not conns:
+            print(f"  [voltage] {topic} not in {bag.name}")
+            return None
+        for conn, ts, raw in reader.messages(connections=conns):
+            m = reader.deserialize(raw, conn.msgtype)
+            for status in m.status:
+                if status.name != BMS_VOLTAGE_STATUS:
+                    continue
+                for kv in status.values:
+                    if kv.key != BMS_VOLTAGE_KEY:
+                        continue
+                    v = parse_bms_voltage(kv.value)
+                    if v is None:
+                        unparsable += 1
+                    else:
+                        log_t.append(ts * NS)
+                        volts.append(v)
+    if unparsable:
+        print(f"  [voltage] skipped {unparsable} unparsable '{BMS_VOLTAGE_STATUS}' value(s)")
+    if not volts:
+        print(f"  [voltage] no '{BMS_VOLTAGE_STATUS}' status on {topic} in {bag.name}")
+        return None
+    order = np.argsort(log_t, kind="stable")
+    return VoltageTrack(log_t=np.asarray(log_t)[order], volts=np.asarray(volts)[order])
 
 
 def read_tracks(
@@ -391,6 +456,8 @@ class OutputSeries:
     model_lat: np.ndarray | None = None
     model_lon: np.ndarray | None = None
     model_alt: np.ndarray | None = None
+    thruster_forces: np.ndarray | None = None  # (N, 6) [N] per servo channel, NaN = unknown
+    battery_voltage: np.ndarray | None = None  # (N,) [V] the voltage the thrust was evaluated at
 
 
 def _sec_to_time(ts, t: float):
@@ -481,12 +548,25 @@ def write_augmented_bag(src: Path, out_path: Path, series: OutputSeries,
             c_errp = new("/sysid/error/position_m", "std_msgs/msg/Float64")
             c_erru = new("/sysid/error/surge_mps", "std_msgs/msg/Float64")
             c_hor = new("/sysid/horizon_s", "std_msgs/msg/Float64")
+            has_forces = series.thruster_forces is not None
+            c_forces = (new("/sysid/thruster_forces", "std_msgs/msg/Float64MultiArray")
+                        if has_forces else None)
+            has_volts = series.battery_voltage is not None
+            c_volts = new("/sysid/battery_voltage", "std_msgs/msg/Float64") if has_volts else None
 
             for c, t_ns, raw in reader.messages():
                 writer.write(conn_map[c.id], t_ns, raw)
 
             f64 = ts.types["std_msgs/msg/Float64"]
             string = ts.types["std_msgs/msg/String"]
+            if has_forces:
+                n_ch = series.thruster_forces.shape[1]
+                f64_array = ts.types["std_msgs/msg/Float64MultiArray"]
+                layout = ts.types["std_msgs/msg/MultiArrayLayout"](
+                    dim=[ts.types["std_msgs/msg/MultiArrayDimension"](
+                        label="servo_channel", size=n_ch, stride=n_ch)],
+                    data_offset=0,
+                )
 
             def put(conn, t: float, msg, typename: str) -> None:
                 writer.write(conn, int(round(t * 1e9)), ts.serialize_cdr(msg, typename))
@@ -511,6 +591,14 @@ def write_augmented_bag(src: Path, out_path: Path, series: OutputSeries,
                 put(c_errp, t, f64(data=float(series.err_pos[i])), "std_msgs/msg/Float64")
                 put(c_erru, t, f64(data=float(series.err_surge[i])), "std_msgs/msg/Float64")
                 put(c_hor, t, f64(data=float(series.horizon[i])), "std_msgs/msg/Float64")
+                if has_forces:
+                    put(c_forces, t,
+                        f64_array(layout=layout,
+                                  data=np.asarray(series.thruster_forces[i], dtype=np.float64)),
+                        "std_msgs/msg/Float64MultiArray")
+                if has_volts:
+                    put(c_volts, t, f64(data=float(series.battery_voltage[i])),
+                        "std_msgs/msg/Float64")
 
             # model_info at 1 Hz across the whole output span, so it is visible wherever
             # the user scrubs to in Foxglove.

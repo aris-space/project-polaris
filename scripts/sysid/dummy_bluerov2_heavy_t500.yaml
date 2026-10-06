@@ -1,0 +1,67 @@
+# ============================================================================
+# DUMMY MODEL WITH THE REAL SURGE THRUST - for testing the T500 PWM x voltage map end to end.
+#
+# Hydrodynamic coefficients: BlueROV2 Heavy, copied unchanged from dummy_bluerov2_heavy.yaml
+# (von Benzon et al. 2022) - NOT POLARIS. Thrust: the real Blue Robotics T500 table on the
+# surge channel, evaluated at the BMS battery voltage. Predictions are therefore not
+# meaningful; the file exists to exercise thruster_map + voltage reading in propagation.
+# ============================================================================
+
+model:
+  name: dummy_bluerov2_heavy_t500
+  version: 0.0.1
+  date: 2026-10-05
+  frame: base_link
+  description: BlueROV2 Heavy coefficients with the real T500 surge thrust map. Dummy, not POLARIS.
+  fitted_from: []
+  notes: "DUMMY — BlueROV2 Heavy coefficients + T500 thrust map, test fixture only."
+
+parameters:
+  rigid_body:
+    m:     {value: 13.5, unit: kg,      source: assumed, uncertainty: null}
+    I_xx:  {value: 0.26, unit: kg m^2,  source: assumed, uncertainty: null}
+    I_yy:  {value: 0.23, unit: kg m^2,  source: assumed, uncertainty: null}
+    I_zz:  {value: 0.37, unit: kg m^2,  source: assumed, uncertainty: null}
+
+  added_mass:
+    X_udot: {value: -6.36,  unit: kg,     source: assumed, uncertainty: null}
+    K_pdot: {value: -0.189, unit: kg m^2, source: assumed, uncertainty: null}
+    M_qdot: {value: -0.135, unit: kg m^2, source: assumed, uncertainty: null}
+    N_rdot: {value: -0.222, unit: kg m^2, source: assumed, uncertainty: null}
+
+  damping_linear:
+    X_u: {value: 13.7, unit: N s/m,     source: assumed, uncertainty: null}
+    K_p: {value: 0.0,  unit: N m s/rad, source: assumed, uncertainty: null}
+    M_q: {value: 0.8,  unit: N m s/rad, source: assumed, uncertainty: null}
+    N_r: {value: 0.0,  unit: N m s/rad, source: assumed, uncertainty: null}
+
+  damping_quadratic:
+    X_uu: {value: 141.0, unit: N s^2/m^2,     source: assumed, uncertainty: null}
+    K_pp: {value: 1.19,  unit: N m s^2/rad^2, source: assumed, uncertainty: null}
+    M_qq: {value: 0.47,  unit: N m s^2/rad^2, source: assumed, uncertainty: null}
+    N_rr: {value: 1.5,   unit: N m s^2/rad^2, source: assumed, uncertainty: null}
+
+  restoring:
+    # Derived, not tabulated: small-angle stiffness = B * BG with B = rho*g*volume = 131.6 N
+    # and BG = 0.01 m (CB 1 cm above CG).
+    K_phi:   {value: 1.316, unit: N m/rad, source: assumed, uncertainty: null}
+    M_theta: {value: 1.316, unit: N m/rad, source: assumed, uncertainty: null}
+
+thrust:
+  channel: 0
+  pwm_neutral: 1500
+  servo_delay_s: 0.0
+  sign: 1
+  maps:
+    0: thruster_curves/t500_force_vs_voltage.csv   # real T500 datasheet table
+  voltage_fallback_v: null
+  curve_file: null
+  source: T500 manufacturer datasheet (thrust); BlueROV2 Heavy literature (coefficients)
+
+dofs:
+  surge: modelled
+  sway: measured
+  heave: measured
+  roll: measured
+  pitch: measured
+  yaw: measured
