@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BUILD_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-docker compose up -d
+docker compose up development-container -d
 
 echo "Waiting for build to complete... (if nothing prints, old container might still be running)"
 while IFS= read -r line; do
@@ -13,6 +13,6 @@ while IFS= read -r line; do
 done < <(docker logs -f --since "$BUILD_START" jetson-container 2>&1)
 
 echo "Build complete — opening tmux session..."
-docker exec -it jetson-container tmux new-session
+docker exec -it development-container tmux new-session
 
 

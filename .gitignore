@@ -8,9 +8,13 @@ logs/
 
 # Local editor/runtime artifacts (keep common defaults)
 .DS_Store
+._*
+.AppleDouble
+.LSOverride
 __pycache__/
 *.pyc
 venv/
+venv*/
 env/
 .venv/
 .pytest_cache/
@@ -26,6 +30,13 @@ settings.json
 **/build/
 **/install/
 **/log/
+# Compiled objects, libraries and make dependency files
+# (e.g. xsens_mti_ros2_driver builds lib/xspublic in-tree)
+*.o
+*.a
+*.so
+*.d
+*.dpp
 /recordings/
 /measurements/
 # VS Code extension artifact
