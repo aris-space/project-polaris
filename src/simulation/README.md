@@ -154,7 +154,7 @@ ros2 run autonomy_bringup_pkg nav2_activate      # "Nav2 is active - safe to sen
 
 # 3. send a goal 2 m ahead, in the map frame
 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
-  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.0, y: 0.0}, orientation: {w: 1.0}}}}"
+  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}}}"
 ```
 
 - **Disarm:** `ros2 topic pub --once /pixhawk/arm_cmd std_msgs/msg/Bool "{data: false}"`.
