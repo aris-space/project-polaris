@@ -41,8 +41,49 @@ parameters:
   restoring:
     K_phi:   {value: null, unit: N m/rad, source: fitted, uncertainty: null}   # roll stiffness
     M_theta: {value: null, unit: N m/rad, source: fitted, uncertainty: null}   # pitch stiffness
+    # Equilibrium (trim) angles the restoring torque pulls back towards. Zero only if the
+    # vehicle floats exactly level; measure from a still, powered-down float.
+    phi_0:   {value: null, unit: rad, source: measured, uncertainty: null}     # roll trim
+    theta_0: {value: null, unit: rad, source: measured, uncertainty: null}     # pitch trim
 
-  thrust:
-    gain_fwd: {value: null, unit: N per command unit, source: fitted, uncertainty: null}
-    gain_rev: {value: null, unit: N per command unit, source: fitted, uncertainty: null}
-    deadband: {value: null, unit: command units,      source: fitted, uncertainty: null}
+# Actuation. Not fitted: the thruster curve comes from the manufacturer datasheet and the
+# channel/neutral/sign describe how servo_output_raw maps onto surge force.
+# curve_file is relative to this file; columns pwm_us, force_kgf. Still to be exported from
+# the manufacturer spreadsheet — propagation refuses to run while it is null.
+thrust:
+  channel: 0                  # index into /pixhawk/servo_output_raw; MOT_1 is the surge thruster
+  pwm_neutral: 1500
+  servo_delay_s: 0.0          # subtracted from servo log_time before pairing with the EKF
+  sign: 1                     # flip to -1 if PWM > neutral drives the vehicle backwards
+  curve_file: null
+  source: manufacturer datasheet
+
+  # Per-axis thruster allocation. `channel` is the index into servo_output_raw (MOT_n -> n-1).
+  # `lever_m` is the ABSOLUTE moment arm in metres, taken from scripts/custom_frame_helper.py
+  # (r_i x d_i about the CoM, before that script normalises each column), so
+  #     tau_axis = sum_i lever_m_i * F(pwm_i, voltage)
+  # comes out directly in N m. For the translational axes lever_m is the dimensionless
+  # direction cosine and the sum is in N.
+  #
+  # Channel mapping was resolved by matching the helper script's thruster numbering to the
+  # report's MOT rows by geometry: MOT_1=T1, MOT_2=T2, MOT_3=T4, MOT_4=T5, MOT_5=T6, MOT_6=T3.
+  allocation:
+    surge:                    # MOT_1 is the only thruster with forward authority
+      - {channel: 0, lever_m: 1.0}        # MOT_1, direction cosine (force, not torque)
+    pitch:                    # three vertical thrusters; sign convention pitch = -torque_y
+      - {channel: 2, lever_m: -0.5508}    # MOT_3 (helper T4, rear pair)
+      - {channel: 3, lever_m: -0.5508}    # MOT_4 (helper T5, rear pair)
+      - {channel: 4, lever_m:  0.6358}    # MOT_5 (helper T6, front)
+      - {channel: 0, lever_m: -0.0300}    # MOT_1: surge thruster sits 3 cm off the CoM in z,
+                                          # so it pitches the vehicle slightly. The report
+                                          # rounds this to 0; it is kept here because it makes
+                                          # surge and pitch weakly coupled through actuation.
+
+# Which DOFs the propagation integrates, and which it takes from the EKF.
+dofs:
+  surge: modelled
+  sway: measured
+  heave: measured
+  roll: measured
+  pitch: measured
+  yaw: measured
