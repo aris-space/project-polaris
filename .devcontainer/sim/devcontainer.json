@@ -13,8 +13,20 @@
         "--privileged",
         "-e",
         "ROS_DOMAIN_ID=38",
+        // Gazebo GUI (gzclient:=True). The host X server only admits clients with the
+        // host user's auth cookie. Falls back to /dev/null (headless) where XAUTHORITY is
+        // unset. The cookie changes on every desktop login: restart the container then.
         "--env=DISPLAY",
         "--volume=/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "--volume=${localEnv:XAUTHORITY:/dev/null}:/tmp/.Xauthority:ro",
+        "--env=XAUTHORITY=/tmp/.Xauthority",
+        // OpenGL on the NVIDIA GPU (see hostRequirements); without one Gazebo renders on the CPU.
+        "--env=NVIDIA_DRIVER_CAPABILITIES=all",
+        // No --ipc=host: the container keeps its own /dev/shm, emptied on every restart. Shared
+        // with the host, Fast DDS shared-memory ports left by killed processes pile up and can
+        // hang new participants (seen: `ros2 topic list` stuck in the ros2 daemon). Without
+        // shared IPC, Qt must not use the X11 MIT-SHM extension.
+        "--env=QT_X11_NO_MITSHM=1",
         "-e",
         "CLEAN_BUILD=0",
         "-e",
@@ -35,9 +47,17 @@
     ],
     // VS Code will run this once after the container is created
     "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
-    // You’re using root in the image
-    "forwardPorts": [8765],
-    "remoteUser": "root",
+    // Non-root user from Dockerfile.sim; VS Code remaps its UID/GID to yours
+    // (updateRemoteUserUID), so the mounted workspace never gets root-owned files.
+    "remoteUser": "polaris",
+    "updateRemoteUserUID": true,
+    // No "forwardPorts": with --network=host the container's ports already are the host's.
+    // Forwarding 8765 makes VS Code bind 127.0.0.1:8765 on the host first, and
+    // foxglove_bridge then aborts with "Address already in use".
+    // Adds --gpus all only where the host has an NVIDIA GPU and the container toolkit.
+    "hostRequirements": {
+        "gpu": "optional"
+    },
     "customizations": {
         "vscode": {
             "extensions": [

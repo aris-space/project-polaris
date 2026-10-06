@@ -453,14 +453,14 @@ class MavlinkBridgeReceiver(Node):
         self.port.mav.manual_control_send(
             self.port.target_system,
             int(surge),  # x  = surge
-            int(sway),   # y  = sway
+            int(sway),  # y  = sway
             int(heave),  # z  = heave (0-1000, 500 = neutral)
-            int(yaw),    # r  = yaw
-            0,           # buttons
-            0,           # buttons2
-            3,           # enabled_extensions = 0b11 → enable s and t fields
+            int(yaw),  # r  = yaw
+            0,  # buttons
+            0,  # buttons2
+            3,  # enabled_extensions = 0b11 → enable s and t fields
             int(pitch),  # s  = pitch  (MANUAL_CONTROL.s carries pitch in ArduSub)
-            int(roll),   # t  = roll   (MANUAL_CONTROL.t carries roll  in ArduSub)
+            int(roll),  # t  = roll   (MANUAL_CONTROL.t carries roll  in ArduSub)
         )
 
     def reboot_cb(self, msg):
@@ -886,7 +886,9 @@ class MavlinkBridgeReceiver(Node):
         # NavSatFix.altitude is above the WGS84 ellipsoid; MAVLink wants MSL.
         alt_mm = int(round((origin.altitude - self._geoid_sep_m) * 1e3))
 
-        time_usec = (origin.header.stamp.sec * 10**9 + origin.header.stamp.nanosec) // 1000
+        time_usec = (
+            origin.header.stamp.sec * 10**9 + origin.header.stamp.nanosec
+        ) // 1000
         self.port.mav.set_gps_global_origin_send(
             self.port.target_system,
             lat_e7,
@@ -934,15 +936,15 @@ class MavlinkBridgeReceiver(Node):
         # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
         # Deadband: thrusters can't produce sub-threshold commands, so zero them
         # out to avoid jitter / integrator wind-up in the ArduSub low-level loop.
-        LIN_DEADBAND = 0.01   # m/s
-        ANG_DEADBAND = 0.015   # rad/s
-        lx = float(msg.linear.x)  if abs(msg.linear.x)  >= LIN_DEADBAND else 0.0
-        lz = float(msg.linear.z)  if abs(msg.linear.z)  >= LIN_DEADBAND else 0.0
+        LIN_DEADBAND = 0.01  # m/s
+        ANG_DEADBAND = 0.015  # rad/s
+        lx = float(msg.linear.x) if abs(msg.linear.x) >= LIN_DEADBAND else 0.0
+        lz = float(msg.linear.z) if abs(msg.linear.z) >= LIN_DEADBAND else 0.0
         az = float(msg.angular.z) if abs(msg.angular.z) >= ANG_DEADBAND else 0.0
 
-        surge    = lx    # FLU forward -> negative vx
-        heave    = -lz   # FLU up      -> -down (FRD spec)
-        yaw_rate = -az   # FLU CCW     -> -CW   (FRD spec)
+        surge = lx  # FLU forward -> negative vx
+        heave = -lz  # FLU up      -> -down (FRD spec)
+        yaw_rate = -az  # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
@@ -968,9 +970,9 @@ class MavlinkBridgeReceiver(Node):
             0.0,
             0.0,
             0.0,  # Position (ignored)
-            surge, # surge
+            surge,  # surge
             0.0,  # vy
-            0.0,  # vz: hard-coded 0 on purpose — vertical control disabled (feature/a_no_vertical); `heave` above is unused
+            heave,  # vz: hard-coded 0 on purpose — vertical control disabled (feature/a_no_vertical); `heave` above is unused
             0.0,
             0.0,
             0.0,  # Acceleration (ignored)

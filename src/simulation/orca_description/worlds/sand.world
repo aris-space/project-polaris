@@ -2,6 +2,13 @@
 <sdf version="1.6">
   <world name="sand">
 
+    <!-- Blue-green ambient light and background, so the scene reads as underwater -->
+    <scene>
+      <ambient>0.3 0.4 0.5 1</ambient>
+      <background>0.1 0.3 0.45 1</background>
+      <shadows>true</shadows>
+    </scene>
+
     <!-- Base Gazebo plugins -->
     <plugin
         filename="gz-sim-physics-system"
@@ -51,6 +58,30 @@
      <uri>model://sand_heightmap</uri>
      <pose>0 7 -10 0 0 0</pose>
     </include>
+
+    <!-- Water surface at z = 0, where the Buoyancy plugin switches water -> air.
+         Visual only: no collision, so physics is unaffected. A thin box rather than
+         a <plane> so it is visible from above and from below. -->
+    <model name="water_surface">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="link">
+        <visual name="surface">
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <box>
+              <size>200 200 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0 0.35 0.55 1</ambient>
+            <diffuse>0 0.35 0.55 1</diffuse>
+            <specular>0.4 0.4 0.4 1</specular>
+          </material>
+          <transparency>0.8</transparency>
+        </visual>
+      </link>
+    </model>
 
     <include>
       <uri>model://orca4</uri>

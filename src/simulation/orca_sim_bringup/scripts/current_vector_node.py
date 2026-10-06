@@ -15,7 +15,7 @@ _OCEAN_CURRENT_QOS = QoSProfile(
 )
 import random
 
-# ros2 run orca_bringup current_vector_node.py
+# ros2 run orca_sim_bringup current_vector_node.py --ros-args -p direction:=con_x -p amplitude:=0.3
 
 
 class CurrentVector(Node):
