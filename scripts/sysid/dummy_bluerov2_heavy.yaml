@@ -1,0 +1,70 @@
+# ============================================================================
+# DUMMY MODEL — BlueROV2 Heavy, NOT POLARIS. For testing the propagation pipeline only.
+#
+# Source: von Benzon et al. 2022, "An Open-Source Benchmark Simulator: Control of a BlueROV2
+# Underwater Robot", J. Mar. Sci. Eng. 10, 1898, Table A1 (damping fitted from pool experiments,
+# inertia from CAD, added mass from Eidsvik 2015).
+#
+# Sign convention as in dynamics.py: added mass negative (Fossen), damping positive magnitudes.
+# The paper lists added mass as positive magnitudes; they are negated here.
+#
+# Paper values with no slot in this schema (sway/heave), kept for reference:
+#   Y_vdot 7.12 kg, Z_wdot 18.68 kg, Y_v 0, Z_w 33.0 N s/m, Y_v|v| 217.0, Z_w|w| 190.0 N s^2/m^2,
+#   volume 0.0134 m^3, rho 1000 kg/m^3, g 9.82 m/s^2, CG (0,0,0), CB (0,0,-0.01) m.
+# ============================================================================
+
+model:
+  name: dummy_bluerov2_heavy
+  version: 0.0.1
+  date: 2026-10-05
+  frame: base_link
+  description: BlueROV2 Heavy literature values (von Benzon et al. 2022). Dummy, not POLARIS.
+  fitted_from: []
+  notes: "DUMMY — BlueROV2 Heavy, test fixture only."
+
+parameters:
+  rigid_body:
+    m:     {value: 13.5, unit: kg,      source: assumed, uncertainty: null}
+    I_xx:  {value: 0.26, unit: kg m^2,  source: assumed, uncertainty: null}
+    I_yy:  {value: 0.23, unit: kg m^2,  source: assumed, uncertainty: null}
+    I_zz:  {value: 0.37, unit: kg m^2,  source: assumed, uncertainty: null}
+
+  added_mass:
+    X_udot: {value: -6.36,  unit: kg,     source: assumed, uncertainty: null}
+    K_pdot: {value: -0.189, unit: kg m^2, source: assumed, uncertainty: null}
+    M_qdot: {value: -0.135, unit: kg m^2, source: assumed, uncertainty: null}
+    N_rdot: {value: -0.222, unit: kg m^2, source: assumed, uncertainty: null}
+
+  damping_linear:
+    X_u: {value: 13.7, unit: N s/m,     source: assumed, uncertainty: null}
+    K_p: {value: 0.0,  unit: N m s/rad, source: assumed, uncertainty: null}
+    M_q: {value: 0.8,  unit: N m s/rad, source: assumed, uncertainty: null}
+    N_r: {value: 0.0,  unit: N m s/rad, source: assumed, uncertainty: null}
+
+  damping_quadratic:
+    X_uu: {value: 141.0, unit: N s^2/m^2,     source: assumed, uncertainty: null}
+    K_pp: {value: 1.19,  unit: N m s^2/rad^2, source: assumed, uncertainty: null}
+    M_qq: {value: 0.47,  unit: N m s^2/rad^2, source: assumed, uncertainty: null}
+    N_rr: {value: 1.5,   unit: N m s^2/rad^2, source: assumed, uncertainty: null}
+
+  restoring:
+    # Derived, not tabulated: small-angle stiffness = B * BG with B = rho*g*volume = 131.6 N
+    # and BG = 0.01 m (CB 1 cm above CG).
+    K_phi:   {value: 1.316, unit: N m/rad, source: assumed, uncertainty: null}
+    M_theta: {value: 1.316, unit: N m/rad, source: assumed, uncertainty: null}
+
+thrust:
+  channel: 0
+  pwm_neutral: 1500
+  servo_delay_s: 0.0
+  sign: 1
+  curve_file: thruster_curves/DUMMY_bluerov2_t200_poly.csv
+  source: DUMMY — T200 polynomial from von Benzon et al. 2022, eq. (18)
+
+dofs:
+  surge: modelled
+  sway: measured
+  heave: measured
+  roll: measured
+  pitch: measured
+  yaw: measured
