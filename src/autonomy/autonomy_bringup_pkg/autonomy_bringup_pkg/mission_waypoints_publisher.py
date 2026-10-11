@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Publish a WGS84 mission CSV's waypoints as GeoJSON for Foxglove visualization."""
+"""Publish mission waypoints as GeoJSON on /mission_waypoints for Foxglove's Map panel.
+
+The ``mission_csv`` param accepts either a WGS84 mission CSV (lat/lon columns -> all points)
+or a captured single-waypoint ``.json`` from ``capture_waypoint`` (lat/lon -> one point), so the
+same node/topic visualizes both the SBL line and a pool single-point test. Change it live with::
+
+    ros2 param set /mission_waypoints_publisher mission_csv /tmp/wp.json
+"""
 
 import csv
 import json
@@ -49,6 +56,14 @@ class MissionWaypointsPublisher(Node):
             "MissionWaypointsPublisher ready (topic=/mission_waypoints)"
         )
 
+    def _load_waypoint_json(self, json_path: str):
+        """Load a single captured waypoint (capture_waypoint output: has 'lat'/'lon')."""
+        with open(json_path, encoding='utf-8') as f:
+            d = json.load(f)
+        if 'lat' not in d or 'lon' not in d:
+            raise ValueError("JSON missing 'lat'/'lon' (not a capture_waypoint file)")
+        return [(0, float(d['lat']), float(d['lon']))]
+
     def _load_waypoints(self, csv_path: str):
         points = []
         with open(csv_path, newline='') as f:
@@ -89,9 +104,12 @@ class MissionWaypointsPublisher(Node):
             self.get_logger().error(f"Mission CSV not found: {csv_path}")
             return
         try:
-            points = self._load_waypoints(csv_path)
-        except (OSError, ValueError) as e:
-            self.get_logger().error(f"Failed to read mission CSV {csv_path}: {e}")
+            if csv_path.lower().endswith('.json'):
+                points = self._load_waypoint_json(csv_path)
+            else:
+                points = self._load_waypoints(csv_path)
+        except (OSError, ValueError, KeyError) as e:
+            self.get_logger().error(f"Failed to read mission waypoints {csv_path}: {e}")
             return
         if not points:
             self.get_logger().error(f"No valid waypoints in {csv_path}")
