@@ -22,6 +22,7 @@ import sys
 import time
 
 import rclpy
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix
 from nav_msgs.msg import Odometry
 
@@ -54,8 +55,11 @@ def main() -> None:
     def on_fix(m): state['fix'] = m
     def on_odom(m): state['odom'] = m
 
-    node.create_subscription(NavSatFix, args.fix_topic, on_fix, 10)
-    node.create_subscription(Odometry, args.odom_topic, on_odom, 10)
+    # BEST_EFFORT (sensor data) QoS: the GNSS driver publishes /fix BEST_EFFORT, so a default
+    # RELIABLE subscriber receives NOTHING ("incompatible qos: reliability"). A BEST_EFFORT
+    # subscriber is compatible with both BEST_EFFORT (/fix) and RELIABLE (EKF odom) publishers.
+    node.create_subscription(NavSatFix, args.fix_topic, on_fix, qos_profile_sensor_data)
+    node.create_subscription(Odometry, args.odom_topic, on_odom, qos_profile_sensor_data)
 
     def spin(dt):
         end = time.monotonic() + dt
