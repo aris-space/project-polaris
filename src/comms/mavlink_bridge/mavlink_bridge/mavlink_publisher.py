@@ -10,7 +10,7 @@ from rclpy.parameter import Parameter
 from pymavlink import mavutil
 from rcl_interfaces.srv import SetParameters as SetParametersSrv
 from datetime import datetime
-from std_msgs.msg import Int16MultiArray, Float32
+from std_msgs.msg import Int16MultiArray, Float32, String
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Quaternion, Vector3
@@ -110,6 +110,14 @@ class MavlinkBridgeSender(Node):
 
         self.heartbeat_publisher = self.create_publisher(
             State, "/pixhawk/heartbeat", 10
+        )
+
+        # ArduSub's own status/error messages (STATUSTEXT): the reason the FC gives for
+        # e.g. a rejected mode change (GUIDED), pre-arm failures, or EKF health. These
+        # were previously received and dropped, leaving operators blind to WHY an action
+        # failed. Republish them so they show up in logs/Foxglove.
+        self.statustext_publisher = self.create_publisher(
+            String, "/pixhawk/statustext", 10
         )
 
         # self.attitude_euler_publisher = self.create_publisher(
@@ -475,6 +483,29 @@ class MavlinkBridgeSender(Node):
                         self._param_value_queue.put_nowait(msg)
                     except queue.Full:
                         pass
+                elif mtype == "STATUSTEXT":
+                    self.handle_statustext(msg)
+
+    def handle_statustext(self, msg):
+        """Log + republish an ArduSub STATUSTEXT so its own reason for an action is
+        visible (e.g. a refused GUIDED mode change, a pre-arm or EKF message). Severity
+        follows MAV_SEVERITY (0-3 emergency..error, 4 warning, 5 notice, 6 info,
+        7 debug). Published as std_msgs/String on /pixhawk/statustext."""
+        text = msg.text
+        if isinstance(text, (bytes, bytearray)):
+            text = bytes(text).decode("utf-8", "replace")
+        text = str(text).strip()
+        if not text:
+            return
+        severity = int(getattr(msg, "severity", 6))
+        line = f"[FC sev{severity}] {text}"
+        if severity <= 3:
+            self.logger.error(line)
+        elif severity == 4:
+            self.logger.warning(line)
+        else:
+            self.logger.info(line)
+        self.statustext_publisher.publish(String(data=text))
 
     def message_counter(self, msg_type: str) -> bool:
         """Only process every Nth message per message type."""
