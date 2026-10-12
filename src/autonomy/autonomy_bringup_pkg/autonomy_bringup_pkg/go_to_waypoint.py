@@ -162,7 +162,8 @@ def main() -> None:
             publish_disarm_and_spin(executor, node, arm_pub, spins=20)
             sys.exit(1)
 
-        print(f'>>> Going to waypoint {args.index} <<<')
+        wp_label = f'waypoint {args.index}' if args.index is not None else 'captured waypoint'
+        print(f'>>> Going to {wp_label} <<<')
         result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
                            status_pub=status_pub, total_waypoints=1, poses=[target], hb_state=hb_state)
 
@@ -179,7 +180,11 @@ def main() -> None:
                 for _ in range(10):
                     executor.spin_once(timeout_sec=0.05)
                 print('>>> Arrived. HOLDING on station (armed + GUIDED). <<<')
-                print('    Re-run with --index {N} to go to the next point,'.format(N=args.index + 1))
+                if args.index is not None:
+                    # Line/index mission: hint the next station. (In --waypoint-file mode
+                    # args.index is None, so this hint is skipped — the earlier crash here
+                    # was `None + 1`.)
+                    print('    Re-run with --index {N} to go to the next point,'.format(N=args.index + 1))
                 print('    or switch to MANUAL on the joystick to take over / ascend.')
         elif result == SendGoalResult.FAILURE and rclpy.ok():
             print('>>> Goal failed; disarm + MANUAL <<<')
