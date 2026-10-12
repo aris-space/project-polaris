@@ -19,7 +19,7 @@ os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
 from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
-from mavros_msgs.msg import OverrideRCIn
+from mavros_msgs.msg import OverrideRCIn, State
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
 
@@ -216,6 +216,17 @@ class MavlinkBridgeReceiver(Node):
             String, "/pixhawk/mode_cmd", self.mode_selection_cb, Comms.SUB_QOS_DEPTH
         )
 
+        # Reconcile the tracked mode with the REAL flight-controller mode from the
+        # heartbeat. mode_selection_cb sets self.pixhawk_mode optimistically the moment
+        # it SENDS a mode command; if the FC then rejects it (e.g. GUIDED denied for
+        # lack of a position estimate), the bridge would stay wedged believing it is in
+        # a mode it never entered -- which silently blocks manual control
+        # (manual_control_cb only forwards in MANUAL/STABILIZE/ALT_HOLD). The heartbeat
+        # is authoritative, so adopt its mode whenever it differs.
+        self.heartbeat_mode_subscriber = self.create_subscription(
+            State, "/pixhawk/heartbeat", self.heartbeat_mode_cb, Comms.SUB_QOS_DEPTH
+        )
+
         self.arm_disarm_subscriber = self.create_subscription(
             Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, Comms.SUB_QOS_DEPTH
         )
@@ -401,6 +412,29 @@ class MavlinkBridgeReceiver(Node):
             self.pixhawk_mode = "GUIDED"
             self.get_logger().info("Sent GUIDED mode command")
             self._file_logger.info("Sent GUIDED mode command")
+
+    def heartbeat_mode_cb(self, msg):
+        """Keep self.pixhawk_mode in sync with the ACTUAL flight-controller mode.
+
+        self.pixhawk_mode is otherwise set only optimistically in mode_selection_cb
+        (when a mode command is SENT, not when the FC confirms it). If the FC rejects a
+        mode change -- e.g. GUIDED denied because ArduSub has no position estimate -- the
+        optimistic value would wedge the bridge in a mode it never entered and block
+        manual control until a mode_cmd is forced. The heartbeat (mavros_msgs/State, with
+        canonical ArduSub mode names) is the source of truth, so adopt it on any change.
+        Ignore UNKNOWN(n) so a transient unmapped mode never clobbers a good value.
+        """
+        fc_mode = msg.mode.strip() if msg.mode else ""
+        if not fc_mode or fc_mode.startswith("UNKNOWN("):
+            return
+        if fc_mode != self.pixhawk_mode:
+            self.get_logger().info(
+                f"Heartbeat mode sync: {self.pixhawk_mode} -> {fc_mode}"
+            )
+            self._file_logger.info(
+                f"Heartbeat mode sync: {self.pixhawk_mode} -> {fc_mode}"
+            )
+            self.pixhawk_mode = fc_mode
 
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
