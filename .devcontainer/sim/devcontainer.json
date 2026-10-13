@@ -8,7 +8,6 @@
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
     // Extra docker run args you normally pass
     "runArgs": [
-        "--pull=always",
         "--network=host",
         "--privileged",
         "-e",
