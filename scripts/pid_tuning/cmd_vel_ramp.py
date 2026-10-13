@@ -192,6 +192,7 @@ class RampPublisher(Node):
         self.tail_zeros = args.tail_zeros
         self.rate_hz = args.rate
         self._tail_count = 0
+        self.finished = False
         self.timer = self.create_timer(1.0 / args.rate, self._tick)
         desc = ", ".join(
             f"{ch['axis']}(target={ch['target']} ramp={ch['ramp']}s hold={ch['hold']}s)"
@@ -225,6 +226,7 @@ class RampPublisher(Node):
             else:
                 self.get_logger().info("done — profile complete, node keeping alive (Ctrl-C to stop)")
                 self.timer.cancel()
+                self.finished = True
 
 
 def parse_args():
@@ -239,6 +241,7 @@ def parse_args():
                    help="hold seconds per axis at peak; single value broadcasts to all axes")
     p.add_argument("--rate", type=float, default=20.0, help="publish rate Hz (matches bridge expectation)")
     p.add_argument("--topic", default="/pixhawk/cmd_vel")
+    p.add_argument("--exit-when-done", action="store_true", help="exit once the profile and tail zeros are sent")
     p.add_argument("--tail-zeros", type=int, default=10, help="explicit zero messages after profile (-1 to skip — lets watchdog handle stop)")
     args = p.parse_args()
 
@@ -276,7 +279,11 @@ def main():
     rclpy.init()
     node = RampPublisher(args)
     try:
-        rclpy.spin(node)
+        if args.exit_when_done:
+            while rclpy.ok() and not node.finished:
+                rclpy.spin_once(node, timeout_sec=0.1)
+        else:
+            rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
