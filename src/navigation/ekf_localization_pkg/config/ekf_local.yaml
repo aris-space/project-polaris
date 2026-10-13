@@ -60,7 +60,7 @@ ekf_local_node:
     imu0_config: [
       false, false, false,
       true,  true,  true,     # roll, pitch, yaw — fuse all (see above)
-      true, true, true,       # linear acceleration x, y, z
+      false, false, false,
       true,  true,  true,     # vroll, vpitch, vyaw
       false, false, false
     ]

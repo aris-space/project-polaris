@@ -116,7 +116,7 @@ ekf_global_node:
     imu0_config: [
       false, false, false,
       true,  true,  true,    # roll, pitch, yaw — fuse all
-      true, true, true,    # vx, vy, vz
+      false, false, false,
       true,  true,  true,    # vroll, vpitch, vyaw
       false, false, false
     ]
