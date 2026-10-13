@@ -1,14 +1,14 @@
 // .devcontainer/sim/devcontainer.json — Gazebo + ArduSub SITL (docs/SIM_MERGE_PLAN.md T2.3)
-// Build the image first: docker/build_sim.sh
+// Image: Dockerfile.sim in aris-space/project-polaris-docker (x86_64 only).
 {
     "name": "Polaris SIM",
-    // Local tag from docker/build_sim.sh; switch to the ghcr tag once someone publishes one.
-    "image": "polaris:sim",
+    "image": "ghcr.io/aris-space/project-polaris-docker:sim",
     // Where the workspace lives *inside* the container
     "workspaceFolder": "/ros2_ws",
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
     // Extra docker run args you normally pass
     "runArgs": [
+        "--pull=always",
         "--network=host",
         "--privileged",
         "-e",
@@ -34,6 +34,9 @@
         // Also baked into the image; repeated so the intent is visible here.
         "-e",
         "POLARIS_SIM=1",
+        // Keep DDS on loopback so colleagues' sims on the same network don't cross-talk.
+        "-e",
+        "ROS_LOCALHOST_ONLY=1",
         // ArduSub SITL: one MAVLink client per TCP port (SERIAL0 5760, SERIAL1 5762, SERIAL2 5763).
         "-e",
         "MAVLINK_PUBLISHER_URL=tcp:127.0.0.1:5760",

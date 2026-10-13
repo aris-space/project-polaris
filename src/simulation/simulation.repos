@@ -1,4 +1,5 @@
-# External simulation dependencies. Consumed ONLY by docker/Dockerfile.sim, which imports them
+# External simulation dependencies. Consumed ONLY by Dockerfile.sim (aris-space/project-polaris-docker,
+# which keeps a hand-synced copy of this file), which imports them
 # into /opt/sim_deps (outside the workspace) — never by setup_submodules.sh, never on the Jetson.
 repositories:
   bluerov2_gz:

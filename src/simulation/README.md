@@ -4,8 +4,8 @@ Gazebo Harmonic + ArduSub SITL (the Polaris fork) + the **real** autonomy stack.
 behaviour tree, `mavlink_bridge` and the Nav2 params are the same files the vehicle runs.
 The only thing the sim changes about them is `use_sim_time` and the MAVLink connection URLs.
 
-This is x86 / dev-machine only. It is built only in the `:sim` image (`POLARIS_SIM=1`) and never
-on the Jetson (`COLCON_IGNORE` is committed in this directory).
+Runs only in the `:sim` Docker image (`POLARIS_SIM=1`), never on the Jetson (`COLCON_IGNORE` is
+committed in this directory).
 
 > **No PSC, ATC or PID value may be transferred from this sim to the real vehicle.**
 > Thruster geometry, mass and inertia are Polaris values from CAD (`orca_description/scripts/generate_model.py`),
@@ -13,11 +13,9 @@ on the Jetson (`COLCON_IGNORE` is committed in this directory).
 > See `docs/SIM_MERGE_PLAN.md` Phase 4.
 
 - [What runs](#what-runs)
-- [1. Get the image](#1-get-the-image)
-- [2. Start the container](#2-start-the-container)
-- [3. Build the workspace](#3-build-the-workspace)
-- [4. Launch the sim](#4-launch-the-sim)
-- [5. Using the running sim](#5-using-the-running-sim)
+- [1. Get started](#1-get-started)
+- [2. Launch the sim](#2-launch-the-sim)
+- [3. Using the running sim](#3-using-the-running-sim)
 - [Ports](#ports)
 - [What is not simulated yet](#what-is-not-simulated-yet)
 - [Troubleshooting](#troubleshooting)
@@ -62,80 +60,78 @@ decisions and test results.
 
 ---
 
-## 1. Get the image
+## 1. Get started
 
-No published image exists yet, so build it locally:
+The image `ghcr.io/aris-space/project-polaris-docker:sim` (~8 GB, **x86_64 only**) contains Gazebo
+Harmonic, ArduSub SITL and the external sim dependencies. It is built from `Dockerfile.sim` in
+[aris-space/project-polaris-docker](https://github.com/aris-space/project-polaris-docker); see
+that repo to build or publish it. This repo is not copied into the image; it is mounted at
+`/ros2_ws`, so your edits never require a new image.
 
-```bash
-docker/build_sim.sh            # tags polaris:sim
-```
+**1. Open the container.** In VS Code: *Dev Containers: Reopen in Container → Polaris SIM*. It pulls
+the latest image every time it creates the container, then `entrypoint.sh` installs the workspace
+dependencies and builds the workspace.
 
-The first build takes **30–60 min** and produces a ~8 GB image, mostly ArduSub SITL and
-`ardupilot_gazebo`. Rebuilds are cached, and workspace edits never trigger one, because the
-workspace is mounted at runtime. For details and the multi-arch publish path, see `docker/README.md`.
-
-## 2. Start the container
-
-**VS Code:** *Dev Containers: Reopen in Container → Polaris SIM* (`.devcontainer/sim/devcontainer.json`).
-
-**Plain docker:**
+<details>
+<summary>Without VS Code (plain docker)</summary>
 
 ```bash
 docker run -it --rm --network=host --privileged \
   -e ROS_DOMAIN_ID=38 \
   -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
-  -v "$XAUTHORITY":/tmp/.Xauthority:ro -e XAUTHORITY=/tmp/.Xauthority \
-  --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e QT_X11_NO_MITSHM=1 \
-  -v "$PWD":/ros2_ws polaris:sim
+  -v "$XAUTHORITY":/tmp/.Xauthority:ro -e XAUTHORITY=/tmp/.Xauthority -e QT_X11_NO_MITSHM=1 \
+  --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -v "$PWD":/ros2_ws ghcr.io/aris-space/project-polaris-docker:sim \
+  bash -lc './entrypoint.sh bash'
 ```
 
-- **Runs as `polaris`, not root.** `docker/build_sim.sh` gives it your UID/GID, so files it writes to the
-  mounted workspace (`build/`, `install/`, `log/`, git) stay yours. It has password-less `sudo`.
-- **Gazebo GUI** needs the X auth cookie (`$XAUTHORITY`) as well as `DISPLAY` and the X socket;
-  without it: `unable to open display`. The cookie changes on every desktop login, so restart the
-  container after logging in again.
-- **`--gpus all`** needs an NVIDIA GPU and the NVIDIA container toolkit. Drop it (and
-  `NVIDIA_DRIVER_CAPABILITIES`) otherwise; Gazebo then renders on the CPU (`llvmpipe`), slowly.
-  The devcontainer adds it only where a GPU exists (`hostRequirements.gpu: optional`).
-- **Don't add `--ipc=host`.** It shares the host's `/dev/shm` with the container, and Fast DDS
-  shared-memory ports left there by killed processes can make new nodes hang (typically
-  `ros2 topic list` stuck in the ros2 daemon). Without it, `/dev/shm` is fresh on every restart.
+- Without an NVIDIA GPU and the NVIDIA container toolkit, drop `--gpus all` and
+  `NVIDIA_DRIVER_CAPABILITIES`. Gazebo then renders on the CPU, slowly.
+- The container user is `polaris` (UID 1000, password-less `sudo`). If your host UID is not 1000,
+  add `--user "$(id -u):$(id -g)"` so files written to the workspace stay yours. The devcontainer
+  does this for you.
+- Don't add `--ipc=host`. Stale Fast DDS shared-memory files in the host's `/dev/shm` can make new
+  nodes hang, e.g. `ros2 topic list` stuck in the ros2 daemon.
 
-> **Do not use `ROS_DOMAIN_ID=37`** (the vehicle's) on a network the vehicle is on. With
-> `--network=host`, the sim's `/pixhawk/cmd_vel`, `/pixhawk/arm_cmd` etc. would land in the
-> vehicle's ROS graph. For extra safety, add `-e ROS_LOCALHOST_ONLY=1`. The Foxglove bridge still
-> works from the same machine.
+</details>
 
-The MAVLink URLs (`MAVLINK_*_URL`) don't need to be set. `sim_launch.py` supplies the SITL
-defaults, and any values already in the environment take precedence.
-
-## 3. Build the workspace
-
-Inside the container, from `/ros2_ws`:
+**2. Rebuild after changes** inside the container, from `/ros2_ws`:
 
 ```bash
-colcon build --symlink-install --packages-skip xsens_mti_ros2_driver foxglove_bridge
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-- A plain `colcon build` includes `src/simulation/*`, because the image sets
-  `COLCON_DEFAULTS_FILE=/ros2_ws/docker/colcon_sim_defaults.yaml`. Add any new sim package there.
-- The two skipped packages don't build on x86. The xsens driver ships arm64-only libraries, and the
-  `foxglove_bridge` submodule needs a newer Humble. The sim uses the apt `foxglove_bridge` instead.
-  This is a pre-existing issue, unrelated to the sim.
-- With `--symlink-install`, edits to Python nodes, launch files and `cfg/sub.parm` apply on the next
-  launch without a rebuild. C++ (`orca_nav2`) and `package.xml` changes still need one.
+A plain `colcon build` includes the sim packages because the image points `COLCON_DEFAULTS_FILE` at
+[`colcon_sim_defaults.yaml`](colcon_sim_defaults.yaml). Add new sim packages there. It skips only
+`foxglove_bridge`: the submodule needs a newer Humble, so the sim uses the apt package. With
+`--symlink-install`, edits to Python nodes, launch files and `cfg/sub.parm` take effect on the next
+launch; C++ (`orca_nav2`) and `package.xml` changes need a rebuild.
 
-## 4. Launch the sim
+**Things to know:**
+
+- **The ROS graph stays on your machine.** The image sets `ROS_LOCALHOST_ONLY=1`, so with
+  `--network=host` the sim's `/pixhawk/cmd_vel`, `/pixhawk/arm_cmd` etc. never reach the vehicle or a
+  colleague's sim on the same network. Foxglove and MAVLink (QGC) still work from your machine. Set
+  `ROS_LOCALHOST_ONLY=0` only if you really need DDS from another machine, and then never use
+  `ROS_DOMAIN_ID=37` (the vehicle's).
+- **Gazebo GUI** works on native Linux only. It needs `DISPLAY`, the X socket and the X auth cookie
+  (`$XAUTHORITY`); the cookie changes at every desktop login, so restart the container after logging
+  in again. On macOS/Windows, stay headless and use Foxglove.
+- **Apple Silicon** runs the x86_64 image under emulation. It works, but Gazebo is slow.
+- The MAVLink URLs (`MAVLINK_*_URL`) don't need to be set; `sim_launch.py` supplies the SITL defaults.
+
+## 2. Launch the sim
 
 ```bash
 ros2 launch orca_sim_bringup sim_launch.py                  # headless (default)
 ros2 launch orca_sim_bringup sim_launch.py gzclient:=True   # with Gazebo GUI (native Linux only)
+ros2 launch orca_sim_bringup sim_launch.py ground_truth:=False   # real EKF on the synthetic sensors
 ```
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `gzclient` | `False` | Gazebo GUI. Needs X11: `DISPLAY`, `/tmp/.X11-unix` and `$XAUTHORITY` mounted (section 2). |
+| `gzclient` | `False` | Gazebo GUI. Native Linux only; needs X11 (see section 1). |
 | `ardusub` | `True` | Start ArduSub SITL. |
 | `nav` | `True` | Start Nav2 via the vehicle's `autonomy.launch.py` (unconfigured, like on the boat). |
 | `ground_truth` | `True` | `True`: Gazebo pose stands in for the EKF. `False`: the real EKF on the synthetic sensors. |
@@ -149,12 +145,12 @@ Every launch wipes ArduSub's saved parameters (`-w`) and reloads them from `cfg/
 
 ---
 
-## 5. Using the running sim
+## 3. Using the running sim
 
 Open a second shell in the same container (VS Code: new terminal, or
 `docker exec -it <container> bash`), then `source /ros2_ws/install/setup.bash`.
 
-### 5.1 Drive it: a Nav2 goal, the same way as on the vehicle
+### 3.1 Drive it: a Nav2 goal, the same way as on the vehicle
 
 ```bash
 # 1. GUIDED + arm (via mavlink_bridge, exactly like the operator does on the boat)
@@ -165,9 +161,9 @@ ros2 topic echo --once /pixhawk/heartbeat        # armed: true, mode: GUIDED
 # 2. bring Nav2 up (it starts unconfigured)
 ros2 run autonomy_bringup_pkg nav2_activate      # "Nav2 is active - safe to send missions."
 
-# 3. send a goal 2 m ahead, in the map frame
+# 3. send a goal in the map frame: x 2 m, y 8 m, 5 m deep
 ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
-  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}}}"
+  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.0, y: 8.0, z: -5.0}, orientation: {w: 1.0}}}}"
 ```
 
 - **Disarm:** `ros2 topic pub --once /pixhawk/arm_cmd std_msgs/msg/Bool "{data: false}"`.
@@ -178,10 +174,11 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   `gnss_datum_watchdog` (part of the real EKF stack) publishes. In that mode the synthetic GNSS
   guarantees an RTK fix at startup, so the datum locks about 30 s after launch, once the selector's
   IMU heading gate opens.
-- **No vertical motion under autonomy.** `vz` is hard-coded to 0 in the bridge (intentional,
-  `docs/SIM_MERGE_PLAN.md` Appendix C.3).
+- **Depth is controlled.** The bridge forwards `cmd_vel.linear.z` as heave, so a goal's `z` (map
+  frame, negative = below the surface) is reached within the goal checker's `z_goal_tolerance`
+  (0.4 m). Use `z: 0.0` to stay at the surface.
 
-### 5.2 Drive it: raw velocity commands (bypassing Nav2)
+### 3.2 Drive it: raw velocity commands (bypassing Nav2)
 
 `ros2_receiver` turns `/pixhawk/cmd_vel` (`geometry_msgs/Twist`, body frame) into GUIDED
 velocity setpoints. It needs GUIDED + armed, and it sends zero if no message arrives for 0.8 s,
@@ -195,7 +192,7 @@ ros2 topic pub -r 10 /pixhawk/cmd_vel geometry_msgs/msg/Twist "{angular: {z: 0.2
 Don't run this while Nav2 is driving: both publish on `/pixhawk/cmd_vel`. For ramped
 tests, there is `scripts/cmd_vel_ramp.py` at the repo root.
 
-### 5.3 Talk to ArduSub directly (MAVProxy, QGroundControl, pymavlink)
+### 3.3 Talk to ArduSub directly (MAVProxy, QGroundControl, pymavlink)
 
 The bridge holds all three SITL TCP ports. The free link for you is **SERIAL5, which sends
 MAVLink to UDP 14550**, the port every GCS listens on by default.
@@ -221,9 +218,9 @@ mavproxy.py --master=udpin:0.0.0.0:14550
 - **SITL files:** `eeprom.bin` and dataflash logs (`logs/*.BIN`) are written to `~/.ros/ardusub_sitl/`
   in the container, which is not in the workspace. Copy them out if you want to keep a log.
 - Arming or changing mode from the GCS works, but it bypasses what the vehicle operator does.
-  Prefer the ROS topics in 5.1 when testing autonomy.
+  Prefer the ROS topics in 3.1 when testing autonomy.
 
-### 5.4 ROS topics worth watching
+### 3.4 ROS topics worth watching
 
 | Topic | Type | What |
 |---|---|---|
@@ -237,7 +234,7 @@ mavproxy.py --master=udpin:0.0.0.0:14550
 | `/odometry/filtered/local` | `nav_msgs/Odometry` | what Nav2 and ArduSub use as the vehicle pose (= `/odom` while `ground_truth:=True`) |
 | `/tf`, `/tf_static` | | `map → odom → base_link` |
 | `/clock` | `rosgraph_msgs/Clock` | sim time; every node runs with `use_sim_time: True` |
-| `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it, see [5.7](#57-ocean-current)) |
+| `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it, see [3.7](#37-ocean-current)) |
 | `/imu/data`, `/sensors/dvl/velocity`, `/fix`, `/waterlinked_ugps/navsatfix`, `/gps/selected` | | synthetic sensors and the vehicle's selector (see `orca_sim_sensors/README.md`) |
 | `/sim/ekf_error/{local,global}/horizontal` | `std_msgs/Float64` | EKF error against ground truth (`ground_truth:=False`) |
 
@@ -251,7 +248,7 @@ ros2 run tf2_tools view_frames                                # writes frames.pd
 ros2 bag record -o sim_run /odom /odometry/filtered/local /pixhawk/cmd_vel /pixhawk/servo_output_raw /tf
 ```
 
-### 5.5 Gazebo side
+### 3.5 Gazebo side
 
 ```bash
 gz topic -l                                                       # all gz topics
@@ -260,15 +257,14 @@ gz topic -e -t /model/orca4/pose
 ```
 
 Thrusters are `thruster1..6`, matching `MOT_1..MOT_6` (see `orca_description/scripts/generate_model.py`).
-For the GUI, relaunch with `gzclient:=True`. It needs native Linux with X11; on macOS/Windows,
-stay headless and use Foxglove.
+For the GUI, relaunch with `gzclient:=True` (native Linux only, see section 1).
 
-### 5.6 Foxglove
+### 3.6 Foxglove
 
 Open Foxglove → *Open connection* → `ws://localhost:8765`. The bridge runs inside the sim and
 uses sim time. Add a 3D panel with the `map` fixed frame to see TF and the Nav2 path.
 
-### 5.7 Ocean current
+### 3.7 Ocean current
 
 ```
 you / current_vector_node.py ─ROS /ocean_current─▶ ros_gz_bridge ─gz /ocean_current─▶ Hydrodynamics plugin (orca4)
@@ -352,14 +348,14 @@ SITL serves **one client per TCP port**. If you point a GCS at 5760/5762/5763, y
   else holds 5760/5762/5763: `ss -ltnp | grep 576`.
 - **Everything seems frozen / timestamps are 0.** Nothing is publishing `/clock`. Gazebo didn't start,
   or ros_gz_bridge died. Check `ros2 topic hz /clock`.
-- **Two sims on one machine.** With `--network=host`, they share ports and the ROS domain. Run one
-  sim at a time, or give the second container its own network (drop `--network=host`) and its own
-  `ROS_DOMAIN_ID`.
+- **Two sims on one machine.** With `--network=host`, they share ports and, even with
+  `ROS_LOCALHOST_ONLY=1`, the ROS graph. Run one sim at a time, or give the second container its own
+  network (drop `--network=host`) and its own `ROS_DOMAIN_ID`.
 - **Wrong vehicle behaviour after bumping ArduSub.** Only the `polaris-pressure-filter` /
   `polaris-custom-frame` branches have the Polaris mixer. `master` flies a 3-thruster SIMPLEROV.
   Quick check: a pure surge command should move only servo 1 in `/pixhawk/servo_output_raw`.
 - **`POLARIS_USE_SIM_TIME=1 outside the simulation image`.** You launched `autonomy.launch.py`
-  with sim time outside `polaris:sim`. This is intentional: sim time on hardware freezes every node.
+  with sim time outside the `:sim` image. This is intentional: sim time on hardware freezes every node.
 
 ## Layout
 
@@ -368,7 +364,8 @@ SITL serves **one client per TCP port**. If you point a GCS at 5760/5762/5763, y
 | `orca_description/` | Gazebo model (`models/orca4`, generated from `model.sdf.in` by `scripts/generate_model.py`) and `worlds/sand.world` |
 | `orca_sim_bringup/` | `launch/sim_launch.py`, `cfg/sub.parm` (ArduSub SITL params), `odom_to_tf.py`, `current_vector_node.py` |
 | `orca_sim_sensors/` | synthetic DVL, IMU, GNSS, SBL + `ekf_truth_error`; see its `README.md` and `STATUS.md` |
-| `simulation.repos` | external sim deps baked into the image (`bluerov2_gz`, `ros2_shared`, `ardupilot_gazebo`) |
+| `simulation.repos` | external sim deps baked into the image (`bluerov2_gz`, `ros2_shared`, `ardupilot_gazebo`); project-polaris-docker keeps a copy, so change both |
+| `colcon_sim_defaults.yaml` | makes a plain `colcon build` in the `:sim` image include the sim packages |
 
 `model.sdf` is generated. Edit `model.sdf.in` / `generate_model.py`, then run
 `python3 scripts/generate_model.py models/orca4/model.sdf.in models/orca4/model.sdf 0`.
