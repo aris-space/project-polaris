@@ -107,6 +107,7 @@ class MavlinkBridgeReceiver(Node):
         self._pid_fetch_result_queue: queue.Queue = queue.Queue(maxsize=1)
 
         self._odom_reset_counter = 0
+        self._fc_guided_armed = False
         self._external_odom_last_send_ns = 0
 
         # Pixhawk GPS_GLOBAL_ORIGIN. gnss_datum_watchdog is the only node that
@@ -427,6 +428,13 @@ class MavlinkBridgeReceiver(Node):
         fc_mode = msg.mode.strip() if msg.mode else ""
         if not fc_mode or fc_mode.startswith("UNKNOWN("):
             return
+        guided_armed = fc_mode == "GUIDED" and bool(msg.armed)
+        if guided_armed and not self._fc_guided_armed and not self._cmd_vel_was_active:
+            # Manual switch to GUIDED (or arming in GUIDED): hold where we are, with the
+            # current heading, instead of ArduSub's stale heading target.
+            self._send_hold_here("entered armed GUIDED")
+            self.get_logger().info("Entered armed GUIDED: holding current position + heading")
+        self._fc_guided_armed = guided_armed
         if fc_mode != self.pixhawk_mode:
             self.get_logger().info(
                 f"Heartbeat mode sync: {self.pixhawk_mode} -> {fc_mode}"
@@ -1014,9 +1022,44 @@ class MavlinkBridgeReceiver(Node):
         self._cmd_vel_last_msg_t = self.get_clock().now().nanoseconds * 1e-9
         self._cmd_vel_was_active = True
 
+    def _send_hold_here(self, reason: str) -> None:
+        """Hold the CURRENT position and heading in GUIDED.
+
+        Zero position offset in MAV_FRAME_BODY_OFFSET_NED = current position. Yaw is NOT
+        ignored: yaw 0 in BODY_OFFSET_NED is a relative yaw, so ArduSub sets its
+        yaw_look_at_heading to the current heading (guided_set_yaw_state, relative_angle).
+        With YAW_IGNORE (old behaviour) ArduSub's GUIDED position hold used a stale
+        yaw_look_at_heading that our stack never sets (we only command yaw rate): in the
+        2026-10-14 pool holds every hold turned to the same fixed heading (-18.7 deg ENU)
+        regardless of the heading it entered with.
+        """
+        m = mavutil.mavlink
+        type_mask = (
+            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+        )
+        self.port.mav.set_position_target_local_ned_send(
+            0,
+            self.port.target_system,
+            self.port.target_component,
+            m.MAV_FRAME_BODY_OFFSET_NED,
+            type_mask,
+            0.0, 0.0, 0.0,   # position offset (hold here)
+            0.0, 0.0, 0.0,   # velocity (ignored)
+            0.0, 0.0, 0.0,   # acceleration (ignored)
+            0.0,             # yaw: 0 relative = keep current heading
+            0.0,             # yaw rate (ignored)
+        )
+        self._file_logger.info(f"GUIDED hold-here setpoint sent ({reason})")
+
     def _cmd_vel_watchdog_cb(self):
         """If no /pixhawk/cmd_vel arrives within _CMD_VEL_TIMEOUT_S, send one
-        zero-velocity setpoint and disarm. Re-arms automatically when cmd_vel
+        hold-here setpoint (current position + heading). Re-arms automatically when cmd_vel
         resumes. Bypasses ArduSub's ~3 s GUID_TIMEOUT so the sub stops within
         ~0.4 s of the upstream publisher going silent (Ctrl+C, controller
         crash, mode change, mission completion)."""
@@ -1028,37 +1071,9 @@ class MavlinkBridgeReceiver(Node):
         now = self.get_clock().now().nanoseconds * 1e-9
         if now - self._cmd_vel_last_msg_t < self._CMD_VEL_TIMEOUT_S:
             return
-        m = mavutil.mavlink
-        type_mask = (
-            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
-        )
-        self.port.mav.set_position_target_local_ned_send(
-            0,
-            self.port.target_system,
-            self.port.target_component,
-            m.MAV_FRAME_BODY_OFFSET_NED,
-            type_mask,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        )
+        self._send_hold_here("cmd_vel timeout")
         self._cmd_vel_was_active = False
-        self.get_logger().info("cmd_vel watchdog: timeout, sent zero-velocity setpoint")
+        self.get_logger().info("cmd_vel watchdog: timeout, sent hold-here setpoint")
 
     def _gcs_heartbeat_cb(self):
         """Send 1 Hz GCS heartbeat. ArduSub FS_GCS_ENABLE failsafes if these stop arriving."""
