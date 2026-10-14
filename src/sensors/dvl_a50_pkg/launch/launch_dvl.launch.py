@@ -149,7 +149,11 @@ def _launch_setup(context, *args, **kwargs):
         namespace="sensors",
         parameters=[
             {
-                "twist_linear_covariance_model": "speed_dependent",
+                # Use the DVL's own FOM-based covariance (floored at stationary), and
+                # reject solutions with < min_good_beams (no redundancy -> undetectable
+                # outliers, e.g. the 3-beam 27 m/s lake glitch).
+                "twist_linear_covariance_model": "reported_fom",
+                "min_good_beams": 4,
                 "dvl_variant": "performance",
                 "speed_sigma_scale": 0.0055,  # between performance (0.001) and standard (0.0101)
                 "no_lock_variance": 1.0e6,

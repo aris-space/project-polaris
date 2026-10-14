@@ -83,6 +83,13 @@ ekf_local_node:
     odom0_nodelay: false
     odom0_differential: false
     odom0_relative: false
+    # Mahalanobis gate on the DVL velocity update: reject an update whose innovation
+    # vs the IMU-predicted velocity is implausibly large for its covariance. Independent
+    # backstop to the node-side beam-count/FOM gating — catches any outlier that slips
+    # through (e.g. a 27 m/s 3-beam glitch gives a huge Mahalanobis distance). Value is a
+    # Mahalanobis distance (not squared); 3-DOF chi2_0.99 ~= 11.3 -> sqrt ~= 3.4. Start
+    # conservative at 8.0 so healthy fast runs are never rejected; tighten via NIS.
+    odom0_twist_rejection_threshold: 8.0
 
     # Thruster-model DVL fallback: body-frame velocity estimated from surge PWM.
     # Published by thruster_velocity_estimator ONLY when DVL has been absent for
