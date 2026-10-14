@@ -17,6 +17,8 @@ Reuses the validated single-waypoint path from wgs84_mission_starter (FollowWayp
 Usage:
   ros2 run autonomy_bringup_pkg go_to_waypoint --index 1
   ros2 run autonomy_bringup_pkg go_to_waypoint --index 3 --no-hold      # disarm+MANUAL on arrival (old behaviour)
+  ros2 run autonomy_bringup_pkg go_to_waypoint --waypoint-file /tmp/wp.json   # target z := current depth
+  ros2 run autonomy_bringup_pkg go_to_waypoint --waypoint-file /tmp/wp.json --keep-target-z
   ros2 run autonomy_bringup_pkg go_to_waypoint --index 1 --origin 47.3287,8.5727,453 --file /path/line.csv
 """
 
@@ -27,9 +29,11 @@ import time
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Odometry
 from nav2_msgs.action import FollowWaypoints
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.signals import SignalHandlerOptions
 from mavros_msgs.msg import State as PixhawkHeartbeat
 from std_msgs.msg import Bool, String
@@ -79,6 +83,14 @@ def main() -> None:
                              'capture_waypoint. Bypasses the mission loader (pool/field tests).')
     parser.add_argument('--no-hold', action='store_true',
                         help='Disarm + MANUAL on arrival (default: stay armed+GUIDED and hold).')
+    parser.add_argument('--keep-target-z', action='store_true',
+                        help='Use the waypoint z as stored. Default: replace it with the CURRENT '
+                             'depth when the run starts. Heave is never sent to the Pixhawk '
+                             '(bridge vz=0, depth is held), but the controller ramps speed down on '
+                             'the 3D distance to the goal, so a surface-captured z on a submerged '
+                             'run kept it at ~0.1-0.2 m/s at the XY goal -> overshoot.')
+    parser.add_argument('--odom-topic', default='/odometry/filtered/global',
+                        help='Map-frame odometry used for the current depth (default: global EKF).')
     parser.add_argument('--origin', type=parse_origin, default=None,
                         help='lat,lon,alt_m manual override (default: consume latched /mission_waypoints_enu)')
     parser.add_argument('--file', type=str, default=None, help='Override CSV (requires --origin).')
@@ -115,6 +127,16 @@ def main() -> None:
         hb_state = PixhawkState()
         node.create_subscription(PixhawkHeartbeat, '/pixhawk/heartbeat',
                                  make_heartbeat_callback(hb_state), 10)
+
+        # Latest map-frame odometry, for replacing the target z with the current depth.
+        # BEST_EFFORT-compatible QoS (works with RELIABLE and BEST_EFFORT publishers).
+        odom_state = {'msg': None, 't': 0.0}
+
+        def _on_odom(m):
+            odom_state['msg'] = m
+            odom_state['t'] = time.monotonic()
+
+        node.create_subscription(Odometry, args.odom_topic, _on_odom, qos_profile_sensor_data)
 
         # Pick the single target pose: captured-file mode, or index into the loaded line.
         if args.waypoint_file is not None:
@@ -161,6 +183,26 @@ def main() -> None:
             publish_manual_and_spin(executor, node, mode_pub, spins=20)
             publish_disarm_and_spin(executor, node, arm_pub, spins=20)
             sys.exit(1)
+
+        if not args.keep_target_z:
+            # Fresh odometry (<1 s old), waiting up to 3 s for it.
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline and (
+                    odom_state['msg'] is None or time.monotonic() - odom_state['t'] > 1.0):
+                executor.spin_once(timeout_sec=0.05)
+            om = odom_state['msg']
+            if om is None or time.monotonic() - odom_state['t'] > 1.0:
+                print(f'WARNING: no fresh {args.odom_topic}; keeping target z={target.pose.position.z:.2f} m '
+                      '(speed near the goal may not ramp down if submerged).', file=sys.stderr)
+            elif om.header.frame_id and target.header.frame_id and om.header.frame_id != target.header.frame_id:
+                print(f'WARNING: {args.odom_topic} frame "{om.header.frame_id}" != target frame '
+                      f'"{target.header.frame_id}"; keeping target z.', file=sys.stderr)
+            else:
+                z_now = float(om.pose.pose.position.z)
+                print(f'Target z {target.pose.position.z:.2f} m -> current depth {z_now:.2f} m '
+                      '(horizontal-only approach; depth is held by the Pixhawk).')
+                target.pose.position.z = z_now
+                goal.poses = [target]
 
         wp_label = f'waypoint {args.index}' if args.index is not None else 'captured waypoint'
         print(f'>>> Going to {wp_label} <<<')
