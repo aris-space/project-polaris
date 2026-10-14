@@ -149,8 +149,9 @@ def _launch_setup(context, *args, **kwargs):
         namespace="sensors",
         parameters=[
             {
-                "twist_linear_covariance_model": "stationary_tep",
+                "twist_linear_covariance_model": "speed_dependent",
                 "dvl_variant": "performance",
+                "speed_sigma_scale": 0.0055,  # between performance (0.001) and standard (0.0101)
                 "no_lock_variance": 1.0e6,
                 "angular_covariance": 1000000.0,
                 "velocity_stale_timeout_sec": 0.5,
