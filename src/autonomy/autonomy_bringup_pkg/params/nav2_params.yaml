@@ -88,7 +88,9 @@ controller_server:
     # Goal checker parameters
     goal_checker:
       plugin: "orca_nav2/GoalChecker3D"
-      xy_goal_tolerance: 0.8
+      # Pool tuning: 0.8 m (lake value, report d_goal) declared "Reached" after the
+      # vehicle had moved only ~0.4 m toward a ~1 m-away pool goal.
+      xy_goal_tolerance: 0.3
       z_goal_tolerance: 20.0
 
     # Controller parameters
@@ -161,8 +163,11 @@ controller_server:
       regulated_linear_scaling_min_speed: 0.05
 
       # Approach velocity: ramp forward speed down over the last N metres to goal.
-      min_approach_linear_velocity: 0.0
-      approach_velocity_scaling_dist: 7.0
+      # v = max(x_vel * remaining/dist, min). Pool tuning: with 7.0 m every pool goal
+      # (<7 m away) crawled at ~0.05 m/s, below ArduSub's GUIDED thrust deadband, so
+      # the progress checker (0.5 m / 10 s) aborted every 10 s. Lake value was 7.0 / 0.0.
+      min_approach_linear_velocity: 0.1
+      approach_velocity_scaling_dist: 1.0
       K_descelerate: 1.0 #0.9 #0.35
 
     SharpTurn:
