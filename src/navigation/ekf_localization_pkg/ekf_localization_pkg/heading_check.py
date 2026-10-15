@@ -126,6 +126,14 @@ class HeadingCheck(Node):
         if not old:
             return
         start = old[-1]
+        # /odometry/gps_map only carries fixes that passed the datum watchdog's accuracy
+        # gate, so dives leave gaps. Only evaluate continuous good-GNSS windows: the start
+        # sample must be ~window_s old and no gap > 1.5 s inside the window.
+        if t - start[0] > window + 1.0:
+            return
+        win = [g[0] for g in self._gps if g[0] >= start[0]]
+        if any(b - a > 1.5 for a, b in zip(win, win[1:])):
+            return
         dx, dy = p.x - start[1], p.y - start[2]
         dist = math.hypot(dx, dy)
         if dist < float(self.get_parameter("min_distance_m").value):
