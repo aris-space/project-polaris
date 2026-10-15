@@ -1,3 +1,4 @@
+import json
 import queue
 import threading
 import rclpy
@@ -18,10 +19,10 @@ from config_pkg.constants import Logs, Comms, Ports
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
-from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
+from std_msgs.msg import Bool, Float32, Float32MultiArray, Float64, Int16MultiArray
 from mavros_msgs.msg import OverrideRCIn, State
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import NavSatFix
+from sensor_msgs.msg import Imu, NavSatFix
 
 #
 from geometry_msgs.msg import Twist, Vector3
@@ -278,6 +279,50 @@ class MavlinkBridgeReceiver(Node):
             self.odom_origin_cb,
             latched_qos,
         )
+        # ── External-nav gate (what may be sent to the Pixhawk as ODOMETRY) ──────────
+        # The Pixhawk's EKF3 aligns its yaw ONCE to the first external-nav yaw it gets
+        # and afterwards rejects samples that disagree by more than its gate. 2026-10-15:
+        # (1) the local EKF's very first message carried its initial yaw (+35.7 deg, before
+        #     fusing the IMU; settled to -60 deg 0.2 s later) -> Pixhawk latched it, "EKF
+        #     bad", no position, GUIDED refused for ~95 s;
+        # (2) forwarding before the heading calibration made the later calibration look
+        #     like a heading jump (same result).
+        # So ODOMETRY is forwarded only once the heading is calibrated AND the local EKF
+        # has settled (its yaw matches /imu/data_corrected within extnav_settle_tol_deg for
+        # extnav_settle_time_s). Settled EKF-vs-IMU yaw is <0.25 deg (p99) in all pool
+        # bags, so the tolerance only catches start-up transients. If it never settles,
+        # forwarding starts anyway after extnav_settle_timeout_s (with a warning).
+        self.declare_parameter("extnav_require_heading_calibration", True)
+        self.declare_parameter("extnav_settle_tol_deg", 2.0)
+        self.declare_parameter("extnav_settle_time_s", 1.0)
+        self.declare_parameter("extnav_settle_timeout_s", 10.0)
+        self.declare_parameter("extnav_yaw_mismatch_warn_deg", 10.0)
+        self._imu_corr_yaw = None          # (yaw ENU rad, monotonic t)
+        self._yaw_offset_deg = None        # latest /imu_yaw_correction/yaw_offset_deg
+        self._cal_ok_offset_deg = None     # offset applied by the last ok calibration
+        self._odom_last_rx = None          # monotonic t of the last local odom msg
+        self._odom_first_rx = None         # monotonic t of the current EKF run's first msg
+        self._settle_since = None
+        self._extnav_settled = False
+        self._extnav_forwarding = False
+        self._extnav_block_reason = "no odometry yet"
+        self._sent_yaw = None              # (yaw NED rad, monotonic t) last forwarded
+        self._yaw_mismatch_count = 0
+        self._yaw_mismatch_deg = None
+        self.create_subscription(
+            Imu, "/imu/data_corrected", self._imu_corr_cb, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            String, "/imu_yaw_correction/calibration_result", self._cal_result_cb, latched_qos
+        )
+        self.create_subscription(
+            Float64, "/imu_yaw_correction/yaw_offset_deg", self._yaw_offset_cb, latched_qos
+        )
+        self._extnav_status_pub = self.create_publisher(
+            String, "/mavlink_bridge/extnav_status", latched_qos
+        )
+        self.create_timer(1.0, self._extnav_status_cb)
+
         self.geoid_sep_subscriber = self.create_subscription(
             UBXNavHPPosLLH,
             "/ubx_nav_hp_pos_llh",
@@ -551,6 +596,123 @@ class MavlinkBridgeReceiver(Node):
                 )
                 self._file_logger.error(f"Reboot rejected: MAV_RESULT={ack.result}")
 
+    @staticmethod
+    def _yaw_of(q) -> float:
+        return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+    def _imu_corr_cb(self, msg: Imu) -> None:
+        self._imu_corr_yaw = (self._yaw_of(msg.orientation), time.monotonic())
+
+    def _yaw_offset_cb(self, msg: Float64) -> None:
+        self._yaw_offset_deg = float(msg.data)
+
+    def _cal_result_cb(self, msg: String) -> None:
+        try:
+            d = json.loads(msg.data)
+        except ValueError:
+            return
+        if d.get("status") in ("ok", "warn_turned") and d.get("offset_new_deg") is not None:
+            self._cal_ok_offset_deg = float(d["offset_new_deg"])
+
+    def _heading_calibrated(self) -> bool:
+        off = self._yaw_offset_deg
+        if off is None:
+            return False
+        if abs(off) > 1e-6:          # calibrated, or set by hand / at launch
+            return True
+        return self._cal_ok_offset_deg is not None and abs(self._cal_ok_offset_deg - off) < 1e-3
+
+    def _extnav_gate(self, msg) -> bool:
+        """True if this local-odometry message may be forwarded to the Pixhawk."""
+        now = time.monotonic()
+        if self._odom_last_rx is None or now - self._odom_last_rx > 2.0:
+            # First message, or the local EKF was restarted (gap > 2 s): re-check
+            # convergence and tell EKF3 that the external-nav frame was reset.
+            if self._odom_last_rx is not None:
+                self._odom_reset_counter = (self._odom_reset_counter + 1) % 256
+                self.get_logger().warn(
+                    "Local EKF restart detected (odometry gap > 2 s): external nav paused "
+                    f"until it settles; reset_counter={self._odom_reset_counter}"
+                )
+            self._odom_first_rx = now
+            self._settle_since = None
+            self._extnav_settled = False
+        self._odom_last_rx = now
+
+        if not self._extnav_settled:
+            imu = self._imu_corr_yaw
+            if imu is not None and now - imu[1] < 0.5:
+                diff = math.degrees(
+                    math.atan2(math.sin(self._yaw_of(msg.pose.pose.orientation) - imu[0]),
+                               math.cos(self._yaw_of(msg.pose.pose.orientation) - imu[0]))
+                )
+                if abs(diff) <= float(self.get_parameter("extnav_settle_tol_deg").value):
+                    if self._settle_since is None:
+                        self._settle_since = now
+                    if now - self._settle_since >= float(
+                            self.get_parameter("extnav_settle_time_s").value):
+                        self._extnav_settled = True
+                else:
+                    self._settle_since = None
+            if (not self._extnav_settled and now - self._odom_first_rx
+                    > float(self.get_parameter("extnav_settle_timeout_s").value)):
+                self._extnav_settled = True
+                self.get_logger().warn(
+                    "Local EKF yaw did not match /imu/data_corrected within tolerance — "
+                    "forwarding external nav anyway after the settle timeout."
+                )
+
+        reason = ""
+        if not self._extnav_settled:
+            reason = "local EKF not settled (yaw vs /imu/data_corrected)"
+        elif (bool(self.get_parameter("extnav_require_heading_calibration").value)
+              and not self._heading_calibrated()):
+            reason = "heading not calibrated (run calibrate_yaw_offset or set yaw_offset_deg)"
+        forward = reason == ""
+        if forward != self._extnav_forwarding:
+            if forward:
+                self.get_logger().info(
+                    "External nav -> Pixhawk: FORWARDING (heading calibrated, local EKF settled)"
+                )
+            else:
+                self.get_logger().warn(f"External nav -> Pixhawk: PAUSED — {reason}")
+            self._extnav_forwarding = forward
+        self._extnav_block_reason = reason
+        return forward
+
+    def _extnav_status_cb(self) -> None:
+        """1 Hz: publish gate state; warn if the Pixhawk's yaw disagrees with ours."""
+        now = time.monotonic()
+        fc, sent = self._fc_yaw, self._sent_yaw
+        self._yaw_mismatch_deg = None
+        if (self._extnav_forwarding and fc is not None and sent is not None
+                and now - fc[1] < 1.0 and now - sent[1] < 1.0):
+            d = math.degrees(math.atan2(math.sin(fc[0] - sent[0]), math.cos(fc[0] - sent[0])))
+            self._yaw_mismatch_deg = d
+            if abs(d) > float(self.get_parameter("extnav_yaw_mismatch_warn_deg").value):
+                self._yaw_mismatch_count += 1
+                if self._yaw_mismatch_count >= 3 and self._yaw_mismatch_count % 10 == 3:
+                    self.get_logger().warn(
+                        f"Pixhawk yaw differs from external nav by {d:+.1f} deg for "
+                        f"{self._yaw_mismatch_count} s — EKF3 latched an old heading and "
+                        "rejects ours (GUIDED may be refused: 'requires position'). "
+                        "Reboot the Pixhawk while DISARMED."
+                    )
+            else:
+                self._yaw_mismatch_count = 0
+        odom_age = None if self._odom_last_rx is None else now - self._odom_last_rx
+        self._extnav_status_pub.publish(String(data=json.dumps(dict(
+            forwarding=self._extnav_forwarding,
+            reason=self._extnav_block_reason,
+            heading_calibrated=self._heading_calibrated(),
+            ekf_settled=self._extnav_settled,
+            odom_age_s=None if odom_age is None else round(odom_age, 2),
+            pixhawk_yaw_minus_extnav_deg=(None if self._yaw_mismatch_deg is None
+                                          else round(self._yaw_mismatch_deg, 1)),
+            yaw_mismatch_s=self._yaw_mismatch_count,
+            reset_counter=self._odom_reset_counter,
+        ))))
+
     def ekf_odom_cb(self, msg):
         """
         Receives filtered odometry from /odometry/filtered/local (ENU/FLU, ROS convention)
@@ -563,6 +725,9 @@ class MavlinkBridgeReceiver(Node):
           Velocity:      body FLU→FRD  vx unchanged, vy=-vy, vz=-vz
           Angular rates: body FLU→FRD  roll unchanged, pitch and yaw negated
         """
+        if not self._extnav_gate(msg):
+            return
+
         # Limit send rate to avoid flooding the serial port.
         now_ns = self.get_clock().now().nanoseconds
         max_hz = (
@@ -600,6 +765,10 @@ class MavlinkBridgeReceiver(Node):
 
         # Step 2: q_ned_frd = q_tmp (0, 1, 0, 0)  [FLU→FRD: 180° around x]
         q = [-xt, wt, zt, -yt]
+        self._sent_yaw = (
+            math.atan2(2.0 * (q[0] * q[3] + q[1] * q[2]), 1.0 - 2.0 * (q[2] * q[2] + q[3] * q[3])),
+            time.monotonic(),
+        )
 
         """OLD VERSION"""
         # q = [wt, xt, yt, zt]
