@@ -34,6 +34,7 @@ setup(
             "navsatfix_marker = ekf_localization_pkg.navsatfix_marker:main",
             "imu_yaw_correction = ekf_localization_pkg.imu_yaw_correction:main",
             "heading_check = ekf_localization_pkg.heading_check:main",
+            "ekf_ready = ekf_localization_pkg.ekf_ready:main",
             "ekf_offline_diagnostic = ekf_localization_pkg.ekf_offline_diagnostic:main",
             "thruster_velocity_estimator = ekf_localization_pkg.thruster_velocity_estimator:main",
             "gps_odom_cov_floor = ekf_localization_pkg.gps_odom_cov_floor:main",
