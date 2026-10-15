@@ -128,6 +128,7 @@ class GnssDatumWatchdog(Node):
         self.declare_parameter("post_lock_replace_covariance", True)
         self.declare_parameter("pvt_topic", "/ubx_nav_pvt")
         self.declare_parameter("ubx_stamp_match_max_s", 0.05)
+        self.declare_parameter("ubx_pending_timeout_s", 0.3)
         self.declare_parameter("imu_topic", "/imu/data_corrected")
         self.declare_parameter("odom_topic", "/odometry/filtered/local")
         self.declare_parameter("navsat_params_file", "")
@@ -164,6 +165,9 @@ class GnssDatumWatchdog(Node):
         self._gate_reentry_n: int = int(self.get_parameter("post_lock_reentry_good_fixes").value)
         self._gate_replace_cov: bool = bool(self.get_parameter("post_lock_replace_covariance").value)
         self._ubx_match_max_s: float = float(self.get_parameter("ubx_stamp_match_max_s").value)
+        self._ubx_pending_timeout_s: float = float(
+            self.get_parameter("ubx_pending_timeout_s").value
+        )
         # Same-epoch UBX data keyed by header stamp (they arrive before the /fix of the
         # same epoch): (stamp_s, h_acc_m) and (stamp_s, gnss_fix_ok, carr_soln).
         self._hp_ring: deque = deque(maxlen=50)
@@ -172,6 +176,14 @@ class GnssDatumWatchdog(Node):
         self._gate_good_streak = 0
         self._n_gps_rejected_gate = 0
         self._gate_last_reason = ""
+        # Fixes waiting for their same-epoch HPPOSLLH. The /fix subscription is created
+        # before the HPPOSLLH one, and both messages of an epoch arrive within ~1 ms, so
+        # the single-threaded executor often runs the /fix callback first. Rejecting
+        # those as "no same-epoch h_acc" made the gate flap at the surface with RTK
+        # fixed (2026-10-15: only 25 of ~250 good fixes forwarded). Instead the fix
+        # waits here until its HPPOSLLH arrives (or expires after
+        # ubx_pending_timeout_s). (stamp_s, msg, dist_m)
+        self._pending: deque = deque(maxlen=20)
         self._imu_topic: str = self.get_parameter("imu_topic").value
         self._odom_topic: str = self.get_parameter("odom_topic").value
         self._navsat_params: str = self.get_parameter("navsat_params_file").value
@@ -378,7 +390,7 @@ class GnssDatumWatchdog(Node):
         """Same-epoch accuracy gate. Returns True if the fix may be forwarded."""
         stamp = self._stamp_s(msg.header)
         hp = self._match(self._hp_ring, stamp)
-        if hp is None:
+        if hp is None:  # caller only calls this once the HPPOSLLH is there
             self._gate_reject("no same-epoch HPPOSLLH h_acc")
             return False
         h_acc = hp[1]
@@ -415,6 +427,9 @@ class GnssDatumWatchdog(Node):
     def _on_hp_pos(self, msg: _UBXNavHPPosLLH) -> None:
         self._latest_h_acc_m = msg.h_acc * _HPPOSLLH_H_ACC_TO_M
         self._hp_ring.append((self._stamp_s(msg.header), self._latest_h_acc_m))
+        if self._launched and self._pending:
+            self._expire_pending(self._stamp_s(msg.header))
+            self._process_pending()
         if not self._launched:
             self._check_and_launch()
 
@@ -518,16 +533,45 @@ class GnssDatumWatchdog(Node):
                     "likely corrupt/mislabeled NavSatFix; not forwarded to navsat_transform",
                 )
                 return
-            if (self._gate_enabled and self._h_acc_sub is not None
-                    and not self._post_lock_gate(msg)):
-                return
-            self.get_logger().info(
-                f"[GPS valid] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
-                f"dist={dist:.0f} m from datum — forwarding to navsat_transform",
-                throttle_duration_sec=10.0,
-            )
+            if self._gate_enabled and self._h_acc_sub is not None:
+                stamp = self._stamp_s(msg.header)
+                if self._match(self._hp_ring, stamp) is None:
+                    # HPPOSLLH of this epoch not processed yet -> wait for it.
+                    self._pending.append((stamp, msg, dist))
+                    self._expire_pending(stamp)
+                    return
+                if not self._post_lock_gate(msg):
+                    return
+            self._publish_valid(msg, dist)
+            return
         self._n_gps_validated += 1
         self._validated_pub.publish(msg)
+
+    def _publish_valid(self, msg: NavSatFix, dist: float) -> None:
+        self.get_logger().info(
+            f"[GPS valid] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
+            f"dist={dist:.0f} m from datum — forwarding to navsat_transform",
+            throttle_duration_sec=10.0,
+        )
+        self._n_gps_validated += 1
+        self._validated_pub.publish(msg)
+
+    def _process_pending(self) -> None:
+        """Run the gate for pending fixes whose HPPOSLLH has now arrived."""
+        still = deque(maxlen=self._pending.maxlen)
+        for stamp, msg, dist in self._pending:
+            if self._match(self._hp_ring, stamp) is not None:
+                if self._post_lock_gate(msg):
+                    self._publish_valid(msg, dist)
+            else:
+                still.append((stamp, msg, dist))
+        self._pending = still
+
+    def _expire_pending(self, now_stamp: float) -> None:
+        """Pending fixes whose HPPOSLLH never came within the timeout count as rejected."""
+        while self._pending and now_stamp - self._pending[0][0] > self._ubx_pending_timeout_s:
+            self._pending.popleft()
+            self._gate_reject("no same-epoch HPPOSLLH h_acc within timeout")
 
     def _on_local_odom(self, msg: Odometry) -> None:
         self._latest_local_odom = msg
