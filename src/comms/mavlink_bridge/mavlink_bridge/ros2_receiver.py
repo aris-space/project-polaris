@@ -108,6 +108,9 @@ class MavlinkBridgeReceiver(Node):
 
         self._odom_reset_counter = 0
         self._fc_guided_armed = False
+        # Latest FC-measured yaw (NED, rad) from ATTITUDE / ATTITUDE_QUATERNION, for
+        # absolute-heading hold setpoints. (yaw_rad, time.monotonic()).
+        self._fc_yaw = None
         self._external_odom_last_send_ns = 0
 
         # Pixhawk GPS_GLOBAL_ORIGIN. gnss_datum_watchdog is the only node that
@@ -693,7 +696,15 @@ class MavlinkBridgeReceiver(Node):
                 if msg is None:
                     break
                 t = msg.get_type()
-                if t == "VFR_HUD":
+                if t == "ATTITUDE":
+                    self._fc_yaw = (float(msg.yaw), time.monotonic())
+                elif t == "ATTITUDE_QUATERNION":
+                    w, x, y, z = msg.q1, msg.q2, msg.q3, msg.q4
+                    self._fc_yaw = (
+                        math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)),
+                        time.monotonic(),
+                    )
+                elif t == "VFR_HUD":
                     self._vfrhud_alt = msg.alt
                     self._vfrhud_climb = msg.climb
                 elif t == "NAV_CONTROLLER_OUTPUT":
@@ -1023,15 +1034,21 @@ class MavlinkBridgeReceiver(Node):
         self._cmd_vel_was_active = True
 
     def _send_hold_here(self, reason: str) -> None:
-        """Hold the CURRENT position and heading in GUIDED.
+        """Hold the CURRENT position and the CURRENT measured heading in GUIDED.
 
-        Zero position offset in MAV_FRAME_BODY_OFFSET_NED = current position. Yaw is NOT
-        ignored: yaw 0 in BODY_OFFSET_NED is a relative yaw, so ArduSub sets its
-        yaw_look_at_heading to the current heading (guided_set_yaw_state, relative_angle).
-        With YAW_IGNORE (old behaviour) ArduSub's GUIDED position hold used a stale
-        yaw_look_at_heading that our stack never sets (we only command yaw rate): in the
-        2026-10-14 pool holds every hold turned to the same fixed heading (-18.7 deg ENU)
-        regardless of the heading it entered with.
+        Preferred: MAV_FRAME_LOCAL_OFFSET_NED with zero offset (= current position) and
+        an ABSOLUTE yaw = the FC's own measured yaw (ATTITUDE). ArduSub then sets
+        yaw_look_at_heading directly from it.
+
+        Why not a relative yaw 0 (BODY_OFFSET_NED, previous version): ArduSub adds a
+        relative yaw to its attitude TARGET (mode_auto.cpp set_auto_yaw_look_at_heading),
+        and in armed MANUAL the attitude controller never runs, so that target is still
+        the heading of the previous hold. GUIDED -> MANUAL -> GUIDED then turned back to
+        the old heading (2026-10-14: entered at 151 deg, turned to 123 deg).
+        And with YAW_IGNORE (original) the hold used a stale yaw_look_at_heading that our
+        stack never sets (every hold went to the same fixed heading).
+
+        Fallback when no fresh FC attitude (> 0.5 s old): the relative-yaw form.
         """
         m = mavutil.mavlink
         type_mask = (
@@ -1043,19 +1060,29 @@ class MavlinkBridgeReceiver(Node):
             | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
         )
+        fc_yaw = self._fc_yaw
+        if fc_yaw is not None and time.monotonic() - fc_yaw[1] < 0.5:
+            frame = m.MAV_FRAME_LOCAL_OFFSET_NED   # zero offset = here, yaw absolute
+            yaw = fc_yaw[0]
+            how = f"absolute yaw {math.degrees(yaw):+.1f} deg NED"
+        else:
+            frame = m.MAV_FRAME_BODY_OFFSET_NED    # yaw 0 relative (fallback)
+            yaw = 0.0
+            how = "relative yaw 0 (no fresh FC attitude)"
         self.port.mav.set_position_target_local_ned_send(
             0,
             self.port.target_system,
             self.port.target_component,
-            m.MAV_FRAME_BODY_OFFSET_NED,
+            frame,
             type_mask,
             0.0, 0.0, 0.0,   # position offset (hold here)
             0.0, 0.0, 0.0,   # velocity (ignored)
             0.0, 0.0, 0.0,   # acceleration (ignored)
-            0.0,             # yaw: 0 relative = keep current heading
+            yaw,
             0.0,             # yaw rate (ignored)
         )
-        self._file_logger.info(f"GUIDED hold-here setpoint sent ({reason})")
+        self.get_logger().info(f"GUIDED hold-here setpoint ({reason}): {how}")
+        self._file_logger.info(f"GUIDED hold-here setpoint sent ({reason}): {how}")
 
     def _cmd_vel_watchdog_cb(self):
         """If no /pixhawk/cmd_vel arrives within _CMD_VEL_TIMEOUT_S, send one
