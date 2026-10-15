@@ -83,7 +83,7 @@ controller_server:
     progress_checker:
       plugin: "orca_nav2/ProgressChecker3D"
       radius: 0.5
-      time_allowance: 10.0
+      time_allowance: 20.0  # pool: turning + slow surge ramp often needs >10 s to make 0.5 m (2026-10-15)
 
     # Goal checker parameters
     goal_checker:

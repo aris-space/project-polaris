@@ -28,7 +28,7 @@ import json
 import time
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Vector3
 from nav_msgs.msg import Odometry
 from nav2_msgs.action import FollowWaypoints
 from rclpy.action import ActionClient
@@ -83,6 +83,10 @@ def main() -> None:
                              'capture_waypoint. Bypasses the mission loader (pool/field tests).')
     parser.add_argument('--no-hold', action='store_true',
                         help='Disarm + MANUAL on arrival (default: stay armed+GUIDED and hold).')
+    parser.add_argument('--hold-here', action='store_true',
+                        help='On arrival hold where the goal checker declared success (old '
+                             'behaviour). Default: shift the hold onto the waypoint itself '
+                             '(arrival can be up to xy_goal_tolerance away).')
     parser.add_argument('--keep-target-z', action='store_true',
                         help='Use the waypoint z as stored. Default: replace it with the CURRENT '
                              'depth when the run starts. Heave is never sent to the Pixhawk '
@@ -123,6 +127,7 @@ def main() -> None:
         mode_pub = node.create_publisher(String, '/pixhawk/mode_cmd', 10)
         arm_pub = node.create_publisher(Bool, '/pixhawk/arm_cmd', 10)
         status_pub = node.create_publisher(String, '/mission_status', 10)
+        hold_offset_pub = node.create_publisher(Vector3, '/pixhawk/hold_offset_enu', 10)
 
         hb_state = PixhawkState()
         node.create_subscription(PixhawkHeartbeat, '/pixhawk/heartbeat',
@@ -221,6 +226,28 @@ def main() -> None:
                 # (depth via pressure, XY via DVL) once the controller stops publishing.
                 for _ in range(10):
                     executor.spin_once(timeout_sec=0.05)
+                if not args.hold_here:
+                    # Shift the hold from the arrival point onto the waypoint: the goal
+                    # checker succeeds up to xy_goal_tolerance away and the bridge's
+                    # hold-here (sent ~0.8 s after the last cmd_vel) keeps that point.
+                    # Offset = goal - current map pose (true-ENU map axes; the bridge sends
+                    # it as LOCAL_OFFSET_NED, i.e. relative to the current position).
+                    deadline = time.monotonic() + 2.0
+                    while time.monotonic() < deadline and (
+                            odom_state['msg'] is None or time.monotonic() - odom_state['t'] > 1.0):
+                        executor.spin_once(timeout_sec=0.05)
+                    om = odom_state['msg']
+                    if om is None or time.monotonic() - odom_state['t'] > 1.0:
+                        print(f'WARNING: no fresh {args.odom_topic}; holding where it arrived.',
+                              file=sys.stderr)
+                    else:
+                        de = target.pose.position.x - om.pose.pose.position.x
+                        dn = target.pose.position.y - om.pose.pose.position.y
+                        hold_offset_pub.publish(Vector3(x=de, y=dn, z=0.0))
+                        for _ in range(5):
+                            executor.spin_once(timeout_sec=0.05)
+                        print(f'>>> Hold shifted onto the waypoint: offset E{de:+.2f} N{dn:+.2f} m '
+                              f'({(de * de + dn * dn) ** 0.5:.2f} m; bridge refuses > hold_offset_max_m)')
                 print('>>> Arrived. HOLDING on station (armed + GUIDED). <<<')
                 if args.index is not None:
                     # Line/index mission: hint the next station. (In --waypoint-file mode

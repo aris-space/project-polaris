@@ -24,7 +24,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
 
 #
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Vector3
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
 #
@@ -251,6 +251,16 @@ class MavlinkBridgeReceiver(Node):
         # no cmd_vel arrives within 0.3 s, send one zero-velocity setpoint so the
         # sub stops within ~0.8 s of the upstream publisher going silent.
         self._CMD_VEL_TIMEOUT_S = 0.8
+
+        # Hold at an offset from the current position (east, north in metres, ENU /
+        # map axes): go_to_waypoint publishes goal - current pose after arrival so the
+        # station hold sits on the waypoint itself instead of where the goal checker
+        # declared success (up to xy_goal_tolerance away). Only applied in GUIDED with
+        # no active cmd_vel; offsets above hold_offset_max_m are refused.
+        self.declare_parameter("hold_offset_max_m", 1.0)
+        self.hold_offset_subscriber = self.create_subscription(
+            Vector3, "/pixhawk/hold_offset_enu", self.hold_offset_cb, Comms.SUB_QOS_DEPTH
+        )
         self._cmd_vel_last_msg_t = 0.0
         self._cmd_vel_was_active = False
         self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
@@ -1033,7 +1043,27 @@ class MavlinkBridgeReceiver(Node):
         self._cmd_vel_last_msg_t = self.get_clock().now().nanoseconds * 1e-9
         self._cmd_vel_was_active = True
 
-    def _send_hold_here(self, reason: str) -> None:
+    def hold_offset_cb(self, msg: Vector3) -> None:
+        east, north = float(msg.x), float(msg.y)
+        dist = math.hypot(east, north)
+        max_m = float(self.get_parameter("hold_offset_max_m").value)
+        if self.pixhawk_mode != "GUIDED" or self._cmd_vel_was_active:
+            self.get_logger().warn(
+                f"hold_offset ignored (mode={self.pixhawk_mode}, cmd_vel active="
+                f"{self._cmd_vel_was_active})"
+            )
+            return
+        if not math.isfinite(dist) or dist > max_m:
+            self.get_logger().warn(
+                f"hold_offset {dist:.2f} m refused (> hold_offset_max_m={max_m:.2f} m); "
+                "keeping hold-here"
+            )
+            return
+        self._send_hold_here(
+            f"hold at offset E{east:+.2f} N{north:+.2f} m", offset_ned=(north, east)
+        )
+
+    def _send_hold_here(self, reason: str, offset_ned=(0.0, 0.0)) -> None:
         """Hold the CURRENT position and the CURRENT measured heading in GUIDED.
 
         Preferred: MAV_FRAME_LOCAL_OFFSET_NED with zero offset (= current position) and
@@ -1049,6 +1079,10 @@ class MavlinkBridgeReceiver(Node):
         stack never sets (every hold went to the same fixed heading).
 
         Fallback when no fresh FC attitude (> 0.5 s old): the relative-yaw form.
+
+        offset_ned (north, east) [m]: hold at current position + this offset instead
+        (LOCAL_OFFSET_NED adds it un-rotated to the current position). Without a fresh
+        FC attitude the yaw is then left to ArduSub (YAW_IGNORE).
         """
         m = mavutil.mavlink
         type_mask = (
@@ -1060,11 +1094,18 @@ class MavlinkBridgeReceiver(Node):
             | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
             | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
         )
+        off_n, off_e = float(offset_ned[0]), float(offset_ned[1])
+        has_offset = off_n != 0.0 or off_e != 0.0
         fc_yaw = self._fc_yaw
         if fc_yaw is not None and time.monotonic() - fc_yaw[1] < 0.5:
-            frame = m.MAV_FRAME_LOCAL_OFFSET_NED   # zero offset = here, yaw absolute
+            frame = m.MAV_FRAME_LOCAL_OFFSET_NED   # offset from here, yaw absolute
             yaw = fc_yaw[0]
             how = f"absolute yaw {math.degrees(yaw):+.1f} deg NED"
+        elif has_offset:
+            frame = m.MAV_FRAME_LOCAL_OFFSET_NED   # offset from here, yaw left to ArduSub
+            type_mask |= m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+            yaw = 0.0
+            how = "yaw ignored (no fresh FC attitude)"
         else:
             frame = m.MAV_FRAME_BODY_OFFSET_NED    # yaw 0 relative (fallback)
             yaw = 0.0
@@ -1075,7 +1116,7 @@ class MavlinkBridgeReceiver(Node):
             self.port.target_component,
             frame,
             type_mask,
-            0.0, 0.0, 0.0,   # position offset (hold here)
+            off_n, off_e, 0.0,   # position offset (N, E, D) from here
             0.0, 0.0, 0.0,   # velocity (ignored)
             0.0, 0.0, 0.0,   # acceleration (ignored)
             yaw,
