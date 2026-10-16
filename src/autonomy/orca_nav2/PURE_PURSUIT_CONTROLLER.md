@@ -232,7 +232,7 @@ See [pure_pursuit_controller_3d.cpp:787-800](src/pure_pursuit_controller_3d.cpp#
 | `z_accel` | 0.2 | Max vertical acceleration (m/s²) |
 | `yaw_vel` | 0.4 | Desired yaw rate (rad/s) — used elsewhere; rotate-to-heading uses its own cap |
 | `yaw_accel` | 0.4 | Max yaw command ramp rate (rad/s²) — *not* the braking capability |
-| `tick_rate` | 20.0 | Controller frequency (Hz), used to convert `accel` → `dv/tick` |
+| `tick_rate` | 20.0 | Expected controller frequency (Hz); only the dt of the first cycle after activation. `accel` → `dv/tick` uses the measured cycle time (clamped 0.01–0.2 s) |
 | `K_descelerate` | 0.2 | Soft `v = K · dist` cap inside `Limiter::decelerate` |
 
 ### Pure pursuit lookahead

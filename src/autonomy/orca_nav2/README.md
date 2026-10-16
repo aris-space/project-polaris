@@ -43,7 +43,7 @@ Parameters:
 | lookahead_dist | double | 1.0 | Lookahead distance for pure pursuit algorithm, m |
 | transform_tolerance | double | 1.0 | How stale a transform can be and still be used, s |
 | goal_tolerance | double | 0.1 | Stop moving when goal is closer than goal_tolerance. Should be less than the values in GoalChecker3D |
-| tick_rate | double | 20 | The BT tick rate, used to calculate dt |
+| tick_rate | double | 20 | Expected control rate; only the dt of the first cycle after activation. Acceleration limits use the measured time between cycles (clamped to 0.01–0.2 s) |
 
 ## ProgressChecker3D
 
