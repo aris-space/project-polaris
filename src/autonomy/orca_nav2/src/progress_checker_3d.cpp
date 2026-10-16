@@ -23,8 +23,10 @@
 #include <string>
 #include <cmath>
 
+#include "angles/angles.h"
 #include "nav2_core/progress_checker.hpp"
 #include "orca_nav2/param_macro.hpp"
+#include "tf2/utils.h"
 //#include "orca_shared/util.hpp" // DONE: Delete this dependency!
 
 namespace orca_nav2
@@ -34,8 +36,10 @@ class ProgressChecker3D : public nav2_core::ProgressChecker
 {
   rclcpp::Clock::SharedPtr clock_;
 
-  // Progress is defined as moving by more than radius_ w/in the time_allowance_
+  // Progress is defined as moving by more than radius_ or rotating by more than
+  // angle_threshold_ w/in the time_allowance_
   double radius_{};
+  double angle_threshold_{};
   double time_allowance_{};
   rclcpp::Duration time_allowance_d_{0, 0};
 
@@ -70,6 +74,7 @@ public:
 
     PARAMETER(parent, plugin_name, radius, 0.5) // TODO: Is this usefulwith this values?
     PARAMETER(parent, plugin_name, time_allowance, 10.0) // yes v_r >= 0.05 m/s
+    PARAMETER(parent, plugin_name, angle_threshold, 0.3) // rad, ~0.03 rad/s min yaw rate
 
     time_allowance_d_ = rclcpp::Duration::from_seconds(time_allowance_);
 
@@ -77,9 +82,16 @@ public:
   }
 
   bool check(geometry_msgs::msg::PoseStamped & pose) override
-  {   
+  {
+    // Rotating in place (rotate-to-heading) is progress too: without this a
+    // long in-place turn times out because XY barely changes.
+    const double dyaw = std::fabs(angles::shortest_angular_distance(
+      tf2::getYaw(baseline_.orientation), tf2::getYaw(pose.pose.orientation)));
 
-    if (!baseline_set_ || get_dist_L2_norm(pose.pose.position, baseline_.position) > radius_) {
+    if (!baseline_set_ ||
+      get_dist_L2_norm(pose.pose.position, baseline_.position) > radius_ ||
+      dyaw > angle_threshold_)
+    {
       set_baseline(pose.pose);
       return true;
     }
