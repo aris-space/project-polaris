@@ -102,9 +102,9 @@ controller_server:
       tick_rate: 20.0
 
       x_vel: 0.4
-      x_accel: 0.04 #0.2
-      z_vel: 0.25
-      z_accel: 0.2
+      x_accel: 0.2 #0.2
+      z_vel: 0.15
+      z_accel: 0.1
       yaw_vel: 0.3
       yaw_accel: 0.2
 
@@ -163,11 +163,8 @@ controller_server:
       regulated_linear_scaling_min_speed: 0.05
 
       # Approach velocity: ramp forward speed down over the last N metres to goal.
-      # v = max(x_vel * remaining/dist, min). Pool tuning: with 7.0 m every pool goal
-      # (<7 m away) crawled at ~0.05 m/s, below ArduSub's GUIDED thrust deadband, so
-      # the progress checker (0.5 m / 10 s) aborted every 10 s. Lake value was 7.0 / 0.0.
-      min_approach_linear_velocity: 0.1
-      approach_velocity_scaling_dist: 1.0
+      min_approach_linear_velocity: 0.15
+      approach_velocity_scaling_dist: 2.0
       K_descelerate: 1.0 #0.9 #0.35
 
     SharpTurn:
