@@ -1,15 +1,23 @@
 // .devcontainer/devcontainer.json
 {
-    "name": "Polaris ROS2",
-    // Use your full-dev image with Gazebo
+    "name": "Polaris ROS2 (thesis SBL laptop test)",
+    // x86 dev image (same as the standard dev container).
     "image": "ghcr.io/aris-space/project-polaris-docker:dev",
     // Where the workspace lives *inside* the container
     "workspaceFolder": "/ros2_ws",
     "workspaceMount": "source=${localWorkspaceFolder},target=/ros2_ws,type=bind",
-    // Extra docker run args you normally pass
+    // Extra docker run args you normally pass.
+    // NOTE (thesis): --network=host is intentionally REMOVED. On Docker Desktop / WSL2 (Windows
+    // laptop) host networking does not reach a physical-LAN device, so it would break HTTP access to
+    // the Waterlinked UGPS box at 192.168.194.94. Default bridge networking NATs outbound traffic
+    // through the Windows host, which DOES reach the box provided the laptop is on that subnet.
+    // Because there is no host networking, the driver + rosbag record run in this one container and
+    // discover each other over the container-local network (ROS_DOMAIN_ID still set for clarity).
     "runArgs": [
-        "--pull=always",
-        "--network=host",
+        // --pull=missing (not =always): use the locally cached image; only pull if absent. Avoids
+        // re-authenticating to the private ghcr.io image on every container start (laptop/offline).
+        // Run `docker login ghcr.io` + delete the local image if you deliberately want a fresh pull.
+        "--pull=missing",
         "--privileged",
         "-e",
         "ROS_DOMAIN_ID=37",
@@ -21,7 +29,10 @@
         "ROSDEP_INSTALL=1"
         // add --device=/dev/ttyUSB0 etc. here if needed
     ],
-    // VS Code will run this once after the container is created
+    // VS Code will run this once after the container is created. entrypoint.sh sources ROS, runs
+    // rosdep (which installs the driver's Python deps declared in package.xml), and builds the
+    // workspace. The driver's deps (requests/pymap3d/termcolor/numpy) are already baked into the
+    // :dev image, so no extra pip step is needed here.
     "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
     // You’re using root in the image
     "forwardPorts": [8765],

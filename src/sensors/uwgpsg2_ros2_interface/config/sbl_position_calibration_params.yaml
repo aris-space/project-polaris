@@ -1,0 +1,27 @@
+# Params for topside position calibration from vehicle GNSS RTK (thesis).
+# Node runs un-namespaced (name sbl_position_calibration); topics are absolute.
+sbl_position_calibration:
+  ros__parameters:
+    waterlinked_url: 'http://192.168.194.94'
+    source: 'gnss'                 # gnss | simulated
+
+    fix_topic: '/fix'                          # sensor_msgs/NavSatFix (vehicle RTK lat/lon, deg)
+    pvt_topic: '/ubx_nav_pvt'                  # UBXNavPVT (carr_soln, gnss_fix_ok)
+    hpposllh_topic: '/ubx_nav_hp_pos_llh'      # UBXNavHPPosLLH (h_acc, 0.1 mm units)
+
+    require_rtk_fixed: true        # true = carr_soln FIXED only; false = accept FLOAT+
+    h_acc_max_m: 0.50             # horizontal-accuracy gate (matches stack)
+    collect_seconds: 5.0
+    min_fixes: 10
+    max_spread_m: 0.5            # reject scattered fixes
+
+    sim_lat: 0.0                 # used only when source=simulated
+    sim_lon: 0.0
+
+    require_static_mode: true
+    config_endpoint: '/api/v1/config/generic'
+    lat_key: 'static_lat'
+    lon_key: 'static_lon'
+    verify_wait_s: 5.0
+    verify_tol_m: 1.0
+    http_timeout_s: 5.0
