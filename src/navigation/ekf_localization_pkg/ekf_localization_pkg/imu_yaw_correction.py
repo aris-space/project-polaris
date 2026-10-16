@@ -42,6 +42,7 @@ head_mot_min_samples        Min valid head_mot samples in the window before
 """
 from __future__ import annotations
 
+import json
 import math
 
 import rclpy
@@ -56,6 +57,7 @@ from rclpy.qos import (
     qos_profile_sensor_data,
 )
 from sensor_msgs.msg import Imu, NavSatFix
+from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
 
 try:
@@ -126,14 +128,33 @@ class ImuYawCorrection(Node):
         self.declare_parameter("gps_topic", "/fix")
         self.declare_parameter("ubx_pvt_topic", "/ubx_nav_pvt")
         self.declare_parameter("yaw_calibration_duration_s", 10.0)
-        self.declare_parameter("yaw_calibration_min_distance_m", 3.0)
-        self.declare_parameter("head_acc_max_deg", 5.0)
+        # 1.5 m / 15 deg: at pool speeds (~0.25 m/s) u-blox head_acc is ~11-12 deg, so the
+        # old 5 deg gate rejected every head_mot sample and the 3 m two-fix fallback was
+        # rarely reached -> calibration aborted silently (2026-10-14 pool tests). With an
+        # RTK fix (~1-2 cm), a 1.5 m baseline still gives a ~1 deg bearing.
+        self.declare_parameter("yaw_calibration_min_distance_m", 1.5)
+        self.declare_parameter("head_acc_max_deg", 15.0)
+        # Flag (not reject) a calibration whose IMU yaw spread over the window exceeds this:
+        # the vehicle turned while calibrating, so bearing and heading are not comparable.
+        self.declare_parameter("max_yaw_spread_deg", 10.0)
         self.declare_parameter("head_mot_min_samples", 5)
 
         input_topic: str = self.get_parameter("input_topic").value
         output_topic: str = self.get_parameter("output_topic").value
         gps_topic: str = self.get_parameter("gps_topic").value
         ubx_pvt_topic: str = self.get_parameter("ubx_pvt_topic").value
+
+        # Latched (TRANSIENT_LOCAL) status topics: the calibration outcome and the offset in
+        # use are visible live (ros2 topic echo) and recorded in every bag, instead of only in
+        # a log line 10 s after the service already answered "started".
+        _latched = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._result_pub = self.create_publisher(String, "~/calibration_result", _latched)
+        self._offset_pub = self.create_publisher(Float64, "~/yaw_offset_deg", _latched)
 
         # Yaw rotation cache (half-angle quaternion for orientation rotation about +Z).
         self._yaw_offset_rad: float = 0.0
@@ -151,6 +172,7 @@ class ImuYawCorrection(Node):
         self._cal_start_fix: NavSatFix | None = None
         self._cal_yaw_samples: list[float] = []
         self._cal_head_mot_samples: list[tuple[float, float]] = []  # (yaw_enu_rad, head_acc_deg)
+        self._cal_head_mot_rejected: list[float] = []  # head_acc_deg of gated-out samples
         self._cal_timer = None
 
         # I/O.
@@ -208,6 +230,11 @@ class ImuYawCorrection(Node):
         self._yaw_offset_rad = math.radians(yaw_offset_deg)
         self._q_yaw_w = math.cos(self._yaw_offset_rad / 2.0)
         self._q_yaw_z = math.sin(self._yaw_offset_rad / 2.0)
+        self._offset_pub.publish(Float64(data=float(yaw_offset_deg)))
+
+    def _publish_result(self, **fields) -> None:
+        fields["offset_applied_deg"] = round(math.degrees(self._yaw_offset_rad), 3)
+        self._result_pub.publish(String(data=json.dumps(fields)))
 
     def _on_param_change(self, params) -> SetParametersResult:
         for p in params:
@@ -272,6 +299,7 @@ class ImuYawCorrection(Node):
         head_acc_deg = _ubx_scaled_to_deg(head_acc_raw)
         max_acc_deg = float(self.get_parameter("head_acc_max_deg").value)
         if head_acc_deg <= 0.0 or head_acc_deg > max_acc_deg:
+            self._cal_head_mot_rejected.append(head_acc_deg)
             return
         yaw_enu = _head_mot_to_enu_rad(head_mot_raw)
         self._cal_head_mot_samples.append((yaw_enu, head_acc_deg))
@@ -299,12 +327,18 @@ class ImuYawCorrection(Node):
         self._cal_start_fix = self._latest_fix
         self._cal_yaw_samples = []
         self._cal_head_mot_samples = []
+        self._cal_head_mot_rejected = []
         self._cal_timer = self.create_timer(0.1, self._on_calibration_tick)
+        self._publish_result(status="running", duration_s=duration)
 
+        # success=True only means the window STARTED. The outcome (ok / warn / aborted)
+        # arrives after the window on ~/calibration_result.
         response.success = True
         response.message = (
-            f"Yaw calibration started — drive forward in a straight line for {duration:.0f} s. "
-            f"Heading source: {'head_mot (preferred)' if self._ubx_enabled else 'two-fix only (head_mot disabled)'}."
+            f"Yaw calibration STARTED (not finished) — drive forward in a straight line for "
+            f"{duration:.0f} s. Heading source: "
+            f"{'head_mot (preferred)' if self._ubx_enabled else 'two-fix only (head_mot disabled)'}. "
+            f"Result: ros2 topic echo /imu_yaw_correction/calibration_result"
         )
         self.get_logger().info(response.message)
         return response
@@ -329,30 +363,38 @@ class ImuYawCorrection(Node):
         self._cal_active = False
 
         if not self._cal_yaw_samples:
-            self.get_logger().warn("Yaw calibration aborted — no IMU yaw samples")
+            self._abort("no IMU yaw samples")
             return
+
+        # head_mot bookkeeping for the result (why samples were or were not used).
+        n_acc = len(self._cal_head_mot_samples)
+        n_rej = len(self._cal_head_mot_rejected)
+        rej_sorted = sorted(self._cal_head_mot_rejected)
+        rej_median = rej_sorted[n_rej // 2] if n_rej else None
+        hm_info = dict(
+            head_mot_accepted=n_acc,
+            head_mot_rejected=n_rej,
+            head_mot_rejected_median_acc_deg=None if rej_median is None else round(rej_median, 1),
+            head_acc_max_deg=float(self.get_parameter("head_acc_max_deg").value),
+        )
 
         # Pick heading source.
         min_head_mot = int(self.get_parameter("head_mot_min_samples").value)
         bearing_rad = None
         source_str = ""
-        if len(self._cal_head_mot_samples) >= min_head_mot:
+        distance = None
+        if n_acc >= min_head_mot:
             sx = sum(math.sin(b) for b, _ in self._cal_head_mot_samples)
             cx = sum(math.cos(b) for b, _ in self._cal_head_mot_samples)
             bearing_rad = math.atan2(sx, cx)
-            avg_acc = sum(a for _, a in self._cal_head_mot_samples) / len(self._cal_head_mot_samples)
-            source_str = (
-                f"head_mot (N={len(self._cal_head_mot_samples)}, "
-                f"avg head_acc={avg_acc:.2f}°)"
-            )
+            avg_acc = sum(a for _, a in self._cal_head_mot_samples) / n_acc
+            source_str = f"head_mot (N={n_acc}, avg head_acc={avg_acc:.2f}°)"
         else:
             # Two-fix fallback.
             if self._cal_start_fix is None or self._latest_fix is None:
-                self.get_logger().warn(
-                    f"Yaw calibration aborted — head_mot insufficient "
-                    f"({len(self._cal_head_mot_samples)} samples, need {min_head_mot}) "
-                    "and no fixes for fallback"
-                )
+                self._abort(
+                    f"head_mot insufficient ({n_acc} accepted, need {min_head_mot}) "
+                    "and no fixes for fallback", **hm_info)
                 return
             distance = _gnss_distance_m(
                 self._cal_start_fix.latitude, self._cal_start_fix.longitude,
@@ -360,11 +402,10 @@ class ImuYawCorrection(Node):
             )
             min_dist = float(self.get_parameter("yaw_calibration_min_distance_m").value)
             if distance < min_dist:
-                self.get_logger().warn(
-                    f"Yaw calibration aborted — head_mot insufficient "
-                    f"({len(self._cal_head_mot_samples)} samples) and fallback "
-                    f"two-fix only moved {distance:.2f} m (need ≥ {min_dist:.2f} m)"
-                )
+                self._abort(
+                    f"head_mot insufficient ({n_acc} accepted, need {min_head_mot}) and "
+                    f"two-fix fallback only moved {distance:.2f} m (need >= {min_dist:.2f} m)",
+                    distance_m=round(distance, 2), **hm_info)
                 return
             bearing_rad = _gnss_bearing_enu_rad(
                 self._cal_start_fix.latitude, self._cal_start_fix.longitude,
@@ -372,27 +413,53 @@ class ImuYawCorrection(Node):
             )
             source_str = f"two-fix bearing (distance={distance:.2f} m)"
 
-        # Circular average of IMU yaw across the window.
+        # Circular average of IMU yaw across the window, plus its spread: a large spread
+        # means the vehicle turned while calibrating (bearing and heading not comparable).
         sx = sum(math.sin(y) for y in self._cal_yaw_samples)
         cx = sum(math.cos(y) for y in self._cal_yaw_samples)
         avg_yaw_rad = math.atan2(sx, cx)
+        spread_deg = max(
+            abs(math.degrees(math.atan2(math.sin(y - avg_yaw_rad), math.cos(y - avg_yaw_rad))))
+            for y in self._cal_yaw_samples
+        )
 
         diff = bearing_rad - avg_yaw_rad
         diff_wrapped = math.atan2(math.sin(diff), math.cos(diff))
         new_offset_deg = math.degrees(diff_wrapped)
+        old_offset_deg = math.degrees(self._yaw_offset_rad)
 
         # Apply via parameter; the on-set callback updates the rotation cache.
         self.set_parameters([
             Parameter("yaw_offset_deg", Parameter.Type.DOUBLE, new_offset_deg)
         ])
 
-        self.get_logger().info(
-            f"Yaw calibration complete. Source: {source_str}. "
-            f"GNSS bearing(ENU)={math.degrees(bearing_rad):+.3f}°, "
-            f"avg IMU yaw={math.degrees(avg_yaw_rad):+.3f}°  →  "
-            f"yaw_offset_deg={new_offset_deg:+.3f}° (applied to /imu/data_corrected)."
+        max_spread = float(self.get_parameter("max_yaw_spread_deg").value)
+        status = "ok" if spread_deg <= max_spread else "warn_turned"
+        self._publish_result(
+            status=status,
+            source=source_str,
+            gnss_bearing_enu_deg=round(math.degrees(bearing_rad), 2),
+            avg_imu_yaw_deg=round(math.degrees(avg_yaw_rad), 2),
+            imu_yaw_spread_deg=round(spread_deg, 1),
+            offset_old_deg=round(old_offset_deg, 2),
+            offset_new_deg=round(new_offset_deg, 2),
+            distance_m=None if distance is None else round(distance, 2),
+            **hm_info,
+        )
+        log = self.get_logger().info if status == "ok" else self.get_logger().warn
+        log(
+            f"Yaw calibration {'complete' if status == 'ok' else 'APPLIED BUT SUSPECT (vehicle turned)'}. "
+            f"Source: {source_str}. GNSS bearing(ENU)={math.degrees(bearing_rad):+.3f}°, "
+            f"avg IMU yaw={math.degrees(avg_yaw_rad):+.3f}° (spread {spread_deg:.1f}°)  →  "
+            f"yaw_offset_deg {old_offset_deg:+.2f}° → {new_offset_deg:+.3f}° (applied to /imu/data_corrected)."
         )
 
+    def _abort(self, reason: str, **fields) -> None:
+        self.get_logger().warn(
+            f"Yaw calibration ABORTED — {reason}. yaw_offset_deg UNCHANGED at "
+            f"{math.degrees(self._yaw_offset_rad):+.2f}°."
+        )
+        self._publish_result(status="aborted", reason=reason, **fields)
 
 def main(args=None) -> None:
     rclpy.init(args=args)
