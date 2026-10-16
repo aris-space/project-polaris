@@ -29,16 +29,14 @@ namespace
 class Limiter
 {
   double max_a_{};
-  double max_dv_{};
 
 public:
   Limiter() = default;
 
-  Limiter(const double &max_a, const double &dt)
-      : max_a_{max_a}, max_dv_{max_a * dt}
+  explicit Limiter(const double &max_a)
+      : max_a_{max_a}
   {
     assert(max_a > 0);
-    assert(dt > 0);
   }
 
   void decelerate(double &v, const double &goal_dist) const
@@ -49,13 +47,15 @@ public:
     v = std::copysign(result_v, v);
   }
 
-  void limit(double &v, const double &prev_v) const
+  // dt is the measured time since the previous command
+  void limit(double &v, const double &prev_v, const double &dt) const
   {
+    const auto max_dv = max_a_ * dt;
     auto dv = v - prev_v;
-    if (dv > max_dv_) {
-      v = prev_v + max_dv_;
-    } else if (dv < -max_dv_) {
-      v = prev_v - max_dv_;
+    if (dv > max_dv) {
+      v = prev_v + max_dv;
+    } else if (dv < -max_dv) {
+      v = prev_v - max_dv;
     }
   }
 };
@@ -66,6 +66,7 @@ class SharpTurnController3D : public nav2_core::Controller
   rclcpp::Logger logger_{rclcpp::get_logger("placeholder_will_be_set_in_configure")};
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::string base_frame_id_;
+  rclcpp::Clock::SharedPtr clock_;
 
   // Parameters
   double z_vel_{};
@@ -75,7 +76,7 @@ class SharpTurnController3D : public nav2_core::Controller
   double lookahead_dist_{};
   double transform_tolerance_{};
   double goal_tolerance_{};  // Stop motion when we're very close to the goal
-  double tick_rate_{};       // Tick rate, used to compute dt
+  double tick_rate_{};       // Only the dt for the first cycle after activation
   double yaw_P_gain_{};      // Proportional gain on path yaw error
 
   rclcpp::Duration transform_tolerance_d_{0, 0};
@@ -83,6 +84,12 @@ class SharpTurnController3D : public nav2_core::Controller
   nav_msgs::msg::Path plan_;
   // Keep track of the previous cmd_vel to limit acceleration
   geometry_msgs::msg::Twist prev_vel_{};
+
+  // Measured control period used by the acceleration limits (see PurePursuitController3D)
+  static constexpr double kMinDt = 0.01;  // s — guards back-to-back cycles
+  static constexpr double kMaxDt = 0.2;   // s — a long gap must not allow a big velocity step
+  rclcpp::Time last_cycle_time_;
+  bool have_last_cycle_{false};
 
   Limiter z_limiter_;
   Limiter yaw_limiter_;
@@ -103,21 +110,55 @@ class SharpTurnController3D : public nav2_core::Controller
   constexpr double yaw_vel_lower() const { return lower(yaw_vel_, yaw_error_); }
 
   // Return the first pose in the plan > lookahead distance away, or the last pose in the plan
-  bool transform_pose(
-    const geometry_msgs::msg::PoseStamped &in_pose,
-    geometry_msgs::msg::PoseStamped &out_pose,
-    const std::string &target_frame) const
+  // Robot pose (odom) → plan frame (map). Same approach as PurePursuitController3D:
+  // only map→odom comes from TF, at its latest sample, composed by hand with the
+  // given pose. A stamped lookup would block until the next 10 Hz map→odom.
+  bool robot_pose_in_plan_frame(
+    const geometry_msgs::msg::PoseStamped &pose_f_odom,
+    geometry_msgs::msg::PoseStamped &pose_f_map) const
   {
+    geometry_msgs::msg::TransformStamped map_t_odom;
     try {
-      auto transform = tf_->lookupTransform(
-        target_frame, in_pose.header.frame_id,
-        in_pose.header.stamp, tf2::durationFromSec(transform_tolerance_));
-      tf2::doTransform(in_pose, out_pose, transform);
-      return true;
+      map_t_odom = tf_->lookupTransform(
+        plan_.header.frame_id, pose_f_odom.header.frame_id, tf2::TimePointZero);
     } catch (const tf2::TransformException &ex) {
-      RCLCPP_DEBUG(logger_, "Transform failed: %s", ex.what());
+      RCLCPP_WARN_THROTTLE(logger_, *clock_, 2000, "Transform failed: %s", ex.what());
       return false;
     }
+
+    // Refuse a map→odom older than transform_tolerance.
+    const double age = (rclcpp::Time(pose_f_odom.header.stamp) -
+                        rclcpp::Time(map_t_odom.header.stamp)).seconds();
+    if (age > transform_tolerance_) {
+      RCLCPP_WARN_THROTTLE(logger_, *clock_, 2000,
+        "%s→%s is %.2f s old (> transform_tolerance %.2f s)",
+        plan_.header.frame_id.c_str(), pose_f_odom.header.frame_id.c_str(),
+        age, transform_tolerance_);
+      return false;
+    }
+
+    tf2::Transform m_t_o, o_t_b;
+    tf2::fromMsg(map_t_odom.transform, m_t_o);
+    tf2::fromMsg(pose_f_odom.pose, o_t_b);
+    tf2::toMsg(m_t_o * o_t_b, pose_f_map.pose);
+    pose_f_map.header.frame_id = plan_.header.frame_id;
+    pose_f_map.header.stamp = pose_f_odom.header.stamp;
+    return true;
+  }
+
+  // Plan-frame pose → robot frame, using the cycle's robot pose (no second TF lookup).
+  geometry_msgs::msg::PoseStamped to_base_frame(
+    const geometry_msgs::msg::PoseStamped &in_f_map,
+    const geometry_msgs::msg::PoseStamped &pose_f_map) const
+  {
+    tf2::Transform m_t_b, m_t_p;
+    tf2::fromMsg(pose_f_map.pose, m_t_b);
+    tf2::fromMsg(in_f_map.pose, m_t_p);
+    geometry_msgs::msg::PoseStamped out;
+    out.header.frame_id = base_frame_id_;
+    out.header.stamp = pose_f_map.header.stamp;
+    tf2::toMsg(m_t_b.inverse() * m_t_p, out.pose);
+    return out;
   }
 
   double get_dist_L2_norm(const geometry_msgs::msg::Point &p1, const geometry_msgs::msg::Point &p2) const
@@ -269,22 +310,10 @@ class SharpTurnController3D : public nav2_core::Controller
   }
 
 
-  geometry_msgs::msg::Twist sharp_turn_3d(const geometry_msgs::msg::PoseStamped &pose_f_odom) const
+  geometry_msgs::msg::Twist sharp_turn_3d(const geometry_msgs::msg::PoseStamped &pose_f_map) const
   {
-    geometry_msgs::msg::PoseStamped pose_f_map;
-    if (!transform_pose(pose_f_odom, pose_f_map, plan_.header.frame_id)) {
-      return geometry_msgs::msg::Twist{};
-    }
-
-    // Find goal
-    auto goal_f_map = find_goal(pose_f_map);
-    goal_f_map.header.stamp = pose_f_map.header.stamp;
-
-    // Transform goal map -> base
-    geometry_msgs::msg::PoseStamped goal_f_base;
-    if (!transform_pose(goal_f_map, goal_f_base, base_frame_id_)) {
-      return geometry_msgs::msg::Twist{};
-    }
+    // Find goal, then express it in the robot frame
+    const auto goal_f_base = to_base_frame(find_goal(pose_f_map), pose_f_map);
 
     auto xy_dist_sq = goal_f_base.pose.position.x * goal_f_base.pose.position.x +
                       goal_f_base.pose.position.y * goal_f_base.pose.position.y;
@@ -326,6 +355,7 @@ public:
     auto parent = weak_parent.lock();
 
     logger_ = parent->get_logger();
+    clock_ = parent->get_clock();
     tf_ = tf;
     base_frame_id_ = costmap_ros->getBaseFrameID();
 
@@ -355,8 +385,8 @@ public:
         "pure_pursuit_robot_twist", rclcpp::QoS(10));
     }
 
-    z_limiter_ = Limiter(z_accel_, 1. / tick_rate_);
-    yaw_limiter_ = Limiter(yaw_accel_, 1. / tick_rate_);
+    z_limiter_ = Limiter(z_accel_);
+    yaw_limiter_ = Limiter(yaw_accel_);
 
     transform_tolerance_d_ = rclcpp::Duration::from_seconds(transform_tolerance_);
 
@@ -415,6 +445,7 @@ public:
     if (robot_twist_pub_) {
       robot_twist_pub_->on_deactivate();
     }
+    have_last_cycle_ = false;
   }
 
   // Pose is base_f_odom, it's 3D, and it comes from /tf via:
@@ -433,12 +464,19 @@ public:
     geometry_msgs::msg::TwistStamped cmd_vel;
     cmd_vel.header = pose.header;
 
+    // Measured time since the previous command
+    const rclcpp::Time now = clock_->now();
+    const double dt = have_last_cycle_ ?
+      std::clamp((now - last_cycle_time_).seconds(), kMinDt, kMaxDt) : 1.0 / tick_rate_;
+    last_cycle_time_ = now;
+    have_last_cycle_ = true;
+
     if (plan_.poses.empty()) {
       return cmd_vel;
     }
 
     geometry_msgs::msg::PoseStamped pose_f_map;
-    if (!transform_pose(pose, pose_f_map, plan_.header.frame_id)) {
+    if (!robot_pose_in_plan_frame(pose, pose_f_map)) {
       return cmd_vel;
     }
 
@@ -476,11 +514,10 @@ public:
       robot_twist_pub_->publish(tw);
     }
 
-    // pose is costmap/odom frame; sharp_turn_3d transforms to map internally
-    cmd_vel.twist = sharp_turn_3d(pose);
+    cmd_vel.twist = sharp_turn_3d(pose_f_map);
 
-    z_limiter_.limit(cmd_vel.twist.linear.z, prev_vel_.linear.z);
-    yaw_limiter_.limit(cmd_vel.twist.angular.z, prev_vel_.angular.z);
+    z_limiter_.limit(cmd_vel.twist.linear.z, prev_vel_.linear.z, dt);
+    yaw_limiter_.limit(cmd_vel.twist.angular.z, prev_vel_.angular.z, dt);
 
     prev_vel_ = cmd_vel.twist;
 

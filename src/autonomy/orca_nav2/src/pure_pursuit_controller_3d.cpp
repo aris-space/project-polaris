@@ -57,17 +57,15 @@ namespace orca_nav2
   class Limiter
   {
     double max_a_{};
-    double max_dv_{};
     double k_decelerate_{};
 
   public:
     Limiter() = default;
 
-    Limiter(const double &max_a, const double &dt, const double &k_decelerate)
-        : max_a_{max_a}, max_dv_{max_a * dt}, k_decelerate_{k_decelerate}
+    Limiter(const double &max_a, const double &k_decelerate)
+        : max_a_{max_a}, k_decelerate_{k_decelerate}
     {
       assert(max_a > 0);
-      assert(dt > 0);
     }
 
     // Ramp down velocity as the sub approaches the goal
@@ -82,17 +80,18 @@ namespace orca_nav2
       v = std::copysign(result_v, v);
     }
 
-    // Limit acceleration
-    void limit(double &v, const double &prev_v) const
+    // Limit acceleration; dt is the measured time since the previous command
+    void limit(double &v, const double &prev_v, const double &dt) const
     {
+      const auto max_dv = max_a_ * dt;
       auto dv = v - prev_v;
-      if (dv > max_dv_)
+      if (dv > max_dv)
       {
-        v = prev_v + max_dv_;
+        v = prev_v + max_dv;
       }
-      else if (dv < -max_dv_)
+      else if (dv < -max_dv)
       {
-        v = prev_v - max_dv_;
+        v = prev_v - max_dv;
       }
     }
   };
@@ -124,6 +123,14 @@ namespace orca_nav2
 
     nav_msgs::msg::Path plan_;
     geometry_msgs::msg::Twist prev_vel_{};
+
+    // Measured control period, used by every acceleration limit. tick_rate_ is
+    // only the fallback for the first cycle after activation (nothing to measure yet).
+    static constexpr double kMinDt = 0.01;  // s — guards back-to-back cycles
+    static constexpr double kMaxDt = 0.2;   // s — a long gap must not allow a big velocity step
+    double dt_{0.05};
+    rclcpp::Time last_cycle_time_;
+    bool have_last_cycle_{false};
 
     // Cross-track velocity damping
     double K_cross_vel_{0.0};
@@ -196,28 +203,66 @@ namespace orca_nav2
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    bool transform_pose(const geometry_msgs::msg::PoseStamped &in_pose,
-                        geometry_msgs::msg::PoseStamped &out_pose,
-                        const std::string &target_frame) const
+    // Robot pose (odom, newest 30 Hz local EKF) → plan frame (map).
+    //
+    // Only the slow map→odom edge comes from TF, at its latest sample
+    // (TimePointZero), and it is composed by hand with the given pose.
+    // Why: a stamped lookup at pose.header.stamp blocks every cycle until the
+    // next 10 Hz global-EKF map→odom arrives (pose stamp is always newer),
+    // capping the loop at ~12 Hz. TimePointZero on the whole map→base_link
+    // chain would not block, but resolves to the map→odom stamp and so returns
+    // a robot pose up to 100 ms old. map→odom itself changes slowly, so using
+    // its latest sample costs nothing measurable.
+    bool robot_pose_in_plan_frame(const geometry_msgs::msg::PoseStamped &pose_f_odom,
+                                  geometry_msgs::msg::PoseStamped &pose_f_map) const
     {
+      geometry_msgs::msg::TransformStamped map_t_odom;
       try
       {
-        // Use latest-available TF (TimePointZero) instead of a stamped lookup.
-        // Why: map→odom is published by the global EKF at 10 Hz, so a stamped
-        // lookup with in_pose.header.stamp blocks each control cycle until the
-        // next 10 Hz TF arrives, capping cmd_vel at the global-EKF rate
-        // regardless of controller_frequency (20 Hz).
-        auto transform = tf_->lookupTransform(
-            target_frame, in_pose.header.frame_id,
-            in_pose.header.stamp, tf2::durationFromSec(transform_tolerance_));
-        tf2::doTransform(in_pose, out_pose, transform);
-        return true;
+        map_t_odom = tf_->lookupTransform(
+            plan_.header.frame_id, pose_f_odom.header.frame_id, tf2::TimePointZero);
       }
       catch (const tf2::TransformException &ex)
       {
-        RCLCPP_DEBUG(logger_, "Transform failed: %s", ex.what());
+        RCLCPP_WARN_THROTTLE(logger_, *clock_, 2000, "Transform failed: %s", ex.what());
         return false;
       }
+
+      // Keep the old safety semantics: refuse a map→odom older than transform_tolerance.
+      const double age = (rclcpp::Time(pose_f_odom.header.stamp) -
+                          rclcpp::Time(map_t_odom.header.stamp)).seconds();
+      if (age > transform_tolerance_)
+      {
+        RCLCPP_WARN_THROTTLE(logger_, *clock_, 2000,
+          "%s→%s is %.2f s old (> transform_tolerance %.2f s)",
+          plan_.header.frame_id.c_str(), pose_f_odom.header.frame_id.c_str(),
+          age, transform_tolerance_);
+        return false;
+      }
+
+      tf2::Transform m_t_o, o_t_b;
+      tf2::fromMsg(map_t_odom.transform, m_t_o);
+      tf2::fromMsg(pose_f_odom.pose, o_t_b);
+      tf2::toMsg(m_t_o * o_t_b, pose_f_map.pose);
+      pose_f_map.header.frame_id = plan_.header.frame_id;
+      pose_f_map.header.stamp = pose_f_odom.header.stamp;
+      return true;
+    }
+
+    // Plan-frame pose → robot frame, using the same robot pose as the rest of
+    // the cycle (no second TF lookup, so no mixed timestamps).
+    geometry_msgs::msg::PoseStamped
+    to_base_frame(const geometry_msgs::msg::PoseStamped &in_f_map,
+                  const geometry_msgs::msg::PoseStamped &pose_f_map) const
+    {
+      tf2::Transform m_t_b, m_t_p;
+      tf2::fromMsg(pose_f_map.pose, m_t_b);
+      tf2::fromMsg(in_f_map.pose, m_t_p);
+      geometry_msgs::msg::PoseStamped out;
+      out.header.frame_id = base_frame_id_;
+      out.header.stamp = pose_f_map.header.stamp;
+      tf2::toMsg(m_t_b.inverse() * m_t_p, out.pose);
+      return out;
     }
 
     double get_dist_L2_norm(const geometry_msgs::msg::Point &p1, const geometry_msgs::msg::Point &p2) const
@@ -405,9 +450,8 @@ namespace orca_nav2
       angular_vel = s * rotate_to_heading_angular_vel_;
 
       // Acceleration limit: clamp step-change in angular velocity
-      const double dt = 1.0 / tick_rate_;
-      const double min_w = prev_vel_.angular.z - yaw_accel_ * dt;
-      const double max_w = prev_vel_.angular.z + yaw_accel_ * dt;
+      const double min_w = prev_vel_.angular.z - yaw_accel_ * dt_;
+      const double max_w = prev_vel_.angular.z + yaw_accel_ * dt_;
       angular_vel = std::clamp(angular_vel, min_w, max_w);
 
       // Decelerate as target approaches: ω_max = sqrt(2 * α * |θ|)
@@ -445,36 +489,20 @@ namespace orca_nav2
     //   - rotates in place (stops translation) when heading error is large.
     //   - slows for tight curvature and for the final approach.
     geometry_msgs::msg::Twist
-    pure_pursuit_3d(const geometry_msgs::msg::PoseStamped &pose_f_odom, double current_speed)
+    pure_pursuit_3d(const geometry_msgs::msg::PoseStamped &pose_f_map, double current_speed)
     {
-      // Transform pose odom → map
-      geometry_msgs::msg::PoseStamped pose_f_map;
-      if (!transform_pose(pose_f_odom, pose_f_map, plan_.header.frame_id)) {
-        return geometry_msgs::msg::Twist{};
-      }
-
       // ── Lookahead points ───────────────────────────────────────────────────
       const double lookahead = getLookaheadDist(current_speed);
 
       // Main carrot: drives linear.x and the goal-proximity check
-      auto goal_f_map = find_goal(pose_f_map, lookahead);
-      goal_f_map.header.stamp = pose_f_map.header.stamp;
-
-      geometry_msgs::msg::PoseStamped goal_f_base;
-      if (!transform_pose(goal_f_map, goal_f_base, base_frame_id_)) {
-        return geometry_msgs::msg::Twist{};
-      }
+      const auto goal_f_base = to_base_frame(find_goal(pose_f_map, lookahead), pose_f_map);
 
       // Curvature carrot: drives curvature computation and rotate-to-path trigger.
       // Fixed distance → independent of speed, no feedback loop.
       geometry_msgs::msg::PoseStamped curv_goal_f_base = goal_f_base;
       if (use_fixed_curvature_lookahead_) {
-        auto curv_goal_f_map = find_goal(pose_f_map, curvature_lookahead_dist_);
-        curv_goal_f_map.header.stamp = pose_f_map.header.stamp;
-        geometry_msgs::msg::PoseStamped tmp;
-        if (transform_pose(curv_goal_f_map, tmp, base_frame_id_)) {
-          curv_goal_f_base = tmp;
-        }
+        curv_goal_f_base =
+          to_base_frame(find_goal(pose_f_map, curvature_lookahead_dist_), pose_f_map);
       }
 
       // ── Distances & curvature ──────────────────────────────────────────────
@@ -636,9 +664,9 @@ namespace orca_nav2
           "pure_pursuit_robot_twist", rclcpp::QoS(10));
       }
 
-      x_limiter_ = Limiter(x_accel_, 1. / tick_rate_, K_descelerate_);
-      z_limiter_ = Limiter(z_accel_, 1. / tick_rate_, K_descelerate_);
-      yaw_limiter_ = Limiter(yaw_accel_, 1. / tick_rate_, K_descelerate_);
+      x_limiter_ = Limiter(x_accel_, K_descelerate_);
+      z_limiter_ = Limiter(z_accel_, K_descelerate_);
+      yaw_limiter_ = Limiter(yaw_accel_, K_descelerate_);
 
       transform_tolerance_d_ = rclcpp::Duration::from_seconds(transform_tolerance_);
 
@@ -682,6 +710,7 @@ namespace orca_nav2
       prev_vel_ = geometry_msgs::msg::Twist{};
       is_rotating_to_path_ = false;
       was_rotating_to_path_ = false;
+      have_last_cycle_ = false;
     }
 
     // Pose is base_f_odom (3D), Twist comes from /odom but is stripped to 2D
@@ -694,13 +723,20 @@ namespace orca_nav2
       geometry_msgs::msg::TwistStamped cmd_vel;
       cmd_vel.header = pose.header;
 
+      // Measured time since the previous command (see dt_)
+      const rclcpp::Time now = clock_->now();
+      dt_ = have_last_cycle_ ? std::clamp((now - last_cycle_time_).seconds(), kMinDt, kMaxDt)
+                             : 1.0 / tick_rate_;
+      last_cycle_time_ = now;
+      have_last_cycle_ = true;
+
       // Compute tracking error (needed for cross-track damping and publishing)
       double cross_xy = 0.0, z_err = 0.0, yaw_err = 0.0;
       geometry_msgs::msg::Point closest_map;
       geometry_msgs::msg::PoseStamped pose_f_map;
       bool have_tracking = false;
 
-      if (!plan_.poses.empty() && transform_pose(pose, pose_f_map, plan_.header.frame_id)) {
+      if (!plan_.poses.empty() && robot_pose_in_plan_frame(pose, pose_f_map)) {
         tracking_error_from_plan(pose_f_map, cross_xy, z_err, yaw_err, closest_map);
         have_tracking = true;
       }
@@ -732,8 +768,10 @@ namespace orca_nav2
         robot_twist_pub_->publish(tw);
       }
 
-      // Regulated Pure Pursuit — pass current forward speed for velocity-scaled lookahead
-      cmd_vel.twist = pure_pursuit_3d(pose, velocity.linear.x);
+      // Regulated Pure Pursuit — pass current forward speed for velocity-scaled lookahead.
+      // No robot pose in the plan frame → command zero (the limiters below ramp it down).
+      cmd_vel.twist = have_tracking ? pure_pursuit_3d(pose_f_map, velocity.linear.x)
+                                    : geometry_msgs::msg::Twist{};
 
       // Cross-track velocity damping: derivative feedback on lateral error.
       if (have_tracking && K_cross_vel_ > 0.0) {
@@ -743,9 +781,9 @@ namespace orca_nav2
       }
 
       // Acceleration limiting
-      x_limiter_.limit(cmd_vel.twist.linear.x, prev_vel_.linear.x);
-      z_limiter_.limit(cmd_vel.twist.linear.z, prev_vel_.linear.z);
-      yaw_limiter_.limit(cmd_vel.twist.angular.z, prev_vel_.angular.z);
+      x_limiter_.limit(cmd_vel.twist.linear.x, prev_vel_.linear.x, dt_);
+      z_limiter_.limit(cmd_vel.twist.linear.z, prev_vel_.linear.z, dt_);
+      yaw_limiter_.limit(cmd_vel.twist.angular.z, prev_vel_.angular.z, dt_);
 
       // Velocity-divergence emergency safety cutoff
       if (have_tracking && enable_velocity_divergence_emergency_ &&
