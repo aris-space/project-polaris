@@ -90,6 +90,7 @@ controller_server:
       plugin: "orca_nav2/ProgressChecker3D"
       radius: 0.5
       time_allowance: 10.0
+      angle_threshold: 0.3  # rad; yaw change that also counts as progress (in-place turns)
 
     # Goal checker parameters
     goal_checker:

@@ -88,7 +88,7 @@ pluginlib_export_plugin_description_file(nav2_core goal_checker_3d_plugin.xml)
 # --- Progress Checker ---
 ament_auto_add_library(progress_checker_3d SHARED src/progress_checker_3d.cpp)
 target_include_directories(progress_checker_3d PRIVATE include)
-ament_target_dependencies(progress_checker_3d nav2_util nav2_core nav2_costmap_2d rclcpp pluginlib)
+ament_target_dependencies(progress_checker_3d nav2_util nav2_core nav2_costmap_2d rclcpp pluginlib angles tf2)
 target_compile_definitions(progress_checker_3d PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 pluginlib_export_plugin_description_file(nav2_core progress_checker_3d_plugin.xml)
 
