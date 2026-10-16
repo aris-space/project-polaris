@@ -24,6 +24,7 @@
     // VS Code will run this once after the container is created
     "postCreateCommand": "cd /ros2_ws && ./entrypoint.sh",
     // You’re using root in the image
+    "forwardPorts": [8765],
     "remoteUser": "root",
     "customizations": {
         "vscode": {

@@ -12,7 +12,12 @@ def generate_launch_description():
     respawn = LaunchConfiguration("respawn")
     respawn_delay = LaunchConfiguration("respawn_delay")
     max_horizontal_accuracy_m = LaunchConfiguration("max_horizontal_accuracy_m")
+    horizontal_accuracy_confidence = LaunchConfiguration("horizontal_accuracy_confidence")
     ubx_nav_hp_pos_llh_topic = LaunchConfiguration("ubx_nav_hp_pos_llh_topic")
+    imu_topic = LaunchConfiguration("imu_topic")
+    imu_heading_stable_window_s = LaunchConfiguration("imu_heading_stable_window_s")
+    imu_heading_stable_threshold_deg = LaunchConfiguration("imu_heading_stable_threshold_deg")
+    imu_heading_timeout_s = LaunchConfiguration("imu_heading_timeout_s")
 
     # Get the path to the waterlinked launch file
     waterlinked_launch_file = os.path.join(
@@ -36,7 +41,18 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "max_horizontal_accuracy_m",
                 default_value="4.0",
-                description="Publish /fix to /gps/selected only if horizontal accuracy (m) is at most this.",
+                description=(
+                    "Publish /fix to /gps/selected only if horizontal accuracy confidence bound "
+                    "(meters) is at most this."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "horizontal_accuracy_confidence",
+                default_value="0.95",
+                description=(
+                    "Confidence for horizontal accuracy gate (0..1). "
+                    "Default 0.95 interprets max_horizontal_accuracy_m as ~95% bound."
+                ),
             ),
             DeclareLaunchArgument(
                 "ubx_nav_hp_pos_llh_topic",
@@ -45,6 +61,26 @@ def generate_launch_description():
                     "UBXNavHPPosLLH topic for receiver h_acc (set '' to disable). "
                     "Must match ublox stack namespace (Polaris gnss launch uses default namespace '')."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "imu_topic",
+                default_value="/imu/data",
+                description="IMU topic for heading stability gate.",
+            ),
+            DeclareLaunchArgument(
+                "imu_heading_stable_window_s",
+                default_value="30.0",
+                description="Rolling window (s) for yaw std computation.",
+            ),
+            DeclareLaunchArgument(
+                "imu_heading_stable_threshold_deg",
+                default_value="0.1",
+                description="Max yaw std (deg) within window to declare IMU heading stable.",
+            ),
+            DeclareLaunchArgument(
+                "imu_heading_timeout_s",
+                default_value="600.0",
+                description="Safety timeout (s): allow GPS anyway if IMU never converges.",
             ),
             # Include the waterlinked interface launch file
             IncludeLaunchDescription(
@@ -74,7 +110,20 @@ def generate_launch_description():
                         "max_horizontal_accuracy_m": ParameterValue(
                             max_horizontal_accuracy_m, value_type=float
                         ),
+                        "horizontal_accuracy_confidence": ParameterValue(
+                            horizontal_accuracy_confidence, value_type=float
+                        ),
                         "ubx_nav_hp_pos_llh_topic": ubx_nav_hp_pos_llh_topic,
+                        "imu_topic": imu_topic,
+                        "imu_heading_stable_window_s": ParameterValue(
+                            imu_heading_stable_window_s, value_type=float
+                        ),
+                        "imu_heading_stable_threshold_deg": ParameterValue(
+                            imu_heading_stable_threshold_deg, value_type=float
+                        ),
+                        "imu_heading_timeout_s": ParameterValue(
+                            imu_heading_timeout_s, value_type=float
+                        ),
                     }
                 ],
             ),

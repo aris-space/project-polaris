@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float64MultiArray, Bool
+from std_msgs.msg import Float64MultiArray, Bool, Float64
 from sensor_msgs.msg import FluidPressure, NavSatFix
 from nav_msgs.msg import Odometry
 import numpy as np
@@ -24,8 +24,9 @@ class ArchimedesTesting(Node):
         super().__init__("ice_estimation")
 
         # --- Initialisierung ---
-        self.omega = 0.138  # Versatz/Abstand zum Eis (m)
+        self.omega = 0.210  # BlueRobotics sensor to ice contact point (m)
         self.pressure = None
+        self.surface_pressure = None
         self.roll = None
         self.pitch = None
         self.latitude = 0.0
@@ -51,7 +52,10 @@ class ArchimedesTesting(Node):
 
         # --- Subscriptions ---
         self.pressure_sub = self.create_subscription(
-            FluidPressure, "/sensors/keller26x/gauge_pressure", self.pressure_callback, 10
+            FluidPressure, "/pixhawk/scaled_pressure", self.pressure_callback, 10
+        )
+        self.surface_pressure_sub = self.create_subscription(
+            Float64, "/sensors/pressure/p_surface_pa", self.surface_pressure_callback, 10
         )
         self.gps_sub = self.create_subscription(
             NavSatFix, "/gps/filtered/global", self.gps_callback, 10
@@ -84,14 +88,17 @@ class ArchimedesTesting(Node):
     def pressure_callback(self, msg):
         self.pressure = msg.fluid_pressure
 
+    def surface_pressure_callback(self, msg):
+        self.surface_pressure = msg.data
+
     def touch_callback(self, msg):
         self.is_touching = msg.data
 
     def ice_thickness(self, pressure, pitch, roll):
         rho_water, rho_ice, g = 1000.0, 917.0, 9.81
 
-        # Tiefe aus Druck (gauge pressure, already relative to atmosphere)
-        v_druck = (pressure / (rho_water * g)) - 0.05
+        gauge_pressure = pressure - self.surface_pressure
+        v_druck = gauge_pressure / (rho_water * g)
 
         omega_corr = self.omega
 
@@ -117,7 +124,7 @@ class ArchimedesTesting(Node):
             self._was_touching = False
             return
 
-        if any(val is None for val in [self.pressure, self.roll, self.pitch]):
+        if any(val is None for val in [self.pressure, self.surface_pressure, self.roll, self.pitch]):
             return
 
         thickness = self.ice_thickness(self.pressure, self.pitch, self.roll)

@@ -1,7 +1,7 @@
 """ROS2 node for detecting contact between AUV tower and the ice ceiling.
 
 Geometry (all distances in metres, body frame: X forward, Y left, Z up):
-  - Tower top contact point: 0.148 m above, 0.650 m behind the ultrasonic sensor
+  - Tower top contact point: 0.148 m above, 0.560 m behind the ultrasonic sensor
   - Pressure sensor:         0.136 m below the tower top (directly beneath it)
 
 Detection strategy:
@@ -23,7 +23,7 @@ from geometry_msgs.msg import Vector3Stamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import FluidPressure
-from std_msgs.msg import Bool, Float32
+from std_msgs.msg import Bool, Float32, Float64
 
 _GRAVITY_MS2 = 9.81
 
@@ -36,11 +36,11 @@ class IceTouchDetectionNode(Node):
 
         # ── geometry ──────────────────────────────────────────────────────────
         self.declare_parameter("tower_height_m", 0.148)
-        self.declare_parameter("tower_horizontal_offset_m", 0.650)
+        self.declare_parameter("tower_horizontal_offset_m", 0.560)
         self.declare_parameter("pressure_sensor_offset_m", 0.136)
 
         # ── geometric detection ───────────────────────────────────────────────
-        self.declare_parameter("touch_tolerance_m", 0.02)
+        self.declare_parameter("touch_tolerance_m", 0.05)
         self.declare_parameter("max_valid_angle_deg", 45.0)
 
         # ── ultrasonic validity ───────────────────────────────────────────────
@@ -84,13 +84,17 @@ class IceTouchDetectionNode(Node):
         self.declare_parameter("ultrasonic_topic", "/top/ultrasonic/distance")
         self.declare_parameter("odometry_topic", "/odometry/filtered/local")
         self.declare_parameter("acceleration_topic", "/imu/acceleration")
-        self.declare_parameter("pressure_topic", "/sensors/keller26x/gauge_pressure")
+        self.declare_parameter("pressure_topic", "/pixhawk/scaled_pressure")
+        self.declare_parameter(
+            "surface_pressure_topic", "/sensors/pressure/p_surface_pa"
+        )
         self.declare_parameter("output_topic", "/ice_touch_detection/touching")
 
         # ── runtime state ─────────────────────────────────────────────────────
         self._latest_distance: float | None = None
         self._latest_orientation: Odometry | None = None  # EKF local, base_link frame
         self._latest_pressure: float | None = None
+        self._surface_pressure: float | None = None
 
         self._ultrasonic_window: deque[float] = deque(
             maxlen=int(self.get_parameter("ultrasonic_zero_window").value)
@@ -108,12 +112,14 @@ class IceTouchDetectionNode(Node):
         odometry_topic = str(self.get_parameter("odometry_topic").value)
         accel_topic = str(self.get_parameter("acceleration_topic").value)
         pressure_topic = str(self.get_parameter("pressure_topic").value)
+        surface_pressure_topic = str(self.get_parameter("surface_pressure_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
 
         self.create_subscription(Float32, ultrasonic_topic, self._ultrasonic_cb, 10)
         self.create_subscription(Odometry, odometry_topic, self._odometry_cb, 10)
         self.create_subscription(Vector3Stamped, accel_topic, self._accel_cb, 10)
         self.create_subscription(FluidPressure, pressure_topic, self._pressure_cb, 10)
+        self.create_subscription(Float64, surface_pressure_topic, self._surface_pressure_cb, 10)
 
         self._pub = self.create_publisher(Bool, output_topic, 10)
 
@@ -125,6 +131,7 @@ class IceTouchDetectionNode(Node):
             f" | ultrasonic: {ultrasonic_topic}"
             f" | odometry: {odometry_topic}"
             f" | pressure: {pressure_topic}"
+            f" | surface_pressure: {surface_pressure_topic}"
             f" | output: {output_topic}"
         )
 
@@ -138,13 +145,14 @@ class IceTouchDetectionNode(Node):
         self._latest_orientation = msg
 
     def _accel_cb(self, msg: Vector3Stamped) -> None:
-        magnitude = math.sqrt(
-            msg.vector.x ** 2 + msg.vector.y ** 2 + msg.vector.z ** 2
-        )
+        magnitude = math.sqrt(msg.vector.x**2 + msg.vector.y**2 + msg.vector.z**2)
         self._accel_window.append(magnitude)
 
     def _pressure_cb(self, msg: FluidPressure) -> None:
         self._latest_pressure = float(msg.fluid_pressure)
+
+    def _surface_pressure_cb(self, msg: Float64) -> None:
+        self._surface_pressure = float(msg.data)
 
     # ── sensor validity ────────────────────────────────────────────────────────
 
@@ -254,7 +262,13 @@ class IceTouchDetectionNode(Node):
         """Return instantaneous (non-debounced) touching state."""
         distance = self._latest_distance
         odom = self._latest_orientation
-        pressure = self._latest_pressure
+        gauge_pressure = (
+            self._latest_pressure - self._surface_pressure
+            if self._latest_pressure is not None and self._surface_pressure is not None
+            else None
+        )
+
+        pressure = gauge_pressure  # pressure helpers all expect gauge Pa
 
         if pressure is None and (distance is None or odom is None):
             return False
@@ -285,7 +299,11 @@ class IceTouchDetectionNode(Node):
                     )
                     return True
                 # Collision spike while verified near surface → touching
-                if collision and pressure is not None and self._pressure_near_surface(pressure):
+                if (
+                    collision
+                    and pressure is not None
+                    and self._pressure_near_surface(pressure)
+                ):
                     self.get_logger().debug(
                         f"IMU collision near surface: accel spike + "
                         f"pressure={pressure:.0f} Pa"

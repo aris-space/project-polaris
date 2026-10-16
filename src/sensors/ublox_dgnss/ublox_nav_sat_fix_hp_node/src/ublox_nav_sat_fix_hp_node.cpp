@@ -19,6 +19,7 @@
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "sensor_msgs/msg/nav_sat_status.hpp"
 #include "ublox_nav_sat_fix_hp_node/visibility_control.h"
+#include "ublox_ubx_msgs/msg/carr_soln.hpp"
 #include "ublox_ubx_msgs/msg/gps_fix.hpp"
 #include "ublox_ubx_msgs/msg/ubx_nav_cov.hpp"
 #include "ublox_ubx_msgs/msg/ubx_nav_hp_pos_llh.hpp"
@@ -181,7 +182,11 @@ private:
       case ublox_ubx_msgs::msg::GpsFix::GPS_FIX_2D:
       case ublox_ubx_msgs::msg::GpsFix::GPS_FIX_3D:
       case ublox_ubx_msgs::msg::GpsFix::GPS_PLUS_DEAD_RECKONING:
-        if (true == ubx_sta_msg->diff_soln) {  // diff corrections were applied
+        if (ubx_sta_msg->carr_soln.status >= 1) {
+          // Carrier-phase RTK (float or fixed ambiguities) → GBAS
+          nav_sat_stat_.status = sensor_msgs::msg::NavSatStatus::STATUS_GBAS_FIX;
+        } else if (true == ubx_sta_msg->diff_soln) {
+          // Code-level differential corrections (SBAS / DGNSS) → SBAS
           nav_sat_stat_.status = sensor_msgs::msg::NavSatStatus::STATUS_SBAS_FIX;
         } else {
           nav_sat_stat_.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;

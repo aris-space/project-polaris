@@ -26,8 +26,8 @@ def generate_launch_description():
     )
     imu_topic_arg = DeclareLaunchArgument(
         "imu_topic",
-        default_value="/imu/data",
-        description="IMU topic.",
+        default_value="/imu/data_corrected",
+        description="IMU topic (head_mot-calibrated, matches the rest of the stack).",
     )
     odom_topic_arg = DeclareLaunchArgument(
         "odom_topic",

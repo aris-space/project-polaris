@@ -106,7 +106,7 @@ class Temperature_sensor(Node):
                 msg_i = ""
 
                 if temp_i <= DISCONNECTED_TEMP:
-                    current_sensor_i_level = DiagnosticStatus.ERROR
+                    current_sensor_i_level = DiagnosticStatus.STALE
                     msg_i = f"Sensor {sensor_i} ({pos}) disconnected (-127°C)."
 
                 elif temp_i >= self.error_level:
