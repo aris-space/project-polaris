@@ -1,0 +1,33 @@
+# Params for the SBL topside-heading auto-calibration node (thesis).
+# Node runs un-namespaced (node name sbl_heading_calibration); topics below are absolute.
+sbl_heading_calibration:
+  ros__parameters:
+    waterlinked_url: 'http://192.168.194.94'
+
+    # Inputs
+    imu_corrected_topic: '/imu/data_corrected'                                   # GNSS-calibrated IMU (ENU)
+    sbl_filtered_topic: '/waterlinked_ugps/locator_position_relative_wrt_topside' # filtered SBL x,y (topside body frame)
+    sbl_quality_topic: '/waterlinked_ugps/locator_acoustic_quality'              # vector.x=std[m], vector.y=valid
+    dvl_odom_topic: '/sensors/dvl/odometry'                                      # dead-reckoning for distance
+    imu_yaw_correction_node: '/imu_yaw_correction'                              # queried for yaw_offset_deg
+
+    # Collection window
+    min_distance_m: 3.0        # stop after this much DVL distance
+    collect_timeout_s: 30.0    # ...or this long, whichever first
+
+    # SBL fix gating + leg-quality gates
+    std_max: 5.0               # reject fixes with acoustic std above this [m]
+    min_fixes: 8               # need at least this many gated fixes
+    min_sbl_length_m: 2.0      # fitted line must span at least this far [m]
+    straightness_ratio_max: 0.15  # PCA minor/major spread ratio (smaller = straighter)
+    yaw_std_max_deg: 8.0       # IMU heading must be stable over the leg (straight drive)
+
+    # Write + verify
+    apply: true                # false = compute + print only (dry-run)
+    probe: false               # true = dump config/generic + position/master, then exit
+    require_static_mode: true  # box gps & compass must be 'static' to accept a manual heading
+    heading_config_endpoint: '/api/v1/config/generic'
+    heading_config_key: 'static_orientation'
+    verify_tol_deg: 1.0
+    verify_wait_s: 5.0
+    http_timeout_s: 5.0

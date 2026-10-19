@@ -32,7 +32,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'uwgpsg2_ros2_interface = uwgpsg2_ros2_interface.uwgpsg2_ros2_interface:main'                 
+            'uwgpsg2_ros2_interface = uwgpsg2_ros2_interface.uwgpsg2_ros2_interface:main',
+            'sbl_heading_calibration = uwgpsg2_ros2_interface.sbl_heading_calibration:main',
+            'sbl_heading_set = uwgpsg2_ros2_interface.sbl_heading_set:main',
+            'sbl_position_calibration = uwgpsg2_ros2_interface.sbl_position_calibration:main',
         ],
     },
 )

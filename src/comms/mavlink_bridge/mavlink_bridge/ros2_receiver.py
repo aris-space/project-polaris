@@ -1,7 +1,14 @@
+import json
 import queue
 import threading
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from rcl_interfaces.msg import SetParametersResult
 import logging, os
 import math
@@ -12,12 +19,13 @@ from config_pkg.constants import Logs, Comms, Ports
 os.environ["MAVLINK20"] = "1"
 from pymavlink import mavutil
 from std_msgs.msg import String
-from std_msgs.msg import Bool, Float32, Float32MultiArray, Int16MultiArray
-from mavros_msgs.msg import OverrideRCIn
+from std_msgs.msg import Bool, Float32, Float32MultiArray, Float64, Int16MultiArray
+from mavros_msgs.msg import OverrideRCIn, State
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu, NavSatFix
 
 #
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Vector3
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
 #
@@ -100,10 +108,20 @@ class MavlinkBridgeReceiver(Node):
         self._pid_fetch_result_queue: queue.Queue = queue.Queue(maxsize=1)
 
         self._odom_reset_counter = 0
+        self._fc_guided_armed = False
+        # Latest FC-measured yaw (NED, rad) from ATTITUDE / ATTITUDE_QUATERNION, for
+        # absolute-heading hold setpoints. (yaw_rad, time.monotonic()).
+        self._fc_yaw = None
         self._external_odom_last_send_ns = 0
 
+        # Pixhawk GPS_GLOBAL_ORIGIN. gnss_datum_watchdog is the only node that
+        # selects a GNSS fix; it publishes the lat/lon of the odom-frame origin
+        # on /odom_origin, which is exactly what ArduSub's local (0, 0) is,
+        # because ekf_odom_cb forwards odom-frame positions. We only convert
+        # its ellipsoidal altitude to MSL (geoid separation from UBX) and send.
         self._gps_origin_sent = False
-        self._gps_origin_valid_count = 0
+        self._odom_origin: NavSatFix | None = None
+        self._geoid_sep_m: float | None = None  # ellipsoid height - MSL height
 
         # Depth monitoring state (populated by MAVLink drain loop)
         self._vfrhud_alt = float(
@@ -203,6 +221,17 @@ class MavlinkBridgeReceiver(Node):
             String, "/pixhawk/mode_cmd", self.mode_selection_cb, Comms.SUB_QOS_DEPTH
         )
 
+        # Reconcile the tracked mode with the REAL flight-controller mode from the
+        # heartbeat. mode_selection_cb sets self.pixhawk_mode optimistically the moment
+        # it SENDS a mode command; if the FC then rejects it (e.g. GUIDED denied for
+        # lack of a position estimate), the bridge would stay wedged believing it is in
+        # a mode it never entered -- which silently blocks manual control
+        # (manual_control_cb only forwards in MANUAL/STABILIZE/ALT_HOLD). The heartbeat
+        # is authoritative, so adopt its mode whenever it differs.
+        self.heartbeat_mode_subscriber = self.create_subscription(
+            State, "/pixhawk/heartbeat", self.heartbeat_mode_cb, Comms.SUB_QOS_DEPTH
+        )
+
         self.arm_disarm_subscriber = self.create_subscription(
             Bool, "/pixhawk/arm_cmd", self.arm_disarm_cb, Comms.SUB_QOS_DEPTH
         )
@@ -223,15 +252,82 @@ class MavlinkBridgeReceiver(Node):
         # no cmd_vel arrives within 0.3 s, send one zero-velocity setpoint so the
         # sub stops within ~0.8 s of the upstream publisher going silent.
         self._CMD_VEL_TIMEOUT_S = 0.8
+
+        # Hold at an offset from the current position (east, north in metres, ENU /
+        # map axes): go_to_waypoint publishes goal - current pose after arrival so the
+        # station hold sits on the waypoint itself instead of where the goal checker
+        # declared success (up to xy_goal_tolerance away). Only applied in GUIDED with
+        # no active cmd_vel; offsets above hold_offset_max_m are refused.
+        self.declare_parameter("hold_offset_max_m", 1.0)
+        self.hold_offset_subscriber = self.create_subscription(
+            Vector3, "/pixhawk/hold_offset_enu", self.hold_offset_cb, Comms.SUB_QOS_DEPTH
+        )
         self._cmd_vel_last_msg_t = 0.0
         self._cmd_vel_was_active = False
         self._cmd_vel_watchdog = self.create_timer(0.1, self._cmd_vel_watchdog_cb)
 
-        self.gps_fix_subscriber = self.create_subscription(
+        # Latched (TRANSIENT_LOCAL) to match gnss_datum_watchdog's publisher, so
+        # the origin arrives even if this node starts after the lock.
+        latched_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self.odom_origin_subscriber = self.create_subscription(
+            NavSatFix,
+            "/odom_origin",
+            self.odom_origin_cb,
+            latched_qos,
+        )
+        # ── External-nav gate (what may be sent to the Pixhawk as ODOMETRY) ──────────
+        # The Pixhawk's EKF3 aligns its yaw ONCE to the first external-nav yaw it gets
+        # and afterwards rejects samples that disagree by more than its gate. 2026-10-15:
+        # (1) the local EKF's very first message carried its initial yaw (+35.7 deg, before
+        #     fusing the IMU; settled to -60 deg 0.2 s later) -> Pixhawk latched it, "EKF
+        #     bad", no position, GUIDED refused for ~95 s;
+        # (2) forwarding before the heading calibration made the later calibration look
+        #     like a heading jump (same result).
+        # So ODOMETRY is forwarded only once the heading is calibrated AND the local EKF
+        # has settled (its yaw matches /imu/data_corrected within extnav_settle_tol_deg for
+        # extnav_settle_time_s). Settled EKF-vs-IMU yaw is <0.25 deg (p99) in all pool
+        # bags, so the tolerance only catches start-up transients. If it never settles,
+        # forwarding starts anyway after extnav_settle_timeout_s (with a warning).
+        self.declare_parameter("extnav_require_heading_calibration", True)
+        self.declare_parameter("extnav_settle_tol_deg", 2.0)
+        self.declare_parameter("extnav_settle_time_s", 1.0)
+        self.declare_parameter("extnav_settle_timeout_s", 10.0)
+        self.declare_parameter("extnav_yaw_mismatch_warn_deg", 10.0)
+        self._imu_corr_yaw = None          # (yaw ENU rad, monotonic t)
+        self._yaw_offset_deg = None        # latest /imu_yaw_correction/yaw_offset_deg
+        self._cal_ok_offset_deg = None     # offset applied by the last ok calibration
+        self._odom_last_rx = None          # monotonic t of the last local odom msg
+        self._odom_first_rx = None         # monotonic t of the current EKF run's first msg
+        self._settle_since = None
+        self._extnav_settled = False
+        self._extnav_forwarding = False
+        self._extnav_block_reason = "no odometry yet"
+        self._sent_yaw = None              # (yaw NED rad, monotonic t) last forwarded
+        self._yaw_mismatch_count = 0
+        self._yaw_mismatch_deg = None
+        self.create_subscription(
+            Imu, "/imu/data_corrected", self._imu_corr_cb, qos_profile_sensor_data
+        )
+        self.create_subscription(
+            String, "/imu_yaw_correction/calibration_result", self._cal_result_cb, latched_qos
+        )
+        self.create_subscription(
+            Float64, "/imu_yaw_correction/yaw_offset_deg", self._yaw_offset_cb, latched_qos
+        )
+        self._extnav_status_pub = self.create_publisher(
+            String, "/mavlink_bridge/extnav_status", latched_qos
+        )
+        self.create_timer(1.0, self._extnav_status_cb)
+
+        self.geoid_sep_subscriber = self.create_subscription(
             UBXNavHPPosLLH,
             "/ubx_nav_hp_pos_llh",
-            self.gps_origin_cb,
-            Comms.SUB_QOS_DEPTH,
+            self.geoid_sep_cb,
+            qos_profile_sensor_data,  # best effort: matches reliable and best-effort publishers
         )
 
         self.get_logger().info("MavlinkBridgeReceiver: Node has been initialized")
@@ -376,6 +472,36 @@ class MavlinkBridgeReceiver(Node):
             self.get_logger().info("Sent GUIDED mode command")
             self._file_logger.info("Sent GUIDED mode command")
 
+    def heartbeat_mode_cb(self, msg):
+        """Keep self.pixhawk_mode in sync with the ACTUAL flight-controller mode.
+
+        self.pixhawk_mode is otherwise set only optimistically in mode_selection_cb
+        (when a mode command is SENT, not when the FC confirms it). If the FC rejects a
+        mode change -- e.g. GUIDED denied because ArduSub has no position estimate -- the
+        optimistic value would wedge the bridge in a mode it never entered and block
+        manual control until a mode_cmd is forced. The heartbeat (mavros_msgs/State, with
+        canonical ArduSub mode names) is the source of truth, so adopt it on any change.
+        Ignore UNKNOWN(n) so a transient unmapped mode never clobbers a good value.
+        """
+        fc_mode = msg.mode.strip() if msg.mode else ""
+        if not fc_mode or fc_mode.startswith("UNKNOWN("):
+            return
+        guided_armed = fc_mode == "GUIDED" and bool(msg.armed)
+        if guided_armed and not self._fc_guided_armed and not self._cmd_vel_was_active:
+            # Manual switch to GUIDED (or arming in GUIDED): hold where we are, with the
+            # current heading, instead of ArduSub's stale heading target.
+            self._send_hold_here("entered armed GUIDED")
+            self.get_logger().info("Entered armed GUIDED: holding current position + heading")
+        self._fc_guided_armed = guided_armed
+        if fc_mode != self.pixhawk_mode:
+            self.get_logger().info(
+                f"Heartbeat mode sync: {self.pixhawk_mode} -> {fc_mode}"
+            )
+            self._file_logger.info(
+                f"Heartbeat mode sync: {self.pixhawk_mode} -> {fc_mode}"
+            )
+            self.pixhawk_mode = fc_mode
+
     """--------------------------------------------- helper functions for the callback functions ---------------------------------------------"""
 
     # def send_4dof_command(self, control_input):
@@ -470,6 +596,123 @@ class MavlinkBridgeReceiver(Node):
                 )
                 self._file_logger.error(f"Reboot rejected: MAV_RESULT={ack.result}")
 
+    @staticmethod
+    def _yaw_of(q) -> float:
+        return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+    def _imu_corr_cb(self, msg: Imu) -> None:
+        self._imu_corr_yaw = (self._yaw_of(msg.orientation), time.monotonic())
+
+    def _yaw_offset_cb(self, msg: Float64) -> None:
+        self._yaw_offset_deg = float(msg.data)
+
+    def _cal_result_cb(self, msg: String) -> None:
+        try:
+            d = json.loads(msg.data)
+        except ValueError:
+            return
+        if d.get("status") in ("ok", "warn_turned") and d.get("offset_new_deg") is not None:
+            self._cal_ok_offset_deg = float(d["offset_new_deg"])
+
+    def _heading_calibrated(self) -> bool:
+        off = self._yaw_offset_deg
+        if off is None:
+            return False
+        if abs(off) > 1e-6:          # calibrated, or set by hand / at launch
+            return True
+        return self._cal_ok_offset_deg is not None and abs(self._cal_ok_offset_deg - off) < 1e-3
+
+    def _extnav_gate(self, msg) -> bool:
+        """True if this local-odometry message may be forwarded to the Pixhawk."""
+        now = time.monotonic()
+        if self._odom_last_rx is None or now - self._odom_last_rx > 2.0:
+            # First message, or the local EKF was restarted (gap > 2 s): re-check
+            # convergence and tell EKF3 that the external-nav frame was reset.
+            if self._odom_last_rx is not None:
+                self._odom_reset_counter = (self._odom_reset_counter + 1) % 256
+                self.get_logger().warn(
+                    "Local EKF restart detected (odometry gap > 2 s): external nav paused "
+                    f"until it settles; reset_counter={self._odom_reset_counter}"
+                )
+            self._odom_first_rx = now
+            self._settle_since = None
+            self._extnav_settled = False
+        self._odom_last_rx = now
+
+        if not self._extnav_settled:
+            imu = self._imu_corr_yaw
+            if imu is not None and now - imu[1] < 0.5:
+                diff = math.degrees(
+                    math.atan2(math.sin(self._yaw_of(msg.pose.pose.orientation) - imu[0]),
+                               math.cos(self._yaw_of(msg.pose.pose.orientation) - imu[0]))
+                )
+                if abs(diff) <= float(self.get_parameter("extnav_settle_tol_deg").value):
+                    if self._settle_since is None:
+                        self._settle_since = now
+                    if now - self._settle_since >= float(
+                            self.get_parameter("extnav_settle_time_s").value):
+                        self._extnav_settled = True
+                else:
+                    self._settle_since = None
+            if (not self._extnav_settled and now - self._odom_first_rx
+                    > float(self.get_parameter("extnav_settle_timeout_s").value)):
+                self._extnav_settled = True
+                self.get_logger().warn(
+                    "Local EKF yaw did not match /imu/data_corrected within tolerance — "
+                    "forwarding external nav anyway after the settle timeout."
+                )
+
+        reason = ""
+        if not self._extnav_settled:
+            reason = "local EKF not settled (yaw vs /imu/data_corrected)"
+        elif (bool(self.get_parameter("extnav_require_heading_calibration").value)
+              and not self._heading_calibrated()):
+            reason = "heading not calibrated (run calibrate_yaw_offset or set yaw_offset_deg)"
+        forward = reason == ""
+        if forward != self._extnav_forwarding:
+            if forward:
+                self.get_logger().info(
+                    "External nav -> Pixhawk: FORWARDING (heading calibrated, local EKF settled)"
+                )
+            else:
+                self.get_logger().warn(f"External nav -> Pixhawk: PAUSED — {reason}")
+            self._extnav_forwarding = forward
+        self._extnav_block_reason = reason
+        return forward
+
+    def _extnav_status_cb(self) -> None:
+        """1 Hz: publish gate state; warn if the Pixhawk's yaw disagrees with ours."""
+        now = time.monotonic()
+        fc, sent = self._fc_yaw, self._sent_yaw
+        self._yaw_mismatch_deg = None
+        if (self._extnav_forwarding and fc is not None and sent is not None
+                and now - fc[1] < 1.0 and now - sent[1] < 1.0):
+            d = math.degrees(math.atan2(math.sin(fc[0] - sent[0]), math.cos(fc[0] - sent[0])))
+            self._yaw_mismatch_deg = d
+            if abs(d) > float(self.get_parameter("extnav_yaw_mismatch_warn_deg").value):
+                self._yaw_mismatch_count += 1
+                if self._yaw_mismatch_count >= 3 and self._yaw_mismatch_count % 10 == 3:
+                    self.get_logger().warn(
+                        f"Pixhawk yaw differs from external nav by {d:+.1f} deg for "
+                        f"{self._yaw_mismatch_count} s — EKF3 latched an old heading and "
+                        "rejects ours (GUIDED may be refused: 'requires position'). "
+                        "Reboot the Pixhawk while DISARMED."
+                    )
+            else:
+                self._yaw_mismatch_count = 0
+        odom_age = None if self._odom_last_rx is None else now - self._odom_last_rx
+        self._extnav_status_pub.publish(String(data=json.dumps(dict(
+            forwarding=self._extnav_forwarding,
+            reason=self._extnav_block_reason,
+            heading_calibrated=self._heading_calibrated(),
+            ekf_settled=self._extnav_settled,
+            odom_age_s=None if odom_age is None else round(odom_age, 2),
+            pixhawk_yaw_minus_extnav_deg=(None if self._yaw_mismatch_deg is None
+                                          else round(self._yaw_mismatch_deg, 1)),
+            yaw_mismatch_s=self._yaw_mismatch_count,
+            reset_counter=self._odom_reset_counter,
+        ))))
+
     def ekf_odom_cb(self, msg):
         """
         Receives filtered odometry from /odometry/filtered/local (ENU/FLU, ROS convention)
@@ -482,6 +725,9 @@ class MavlinkBridgeReceiver(Node):
           Velocity:      body FLU→FRD  vx unchanged, vy=-vy, vz=-vz
           Angular rates: body FLU→FRD  roll unchanged, pitch and yaw negated
         """
+        if not self._extnav_gate(msg):
+            return
+
         # Limit send rate to avoid flooding the serial port.
         now_ns = self.get_clock().now().nanoseconds
         max_hz = (
@@ -519,6 +765,10 @@ class MavlinkBridgeReceiver(Node):
 
         # Step 2: q_ned_frd = q_tmp (0, 1, 0, 0)  [FLU→FRD: 180° around x]
         q = [-xt, wt, zt, -yt]
+        self._sent_yaw = (
+            math.atan2(2.0 * (q[0] * q[3] + q[1] * q[2]), 1.0 - 2.0 * (q[2] * q[2] + q[3] * q[3])),
+            time.monotonic(),
+        )
 
         """OLD VERSION"""
         # q = [wt, xt, yt, zt]
@@ -625,7 +875,15 @@ class MavlinkBridgeReceiver(Node):
                 if msg is None:
                     break
                 t = msg.get_type()
-                if t == "VFR_HUD":
+                if t == "ATTITUDE":
+                    self._fc_yaw = (float(msg.yaw), time.monotonic())
+                elif t == "ATTITUDE_QUATERNION":
+                    w, x, y, z = msg.q1, msg.q2, msg.q3, msg.q4
+                    self._fc_yaw = (
+                        math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)),
+                        time.monotonic(),
+                    )
+                elif t == "VFR_HUD":
                     self._vfrhud_alt = msg.alt
                     self._vfrhud_climb = msg.climb
                 elif t == "NAV_CONTROLLER_OUTPUT":
@@ -829,24 +1087,36 @@ class MavlinkBridgeReceiver(Node):
             )
             self.get_logger().info(f"Queued ArduSub param write for {mav_param_id}")
 
-    def gps_origin_cb(self, msg: UBXNavHPPosLLH):
-        if self._gps_origin_sent:
+    def odom_origin_cb(self, msg: NavSatFix):
+        self._odom_origin = msg
+        self._try_send_gps_origin()
+
+    def geoid_sep_cb(self, msg: UBXNavHPPosLLH):
+        # Only the geoid separation is used from UBX; fix selection happens in
+        # gnss_datum_watchdog. height and hmsl are both in mm.
+        if self._gps_origin_sent or msg.invalid_hmsl or msg.invalid_height:
             return
-        if msg.invalid_lon or msg.invalid_lat or msg.invalid_hmsl:
-            self._gps_origin_valid_count = 0
+        self._geoid_sep_m = (int(msg.height) - int(msg.hmsl)) * 1e-3
+        self._try_send_gps_origin()
+
+    def _try_send_gps_origin(self):
+        if self._gps_origin_sent or self._odom_origin is None:
             return
-        self._gps_origin_valid_count += 1
-        if self._gps_origin_valid_count < 5:
+        if self._geoid_sep_m is None:
+            self.get_logger().info(
+                "GPS origin received on /odom_origin; waiting for /ubx_nav_hp_pos_llh "
+                "to convert its altitude to MSL",
+                throttle_duration_sec=10.0,
+            )
             return
 
-        # UBX-NAV-HPPOSLLH units:
-        #   lat, lon:  deg * 1e7 (already MAVLink degE7 scale)
-        #   hmsl:      mm, height above mean sea level (already MAVLink altitude scale)
-        lat_e7 = int(msg.lat)
-        lon_e7 = int(msg.lon)
-        alt_mm = int(msg.hmsl)
+        origin = self._odom_origin
+        lat_e7 = int(round(origin.latitude * 1e7))
+        lon_e7 = int(round(origin.longitude * 1e7))
+        # NavSatFix.altitude is above the WGS84 ellipsoid; MAVLink wants MSL.
+        alt_mm = int(round((origin.altitude - self._geoid_sep_m) * 1e3))
 
-        time_usec = (msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec) // 1000
+        time_usec = (origin.header.stamp.sec * 10**9 + origin.header.stamp.nanosec) // 1000
         self.port.mav.set_gps_global_origin_send(
             self.port.target_system,
             lat_e7,
@@ -869,15 +1139,13 @@ class MavlinkBridgeReceiver(Node):
             time_usec,
         )
         self._gps_origin_sent = True
-        lat_deg = lat_e7 * 1e-7
-        lon_deg = lon_e7 * 1e-7
-        alt_m = alt_mm * 1e-3
-        self.get_logger().info(
-            f"GPS_GLOBAL_ORIGIN sent (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
+        msg = (
+            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL, odom origin from gnss_datum_watchdog): "
+            f"lat={origin.latitude:.7f}, lon={origin.longitude:.7f}, "
+            f"alt={alt_mm * 1e-3:.2f}m (geoid sep {self._geoid_sep_m:.2f}m)"
         )
-        self._file_logger.info(
-            f"GPS_GLOBAL_ORIGIN sent to Pixhawk (MSL): lat={lat_deg:.7f}, lon={lon_deg:.7f}, alt={alt_m:.2f}m"
-        )
+        self.get_logger().info(msg)
+        self._file_logger.info(msg)
 
     def cmd_vel_cb(self, msg):
         # msg is geometry_msgs.msg.Twist
@@ -887,9 +1155,24 @@ class MavlinkBridgeReceiver(Node):
 
         # 1. Map ROS FLU body frame -> ArduSub MAV_FRAME_BODY_FRD.
         # Input convention is REP-103 FLU (matches pure_pursuit_controller_3d):
-        surge    = float(msg.linear.x)   # FLU forward -> negative vx
-        heave    = -float(msg.linear.z)   # FLU up      -> -down (FRD spec)
-        yaw_rate = -float(msg.angular.z)  # FLU CCW     -> -CW   (FRD spec)
+        #   +linear.x = forward, +linear.y = left, +linear.z = up,
+        #   +angular.z = yaw CCW (left).
+        # ArduSub 4.5.7 interprets SET_POSITION_TARGET_LOCAL_NED with BODY_FRD
+        # spec-correctly for z (down positive) and yaw (CW positive), but the
+        # x axis is empirically inverted (forward needs negative vx). Verified
+        # in MANUAL that thrusters/AHRS_ORIENTATION are correct, so the surge
+        # flip compensates ArduSub's GUIDED-mode BODY_FRD x-axis specifically.
+        # Deadband: thrusters can't produce sub-threshold commands, so zero them
+        # out to avoid jitter / integrator wind-up in the ArduSub low-level loop.
+        LIN_DEADBAND = 0.01   # m/s
+        ANG_DEADBAND = 0.015   # rad/s
+        lx = float(msg.linear.x)  if abs(msg.linear.x)  >= LIN_DEADBAND else 0.0
+        lz = float(msg.linear.z)  if abs(msg.linear.z)  >= LIN_DEADBAND else 0.0
+        az = float(msg.angular.z) if abs(msg.angular.z) >= ANG_DEADBAND else 0.0
+
+        surge    = lx    # FLU forward -> negative vx
+        heave    = -lz   # FLU up      -> -down (FRD spec)
+        yaw_rate = -az   # FLU CCW     -> -CW   (FRD spec)
 
         # 2. Type mask (ArduSub GCS_MAVLink_Sub.cpp): vel_ignore is true if ANY of
         # MAVLINK_SET_POS_TYPE_MASK_VEL_IGNORE bits (vx,vy,vz) are set — so we must not
@@ -915,9 +1198,9 @@ class MavlinkBridgeReceiver(Node):
             0.0,
             0.0,
             0.0,  # Position (ignored)
-            surge,
+            surge, # surge
             0.0,
-            heave,  # Velocities (m/s)
+            0.0,  # heave
             0.0,
             0.0,
             0.0,  # Acceleration (ignored)
@@ -929,9 +1212,91 @@ class MavlinkBridgeReceiver(Node):
         self._cmd_vel_last_msg_t = self.get_clock().now().nanoseconds * 1e-9
         self._cmd_vel_was_active = True
 
+    def hold_offset_cb(self, msg: Vector3) -> None:
+        east, north = float(msg.x), float(msg.y)
+        dist = math.hypot(east, north)
+        max_m = float(self.get_parameter("hold_offset_max_m").value)
+        if self.pixhawk_mode != "GUIDED" or self._cmd_vel_was_active:
+            self.get_logger().warn(
+                f"hold_offset ignored (mode={self.pixhawk_mode}, cmd_vel active="
+                f"{self._cmd_vel_was_active})"
+            )
+            return
+        if not math.isfinite(dist) or dist > max_m:
+            self.get_logger().warn(
+                f"hold_offset {dist:.2f} m refused (> hold_offset_max_m={max_m:.2f} m); "
+                "keeping hold-here"
+            )
+            return
+        self._send_hold_here(
+            f"hold at offset E{east:+.2f} N{north:+.2f} m", offset_ned=(north, east)
+        )
+
+    def _send_hold_here(self, reason: str, offset_ned=(0.0, 0.0)) -> None:
+        """Hold the CURRENT position and the CURRENT measured heading in GUIDED.
+
+        Preferred: MAV_FRAME_LOCAL_OFFSET_NED with zero offset (= current position) and
+        an ABSOLUTE yaw = the FC's own measured yaw (ATTITUDE). ArduSub then sets
+        yaw_look_at_heading directly from it.
+
+        Why not a relative yaw 0 (BODY_OFFSET_NED, previous version): ArduSub adds a
+        relative yaw to its attitude TARGET (mode_auto.cpp set_auto_yaw_look_at_heading),
+        and in armed MANUAL the attitude controller never runs, so that target is still
+        the heading of the previous hold. GUIDED -> MANUAL -> GUIDED then turned back to
+        the old heading (2026-10-14: entered at 151 deg, turned to 123 deg).
+        And with YAW_IGNORE (original) the hold used a stale yaw_look_at_heading that our
+        stack never sets (every hold went to the same fixed heading).
+
+        Fallback when no fresh FC attitude (> 0.5 s old): the relative-yaw form.
+
+        offset_ned (north, east) [m]: hold at current position + this offset instead
+        (LOCAL_OFFSET_NED adds it un-rotated to the current position). Without a fresh
+        FC attitude the yaw is then left to ArduSub (YAW_IGNORE).
+        """
+        m = mavutil.mavlink
+        type_mask = (
+            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
+            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+        )
+        off_n, off_e = float(offset_ned[0]), float(offset_ned[1])
+        has_offset = off_n != 0.0 or off_e != 0.0
+        fc_yaw = self._fc_yaw
+        if fc_yaw is not None and time.monotonic() - fc_yaw[1] < 0.5:
+            frame = m.MAV_FRAME_LOCAL_OFFSET_NED   # offset from here, yaw absolute
+            yaw = fc_yaw[0]
+            how = f"absolute yaw {math.degrees(yaw):+.1f} deg NED"
+        elif has_offset:
+            frame = m.MAV_FRAME_LOCAL_OFFSET_NED   # offset from here, yaw left to ArduSub
+            type_mask |= m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
+            yaw = 0.0
+            how = "yaw ignored (no fresh FC attitude)"
+        else:
+            frame = m.MAV_FRAME_BODY_OFFSET_NED    # yaw 0 relative (fallback)
+            yaw = 0.0
+            how = "relative yaw 0 (no fresh FC attitude)"
+        self.port.mav.set_position_target_local_ned_send(
+            0,
+            self.port.target_system,
+            self.port.target_component,
+            frame,
+            type_mask,
+            off_n, off_e, 0.0,   # position offset (N, E, D) from here
+            0.0, 0.0, 0.0,   # velocity (ignored)
+            0.0, 0.0, 0.0,   # acceleration (ignored)
+            yaw,
+            0.0,             # yaw rate (ignored)
+        )
+        self.get_logger().info(f"GUIDED hold-here setpoint ({reason}): {how}")
+        self._file_logger.info(f"GUIDED hold-here setpoint sent ({reason}): {how}")
+
     def _cmd_vel_watchdog_cb(self):
         """If no /pixhawk/cmd_vel arrives within _CMD_VEL_TIMEOUT_S, send one
-        zero-velocity setpoint and disarm. Re-arms automatically when cmd_vel
+        hold-here setpoint (current position + heading). Re-arms automatically when cmd_vel
         resumes. Bypasses ArduSub's ~3 s GUID_TIMEOUT so the sub stops within
         ~0.4 s of the upstream publisher going silent (Ctrl+C, controller
         crash, mode change, mission completion)."""
@@ -943,37 +1308,9 @@ class MavlinkBridgeReceiver(Node):
         now = self.get_clock().now().nanoseconds * 1e-9
         if now - self._cmd_vel_last_msg_t < self._CMD_VEL_TIMEOUT_S:
             return
-        m = mavutil.mavlink
-        type_mask = (
-            m.POSITION_TARGET_TYPEMASK_VX_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_VY_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_VZ_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AX_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AY_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_AZ_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_YAW_IGNORE
-            | m.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
-        )
-        self.port.mav.set_position_target_local_ned_send(
-            0,
-            self.port.target_system,
-            self.port.target_component,
-            m.MAV_FRAME_BODY_OFFSET_NED,
-            type_mask,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        )
+        self._send_hold_here("cmd_vel timeout")
         self._cmd_vel_was_active = False
-        self.get_logger().info("cmd_vel watchdog: timeout, sent zero-velocity setpoint")
+        self.get_logger().info("cmd_vel watchdog: timeout, sent hold-here setpoint")
 
     def _gcs_heartbeat_cb(self):
         """Send 1 Hz GCS heartbeat. ArduSub FS_GCS_ENABLE failsafes if these stop arriving."""

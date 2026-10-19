@@ -1,0 +1,34 @@
+# Laptop-only SBL raw-collection config (thesis: tightly-coupled SBL particle filter).
+#
+# Passive: talks to the Waterlinked UGPS G2 box over HTTP only. It does NOT need the onboard
+# computer, the ublox GNSS, or any /fix, /navrelposned or topside NavigationStatus topics, and it
+# never PUTs an external-master position to the box. It simply GETs the raw per-receiver ranges and
+# the receiver geometry and publishes them for recording.
+#
+# Node name/namespace must match sbl_laptop_record.launch.py (namespace waterlinked/ugps,
+# node name waterlinked_localization_node).
+waterlinked/ugps:
+  waterlinked_localization_node:
+    ros__parameters:
+      # Poll a touch faster than the box ping (2-4 Hz per the G2 datasheet); the driver
+      # de-duplicates, so we publish one SblRaw per genuinely new fix.
+      ros_rate: 4.0
+      waterlinked_url: 'http://192.168.194.94'   # UGPS box; laptop must be on this subnet
+      ros_rate_topside: 10.0
+
+      # Frame-transform path left on so node init is clean, but with NO external sources it stays
+      # passive (transform steps simply idle; "lacking arguments" info lines are expected/benign).
+      use_ros_based_frame_transform: True
+      use_ros_based_locator_relative_position: False
+
+      waterlinked_api_external_master_path: '/api/v1/external/master'
+      wl_api_use_external_gps_fixed: False
+      wl_api_use_external_heading_fixed: False
+      external_gps_fixed_lat: 0.0
+      external_gps_fixed_lon: 0.0
+      external_heading_fixed_value: 0.0
+      wl_api_use_external_gps_measurements: False
+      wl_api_use_external_heading_measurements: False
+
+      # Thesis: enable the additive raw per-receiver SBL telemetry (sbl_raw + sbl_receiver_config).
+      publish_sbl_raw: True

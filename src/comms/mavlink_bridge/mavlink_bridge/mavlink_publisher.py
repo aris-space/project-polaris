@@ -10,7 +10,7 @@ from rclpy.parameter import Parameter
 from pymavlink import mavutil
 from rcl_interfaces.srv import SetParameters as SetParametersSrv
 from datetime import datetime
-from std_msgs.msg import Int16MultiArray, Float32
+from std_msgs.msg import Int16MultiArray, Float32, String
 from mavros_msgs.msg import State, RCIn, ManualControl  # HEARTBEAT  # RC_CHANNELS
 from rcl_interfaces.msg import SetParametersResult
 from geometry_msgs.msg import Quaternion, Vector3
@@ -112,6 +112,14 @@ class MavlinkBridgeSender(Node):
             State, "/pixhawk/heartbeat", 10
         )
 
+        # ArduSub's own status/error messages (STATUSTEXT): the reason the FC gives for
+        # e.g. a rejected mode change (GUIDED), pre-arm failures, or EKF health. These
+        # were previously received and dropped, leaving operators blind to WHY an action
+        # failed. Republish them so they show up in logs/Foxglove.
+        self.statustext_publisher = self.create_publisher(
+            String, "/pixhawk/statustext", 10
+        )
+
         # self.attitude_euler_publisher = self.create_publisher(
         #     Vector3, "/pixhawk/attitude_euler", 10
         # )
@@ -192,79 +200,21 @@ class MavlinkBridgeSender(Node):
         #     f"MANUAL_CONTROL request sent (msg_id={mavutil.mavlink.MAVLINK_MSG_ID_MANUAL_CONTROL}, interval=100ms)"
         # )
 
-        # ADDED: Request SCALED_PRESSURE2 messages at 50 Hz
-        self.logger.info("Requesting SCALED_PRESSURE2 message stream from Pixhawk...")
-        self.port.mav.command_long_send(
-            self.port.target_system,
-            self.port.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0,  # confirmation
-            mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2,  # message ID = 137
-            20000,  # interval in microseconds (20ms = 50Hz)
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-        self.logger.info("SCALED_PRESSURE2 request sent (interval=20ms)")
-
-        # # ADDED: Request ATTITUDE messages at 50 Hz
-        # self.logger.info("Requesting ATTITUDE EULERmessage stream from Pixhawk...")
-        # self.port.mav.command_long_send(
-        #     self.port.target_system,
-        #     self.port.target_component,
-        #     mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-        #     0,  # confirmation
-        #     mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,  # message ID = 30
-        #     20000,  # interval in microseconds (20ms = 50Hz)
-        #     0, 0, 0, 0, 0,
-        # )
-
-        self.logger.info(
-            "Requesting ATTITUDE QUATERNION message stream from Pixhawk..."
-        )
-        self.port.mav.command_long_send(
-            self.port.target_system,
-            self.port.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0,  # confirmation
-            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE_QUATERNION,  # message ID = 31
-            20000,  # interval in microseconds (20ms = 50Hz)
-            0,
-            0,
-            0,
-            0,
-            0,
-        )
-        self.logger.info("BOTH ATTITUDE request sent (interval=20ms)")
-
-        # Request PID_TUNING messages at 20 Hz
-        pid_tuning_msg_id = getattr(mavutil.mavlink, "MAVLINK_MSG_ID_PID_TUNING", 194)
-        self.logger.info("Requesting PID_TUNING message stream from Pixhawk...")
-        self.port.mav.command_long_send(
-            self.port.target_system,
-            self.port.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0,
-            pid_tuning_msg_id,
-            100000,  # 100ms = 10 Hz
-            0, 0, 0, 0, 0,
-        )
-        self.logger.info(f"PID_TUNING request sent (msg_id={pid_tuning_msg_id}, interval=100ms)")
-
-        # Request SERVO_OUTPUT_RAW messages at 10 Hz
-        self.logger.info("Requesting SERVO_OUTPUT_RAW message stream from Pixhawk...")
-        self.port.mav.command_long_send(
-            self.port.target_system,
-            self.port.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0,  # confirmation
-            mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,  # message ID = 36
-            100000,  # interval in microseconds (100ms = 10Hz)
-            0, 0, 0, 0, 0,
-        )
-        self.logger.info("SERVO_OUTPUT_RAW request sent (interval=100ms)")
+        # Stream requests. MAV_CMD_SET_MESSAGE_INTERVAL is volatile on the FC: after a
+        # Pixhawk reboot it falls back to its SRx defaults (attitude gone, pressure and
+        # servo outputs at ~2 Hz; seen 2026-10-14 when the bridge kept running across a
+        # reboot). So the requests are re-sent whenever a reboot is detected (STATUSTEXT
+        # "ArduPilot Ready", heartbeat returning after a gap) or the attitude stream stalls.
+        self._stream_requests = [
+            ("SCALED_PRESSURE2", mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE2, 20000),          # 50 Hz
+            ("ATTITUDE_QUATERNION", mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE_QUATERNION, 20000),    # 50 Hz
+            ("PID_TUNING", getattr(mavutil.mavlink, "MAVLINK_MSG_ID_PID_TUNING", 194), 100000),    # 10 Hz
+            ("SERVO_OUTPUT_RAW", mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW, 100000),         # 10 Hz
+        ]
+        self._streams_request_pending = False
+        self._last_stream_request_s = 0.0
+        self._last_attitude_s = None
+        self._request_streams("startup")
 
         self.msg_type_counter = {
             # "HEARTBEAT": 0,
@@ -450,6 +400,29 @@ class MavlinkBridgeSender(Node):
     #     )
     #     return SetParametersResult(successful=True)
 
+    def _now_s(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
+    def _request_streams(self, reason: str) -> None:
+        """Send MAV_CMD_SET_MESSAGE_INTERVAL for every stream the bridge needs.
+        Not thread-safe by itself: the 1 Hz timer calls it under _mav_lock."""
+        for name, msg_id, interval_us in self._stream_requests:
+            self.port.mav.command_long_send(
+                self.port.target_system,
+                self.port.target_component,
+                mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+                0,
+                msg_id,
+                interval_us,
+                0, 0, 0, 0, 0,
+            )
+        self._last_stream_request_s = self._now_s()
+        self._streams_request_pending = False
+        self.logger.info(
+            f"MAVLink stream intervals requested ({reason}): "
+            + ", ".join(f"{n}@{1e6 / i:.0f}Hz" for n, _, i in self._stream_requests)
+        )
+
     def mavlink_callback(self):
         """Timer callback - drain UDP buffer and publish to ROS2."""
         with self._mav_lock:
@@ -461,6 +434,7 @@ class MavlinkBridgeSender(Node):
                 if mtype == "HEARTBEAT":
                     self.handle_heartbeat(msg)
                 elif mtype == "ATTITUDE_QUATERNION":
+                    self._last_attitude_s = self._now_s()
                     self.handle_attitude_quaternion(msg)
                 # elif msg.get_type() == "RC_CHANNELS":
                 #    self.handle_rc_channels(msg)
@@ -475,6 +449,33 @@ class MavlinkBridgeSender(Node):
                         self._param_value_queue.put_nowait(msg)
                     except queue.Full:
                         pass
+                elif mtype == "STATUSTEXT":
+                    self.handle_statustext(msg)
+
+    def handle_statustext(self, msg):
+        """Log + republish an ArduSub STATUSTEXT so its own reason for an action is
+        visible (e.g. a refused GUIDED mode change, a pre-arm or EKF message). Severity
+        follows MAV_SEVERITY (0-3 emergency..error, 4 warning, 5 notice, 6 info,
+        7 debug). Published as std_msgs/String on /pixhawk/statustext."""
+        text = msg.text
+        if isinstance(text, (bytes, bytearray)):
+            text = bytes(text).decode("utf-8", "replace")
+        text = str(text).strip()
+        if not text:
+            return
+        severity = int(getattr(msg, "severity", 6))
+        line = f"[FC sev{severity}] {text}"
+        if severity <= 3:
+            self.logger.error(line)
+        elif severity == 4:
+            self.logger.warning(line)
+        else:
+            self.logger.info(line)
+        self.statustext_publisher.publish(String(data=text))
+        if "ArduPilot Ready" in text:
+            # FC just (re)booted: its message intervals are back to defaults.
+            # Sent from the 1 Hz timer (this handler runs under _mav_lock).
+            self._streams_request_pending = True
 
     def message_counter(self, msg_type: str) -> bool:
         """Only process every Nth message per message type."""
@@ -494,7 +495,12 @@ class MavlinkBridgeSender(Node):
         if msg.autopilot == mavutil.mavlink.MAV_AUTOPILOT_INVALID:
             return  # Skip non-autopilot heartbeats
 
-        self.last_heartbeat_time = self.get_clock().now()
+        now = self.get_clock().now()
+        if (self.last_heartbeat_time is not None
+                and (now - self.last_heartbeat_time).nanoseconds / 1e9 > 3.0):
+            # heartbeat came back after a gap -> FC probably rebooted
+            self._streams_request_pending = True
+        self.last_heartbeat_time = now
 
         # if not self.message_counter("HEARTBEAT"):
         #     return
@@ -591,6 +597,19 @@ class MavlinkBridgeSender(Node):
         diag_msg.header.stamp = now.to_msg()
         diag_msg.status.append(status)
         self.diagnostic_publisher.publish(diag_msg)
+
+        # Re-request streams after a detected FC reboot, or if heartbeats arrive but the
+        # 50 Hz attitude stream has stalled for > 3 s (reboot text missed). Rate-limited.
+        now_s = self._now_s()
+        attitude_stalled = age_s < 2.0 and (
+            self._last_attitude_s is None or now_s - self._last_attitude_s > 3.0
+        )
+        if (self._streams_request_pending or attitude_stalled) and (
+            now_s - self._last_stream_request_s > 5.0
+        ):
+            reason = "FC reboot detected" if self._streams_request_pending else "attitude stream stalled"
+            with self._mav_lock:
+                self._request_streams(reason)
 
     # def handle_attitude_euler(self, msg):
     #     """Process ATTITUDE_EULER message and publish to ROS2"""

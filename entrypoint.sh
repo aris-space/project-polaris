@@ -82,8 +82,16 @@ EOF
 }
 
 # Returns 0 if a basic internet connection is available, 1 otherwise.
+# Tries several endpoints and succeeds if ANY connects. Port 443 (HTTPS) is included because many
+# networks (home routers, ISPs, campus/corporate) block outbound port 53 to public DNS resolvers,
+# which made the old single 8.8.8.8:53 probe report "no internet" on networks that were in fact online.
 has_internet() {
-  timeout 3 bash -c 'echo >/dev/tcp/8.8.8.8/53' 2>/dev/null
+  for hostport in 8.8.8.8/53 1.1.1.1/53 8.8.8.8/443 1.1.1.1/443; do
+    if timeout 3 bash -c "echo >/dev/tcp/${hostport}" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # --- Config defaults ---

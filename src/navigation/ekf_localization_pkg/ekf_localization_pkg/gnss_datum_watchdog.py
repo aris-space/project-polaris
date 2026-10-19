@@ -1,15 +1,26 @@
+import json
 import math
 import signal
+from collections import deque
 import subprocess
 import tempfile
 from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix
+from std_msgs.msg import String
+from pyproj import Transformer
+
+from ekf_localization_pkg.global_ekf_to_navsatfix import _utm_epsg
 
 _DEG2RAD = math.pi / 180.0
 _EARTH_R_M = 6_371_000.0
@@ -31,6 +42,13 @@ except ImportError:
     _UBXNavHPPosLLH = None
     _HPPOSLLH_AVAILABLE = False
 
+try:
+    from ublox_ubx_msgs.msg import UBXNavPVT as _UBXNavPVT
+    _PVT_AVAILABLE = True
+except ImportError:
+    _UBXNavPVT = None
+    _PVT_AVAILABLE = False
+
 # UBX-NAV-HPPOSLLH h_acc field is in 0.1 mm units
 _HPPOSLLH_H_ACC_TO_M = 1e-4
 
@@ -49,11 +67,27 @@ class GnssDatumWatchdog(Node):
       - |lat| > 0.1° and |lon| > 0.1°   (null-island guard)
       - UBX-NAV-HPPOSLLH h_acc > 0 and <= h_acc_max_m
 
+    Fallback: if no fix passes the h_acc gate within h_acc_fallback_after_s of
+    the first fix that passes the status and null-island checks, the gate
+    widens to h_acc_fallback_max_m and a WARNING is logged. A datum locked this
+    way shifts the whole mission by up to that accuracy.
+
+    At lock it publishes, latched (TRANSIENT_LOCAL):
+      /gnss_datum    the locked fix = map-frame origin (mission_waypoint_loader)
+      /odom_origin   lat/lon/alt of odom-frame (0, 0, 0) = datum minus the local
+                     EKF position at lock (ros2_receiver -> Pixhawk
+                     GPS_GLOBAL_ORIGIN, since ArduSub is fed odom-frame poses).
+                     Assumes the odom frame is ENU-aligned, like the global EKF
+                     path (map_yaw_offset_rad = 0).
+
     Parameters
     ----------
     fix_topic            NavSatFix topic                      (default /gps/selected)
     h_acc_topic          UBXNavHPPosLLH accuracy topic        (default /ubx_nav_hp_pos_llh)
     h_acc_max_m          Max acceptable horizontal accuracy   (default 0.50 m)
+    h_acc_fallback_max_m Widened h_acc gate after the timeout (default 5.0 m)
+    h_acc_fallback_after_s  Time without an h_acc_max_m fix before widening
+                         (default 300 s — fits an NTRIP cold start)
     max_fix_distance_m   Max haversine distance from datum    (default 100000 m = 100 km)
     imu_topic            IMU topic forwarded to navsat        (default /imu/data_corrected)
     odom_topic           Local odom forwarded to navsat       (default /odometry/filtered/local)
@@ -64,8 +98,19 @@ class GnssDatumWatchdog(Node):
     After the datum is set, every incoming fix is validated by:
       - status >= 0 and |lat| > 0.1° (null-island guard)
       - haversine distance from datum <= max_fix_distance_m
+      - post-lock accuracy gate (post_lock_gate, default on): the SAME-EPOCH
+        UBX-NAV-HPPOSLLH h_acc (matched by header stamp) must be
+        <= post_lock_h_acc_max_m and, if UBX-NAV-PVT of that epoch is
+        available, gnss_fix_ok must be true. After any rejection the gate stays
+        closed until post_lock_reentry_good_fixes consecutive good fixes.
+        The fix's position_covariance is replaced by the same-epoch h_acc^2
+        (post_lock_replace_covariance): the ublox NavSatFix carries the
+        PREVIOUS epoch's covariance, so the first degraded fixes on a dive
+        still claimed RTK accuracy (2026-10-14 pool: fixes up to 36 m wrong
+        reached the global EKF, the first ones with sigma ~0.01 m).
     Valid fixes are republished on /gps/validated; navsat_transform subscribes
     to that topic instead of the raw fix topic so garbage fixes never reach it.
+    Gate state + counters: latched JSON on ~/gnss_gate.
     """
 
     def __init__(self) -> None:
@@ -74,7 +119,16 @@ class GnssDatumWatchdog(Node):
         self.declare_parameter("fix_topic", "/gps/selected")
         self.declare_parameter("h_acc_topic", "/ubx_nav_hp_pos_llh")
         self.declare_parameter("h_acc_max_m", 0.50)
+        self.declare_parameter("h_acc_fallback_max_m", 5.0)
+        self.declare_parameter("h_acc_fallback_after_s", 300.0)
         self.declare_parameter("max_fix_distance_m", 100_000.0)
+        self.declare_parameter("post_lock_gate", True)
+        self.declare_parameter("post_lock_h_acc_max_m", 0.30)
+        self.declare_parameter("post_lock_reentry_good_fixes", 3)
+        self.declare_parameter("post_lock_replace_covariance", True)
+        self.declare_parameter("pvt_topic", "/ubx_nav_pvt")
+        self.declare_parameter("ubx_stamp_match_max_s", 0.05)
+        self.declare_parameter("ubx_pending_timeout_s", 0.3)
         self.declare_parameter("imu_topic", "/imu/data_corrected")
         self.declare_parameter("odom_topic", "/odometry/filtered/local")
         self.declare_parameter("navsat_params_file", "")
@@ -95,7 +149,41 @@ class GnssDatumWatchdog(Node):
         fix_topic: str = self.get_parameter("fix_topic").value
         h_acc_topic: str = self.get_parameter("h_acc_topic").value
         self._h_acc_max_m: float = self.get_parameter("h_acc_max_m").value
+        self._h_acc_fallback_max_m: float = float(
+            self.get_parameter("h_acc_fallback_max_m").value
+        )
+        self._h_acc_fallback_after_s: float = float(
+            self.get_parameter("h_acc_fallback_after_s").value
+        )
+        # Set by the first fix that passes status + null-island; starts the
+        # fallback timer. _fallback_active flips once, when the gate widens.
+        self._t_first_valid_fix_s: float | None = None
+        self._fallback_active = False
         self._max_fix_distance_m: float = self.get_parameter("max_fix_distance_m").value
+        self._gate_enabled: bool = bool(self.get_parameter("post_lock_gate").value)
+        self._gate_h_acc_max_m: float = float(self.get_parameter("post_lock_h_acc_max_m").value)
+        self._gate_reentry_n: int = int(self.get_parameter("post_lock_reentry_good_fixes").value)
+        self._gate_replace_cov: bool = bool(self.get_parameter("post_lock_replace_covariance").value)
+        self._ubx_match_max_s: float = float(self.get_parameter("ubx_stamp_match_max_s").value)
+        self._ubx_pending_timeout_s: float = float(
+            self.get_parameter("ubx_pending_timeout_s").value
+        )
+        # Same-epoch UBX data keyed by header stamp (they arrive before the /fix of the
+        # same epoch): (stamp_s, h_acc_m) and (stamp_s, gnss_fix_ok, carr_soln).
+        self._hp_ring: deque = deque(maxlen=50)
+        self._pvt_ring: deque = deque(maxlen=50)
+        self._gate_open = True
+        self._gate_good_streak = 0
+        self._n_gps_rejected_gate = 0
+        self._gate_last_reason = ""
+        # Fixes waiting for their same-epoch HPPOSLLH. The /fix subscription is created
+        # before the HPPOSLLH one, and both messages of an epoch arrive within ~1 ms, so
+        # the single-threaded executor often runs the /fix callback first. Rejecting
+        # those as "no same-epoch h_acc" made the gate flap at the surface with RTK
+        # fixed (2026-10-15: only 25 of ~250 good fixes forwarded). Instead the fix
+        # waits here until its HPPOSLLH arrives (or expires after
+        # ubx_pending_timeout_s). (stamp_s, msg, dist_m)
+        self._pending: deque = deque(maxlen=20)
         self._imu_topic: str = self.get_parameter("imu_topic").value
         self._odom_topic: str = self.get_parameter("odom_topic").value
         self._navsat_params: str = self.get_parameter("navsat_params_file").value
@@ -157,9 +245,36 @@ class GnssDatumWatchdog(Node):
         self._t_node_start: float = self.get_clock().now().nanoseconds * 1e-9
         self._t_lock_s: float | None = None
 
+        self._gate_pub = self.create_publisher(
+            String, "~/gnss_gate",
+            QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+                       reliability=QoSReliabilityPolicy.RELIABLE),
+        )
+
         # Validated GPS fixes forwarded to navsat_transform (replaces raw topic).
         self._validated_pub = self.create_publisher(
             NavSatFix, "/gps/validated", qos_profile_sensor_data
+        )
+
+        # One-shot latched publication of the locked datum. Published exactly
+        # once inside _spawn_navsat_and_global (same instant the watchdog
+        # spawns navsat_transform and map->odom goes live). Downstream
+        # consumers (mission_waypoint_loader) subscribe with TRANSIENT_LOCAL
+        # and receive the latched message even if they connect minutes later
+        # — so the mission CSV's ENU origin is byte-for-byte the same fix
+        # that anchored the EKF datum.
+        latched_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self._datum_pub = self.create_publisher(
+            NavSatFix, "/gnss_datum", latched_qos
+        )
+        # Same instant, same fix, shifted to the odom-frame origin. Consumed by
+        # ros2_receiver for the Pixhawk GPS_GLOBAL_ORIGIN.
+        self._odom_origin_pub = self.create_publisher(
+            NavSatFix, "/odom_origin", latched_qos
         )
 
         # Diagnostic monitors — warn the moment a position exceeds 10 km (way beyond
@@ -197,6 +312,19 @@ class GnssDatumWatchdog(Node):
                     "falling back to coordinate + status check only."
                 )
 
+        pvt_topic: str = self.get_parameter("pvt_topic").value
+        if pvt_topic and _PVT_AVAILABLE:
+            self._pvt_sub = self.create_subscription(
+                _UBXNavPVT, pvt_topic, self._on_pvt, qos_profile_sensor_data
+            )
+        else:
+            self._pvt_sub = None
+        if self._gate_enabled and self._h_acc_sub is None:
+            self.get_logger().warn(
+                "post_lock_gate requested but no UBX HPPOSLLH h_acc source — "
+                "post-lock accuracy gate DISABLED (only status/null/distance checks)."
+            )
+
         self.get_logger().info(
             f"Waiting for RTK fix on '{fix_topic}' "
             f"(h_acc ≤ {self._h_acc_max_m * 100:.0f} cm via '{h_acc_topic}') "
@@ -220,8 +348,88 @@ class GnssDatumWatchdog(Node):
         self._latest_fix = msg
         self._check_and_launch()
 
+    @staticmethod
+    def _stamp_s(header) -> float:
+        return header.stamp.sec + header.stamp.nanosec * 1e-9
+
+    def _on_pvt(self, msg) -> None:
+        self._pvt_ring.append(
+            (self._stamp_s(msg.header), bool(msg.gnss_fix_ok),
+             int(getattr(msg.carr_soln, "status", msg.carr_soln)))
+        )
+
+    def _match(self, ring, stamp_s: float):
+        best, best_dt = None, self._ubx_match_max_s
+        for item in reversed(ring):
+            dt = abs(item[0] - stamp_s)
+            if dt <= best_dt:
+                best, best_dt = item, dt
+        return best
+
+    def _publish_gate(self) -> None:
+        self._gate_pub.publish(String(data=json.dumps(dict(
+            gate_open=self._gate_open,
+            last_reason=self._gate_last_reason,
+            h_acc_max_m=self._gate_h_acc_max_m,
+            validated=self._n_gps_validated,
+            rejected_gate=self._n_gps_rejected_gate,
+        ))))
+
+    def _gate_reject(self, reason: str) -> None:
+        self._n_gps_rejected_gate += 1
+        self._gate_good_streak = 0
+        self._gate_last_reason = reason
+        if self._gate_open:
+            self._gate_open = False
+            self.get_logger().warn(
+                f"[GNSS gate] CLOSED — {reason}; global EKF runs without GNSS"
+            )
+            self._publish_gate()
+
+    def _post_lock_gate(self, msg: NavSatFix) -> bool:
+        """Same-epoch accuracy gate. Returns True if the fix may be forwarded."""
+        stamp = self._stamp_s(msg.header)
+        hp = self._match(self._hp_ring, stamp)
+        if hp is None:  # caller only calls this once the HPPOSLLH is there
+            self._gate_reject("no same-epoch HPPOSLLH h_acc")
+            return False
+        h_acc = hp[1]
+        pvt = self._match(self._pvt_ring, stamp)
+        if pvt is not None and not pvt[1]:
+            self._gate_reject(f"gnss_fix_ok=false (h_acc {h_acc:.2f} m)")
+            return False
+        if h_acc <= 0.0 or h_acc > self._gate_h_acc_max_m:
+            self._gate_reject(f"h_acc {h_acc:.2f} m > {self._gate_h_acc_max_m:.2f} m")
+            return False
+        self._gate_good_streak += 1
+        if not self._gate_open:
+            if self._gate_good_streak < self._gate_reentry_n:
+                self._n_gps_rejected_gate += 1
+                return False
+            self._gate_open = True
+            self._gate_last_reason = ""
+            self.get_logger().info(
+                f"[GNSS gate] OPEN — {self._gate_good_streak} consecutive fixes with "
+                f"h_acc <= {self._gate_h_acc_max_m:.2f} m"
+            )
+            self._publish_gate()
+        if self._gate_replace_cov:
+            # Replace the lagged (previous-epoch) covariance with this epoch's h_acc.
+            cov = list(msg.position_covariance)
+            var_h = h_acc * h_acc
+            cov[0] = var_h
+            cov[4] = var_h
+            cov[1] = cov[3] = 0.0
+            msg.position_covariance = cov
+            msg.position_covariance_type = NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
+        return True
+
     def _on_hp_pos(self, msg: _UBXNavHPPosLLH) -> None:
         self._latest_h_acc_m = msg.h_acc * _HPPOSLLH_H_ACC_TO_M
+        self._hp_ring.append((self._stamp_s(msg.header), self._latest_h_acc_m))
+        if self._launched and self._pending:
+            self._expire_pending(self._stamp_s(msg.header))
+            self._process_pending()
         if not self._launched:
             self._check_and_launch()
 
@@ -234,15 +442,63 @@ class GnssDatumWatchdog(Node):
         if abs(fix.latitude) < 0.1 and abs(fix.longitude) < 0.1:
             return
 
-        # h_acc gate
+        # h_acc gate, widened to h_acc_fallback_max_m after the timeout.
         if self._h_acc_sub is not None:
+            now_s = self.get_clock().now().nanoseconds * 1e-9
+            if self._t_first_valid_fix_s is None:
+                self._t_first_valid_fix_s = now_s
+            waited_s = now_s - self._t_first_valid_fix_s
+            if not self._fallback_active and waited_s >= self._h_acc_fallback_after_s:
+                self._fallback_active = True
+                self.get_logger().warn(
+                    f"No fix with h_acc <= {self._h_acc_max_m:.2f} m after {waited_s:.0f} s "
+                    f"(latest h_acc={self._fmt_h_acc()}). Widening the datum gate to "
+                    f"{self._h_acc_fallback_max_m:.2f} m: the mission and Pixhawk origin "
+                    f"will be off by up to that much."
+                )
+            h_acc_max = (
+                self._h_acc_fallback_max_m if self._fallback_active else self._h_acc_max_m
+            )
             if self._latest_h_acc_m is None:
                 return
-            if self._latest_h_acc_m <= 0.0 or self._latest_h_acc_m > self._h_acc_max_m:
+            if self._latest_h_acc_m <= 0.0 or self._latest_h_acc_m > h_acc_max:
                 return
+            if self._fallback_active:
+                self.get_logger().warn(
+                    f"Locking datum on fallback gate: h_acc={self._fmt_h_acc()} "
+                    f"(> {self._h_acc_max_m:.2f} m RTK threshold, "
+                    f"<= {self._h_acc_fallback_max_m:.2f} m fallback)"
+                )
 
         self._launched = True
         self._spawn_navsat_and_global(fix)
+
+    def _fmt_h_acc(self) -> str:
+        if self._latest_h_acc_m is None:
+            return "none"
+        return f"{self._latest_h_acc_m:.2f} m"
+
+    def _odom_origin_fix(self, datum: NavSatFix) -> NavSatFix:
+        """lat/lon/alt of odom (0, 0, 0): the datum minus the local anchor.
+
+        Same UTM projection as global_ekf_to_navsatfix, ENU-aligned odom frame.
+        """
+        epsg = _utm_epsg(datum.latitude, datum.longitude)
+        to_utm = Transformer.from_crs("EPSG:4326", epsg, always_xy=True)
+        from_utm = Transformer.from_crs(epsg, "EPSG:4326", always_xy=True)
+        datum_e, datum_n = to_utm.transform(datum.longitude, datum.latitude)
+        lon, lat = from_utm.transform(
+            datum_e - self._local_anchor_x, datum_n - self._local_anchor_y
+        )
+        origin = NavSatFix()
+        origin.header = datum.header
+        origin.status = datum.status
+        origin.latitude = lat
+        origin.longitude = lon
+        origin.altitude = datum.altitude - self._local_anchor_z
+        origin.position_covariance = datum.position_covariance
+        origin.position_covariance_type = datum.position_covariance_type
+        return origin
 
     def _validate_and_republish(self, msg: NavSatFix) -> None:
         # Log every incoming fix so we can see exactly what arrives near the crash.
@@ -277,13 +533,45 @@ class GnssDatumWatchdog(Node):
                     "likely corrupt/mislabeled NavSatFix; not forwarded to navsat_transform",
                 )
                 return
-            self.get_logger().info(
-                f"[GPS valid] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
-                f"dist={dist:.0f} m from datum — forwarding to navsat_transform",
-                throttle_duration_sec=10.0,
-            )
+            if self._gate_enabled and self._h_acc_sub is not None:
+                stamp = self._stamp_s(msg.header)
+                if self._match(self._hp_ring, stamp) is None:
+                    # HPPOSLLH of this epoch not processed yet -> wait for it.
+                    self._pending.append((stamp, msg, dist))
+                    self._expire_pending(stamp)
+                    return
+                if not self._post_lock_gate(msg):
+                    return
+            self._publish_valid(msg, dist)
+            return
         self._n_gps_validated += 1
         self._validated_pub.publish(msg)
+
+    def _publish_valid(self, msg: NavSatFix, dist: float) -> None:
+        self.get_logger().info(
+            f"[GPS valid] lat={msg.latitude:.6f}° lon={msg.longitude:.6f}° "
+            f"dist={dist:.0f} m from datum — forwarding to navsat_transform",
+            throttle_duration_sec=10.0,
+        )
+        self._n_gps_validated += 1
+        self._validated_pub.publish(msg)
+
+    def _process_pending(self) -> None:
+        """Run the gate for pending fixes whose HPPOSLLH has now arrived."""
+        still = deque(maxlen=self._pending.maxlen)
+        for stamp, msg, dist in self._pending:
+            if self._match(self._hp_ring, stamp) is not None:
+                if self._post_lock_gate(msg):
+                    self._publish_valid(msg, dist)
+            else:
+                still.append((stamp, msg, dist))
+        self._pending = still
+
+    def _expire_pending(self, now_stamp: float) -> None:
+        """Pending fixes whose HPPOSLLH never came within the timeout count as rejected."""
+        while self._pending and now_stamp - self._pending[0][0] > self._ubx_pending_timeout_s:
+            self._pending.popleft()
+            self._gate_reject("no same-epoch HPPOSLLH h_acc within timeout")
 
     def _on_local_odom(self, msg: Odometry) -> None:
         self._latest_local_odom = msg
@@ -355,10 +643,12 @@ class GnssDatumWatchdog(Node):
             f"datum={datum} time_to_lock={time_to_lock} "
             f"gps received={self._n_gps_received} "
             f"validated={self._n_gps_validated} "
-            f"rejected(status/null/haversine)="
+            f"rejected(status/null/haversine/accuracy_gate)="
             f"{self._n_gps_rejected_status}/"
             f"{self._n_gps_rejected_null}/"
-            f"{self._n_gps_rejected_haversine} "
+            f"{self._n_gps_rejected_haversine}/"
+            f"{self._n_gps_rejected_gate} "
+            f"gate_open={self._gate_open} "
             f"diag_thresholds_hit=[{thresholds}]"
         )
 
@@ -403,6 +693,31 @@ class GnssDatumWatchdog(Node):
             f"Valid fix: lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° "
             f"alt={fix.altitude:.1f} m{h_acc_str} — spawning navsat_transform + global EKF"
             f"{local_pos}"
+        )
+
+        # Publish the locked datum on /gnss_datum (latched). Downstream nodes
+        # (e.g. mission_waypoint_loader) use this as their single source of
+        # truth for the map-frame origin, ensuring they share the exact same
+        # fix as the EKF.
+        self._datum_pub.publish(fix)
+        self.get_logger().info(
+            f"Published datum on /gnss_datum (latched): "
+            f"lat={fix.latitude:.7f}° lon={fix.longitude:.7f}° alt={fix.altitude:.1f} m"
+        )
+
+        if not self._local_anchor_valid:
+            self.get_logger().warn(
+                f"No local odom on '{self._odom_topic}' at datum lock: publishing the "
+                "datum itself as /odom_origin. The Pixhawk origin is only right if the "
+                "vehicle has not moved since the local EKF started."
+            )
+        origin = self._odom_origin_fix(fix)
+        self._odom_origin_pub.publish(origin)
+        self.get_logger().info(
+            f"Published odom origin on /odom_origin (latched): "
+            f"lat={origin.latitude:.7f}° lon={origin.longitude:.7f}° "
+            f"alt={origin.altitude:.1f} m (datum minus local anchor "
+            f"x={self._local_anchor_x:.2f} m y={self._local_anchor_y:.2f} m)"
         )
 
         # Write a minimal YAML with just the datum; loaded second in the launch

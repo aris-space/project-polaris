@@ -137,15 +137,17 @@ class ModeControlNode(Node):
             self.prev_reboot_button_state = cur_reboot
 
     def _heartbeat_cb(self, msg: State):
-        if self._mode_initialized:
-            return
-        self.mode = msg.mode
-        self.prev_mode = msg.mode
-        self._mode_initialized = True
-        mode_msg = String()
-        mode_msg.data = msg.mode
-        self.mode_publisher.publish(mode_msg)
-        self.get_logger().info(f"Mode initialized from Pixhawk heartbeat: {msg.mode}")
+        if not self._mode_initialized:
+            self._mode_initialized = True
+            self.get_logger().info(f"Mode initialized from Pixhawk heartbeat: {msg.mode}")
+
+        if msg.mode != self.prev_mode:
+            self.mode = msg.mode
+            self.prev_mode = msg.mode
+            mode_msg = String()
+            mode_msg.data = msg.mode
+            self.mode_publisher.publish(mode_msg)
+            self.get_logger().info(f"Mode synced from Pixhawk heartbeat: {msg.mode}")
 
     def _set_mode(self, mode: str):
         """Publish mode to /mode_control/current_mode and /pixhawk/mode_cmd together."""

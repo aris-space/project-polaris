@@ -37,3 +37,9 @@ waterlinked/ugps:
       # API external params
       wl_api_use_external_gps_measurements: True
       wl_api_use_external_heading_measurements: True
+
+      # Thesis (tightly-coupled SBL particle filter): publish the raw per-receiver acoustic data
+      # by default on the deployed stack. Adds the sbl_raw topic (receiver_distance / nsd / rssi /
+      # valid + solved x/y/z/std + poll time) and the latched sbl_receiver_config (geometry +
+      # sound speed). Purely additive — the existing solved-position topics are unaffected.
+      publish_sbl_raw: True

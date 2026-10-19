@@ -17,6 +17,9 @@ from sensor_msgs.msg import Imu
 from geographic_msgs.msg import GeoPointStamped
 from auv_msgs.msg import NavigationStatus
 from ublox_ubx_msgs.msg import UBXNavRelPosNED as NavRELPOSNED9
+# Thesis (tightly-coupled SBL particle filter): additive raw per-receiver SBL telemetry.
+from custom_msgs.msg import SblRaw, SblReceiverConfig
+from std_msgs.msg import Header
 
 import math
 import sys
@@ -70,6 +73,19 @@ class WaterLinkedUWGPSG2Interface(Node):
     def get_global_position(self, base_url):
         return self.get_data("{}/api/v1/position/global".format(base_url))
 
+    # --- Thesis additive endpoints: raw per-receiver ranges + receiver/generic config ---
+    def get_acoustic_position_raw(self, base_url):
+        # Per-receiver slant ranges + signal quality, BEFORE Waterlinked solves a position.
+        return self.get_data("{}/api/v1/position/acoustic/raw".format(base_url))
+
+    def get_receiver_config(self, base_url):
+        # Fixed topside receiver geometry (positions in the acoustic frame).
+        return self.get_data("{}/api/v1/config/receivers".format(base_url))
+
+    def get_generic_config(self, base_url):
+        # Generic acoustic config (sound speed, carrier frequency, ...).
+        return self.get_data("{}/api/v1/config/generic".format(base_url))
+
     # ROS-related methods
     def declare_node_parameters(self):
         # self.declare_parameter('use_gamepad', False)
@@ -98,6 +114,8 @@ class WaterLinkedUWGPSG2Interface(Node):
         # self.declare_parameter( 'external_navigation_status_measurements_topic', '')
         self.declare_parameter("use_ros_based_locator_relative_position", False)
         # self.declare_parameter('external_locator_relative_position_topic', '')
+        # Thesis: opt-in raw per-receiver SBL telemetry (default off; deployed stack unaffected).
+        self.declare_parameter("publish_sbl_raw", False)
 
     def get_ros_params(self):
         # Setting ROS parameters
@@ -177,6 +195,9 @@ class WaterLinkedUWGPSG2Interface(Node):
             .get_parameter_value()
             .bool_value
         )
+        self.PUBLISH_SBL_RAW = (
+            self.get_parameter("publish_sbl_raw").get_parameter_value().bool_value
+        )
         # self.EXTERNAL_LOCATOR_RELATIVE_POSITION_TOPIC = self.get_parameter(
         #     'external_locator_relative_position_topic').get_parameter_value().string_value
 
@@ -200,6 +221,10 @@ class WaterLinkedUWGPSG2Interface(Node):
         self.transform_relative_to_ned_position()
         self.transform_ned_to_global_position()
         self.publish_all_waterlinked_variables()
+
+        # Thesis: additive raw per-receiver SBL telemetry (independent of the solved-position flow).
+        if getattr(self, "PUBLISH_SBL_RAW", False):
+            self.poll_and_publish_sbl_raw()
 
         """msg = NavSatFix()
         msg.latitude = 43.0 + rand()*2.0
@@ -238,6 +263,140 @@ class WaterLinkedUWGPSG2Interface(Node):
         if pos and not self.USE_ROS_BASED_FRAME_TRANSFORM:
             self.locator_global_lat = pos["lat"]
             self.locator_global_lon = pos["lon"]
+
+    # --- Thesis additive: raw per-receiver SBL telemetry (opt-in via publish_sbl_raw) ---
+    @staticmethod
+    def _as_float_list(seq):
+        out = []
+        for v in seq or []:
+            try:
+                out.append(float(v))
+            except (TypeError, ValueError):
+                out.append(float("nan"))
+        return out
+
+    def poll_and_publish_sbl_raw(self):
+        """Poll GET /api/v1/position/acoustic/raw and publish the per-receiver ranges.
+
+        Deduplicates: the box pings at ~2-4 Hz while we poll at ros_rate, so identical successive
+        payloads (same ranges + solved x/y/z) are dropped to avoid emitting stale duplicates.
+        """
+        poll_time = time.time()
+        data = self.get_acoustic_position_raw(self.WATERLINKED_URL)
+        if not data:
+            return
+
+        distances = self._as_float_list(data.get("receiver_distance"))
+        nsd = self._as_float_list(data.get("receiver_nsd"))
+        rssi = self._as_float_list(data.get("receiver_rssi"))
+        valid_raw = data.get("receiver_valid") or []
+        valid = []
+        for v in valid_raw:
+            try:
+                valid.append(1 if int(v) else 0)
+            except (TypeError, ValueError):
+                valid.append(1 if bool(v) else 0)
+
+        x = float(data.get("x", 0.0))
+        y = float(data.get("y", 0.0))
+        z = float(data.get("z", 0.0))
+        try:
+            std = float(data["std"])
+        except (KeyError, TypeError, ValueError):
+            std = -1.0
+        pv = data.get("position_valid")
+        if isinstance(pv, bool):
+            position_valid = pv
+        elif isinstance(pv, (int, float)):
+            position_valid = bool(int(pv))
+        else:
+            position_valid = False
+
+        # Dedup on (ranges, solved position). Skip if unchanged since last publish.
+        signature = (tuple(distances), x, y, z)
+        if getattr(self, "_last_sbl_raw_signature", None) == signature:
+            return
+        self._last_sbl_raw_signature = signature
+
+        msg = SblRaw()
+        msg.header = self._stamp_header(poll_time, frame_id="sbl_link")
+        msg.receiver_distance = distances
+        msg.receiver_nsd = nsd
+        msg.receiver_rssi = rssi
+        msg.receiver_valid = valid
+        msg.x = x
+        msg.y = y
+        msg.z = z
+        msg.std = std
+        msg.position_valid = position_valid
+        msg.poll_unix_time = poll_time
+        self.sbl_raw_pub.publish(msg)
+
+        # Log the observed effective (post-dedup) rate roughly once per second.
+        now = poll_time
+        cnt = getattr(self, "_sbl_raw_count", 0) + 1
+        self._sbl_raw_count = cnt
+        last_log = getattr(self, "_sbl_raw_last_log", 0.0)
+        if now - last_log >= 1.0:
+            n_valid = sum(valid)
+            self.get_logger().info(
+                "SBL raw: %d receivers (%d valid), %d new fixes so far"
+                % (len(distances), n_valid, cnt)
+            )
+            self._sbl_raw_last_log = now
+
+    def _stamp_header(self, unix_time, frame_id=""):
+        header = Header()
+        frac, whole = math.modf(unix_time)
+        header.stamp.sec = int(whole)
+        header.stamp.nanosec = int(1e9 * frac)
+        header.frame_id = frame_id
+        return header
+
+    def publish_sbl_receiver_config(self):
+        """One-shot latched publish of the fixed receiver geometry + sound speed."""
+        poll_time = time.time()
+        receivers = self.get_receiver_config(self.WATERLINKED_URL)
+        # /config/receivers may return a bare list or an object wrapping one.
+        if isinstance(receivers, dict):
+            receivers = receivers.get("receivers", [])
+        if not receivers:
+            self.get_logger().warn("SBL receiver config unavailable; skipping latched publish.")
+            return
+
+        msg = SblReceiverConfig()
+        msg.header = self._stamp_header(poll_time)
+        ids, xs, ys, zs = [], [], [], []
+        for i, rec in enumerate(receivers):
+            if not isinstance(rec, dict):
+                continue
+            ids.append(int(rec.get("id", i)))
+            xs.append(float(rec.get("x", 0.0)))
+            ys.append(float(rec.get("y", 0.0)))
+            zs.append(float(rec.get("z", 0.0)))
+        msg.receiver_id = ids
+        msg.receiver_x = xs
+        msg.receiver_y = ys
+        msg.receiver_z = zs
+        msg.num_receivers = len(ids)
+
+        generic = self.get_generic_config(self.WATERLINKED_URL)
+        sos = -1.0
+        if isinstance(generic, dict):
+            for key in ("sound_speed", "speed_of_sound"):
+                if key in generic:
+                    try:
+                        sos = float(generic[key])
+                    except (TypeError, ValueError):
+                        sos = -1.0
+                    break
+        msg.speed_of_sound = sos
+
+        self.sbl_receiver_config_pub.publish(msg)
+        self.get_logger().info(
+            "SBL receiver config latched: %d receivers, sound_speed=%.1f m/s"
+            % (msg.num_receivers, sos)
+        )
 
     def get_topside_position(self, base_url):
         return self.get_data("{}/api/v1/position/master".format(base_url))
@@ -613,6 +772,15 @@ class WaterLinkedUWGPSG2Interface(Node):
             Vector3Stamped, "locator_position_topside_ned", 10
         )
 
+        # Thesis: raw per-receiver telemetry publishers (created only when opted in).
+        if getattr(self, "PUBLISH_SBL_RAW", False):
+            self.sbl_raw_pub = self.create_publisher(SblRaw, "sbl_raw", 10)
+            self.sbl_receiver_config_pub = self.create_publisher(
+                SblReceiverConfig,
+                "sbl_receiver_config",
+                QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            )
+
         """self.fake_gps_pub = self.create_publisher(NavSatFix, "/fix", 10)
         self.fake_heading_pub = self.create_publisher(NavRELPOSNED9, "/navrelposned", 10)"""
 
@@ -842,7 +1010,11 @@ class WaterLinkedUWGPSG2Interface(Node):
                     "Antenna global position: lat=%.6f lon=%.6f alt=%.2f"
                     % (nav_msg.latitude, nav_msg.longitude, nav_msg.altitude)
                 )
-        
+
+        # Thesis: latch the fixed receiver geometry once at startup so replays/late subscribers
+        # can interpret sbl_raw ranges. The periodic raw polling happens in timer_callback.
+        if getattr(self, "PUBLISH_SBL_RAW", False):
+            self.publish_sbl_receiver_config()
 
         debug = False
         if debug:

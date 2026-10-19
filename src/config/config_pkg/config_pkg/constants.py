@@ -17,7 +17,6 @@ from config_pkg.constants import JoyControlMapping
 emergency_stop_button_idx = JoyControlMapping.EMERGENCY_STOP_BUTTON_IDX
 """
 
-
 class SubConfig:
     MAX_DEPTH = 30.0  # meters
     LEAK_THRESHOLD = 500  # Analog value
