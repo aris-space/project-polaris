@@ -170,15 +170,108 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
   `nav2_arm_watchdog` then deactivates Nav2 by itself, as on the vehicle.
 - **Deactivate Nav2 by hand:** `ros2 run autonomy_bringup_pkg nav2_deactivate`.
 - **Mode names** for `/pixhawk/mode_cmd`: `MANUAL`, `STABILIZE`, `ALT_HOLD`, `GUIDED`, `POSHOLD`, `SURFACE`, …
-- **`wgs84_mission_starter` needs `ground_truth:=False`.** It waits for `/gnss_datum`, which only
-  `gnss_datum_watchdog` (part of the real EKF stack) publishes. In that mode the synthetic GNSS
-  guarantees an RTK fix at startup, so the datum locks about 30 s after launch, once the selector's
-  IMU heading gate opens.
+- **To fly a whole mission CSV** instead of a single goal, see [3.2](#32-run-a-mission-csv).
 - **Depth is controlled.** The bridge forwards `cmd_vel.linear.z` as heave, so a goal's `z` (map
   frame, negative = below the surface) is reached within the goal checker's `z_goal_tolerance`
   (0.4 m). Use `z: 0.0` to stay at the surface.
 
-### 3.2 Drive it: raw velocity commands (bypassing Nav2)
+### 3.2 Run a mission CSV
+
+The same flow the operator uses on the vehicle: `mission_waypoint_loader` turns a WGS84 mission
+CSV into map-frame waypoints once the GNSS datum locks, and `wgs84_mission_starter` sends them to
+Nav2 as one `FollowWaypoints` goal.
+
+**Launch with the real EKF.** The loader waits for `/gnss_datum`, which only `gnss_datum_watchdog`
+(part of the real EKF stack) publishes, so `ground_truth:=True` never gets a mission:
+
+```bash
+ros2 launch orca_sim_bringup sim_launch.py ground_truth:=False
+```
+
+The synthetic GNSS guarantees an RTK fix at startup, so the datum locks about 30 s after launch,
+once the selector's IMU heading gate opens.
+
+**Pick the mission** in
+[`autonomy_bringup_pkg/params/mission.yaml`](../autonomy/autonomy_bringup_pkg/params/mission.yaml)
+(`mission_csv`, a file name from `autonomy_bringup_pkg/missions/`). There is no default: a missing,
+empty or wrong name makes `mission_waypoint_loader` exit at launch with a `FATAL` line. The file is
+read once at startup, so relaunch after changing it.
+
+The CSV must lie near the sim origin, the lat/lon/alt in
+[`missions/default_mission_origin.json`](../autonomy/autonomy_bringup_pkg/missions/default_mission_origin.json)
+(ArduSub `--home` and the synthetic GNSS both use it). `smaller_square.csv` and
+`default_wgs84_mission.csv` are written for it; the Goldbach and pool missions are kilometres away.
+`alt` is HAE, so `alt` = origin alt (1822.0) is the surface and 1817.0 is 5 m deep. The CSV columns
+`up_down`, `delta_z_m` and `hold_s` are parsed but not acted on yet.
+
+**Run it** in a second shell:
+
+```bash
+# 1. wait for the waypoints (loader logs "Published N ENU waypoints on /mission_waypoints_enu")
+ros2 topic echo --once /mission_waypoints_enu
+
+# 2. bring Nav2 up (needs map→odom, i.e. the datum from step 1)
+ros2 run autonomy_bringup_pkg nav2_activate        # "Nav2 is active - safe to send missions."
+
+# 3. start the mission: arms + sets GUIDED by itself, then sends the goal
+ros2 run autonomy_bringup_pkg wgs84_mission_starter
+```
+
+- **Progress:** the starter prints `Heading to WP n/N`; `/mission_status` carries the same `n/N`.
+  On success it disarms and sets `MANUAL`.
+- **Abort:** Ctrl+C in the starter sets `MANUAL`, cancels the goal and disarms. Disarming or leaving
+  GUIDED from elsewhere also cancels it, and `nav2_arm_watchdog` then deactivates Nav2. Run
+  `nav2_activate` again before the next mission.
+- **Dry run with another origin:** `wgs84_mission_starter --origin lat,lon,alt --file <path.csv>`
+  transforms the CSV itself and skips the loader. Both flags are required together, and the origin
+  must match the EKF's datum, or every waypoint is shifted by the difference.
+
+#### Record and export tracking errors
+
+`orca_nav2/PurePursuitController3D` publishes six diagnostics while it follows a path
+(`publish_tracking_error: true` under each controller in
+[`nav2_params.yaml`](../autonomy/autonomy_bringup_pkg/params/nav2_params.yaml), on by default):
+
+| Topic | Type | Meaning |
+|---|---|---|
+| `/pure_pursuit_cross_track_xy` | `std_msgs/Float64` | horizontal distance to the path polyline (m) |
+| `/pure_pursuit_vertical_error` | `std_msgs/Float64` | `robot_z - path_z` at the closest XY point (m) |
+| `/pure_pursuit_yaw_error` | `std_msgs/Float64` | shortest angle from path heading to robot yaw (rad, `[-π, π]`) |
+| `/pure_pursuit_closest_point_map` | `geometry_msgs/PointStamped` | closest point on the path, map frame |
+| `/pure_pursuit_robot_pose_map` | `geometry_msgs/PoseStamped` | robot pose, map frame |
+| `/pure_pursuit_robot_twist` | `geometry_msgs/TwistStamped` | twist Nav2 passes to the controller (from odometry) |
+
+`sim_launch.py` does not record anything, so start the bag yourself before the mission. Write it
+under `/ros2_ws/recordings/`: that directory is git-ignored and, because the workspace is mounted,
+it appears on the host with no `docker cp`.
+
+```bash
+ros2 bag record -o /ros2_ws/recordings/sim_$(date +%Y%m%d_%H%M%S) \
+  /pure_pursuit_cross_track_xy /pure_pursuit_vertical_error /pure_pursuit_yaw_error \
+  /pure_pursuit_closest_point_map /pure_pursuit_robot_pose_map /pure_pursuit_robot_twist \
+  /ocean_current /gps/filtered/global
+```
+
+`/ocean_current` and `/gps/filtered/global` are optional; the exporter adds them as columns of the
+wide CSV (empty if not recorded). Stop the recording with Ctrl+C after the mission, then export:
+
+```bash
+ros2 run autonomy_bringup_pkg export_tracking_bag_csv /ros2_ws/recordings/sim_YYYYMMDD_HHMMSS
+#   -o <dir>   output directory (default: <bag>/csv_export)
+#   --plot     plot the three error scalars (needs matplotlib)
+```
+
+| Output file | Content |
+|---|---|
+| `tracking_errors_long.csv` | every message, one row each: `msg_type` (`float64`, `point`, `pose`, `twist`, `vector3`) and the values in `v0`…`v12` |
+| `tracking_errors_wide.csv` | one row per cross-track sample: the three errors, closest point, robot pose, twist, ocean current and GPS, joined as-of on time |
+| `gps_filtered_global.csv` | `/gps/filtered/global` lat/lon/alt (header only if not recorded) |
+| `tracking_export_README.txt` | column reference |
+
+The CSVs need no ROS, e.g. `pd.read_csv("tracking_errors_wide.csv").describe()`. If the error
+topics have 0 messages in `ros2 bag info`, the controller never followed a path while you recorded.
+
+### 3.3 Drive it: raw velocity commands (bypassing Nav2)
 
 `ros2_receiver` turns `/pixhawk/cmd_vel` (`geometry_msgs/Twist`, body frame) into GUIDED
 velocity setpoints. It needs GUIDED + armed, and it sends zero if no message arrives for 0.8 s,
@@ -192,7 +285,7 @@ ros2 topic pub -r 10 /pixhawk/cmd_vel geometry_msgs/msg/Twist "{angular: {z: 0.2
 Don't run this while Nav2 is driving: both publish on `/pixhawk/cmd_vel`. For ramped
 tests, there is `scripts/cmd_vel_ramp.py` at the repo root.
 
-### 3.3 Talk to ArduSub directly (MAVProxy, QGroundControl, pymavlink)
+### 3.4 Talk to ArduSub directly (MAVProxy, QGroundControl, pymavlink)
 
 The bridge holds all three SITL TCP ports. The free link for you is **SERIAL5, which sends
 MAVLink to UDP 14550**, the port every GCS listens on by default.
@@ -220,7 +313,7 @@ mavproxy.py --master=udpin:0.0.0.0:14550
 - Arming or changing mode from the GCS works, but it bypasses what the vehicle operator does.
   Prefer the ROS topics in 3.1 when testing autonomy.
 
-### 3.4 ROS topics worth watching
+### 3.5 ROS topics worth watching
 
 | Topic | Type | What |
 |---|---|---|
@@ -234,7 +327,7 @@ mavproxy.py --master=udpin:0.0.0.0:14550
 | `/odometry/filtered/local` | `nav_msgs/Odometry` | what Nav2 and ArduSub use as the vehicle pose (= `/odom` while `ground_truth:=True`) |
 | `/tf`, `/tf_static` | | `map → odom → base_link` |
 | `/clock` | `rosgraph_msgs/Clock` | sim time; every node runs with `use_sim_time: True` |
-| `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it, see [3.7](#37-ocean-current)) |
+| `/ocean_current` | `geometry_msgs/Vector3` | current applied in Gazebo (you can publish to it, see [3.8](#38-ocean-current)) |
 | `/imu/data`, `/sensors/dvl/velocity`, `/fix`, `/waterlinked_ugps/navsatfix`, `/gps/selected` | | synthetic sensors and the vehicle's selector (see `orca_sim_sensors/README.md`) |
 | `/sim/ekf_error/{local,global}/horizontal` | `std_msgs/Float64` | EKF error against ground truth (`ground_truth:=False`) |
 
@@ -248,7 +341,7 @@ ros2 run tf2_tools view_frames                                # writes frames.pd
 ros2 bag record -o sim_run /odom /odometry/filtered/local /pixhawk/cmd_vel /pixhawk/servo_output_raw /tf
 ```
 
-### 3.5 Gazebo side
+### 3.6 Gazebo side
 
 ```bash
 gz topic -l                                                       # all gz topics
@@ -259,12 +352,12 @@ gz topic -e -t /model/orca4/pose
 Thrusters are `thruster1..6`, matching `MOT_1..MOT_6` (see `orca_description/scripts/generate_model.py`).
 For the GUI, relaunch with `gzclient:=True` (native Linux only, see section 1).
 
-### 3.6 Foxglove
+### 3.7 Foxglove
 
 Open Foxglove → *Open connection* → `ws://localhost:8765`. The bridge runs inside the sim and
 uses sim time. Add a 3D panel with the `map` fixed frame to see TF and the Nav2 path.
 
-### 3.7 Ocean current
+### 3.8 Ocean current
 
 ```
 you / current_vector_node.py ─ROS /ocean_current─▶ ros_gz_bridge ─gz /ocean_current─▶ Hydrodynamics plugin (orca4)
