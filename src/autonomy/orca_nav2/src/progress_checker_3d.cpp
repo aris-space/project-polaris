@@ -26,7 +26,6 @@
 #include "angles/angles.h"
 #include "nav2_core/progress_checker.hpp"
 #include "orca_nav2/param_macro.hpp"
-#include "tf2/utils.h"
 //#include "orca_shared/util.hpp" // DONE: Delete this dependency!
 
 namespace orca_nav2
@@ -63,6 +62,11 @@ class ProgressChecker3D : public nav2_core::ProgressChecker
     baseline_set_ = true;
   }
 
+  static double get_yaw(const geometry_msgs::msg::Quaternion & q)
+  {
+    return std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+  }
+
 public:
   void initialize(
     const rclcpp_lifecycle::LifecycleNode::WeakPtr & weak_parent,
@@ -86,7 +90,7 @@ public:
     // Rotating in place (rotate-to-heading) is progress too: without this a
     // long in-place turn times out because XY barely changes.
     const double dyaw = std::fabs(angles::shortest_angular_distance(
-      tf2::getYaw(baseline_.orientation), tf2::getYaw(pose.pose.orientation)));
+      get_yaw(baseline_.orientation), get_yaw(pose.pose.orientation)));
 
     if (!baseline_set_ ||
       get_dist_L2_norm(pose.pose.position, baseline_.position) > radius_ ||
