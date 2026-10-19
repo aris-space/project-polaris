@@ -4,18 +4,19 @@
 import csv
 import json
 import os
+import sys
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from rcl_interfaces.msg import SetParametersResult
-from ament_index_python.packages import get_package_share_directory
 from foxglove_msgs.msg import GeoJSON
 
-
-def default_mission_csv_path() -> str:
-    share = get_package_share_directory('autonomy_bringup_pkg')
-    return f'{share}/missions/goldbach_straightline_wgs84_mission.csv'
+from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import (
+    MissionConfigError,
+    declare_mission_csv,
+    resolve_mission_csv,
+)
 
 
 class MissionWaypointsPublisher(Node):
@@ -29,7 +30,9 @@ class MissionWaypointsPublisher(Node):
     def __init__(self):
         super().__init__("mission_waypoints_publisher")
 
-        self.declare_parameter("mission_csv", default_mission_csv_path())
+        # Required, no default: set via params/mission.yaml (see autonomy.launch.py).
+        # Validated here; later `ros2 param set` changes are re-read in _publish_mission.
+        declare_mission_csv(self)
 
         latched_qos = QoSProfile(
             depth=1,
@@ -84,7 +87,7 @@ class MissionWaypointsPublisher(Node):
         return json.dumps({"type": "FeatureCollection", "features": features})
 
     def _publish_mission(self):
-        csv_path = str(self.get_parameter("mission_csv").value)
+        csv_path = resolve_mission_csv(str(self.get_parameter("mission_csv").value))
         if not csv_path or not os.path.isfile(csv_path):
             self.get_logger().error(f"Mission CSV not found: {csv_path}")
             return
@@ -121,7 +124,12 @@ class MissionWaypointsPublisher(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = MissionWaypointsPublisher()
+    try:
+        node = MissionWaypointsPublisher()
+    except MissionConfigError as exc:
+        rclpy.logging.get_logger("mission_waypoints_publisher").fatal(str(exc))
+        rclpy.shutdown()
+        sys.exit(1)
     rclpy.spin(node)
     rclpy.shutdown()
 

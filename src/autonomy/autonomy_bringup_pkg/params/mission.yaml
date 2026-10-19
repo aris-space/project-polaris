@@ -1,0 +1,13 @@
+# Mission selection for autonomy.launch.py.
+#
+# Loaded into both mission_waypoint_loader (Nav2 waypoints) and
+# mission_waypoints_publisher (Foxglove map), so they always show the same mission.
+#
+# mission_csv: a bare filename is resolved against share/autonomy_bringup_pkg/missions/;
+#              an absolute path is used as-is.
+#
+# Read once at node startup: relaunch the autonomy stack after changing it.
+
+/**:
+  ros__parameters:
+    mission_csv: "smaller_square.csv"

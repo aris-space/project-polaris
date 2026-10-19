@@ -23,6 +23,7 @@ or AFTER the watchdog locks: late-joining still delivers the datum.
 
 from __future__ import annotations
 
+import sys
 import time
 
 import rclpy
@@ -34,11 +35,14 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseArray
 from sensor_msgs.msg import NavSatFix
 
-from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import process_coordinates
+from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import (
+    MissionConfigError,
+    declare_mission_csv,
+    process_coordinates,
+)
 
 
 # Heartbeat log cadence while waiting for /gnss_datum. The watchdog can take
@@ -52,13 +56,10 @@ class MissionWaypointLoader(Node):
     def __init__(self) -> None:
         super().__init__('mission_waypoint_loader')
 
-        share = get_package_share_directory('autonomy_bringup_pkg')
-        default_csv = f'{share}/missions/goldbach_straightline_wgs84_mission.csv'
-        self.declare_parameter('mission_csv', default_csv)
+        # Required, no default: set via params/mission.yaml (see autonomy.launch.py).
+        self._csv_path: str = declare_mission_csv(self)
         self.declare_parameter('datum_topic', '/gnss_datum')
         self.declare_parameter('output_topic', '/mission_waypoints_enu')
-
-        self._csv_path: str = str(self.get_parameter('mission_csv').value)
         datum_topic: str = str(self.get_parameter('datum_topic').value)
         output_topic: str = str(self.get_parameter('output_topic').value)
 
@@ -149,7 +150,12 @@ class MissionWaypointLoader(Node):
 
 def main() -> None:
     rclpy.init()
-    node = MissionWaypointLoader()
+    try:
+        node = MissionWaypointLoader()
+    except MissionConfigError as exc:
+        rclpy.logging.get_logger('mission_waypoint_loader').fatal(str(exc))
+        rclpy.shutdown()
+        sys.exit(1)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

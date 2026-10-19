@@ -59,6 +59,8 @@ def generate_launch_description():
 
     nav2_bt_file = os.path.join(orca_bringup_dir, 'behavior_trees', 'orca4_bt.xml')
     nav2_params_file = os.path.join(orca_bringup_dir, 'params', 'nav2_params.yaml')
+    # Which mission CSV to fly; shared by mission_waypoint_loader and mission_waypoints_publisher.
+    mission_params_file = os.path.join(orca_bringup_dir, 'params', 'mission.yaml')
 
     configured_nav2_params = RewrittenYaml(
         source_file=nav2_params_file,
@@ -135,6 +137,7 @@ def generate_launch_description():
         output='screen',
         respawn=respawn,
         respawn_delay=respawn_delay,
+        parameters=[mission_params_file],
     )
 
     mission_waypoint_loader = Node(
@@ -144,6 +147,7 @@ def generate_launch_description():
         output='screen',
         respawn=respawn,
         respawn_delay=respawn_delay,
+        parameters=[mission_params_file],
     )
 
     nav2_arm_watchdog = Node(

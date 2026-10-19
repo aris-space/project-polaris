@@ -5,16 +5,55 @@ from __future__ import annotations
 
 import csv
 import math
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
 
+from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Point, Pose, PoseStamped
+from rclpy.exceptions import ParameterUninitializedException
+from rclpy.node import Node
+from rclpy.parameter import Parameter
 from std_msgs.msg import Header
 
 # Defaults when optional columns are missing or empty (Phase A - vertical bump metadata).
 DEFAULT_DELTA_Z_M = 0.3
 DEFAULT_HOLD_S = 1.0
+
+class MissionConfigError(RuntimeError):
+    """``mission_csv`` is unset, empty, or does not point at a file."""
+
+
+def resolve_mission_csv(path: str) -> str:
+    """Absolute path as-is; bare filename / relative path -> share/autonomy_bringup_pkg/missions/."""
+    if os.path.isabs(path):
+        return path
+    share = get_package_share_directory('autonomy_bringup_pkg')
+    return os.path.join(share, 'missions', path)
+
+
+def declare_mission_csv(node: Node) -> str:
+    """Declare the required ``mission_csv`` param and return the resolved CSV path.
+
+    No default on purpose: the mission must be chosen explicitly (params/mission.yaml),
+    so a missing config can never silently fly some other mission.
+    Raises ``MissionConfigError`` if unset, empty, or not an existing file.
+    """
+    node.declare_parameter('mission_csv', Parameter.Type.STRING)
+    try:
+        value = str(node.get_parameter('mission_csv').value).strip()
+    except ParameterUninitializedException:
+        raise MissionConfigError(
+            'mission_csv is not set. Choose a mission in params/mission.yaml '
+            '(or pass --ros-args -p mission_csv:=<file.csv>).'
+        ) from None
+    if not value:
+        raise MissionConfigError('mission_csv is empty. Choose a mission in params/mission.yaml.')
+    path = resolve_mission_csv(value)
+    if not os.path.isfile(path):
+        raise MissionConfigError(f'mission_csv {value!r} -> {path} is not a file.')
+    return path
 
 
 @dataclass(frozen=True)
