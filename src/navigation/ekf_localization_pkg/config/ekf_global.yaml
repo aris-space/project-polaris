@@ -139,6 +139,12 @@ ekf_global_node:
     odom0_nodelay: false
     odom0_differential: false
     odom0_relative: false
+    # Mahalanobis gate on the DVL velocity update (same backstop as the local EKF):
+    # reject updates whose innovation is implausibly large for their covariance, so a
+    # DVL outlier that slips past the node-side beam-count/FOM gating can't corrupt the
+    # global estimate. Mahalanobis distance (not squared); 3-DOF chi2_0.99 ~= 11.3 ->
+    # sqrt ~= 3.4. Conservative 8.0 start; tighten via NIS.
+    odom0_twist_rejection_threshold: 8.0
 
     # Absolute GPS correction from gps_to_map_position (NOT navsat_transform).
     # gps_to_map_position projects /gps/validated directly to true-ENU
