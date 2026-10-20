@@ -33,6 +33,7 @@ ros2 launch orca_sim_bringup sim_launch.py ground_truth:=False sensor_seed:=42  
 | Launch arg | Default | Meaning |
 |---|---|---|
 | `ice_layer` | `False` | GNSS surfacing behaviour (see [GNSS](#gnss--u-blox-x20p-rtk)). |
+| `world` | `sand.world` | The top ultrasonic reads the ice from this world (`ice.world`). |
 | `sensor_seed` | `-1` | Seed for every sensor's random generator; `-1` = different each run. |
 
 The sensors alone, without the rest of the sim (they need `/odom`, `/clock` and the Gazebo IMU):
@@ -172,6 +173,27 @@ warning. With `ground_truth:=True` no watchdog runs, so there is no startup hold
 first-order Gauss-Markov process (time constant `float_error_tau_s` 30 s) with σ = the reported
 h_acc, so it wanders slowly like a real float solution instead of jumping every epoch.
 
+## Top ultrasonic (ice ceiling)
+
+`sim_top_ultrasonic_node` → `/top/ultrasonic/distance` (`std_msgs/Float32`, m, 10 Hz), what
+`ultrasonic_driver` publishes in the `top` namespace and `ice_touch_detection_pkg` reads.
+
+**Perfect model:** one ray from the mount along body +z, no noise, no beam width, no dropouts.
+It hits the first of: the `<box>` collisions of the `ice_layer` model in the world file Gazebo
+runs (read at startup, so it always matches the physics), or the water surface z = 0, which it
+sees from below in the hole. Nothing within `max_range_m` (2.5 m): it publishes
+`out_of_range_value` 0.0, as the real sensor does. In `sand.world` it only sees the surface.
+Note that `ice_touch_detection_pkg` declares the sensor faulty when ≥ 80 % of its last 15 readings
+are 0.0, so it switches to its pressure fallback whenever the ice is more than 2.5 m away.
+
+**Mount:** `sensor_xyz` = (0.4956, −0.0003, 0.1055) m in `base_link`, derived because no launch
+file publishes a TF for it: Keller sensor (`keller_26x_pkg` static TF, 0.005607, −0.000299,
+0.117520) + 0.136 m up to the tower top (`pressure_sensor_offset_m`) − 0.148 m down to the sensor
+(`tower_height_m`), 0.490 m in front of the tower (`tower_horizontal_offset_m` in
+`ice_touch_detection.yaml`; the node's default is 0.560 and its README says 650 mm). The model's
+two tower cylinders (x = ±0.25 m) reach the same tower-top height, so the reading at contact is
+0.148 m.
+
 ## SBL — Water Linked Underwater GPS G2
 
 Publishes the two topics `uwgpsg2_ros2_interface` publishes, at 2 Hz (its `ros_rate`), with
@@ -217,7 +239,7 @@ updates pull the global EKF in.
 
 | File | |
 |---|---|
-| `orca_sim_sensors/sim_dvl_node.py`, `sim_imu_node.py`, `sim_gnss_node.py`, `sim_sbl_node.py` | the sensors |
+| `orca_sim_sensors/sim_dvl_node.py`, `sim_imu_node.py`, `sim_gnss_node.py`, `sim_sbl_node.py`, `sim_top_ultrasonic_node.py` | the sensors |
 | `orca_sim_sensors/ekf_truth_error_node.py` | EKF-vs-truth error |
 | `orca_sim_sensors/common.py` | flat-earth ENU↔LLH, rotations |
 | `launch/sim_sensors.launch.py` | sensors + base_link→sensor static TFs (included by `sim_launch.py`) |

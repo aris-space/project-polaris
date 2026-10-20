@@ -3,8 +3,8 @@
 
     ros2 launch orca_sim_sensors sim_sensors.launch.py ice_layer:=true
 
-Included by orca_sim_bringup/launch/sim_launch.py. Starts the synthetic DVL, IMU, GNSS and
-SBL plus the base_link -> sensor static TFs the vehicle's driver launch files publish (values
+Included by orca_sim_bringup/launch/sim_launch.py. Starts the synthetic DVL, IMU, GNSS, SBL
+and top ultrasonic plus the base_link -> sensor static TFs the vehicle's driver launch files publish (values
 copied from those files; keep in sync). The Bar30 is not here: it is ArduSub SITL's second
 barometer (SIM_BAR2_* in orca_sim_bringup/cfg/sub.parm), reaching ROS through
 mavlink_publisher as on the vehicle.
@@ -12,6 +12,9 @@ mavlink_publisher as on the vehicle.
 All nodes run on sim time. See ../README.md for what each sensor models.
 """
 
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.substitutions import LaunchConfiguration
@@ -47,6 +50,8 @@ def generate_launch_description():
     ice_layer = ParameterValue(LaunchConfiguration('ice_layer'), value_type=bool)
     seed = ParameterValue(LaunchConfiguration('seed'), value_type=int)
     startup_rtk = ParameterValue(LaunchConfiguration('startup_rtk'), value_type=bool)
+    default_world = os.path.join(
+        get_package_share_directory('orca_description'), 'worlds', 'sand.world')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -57,6 +62,9 @@ def generate_launch_description():
             'startup_rtk', default_value='true',
             description='GNSS: guaranteed RTK at startup until gnss_datum_watchdog latches '
                         '/gnss_datum. Only meaningful when the watchdog runs (real EKF).'),
+        DeclareLaunchArgument(
+            'world_file', default_value=default_world,
+            description='World Gazebo runs; the top ultrasonic reads the ice layer from it.'),
         DeclareLaunchArgument(
             'seed', default_value='-1',
             description='Random seed for all synthetic sensors (-1 = different every run).'),
@@ -74,5 +82,9 @@ def generate_launch_description():
                  output='screen'),
             Node(package='orca_sim_sensors', executable='sim_sbl_node', name='sim_sbl_node',
                  parameters=[{'seed': seed}], output='screen'),
+            Node(package='orca_sim_sensors', executable='sim_top_ultrasonic_node',
+                 name='sim_top_ultrasonic_node',
+                 parameters=[{'world_file': LaunchConfiguration('world_file')}],
+                 output='screen'),
         ]),
     ])

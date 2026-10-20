@@ -135,6 +135,7 @@ ros2 launch orca_sim_bringup sim_launch.py ground_truth:=False   # real EKF on t
 | `ardusub` | `True` | Start ArduSub SITL. |
 | `nav` | `True` | Start Nav2 via the vehicle's `autonomy.launch.py` (unconfigured, like on the boat). |
 | `ground_truth` | `True` | `True`: Gazebo pose stands in for the EKF. `False`: the real EKF on the synthetic sensors. |
+| `world` | `sand.world` | World in `orca_description/worlds`. `ice.world` adds a physical ice layer, see [3.8](#38-ice-layer-iceworld). |
 | `ice_layer` | `False` | GNSS under ice: each surfacing randomly gets late RTK, float only, or nothing. `False`: RTK within a few seconds of every surfacing. |
 | `sensor_seed` | `-1` | Random seed for the synthetic sensors (`-1` = different every run). |
 | `gcs_url` | `udpclient:127.0.0.1:14550` | ArduSub SERIAL5 device for a human GCS. |
@@ -318,6 +319,27 @@ cross-current. Compare `/odom` with the Nav2 path and watch `/pixhawk/servo_outp
 hand-estimated, so the drift it produces is not a real disturbance-rejection number.
 
 ---
+
+### 3.8 Ice layer (`ice.world`)
+
+```bash
+ros2 launch orca_sim_bringup sim_launch.py world:=ice.world ice_layer:=True
+```
+
+- **Ice:** static model `ice_layer`, z = −0.3 … +0.1 m over the whole 200 × 200 m scene, with a
+  **3 × 3 m hole centred on the origin**, where the vehicle spawns. It is a collision barrier: the
+  vehicle cannot pass through it, only surface in the hole. `world:=ice.world` only adds the
+  physical ice; `ice_layer:=True` is the separate GNSS behaviour at surfacing.
+- **Vehicle hitbox:** the buoyancy box plus two upright tower cylinders (Ø 160 mm, at x = ±0.25 m,
+  an estimate) up to the tower top, 0.2535 m above `base_link` (Keller sensor + 0.136 m). Under the
+  ice the vehicle stops at `base_link` z = −0.5535 with both towers touching. Hull, thrusters and propellers have no collision, so near
+  the hole edge they can visually overlap the ice.
+- **Top ultrasonic:** `/top/ultrasonic/distance` from `orca_sim_sensors`, a perfect upward ray
+  that reads 0.148 m when the towers touch level ice and 0.0 beyond its 2.5 m range. See
+  `orca_sim_sensors/README.md`.
+
+To change the ice, edit `worlds/ice.world`. Keep the ice as axis-aligned `<box>` collisions of the
+`ice_layer` model: the ultrasonic ray-casts against exactly those.
 
 ## Ports
 

@@ -5,6 +5,7 @@ Polaris SITL: Gazebo Harmonic + ArduSub SITL + the REAL autonomy stack.
     ros2 launch orca_sim_bringup sim_launch.py                 # headless, ground-truth odom
     ros2 launch orca_sim_bringup sim_launch.py gzclient:=True  # Gazebo GUI (native Linux only)
     ros2 launch orca_sim_bringup sim_launch.py ground_truth:=False ice_layer:=True  # real EKF
+    ros2 launch orca_sim_bringup sim_launch.py world:=ice.world ice_layer:=True  # under-ice mission
 
 Then, exactly as on the vehicle:
     ros2 run autonomy_bringup_pkg nav2_activate
@@ -55,7 +56,12 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration, NotSubstitution
+from launch.substitutions import (
+    EnvironmentVariable,
+    LaunchConfiguration,
+    NotSubstitution,
+    PathJoinSubstitution,
+)
 from launch_ros.actions import Node, SetParameter
 
 # ArduSub SITL serves one MAVLink client per TCP serial port:
@@ -87,7 +93,8 @@ def generate_launch_description():
     pressure_pose_dir = get_package_share_directory('pressure_pose_pkg')
 
     ardusub_params_file = os.path.join(sim_bringup_dir, 'cfg', 'sub.parm')
-    world_file = os.path.join(orca_description_dir, 'worlds', 'sand.world')
+    world_file = PathJoinSubstitution(
+        [orca_description_dir, 'worlds', LaunchConfiguration('world')])
     ardusub_home = _ardusub_home(
         os.path.join(autonomy_bringup_dir, 'missions', 'default_mission_origin.json'))
     # ArduSub writes eeprom.bin and logs into its cwd; keep them out of the workspace.
@@ -125,6 +132,10 @@ def generate_launch_description():
             'ice_layer', default_value='False',
             description='GNSS under ice: each surfacing randomly gets late RTK, float only, '
                         'or nothing. False: RTK within a few seconds of every surfacing.'),
+        DeclareLaunchArgument(
+            'world', default_value='sand.world',
+            description='World in orca_description/worlds. ice.world: ice layer (z -0.3..0.1 m) '
+                        'with a 3 x 3 m hole at the origin; combine with ice_layer:=True.'),
         DeclareLaunchArgument(
             'sensor_seed', default_value='-1',
             description='Random seed for the synthetic sensors (-1 = different every run).'),
@@ -205,6 +216,7 @@ def generate_launch_description():
                 os.path.join(sim_sensors_dir, 'launch', 'sim_sensors.launch.py')),
             launch_arguments={
                 'ice_layer': LaunchConfiguration('ice_layer'),
+                'world_file': world_file,
                 'seed': LaunchConfiguration('sensor_seed'),
                 # The startup RTK guarantee waits for the watchdog, which only the EKF runs.
                 'startup_rtk': NotSubstitution(ground_truth),

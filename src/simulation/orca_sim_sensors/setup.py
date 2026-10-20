@@ -25,6 +25,7 @@ setup(
             'sim_dvl_node = orca_sim_sensors.sim_dvl_node:main',
             'sim_imu_node = orca_sim_sensors.sim_imu_node:main',
             'sim_sbl_node = orca_sim_sensors.sim_sbl_node:main',
+            'sim_top_ultrasonic_node = orca_sim_sensors.sim_top_ultrasonic_node:main',
             'ekf_truth_error = orca_sim_sensors.ekf_truth_error_node:main',
         ],
     },

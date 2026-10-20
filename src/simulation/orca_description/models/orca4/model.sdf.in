@@ -50,6 +50,27 @@
         </geometry>
       </collision>
 
+      <!-- Towers: the highest points of the vehicle, so they are what touches the ice ceiling.
+           Part of the buoyancy volume; generate_model.py shrinks the main box to compensate. -->
+      <collision name="tower_front_collision">
+        <pose>@tower_front_x @tower_y @tower_z 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>@tower_radius</radius>
+            <length>@tower_length</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <collision name="tower_back_collision">
+        <pose>@tower_back_x @tower_y @tower_z 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>@tower_radius</radius>
+            <length>@tower_length</length>
+          </cylinder>
+        </geometry>
+      </collision>
+
       <!-- IMU sensor gyro and accel data will be sent to ArduSub -->
       <sensor name="imu_sensor" type="imu">
         <!-- Transform from the Gazebo body frame (x-forward, y-left, z-up)
