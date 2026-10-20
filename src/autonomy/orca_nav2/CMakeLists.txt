@@ -92,6 +92,19 @@ ament_target_dependencies(progress_checker_3d nav2_util nav2_core nav2_costmap_2
 target_compile_definitions(progress_checker_3d PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 pluginlib_export_plugin_description_file(nav2_core progress_checker_3d_plugin.xml)
 
+# --- Waypoint Task Executor ---
+# NOTE: nav2_waypoint_follower's ClassLoader<nav2_core::WaypointTaskExecutor> is scoped
+# under the "nav2_waypoint_follower" plugin-export key, not "nav2_core" (unlike every other
+# nav2_core plugin type above) -- confirmed against nav2_waypoint_follower's own package.xml,
+# which exports its built-in executors the same way. Exporting under "nav2_core" here builds
+# fine but is silently invisible to WaypointFollower's pluginlib lookup.
+ament_auto_add_library(ice_approach_task_executor SHARED src/ice_approach_task_executor.cpp)
+target_include_directories(ice_approach_task_executor PRIVATE include)
+ament_target_dependencies(ice_approach_task_executor
+  nav2_util nav2_core rclcpp rclcpp_lifecycle pluginlib geometry_msgs nav_msgs std_msgs)
+target_compile_definitions(ice_approach_task_executor PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
+pluginlib_export_plugin_description_file(nav2_waypoint_follower ice_approach_task_executor_plugin.xml)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
@@ -103,6 +116,7 @@ install(
   straight_line_planner_3d_plugin.xml
   goal_checker_3d_plugin.xml
   progress_checker_3d_plugin.xml
+  ice_approach_task_executor_plugin.xml
   DESTINATION share/${PROJECT_NAME}
 )
 

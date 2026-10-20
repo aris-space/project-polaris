@@ -1,0 +1,5 @@
+<library path="ice_approach_task_executor">
+  <class name="orca_nav2/IceApproachTaskExecutor" type="orca_nav2::IceApproachTaskExecutor" base_class_type="nav2_core::WaypointTaskExecutor">
+    <description>Rise to ice ceiling, hold firm contact, descend, per-waypoint via up_down flag.</description>
+  </class>
+</library>

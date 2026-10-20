@@ -49,5 +49,6 @@
     <nav2_core plugin="${prefix}/progress_checker_3d_plugin.xml" />
     <nav2_core plugin="${prefix}/orca_controllers_plugins.xml" />
     <nav2_core plugin="${prefix}/straight_line_planner_3d_plugin.xml" />
+    <nav2_waypoint_follower plugin="${prefix}/ice_approach_task_executor_plugin.xml" />
   </export>
 </package>

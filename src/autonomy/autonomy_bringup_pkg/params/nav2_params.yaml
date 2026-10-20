@@ -295,8 +295,23 @@ waypoint_follower:
     use_sim_time: False
     loop_rate: 20
     stop_on_failure: False
-    waypoint_task_executor_plugin: "wait_at_waypoint"
-    wait_at_waypoint:
-      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
-      enabled: True
-      waypoint_pause_duration: 1250   # Sleep for 2000ms
+    waypoint_task_executor_plugin: "ice_approach_task_executor"
+    ice_approach_task_executor:
+      plugin: "orca_nav2/IceApproachTaskExecutor"
+      rise_vel: 0.05
+      press_vel: 0.03
+      descend_vel: 0.05
+      crawl_dist_m: 0.15
+      crawl_vel: 0.02
+      depth_tolerance_m: 0.10
+      rise_timeout_s: 60.0
+      descend_timeout_s: 60.0
+      contact_lost_grace_s: 2.0
+      plain_waypoint_pause_ms: 1250.0
+      cmd_rate_hz: 10.0
+      touching_topic: "/ice_touch_detection/touching"
+      ultrasonic_topic: "/top/ultrasonic/distance"
+      odom_topic: "/odometry/filtered/local"
+      mode_topic: "/mode_control/current_mode"
+      meta_topic: "/mission_waypoints_meta"
+      cmd_vel_topic: "/pixhawk/cmd_vel"
