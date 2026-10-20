@@ -10,12 +10,15 @@ just uses whichever fix the EKF chose.
 On the first /gnss_datum message:
 
   1. Reads the mission CSV.
-  2. Calls process_coordinates(lat, lon, alt) to transform every WGS84 point
-     to map-frame ENU using the datum as origin.
-  3. Publishes the result as a PoseArray on /mission_waypoints_enu (latched,
-     TRANSIENT_LOCAL), so any later subscriber (WGS84_mission_starter when
-     the operator runs the mission) sees it immediately — even hours later,
-     even after the vehicle has dived and lost GNSS.
+  2. Calls process_mission(lat, lon, alt) to transform every WGS84 point
+     to map-frame ENU using the datum as origin, and to parse the optional
+     per-waypoint metadata columns (up_down / delta_z_m / hold_s).
+  3. Publishes the poses as a PoseArray on /mission_waypoints_enu, and the
+     metadata as an index-aligned Float32MultiArray on /mission_waypoints_meta
+     (both latched, TRANSIENT_LOCAL), so any later subscriber
+     (WGS84_mission_starter when the operator runs the mission, or the
+     ice-approach waypoint task executor) sees them immediately — even hours
+     later, even after the vehicle has dived and lost GNSS.
 
 Because /gnss_datum is latched, this loader works whether it starts BEFORE
 or AFTER the watchdog locks: late-joining still delivers the datum.
@@ -37,11 +40,12 @@ from rclpy.qos import (
 
 from geometry_msgs.msg import PoseArray
 from sensor_msgs.msg import NavSatFix
+from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 
 from autonomy_bringup_pkg.load_wgs84_points_to_waypoints import (
     MissionConfigError,
     declare_mission_csv,
-    process_coordinates,
+    process_mission,
 )
 
 
@@ -60,8 +64,10 @@ class MissionWaypointLoader(Node):
         self._csv_path: str = declare_mission_csv(self)
         self.declare_parameter('datum_topic', '/gnss_datum')
         self.declare_parameter('output_topic', '/mission_waypoints_enu')
+        self.declare_parameter('meta_output_topic', '/mission_waypoints_meta')
         datum_topic: str = str(self.get_parameter('datum_topic').value)
         output_topic: str = str(self.get_parameter('output_topic').value)
+        meta_output_topic: str = str(self.get_parameter('meta_output_topic').value)
 
         self._locked = False
         self._wait_started_t: float = time.monotonic()
@@ -74,6 +80,7 @@ class MissionWaypointLoader(Node):
             reliability=QoSReliabilityPolicy.RELIABLE,
         )
         self._pub = self.create_publisher(PoseArray, output_topic, latched_qos)
+        self._meta_pub = self.create_publisher(Float32MultiArray, meta_output_topic, latched_qos)
 
         # Match the watchdog's QoS exactly: TRANSIENT_LOCAL + RELIABLE.
         # BEST_EFFORT or VOLATILE here would make us miss the latched message
@@ -129,7 +136,7 @@ class MissionWaypointLoader(Node):
         )
 
         try:
-            poses = process_coordinates(self._csv_path, lat0, lon0, alt0)
+            poses, meta_list = process_mission(self._csv_path, lat0, lon0, alt0)
         except (OSError, ValueError) as exc:
             self.get_logger().error(
                 f'Mission CSV load failed ({self._csv_path}): {exc}. '
@@ -142,9 +149,20 @@ class MissionWaypointLoader(Node):
         arr.header.frame_id = 'map'
         arr.poses = [p.pose for p in poses]
         self._pub.publish(arr)
+
+        # Index-aligned with arr.poses: [up_down (0.0/1.0), delta_z_m, hold_s] per waypoint.
+        meta_msg = Float32MultiArray()
+        meta_msg.layout.dim = [
+            MultiArrayDimension(label='waypoint', size=len(meta_list), stride=3)
+        ]
+        for m in meta_list:
+            meta_msg.data.extend([1.0 if m.up_down else 0.0, float(m.delta_z_m), float(m.hold_s)])
+        self._meta_pub.publish(meta_msg)
+
         self.get_logger().info(
             f'Published {len(arr.poses)} ENU waypoints on {self._pub.topic_name} '
-            '(latched, TRANSIENT_LOCAL).'
+            f'and {len(meta_list)} waypoint-meta rows on {self._meta_pub.topic_name} '
+            '(both latched, TRANSIENT_LOCAL).'
         )
 
 
