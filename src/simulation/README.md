@@ -429,7 +429,7 @@ hand-estimated, so the drift it produces is not a real disturbance-rejection num
 ```bash
 ros2 launch orca_sim_bringup sim_launch.py world:=ice.world ice_layer:=True gzclient:=True ground_truth:=False
 ```
-
+- **mission.yaml** needs to be changed to the sim mission.
 - **Ice:** static model `ice_layer`, z = −0.3 … +0.1 m over the whole 200 × 200 m scene, with a
   **3 × 3 m hole centred on the origin**, where the vehicle spawns. It is a collision barrier: the
   vehicle cannot pass through it, only surface in the hole. `world:=ice.world` only adds the
