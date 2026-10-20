@@ -45,8 +45,29 @@
         <pose>0 0 0.06 0 0 0</pose>
         <geometry>
           <box>
-            <size>0.457 0.338 0.21078864628533997</size>
+            <size>0.457 0.338 0.18784674495237683</size>
           </box>
+        </geometry>
+      </collision>
+
+      <!-- Towers: the highest points of the vehicle, so they are what touches the ice ceiling.
+           Part of the buoyancy volume; generate_model.py shrinks the main box to compensate. -->
+      <collision name="tower_front_collision">
+        <pose>0.25 0.0 0.209457161571335 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.08</radius>
+            <length>0.08812567685733003</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <collision name="tower_back_collision">
+        <pose>-0.25 0.0 0.209457161571335 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.08</radius>
+            <length>0.08812567685733003</length>
+          </cylinder>
         </geometry>
       </collision>
 

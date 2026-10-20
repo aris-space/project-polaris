@@ -22,6 +22,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>autonomy_bringup_pkg</exec_depend>
+  <exec_depend>orca_description</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

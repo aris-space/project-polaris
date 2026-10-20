@@ -74,7 +74,24 @@ buoyancy_adjustment = 0.05
 displaced_mass = mass + buoyancy_adjustment
 collision_x = 0.457
 collision_y = 0.338
-collision_z = displaced_mass / (collision_x * collision_y * fluid_density)
+_main_box_z = displaced_mass / (collision_x * collision_y * fluid_density)
+
+# --- Tower hitboxes, so the vehicle touches the ice with its tower tops, as on the vehicle ---
+# Two upright cylinders, 160 mm diameter, in front of and behind the centre (x positions are an
+# estimate). Top = Keller pressure sensor (keller_26x_pkg launch: base_link -> keller_pressure_link
+# z 0.117520) + 0.136 m (ice_touch_detection_pkg pressure_sensor_offset_m). Each runs from the
+# top of the main box up to the tower top.
+tower_front_x = 0.25
+tower_back_x = -0.25
+tower_y = 0.0
+tower_radius = 0.08
+tower_top_z = 0.117520 + 0.136
+tower_length = tower_top_z - (volume_z + _main_box_z / 2)
+tower_z = tower_top_z - tower_length / 2
+# Buoyancy is computed from all collision volumes: shrink the main box by the towers' volume
+# so the total displaced volume (and the 0.05 kg positive buoyancy) stays the same.
+_towers_volume = 2 * math.pi * tower_radius ** 2 * tower_length
+collision_z = (displaced_mass / fluid_density - _towers_volume) / (collision_x * collision_y)
 
 # --- Hydrodynamic *drag*: slender hull cylinder (areas only; not the buoyancy collision shape) ---
 hull_length = 1.78
