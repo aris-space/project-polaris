@@ -55,76 +55,94 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from ublox_ubx_msgs.msg import UBXNavHPPosLLH
 
-from orca_sim_sensors.common import default_origin_file, enu_to_llh, load_origin, quat_to_matrix
+from orca_sim_sensors.common import (
+    default_origin_file,
+    enu_to_llh,
+    load_origin,
+    quat_to_matrix,
+)
 
-NO_FIX, FLOAT, RTK = 'no_fix', 'float', 'rtk'
-OUTCOME_RTK, OUTCOME_FLOAT, OUTCOME_NONE = 'rtk', 'float', 'nothing'
+NO_FIX, FLOAT, RTK = "no_fix", "float", "rtk"
+OUTCOME_RTK, OUTCOME_FLOAT, OUTCOME_NONE = "rtk", "float", "nothing"
 
 
 class SimGnssNode(Node):
     def __init__(self):
-        super().__init__('sim_gnss_node')
-        self.declare_parameter('origin_file', default_origin_file())
-        self.declare_parameter('fix_topic', '/fix')
-        self.declare_parameter('h_acc_topic', '/ubx_nav_hp_pos_llh')
-        self.declare_parameter('datum_topic', '/gnss_datum')
-        self.declare_parameter('frame_id', 'gnss_link')
+        super().__init__("sim_gnss_node")
+        self.declare_parameter("origin_file", default_origin_file())
+        self.declare_parameter("fix_topic", "/fix")
+        self.declare_parameter("h_acc_topic", "/ubx_nav_hp_pos_llh")
+        self.declare_parameter("datum_topic", "/gnss_datum")
+        self.declare_parameter("frame_id", "gnss_link")
         # base_link -> gnss_link, from gnss_bringup_pkg/launch/launch_gnss_x20p.launch.py
-        self.declare_parameter('antenna_offset', [-0.0057, -0.00024, 0.174])
-        self.declare_parameter('rate_hz', 2.0)  # CFG_RATE_MEAS 500 ms on the vehicle
-        self.declare_parameter('available', True)
-        self.declare_parameter('seed', -1)
+        self.declare_parameter("antenna_offset", [-0.0057, -0.00024, 0.174])
+        self.declare_parameter("rate_hz", 2.0)  # CFG_RATE_MEAS 500 ms on the vehicle
+        self.declare_parameter("available", True)
+        self.declare_parameter("seed", -1)
 
-        self.declare_parameter('surface_depth_m', 0.05)
-        self.declare_parameter('surfaced_base_link_z', -0.165)  # measured: floating at rest
-        self.declare_parameter('ice_layer', False)
-        self.declare_parameter('acquire_fix_s', 1.0)
-        self.declare_parameter('rtk_h_acc_m', 0.02)
-        self.declare_parameter('float_h_acc_m', 1.0)
-        self.declare_parameter('float_error_tau_s', 30.0)
-        self.declare_parameter('no_fix_h_acc_m', 10000.0)
-        self.declare_parameter('rtk_delay_min_s', 2.0)
-        self.declare_parameter('rtk_delay_max_s', 5.0)
-        self.declare_parameter('ice_p_rtk', 0.5)
-        self.declare_parameter('ice_p_float', 0.3)
-        self.declare_parameter('ice_rtk_delay_min_s', 5.0)
-        self.declare_parameter('ice_rtk_delay_max_s', 20.0)
-        self.declare_parameter('ice_float_h_acc_min_m', 0.6)
-        self.declare_parameter('ice_float_h_acc_max_m', 2.0)
-        self.declare_parameter('startup_rtk_until_datum', True)
-        self.declare_parameter('startup_rtk_max_s', 300.0)
+        self.declare_parameter("surface_depth_m", 0.05)
+        self.declare_parameter(
+            "surfaced_base_link_z", -0.7
+        )  # 0.5535 (tower hitbox) + tolerance
+        self.declare_parameter("ice_layer", False)
+        self.declare_parameter("acquire_fix_s", 1.0)
+        self.declare_parameter("rtk_h_acc_m", 0.02)
+        self.declare_parameter("float_h_acc_m", 1.0)
+        self.declare_parameter("float_error_tau_s", 30.0)
+        self.declare_parameter("no_fix_h_acc_m", 10000.0)
+        self.declare_parameter("rtk_delay_min_s", 2.0)
+        self.declare_parameter("rtk_delay_max_s", 5.0)
+        self.declare_parameter("ice_p_rtk", 0.5)
+        self.declare_parameter("ice_p_float", 0.3)
+        self.declare_parameter("ice_rtk_delay_min_s", 5.0)
+        self.declare_parameter("ice_rtk_delay_max_s", 20.0)
+        self.declare_parameter("ice_float_h_acc_min_m", 0.6)
+        self.declare_parameter("ice_float_h_acc_max_m", 2.0)
+        self.declare_parameter("startup_rtk_until_datum", True)
+        self.declare_parameter("startup_rtk_max_s", 300.0)
 
         p = lambda n: self.get_parameter(n).value  # noqa: E731
-        self._origin = load_origin(p('origin_file'))
-        self._frame_id = p('frame_id')
-        self._antenna = np.array(p('antenna_offset'), dtype=float)
-        self._dt = 1.0 / float(p('rate_hz'))
-        self._available = bool(p('available'))
-        seed = int(p('seed'))
+        self._origin = load_origin(p("origin_file"))
+        self._frame_id = p("frame_id")
+        self._antenna = np.array(p("antenna_offset"), dtype=float)
+        self._dt = 1.0 / float(p("rate_hz"))
+        self._available = bool(p("available"))
+        seed = int(p("seed"))
         self._rng = random.Random(None if seed < 0 else seed)
 
-        self._surface_depth = float(p('surface_depth_m'))
-        self._surfaced_z = float(p('surfaced_base_link_z'))
-        self._ice = bool(p('ice_layer'))
-        self._acquire_s = float(p('acquire_fix_s'))
-        self._rtk_h = float(p('rtk_h_acc_m'))
-        self._float_h = float(p('float_h_acc_m'))
-        self._tau = float(p('float_error_tau_s'))
-        self._no_fix_h = float(p('no_fix_h_acc_m'))
-        self._rtk_delay = (float(p('rtk_delay_min_s')), float(p('rtk_delay_max_s')))
-        self._ice_p_rtk = float(p('ice_p_rtk'))
-        self._ice_p_float = float(p('ice_p_float'))
-        self._ice_rtk_delay = (float(p('ice_rtk_delay_min_s')), float(p('ice_rtk_delay_max_s')))
-        self._ice_float_h = (float(p('ice_float_h_acc_min_m')), float(p('ice_float_h_acc_max_m')))
-        self._startup = bool(p('startup_rtk_until_datum'))
-        self._startup_max_s = float(p('startup_rtk_max_s'))
+        self._surface_depth = float(p("surface_depth_m"))
+        self._surfaced_z = float(p("surfaced_base_link_z"))
+        self._ice = bool(p("ice_layer"))
+        self._acquire_s = float(p("acquire_fix_s"))
+        self._rtk_h = float(p("rtk_h_acc_m"))
+        self._float_h = float(p("float_h_acc_m"))
+        self._tau = float(p("float_error_tau_s"))
+        self._no_fix_h = float(p("no_fix_h_acc_m"))
+        self._rtk_delay = (float(p("rtk_delay_min_s")), float(p("rtk_delay_max_s")))
+        self._ice_p_rtk = float(p("ice_p_rtk"))
+        self._ice_p_float = float(p("ice_p_float"))
+        self._ice_rtk_delay = (
+            float(p("ice_rtk_delay_min_s")),
+            float(p("ice_rtk_delay_max_s")),
+        )
+        self._ice_float_h = (
+            float(p("ice_float_h_acc_min_m")),
+            float(p("ice_float_h_acc_max_m")),
+        )
+        self._startup = bool(p("startup_rtk_until_datum"))
+        self._startup_max_s = float(p("startup_rtk_max_s"))
 
-        self._fix_pub = self.create_publisher(NavSatFix, p('fix_topic'), 10)
-        self._hp_pub = self.create_publisher(UBXNavHPPosLLH, p('h_acc_topic'), 10)
-        self.create_subscription(Odometry, '/odom', self._on_odom, qos_profile_sensor_data)
-        latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-                             reliability=QoSReliabilityPolicy.RELIABLE)
-        self.create_subscription(NavSatFix, p('datum_topic'), self._on_datum, latched)
+        self._fix_pub = self.create_publisher(NavSatFix, p("fix_topic"), 10)
+        self._hp_pub = self.create_publisher(UBXNavHPPosLLH, p("h_acc_topic"), 10)
+        self.create_subscription(
+            Odometry, "/odom", self._on_odom, qos_profile_sensor_data
+        )
+        latched = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self.create_subscription(NavSatFix, p("datum_topic"), self._on_datum, latched)
 
         self._odom = None
         self._t0 = None
@@ -138,11 +156,16 @@ class SimGnssNode(Node):
         self._mode = None
         self.create_timer(self._dt, self._tick)
         self.get_logger().info(
-            f'Synthetic GNSS: ice_layer={self._ice}, sky view while base_link is within '
-            f'{self._surface_depth:.2f} m of its floating depth (z={self._surfaced_z:.3f} m), '
-            + (f'RTK guaranteed at startup until {p("datum_topic")} '
-               f'(max {self._startup_max_s:.0f} s), ' if self._startup else 'no startup RTK hold, ')
-            + f'available={self._available}')
+            f"Synthetic GNSS: ice_layer={self._ice}, sky view while base_link is within "
+            f"{self._surface_depth:.2f} m of its floating depth (z={self._surfaced_z:.3f} m), "
+            + (
+                f'RTK guaranteed at startup until {p("datum_topic")} '
+                f"(max {self._startup_max_s:.0f} s), "
+                if self._startup
+                else "no startup RTK hold, "
+            )
+            + f"available={self._available}"
+        )
 
     def _on_odom(self, msg):
         self._odom = msg
@@ -151,7 +174,8 @@ class SimGnssNode(Node):
         if self._startup:
             self._startup = False
             self.get_logger().info(
-                'Datum latched: startup RTK guarantee ends, sky-view rules apply.')
+                "Datum latched: startup RTK guarantee ends, sky-view rules apply."
+            )
 
     def _roll_outcome(self, open_water):
         if open_water:
@@ -169,21 +193,31 @@ class SimGnssNode(Node):
         if self._startup and now_s - self._t0 > self._startup_max_s:
             self._startup = False
             self.get_logger().warn(
-                f'No datum after {self._startup_max_s:.0f} s: ending the startup RTK guarantee.')
+                f"No datum after {self._startup_max_s:.0f} s: ending the startup RTK guarantee."
+            )
         surfaced = self._startup or depth <= self._surface_depth
         if surfaced and not self._surfaced:
             self._t_surface = now_s
             self._outcome, self._rtk_delay_s, self._outcome_h = self._roll_outcome(
-                open_water=self._startup or not self._ice)
+                open_water=self._startup or not self._ice
+            )
             self._float_err[:] = 0.0
-            extra = (f', RTK after {self._rtk_delay_s:.1f} s' if self._outcome == OUTCOME_RTK
-                     else f', h_acc {self._outcome_h:.2f} m' if self._outcome == OUTCOME_FLOAT
-                     else '')
+            extra = (
+                f", RTK after {self._rtk_delay_s:.1f} s"
+                if self._outcome == OUTCOME_RTK
+                else (
+                    f", h_acc {self._outcome_h:.2f} m"
+                    if self._outcome == OUTCOME_FLOAT
+                    else ""
+                )
+            )
             self.get_logger().info(
-                f'Surfaced{" (startup)" if self._startup else ""}: outcome {self._outcome}{extra}')
+                f'Surfaced{" (startup)" if self._startup else ""}: outcome {self._outcome}{extra}'
+            )
         elif not surfaced and self._surfaced:
             self.get_logger().info(
-                f'Submerged ({depth:.2f} m below floating depth): sky view lost.')
+                f"Submerged ({depth:.2f} m below floating depth): sky view lost."
+            )
         self._surfaced = surfaced
 
         if not surfaced:
@@ -209,13 +243,18 @@ class SimGnssNode(Node):
         p = np.array([pose.position.x, pose.position.y, pose.position.z])
         mode, h_acc = self._solution(now_s, depth=self._surfaced_z - p[2])
         if mode != self._mode:
-            self.get_logger().info(f'GNSS solution: {mode} (h_acc {h_acc:.2f} m)')
+            self.get_logger().info(f"GNSS solution: {mode} (h_acc {h_acc:.2f} m)")
             self._mode = mode
 
         antenna = p + quat_to_matrix(pose.orientation) @ self._antenna
         if mode == RTK:
-            err = np.array([self._rng.gauss(0, h_acc), self._rng.gauss(0, h_acc),
-                            self._rng.gauss(0, 2 * h_acc)])
+            err = np.array(
+                [
+                    self._rng.gauss(0, h_acc),
+                    self._rng.gauss(0, h_acc),
+                    self._rng.gauss(0, 2 * h_acc),
+                ]
+            )
         elif mode == FLOAT:
             a = math.exp(-self._dt / self._tau)
             sig = np.array([h_acc, h_acc, 2 * h_acc])
@@ -239,11 +278,14 @@ class SimGnssNode(Node):
         fix.header.stamp = stamp
         fix.header.frame_id = self._frame_id
         # Same mapping as ublox_nav_sat_fix_hp_node: carrier solution (float or fixed) -> GBAS.
-        fix.status.status = (NavSatStatus.STATUS_NO_FIX if mode == NO_FIX
-                             else NavSatStatus.STATUS_GBAS_FIX)
+        fix.status.status = (
+            NavSatStatus.STATUS_NO_FIX
+            if mode == NO_FIX
+            else NavSatStatus.STATUS_GBAS_FIX
+        )
         fix.status.service = NavSatStatus.SERVICE_GPS
         fix.latitude, fix.longitude, fix.altitude = lat, lon, alt
-        var = h_acc ** 2
+        var = h_acc**2
         fix.position_covariance = [var, 0.0, 0.0, 0.0, var, 0.0, 0.0, 0.0, 4.0 * var]
         fix.position_covariance_type = NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
         self._fix_pub.publish(fix)
@@ -261,7 +303,7 @@ class SimGnssNode(Node):
         alt_01mm = round(alt * 1e4)
         hp.height, hp.height_hp = int(alt_01mm // 10), int(alt_01mm % 10)
         hp.hmsl, hp.hmsl_hp = hp.height, hp.height_hp
-        hp.h_acc = min(int(round(h_acc * 1e4)), 2**32 - 1)        # 0.1 mm units
+        hp.h_acc = min(int(round(h_acc * 1e4)), 2**32 - 1)  # 0.1 mm units
         hp.v_acc = min(int(round(2.0 * h_acc * 1e4)), 2**32 - 1)
         self._hp_pub.publish(hp)
 
@@ -278,5 +320,5 @@ def main():
         rclpy.try_shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
