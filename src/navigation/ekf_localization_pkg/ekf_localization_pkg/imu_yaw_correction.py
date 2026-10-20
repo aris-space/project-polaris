@@ -22,8 +22,15 @@ Heading sources, in priority order:
   2. Two-fix haversine bearing (start fix vs latest fix). Used as fallback
      if head_mot was not valid often enough during the window.
 
-The calibration sets yaw_offset_deg = circular_avg(GNSS bearing) -
+The calibration sets yaw_offset_deg = circular_avg(GNSS bearing) - crab -
 circular_avg(raw IMU yaw), via the live parameter callback.
+
+Crab correction: the GNSS bearing is the course over ground = heading + crab, with
+crab = atan2(vy, vx) of the body-frame velocity (DVL via the local EKF). Sideways drift
+during the calibration drive otherwise enters the offset 1:1 (2026-10-20: crab +3.2 deg
+-> heading error +3...7 deg after the calibration). Same correction as heading_check.
+If no local odometry / too little speed was seen in the window, the offset is computed
+without it (as before) and the result says so.
 
 Parameters
 ----------
@@ -39,6 +46,10 @@ yaw_calibration_min_distance_m  Min distance for the two-fix fallback to be
 head_acc_max_deg            Max head_mot uncertainty per sample (default 5.0)
 head_mot_min_samples        Min valid head_mot samples in the window before
                             preferring head_mot over two-fix (default 5)
+crab_correction             Subtract the DVL crab angle from the bearing (default true)
+odom_topic                  Body-frame velocity source (default /odometry/filtered/local)
+crab_min_speed_mps          Min mean body speed to trust the crab angle (default 0.05)
+crab_max_deg                Larger crab angles are not applied, status warn_crab (default 20)
 """
 from __future__ import annotations
 
@@ -56,6 +67,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
     qos_profile_sensor_data,
 )
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import Float64, String
 from std_srvs.srv import Trigger
@@ -138,6 +150,10 @@ class ImuYawCorrection(Node):
         # the vehicle turned while calibrating, so bearing and heading are not comparable.
         self.declare_parameter("max_yaw_spread_deg", 10.0)
         self.declare_parameter("head_mot_min_samples", 5)
+        self.declare_parameter("crab_correction", True)
+        self.declare_parameter("odom_topic", "/odometry/filtered/local")
+        self.declare_parameter("crab_min_speed_mps", 0.05)
+        self.declare_parameter("crab_max_deg", 20.0)
 
         input_topic: str = self.get_parameter("input_topic").value
         output_topic: str = self.get_parameter("output_topic").value
@@ -173,6 +189,7 @@ class ImuYawCorrection(Node):
         self._cal_yaw_samples: list[float] = []
         self._cal_head_mot_samples: list[tuple[float, float]] = []  # (yaw_enu_rad, head_acc_deg)
         self._cal_head_mot_rejected: list[float] = []  # head_acc_deg of gated-out samples
+        self._cal_vel_samples: list[tuple[float, float]] = []  # body (vx, vy) m/s
         self._cal_timer = None
 
         # I/O.
@@ -199,6 +216,10 @@ class ImuYawCorrection(Node):
         # combo, so this works in both live and offline-replay paths.
         self.create_subscription(Imu, input_topic, self._on_imu, qos_profile_sensor_data)
         self.create_subscription(NavSatFix, gps_topic, self._on_gps, qos_profile_sensor_data)
+        self.create_subscription(
+            Odometry, str(self.get_parameter("odom_topic").value), self._on_odom,
+            qos_profile_sensor_data,
+        )
 
         self._ubx_enabled = bool(ubx_pvt_topic) and _UBX_PVT_AVAILABLE
         if self._ubx_enabled:
@@ -287,6 +308,11 @@ class ImuYawCorrection(Node):
             return
         self._latest_fix = msg
 
+    def _on_odom(self, msg: Odometry) -> None:
+        if self._cal_active:
+            v = msg.twist.twist.linear
+            self._cal_vel_samples.append((float(v.x), float(v.y)))
+
     def _on_ubx_pvt(self, msg) -> None:
         if not self._cal_active:
             return
@@ -328,6 +354,7 @@ class ImuYawCorrection(Node):
         self._cal_yaw_samples = []
         self._cal_head_mot_samples = []
         self._cal_head_mot_rejected = []
+        self._cal_vel_samples = []
         self._cal_timer = self.create_timer(0.1, self._on_calibration_tick)
         self._publish_result(status="running", duration_s=duration)
 
@@ -413,6 +440,29 @@ class ImuYawCorrection(Node):
             )
             source_str = f"two-fix bearing (distance={distance:.2f} m)"
 
+        # Crab correction: bearing is the course over ground; heading = course - crab.
+        crab_deg = None
+        crab_info = "crab correction off"
+        crab_ok = True
+        if bool(self.get_parameter("crab_correction").value):
+            n_v = len(self._cal_vel_samples)
+            if n_v >= 5:
+                vx = sum(v[0] for v in self._cal_vel_samples) / n_v
+                vy = sum(v[1] for v in self._cal_vel_samples) / n_v
+                if math.hypot(vx, vy) >= float(self.get_parameter("crab_min_speed_mps").value):
+                    crab_deg = math.degrees(math.atan2(vy, vx))
+                    if abs(crab_deg) <= float(self.get_parameter("crab_max_deg").value):
+                        bearing_rad -= math.radians(crab_deg)
+                        crab_info = f"crab {crab_deg:+.1f}° subtracted (body v {vx:+.2f},{vy:+.2f} m/s)"
+                    else:
+                        crab_ok = False
+                        crab_info = (f"crab {crab_deg:+.1f}° NOT applied (> crab_max_deg; "
+                                     "drive straight forward)")
+                else:
+                    crab_info = f"crab not applied (body speed {math.hypot(vx, vy):.2f} m/s too low)"
+            else:
+                crab_info = "crab not applied (no local EKF odometry during the window)"
+
         # Circular average of IMU yaw across the window, plus its spread: a large spread
         # means the vehicle turned while calibrating (bearing and heading not comparable).
         sx = sum(math.sin(y) for y in self._cal_yaw_samples)
@@ -435,6 +485,8 @@ class ImuYawCorrection(Node):
 
         max_spread = float(self.get_parameter("max_yaw_spread_deg").value)
         status = "ok" if spread_deg <= max_spread else "warn_turned"
+        if status == "ok" and not crab_ok:
+            status = "warn_crab"
         self._publish_result(
             status=status,
             source=source_str,
@@ -444,12 +496,14 @@ class ImuYawCorrection(Node):
             offset_old_deg=round(old_offset_deg, 2),
             offset_new_deg=round(new_offset_deg, 2),
             distance_m=None if distance is None else round(distance, 2),
+            crab_deg=None if crab_deg is None else round(crab_deg, 1),
+            crab_info=crab_info,
             **hm_info,
         )
         log = self.get_logger().info if status == "ok" else self.get_logger().warn
         log(
-            f"Yaw calibration {'complete' if status == 'ok' else 'APPLIED BUT SUSPECT (vehicle turned)'}. "
-            f"Source: {source_str}. GNSS bearing(ENU)={math.degrees(bearing_rad):+.3f}°, "
+            f"Yaw calibration {'complete' if status == 'ok' else 'APPLIED BUT SUSPECT (' + status + ')'}. "
+            f"Source: {source_str}; {crab_info}. Heading(ENU)={math.degrees(bearing_rad):+.3f}°, "
             f"avg IMU yaw={math.degrees(avg_yaw_rad):+.3f}° (spread {spread_deg:.1f}°)  →  "
             f"yaw_offset_deg {old_offset_deg:+.2f}° → {new_offset_deg:+.3f}° (applied to /imu/data_corrected)."
         )
