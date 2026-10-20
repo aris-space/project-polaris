@@ -26,6 +26,8 @@
   <exec_depend>dvl_a50_pkg</exec_depend>
   <exec_depend>pressure_pose_pkg</exec_depend>
   <exec_depend>uwgpsg2_translator</exec_depend>
+  <exec_depend>mode_control_pkg</exec_depend>
+  <exec_depend>ice_touch_detection_pkg</exec_depend>
   <exec_depend>robot_localization</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>tf2_ros</exec_depend>

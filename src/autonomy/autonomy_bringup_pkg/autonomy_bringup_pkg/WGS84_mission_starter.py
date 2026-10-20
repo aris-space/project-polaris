@@ -133,7 +133,10 @@ def wait_for_mission_waypoints(
         poses = []
         for p in msg.poses:
             ps = PoseStamped()
-            ps.header.stamp = msg.header.stamp
+            # Stamp left at 0 = "latest transform". The PoseArray stamp is when the datum
+            # locked, often minutes before the mission starts: older than the TF buffer, so
+            # Nav2 could not transform the goals to odom (in the sim it is even wall time vs
+            # sim time) and reported waypoints as reached without moving.
             ps.header.frame_id = frame
             ps.pose = p
             poses.append(ps)
