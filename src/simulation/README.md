@@ -323,7 +323,7 @@ hand-estimated, so the drift it produces is not a real disturbance-rejection num
 ### 3.8 Ice layer (`ice.world`)
 
 ```bash
-ros2 launch orca_sim_bringup sim_launch.py world:=ice.world ice_layer:=True
+ros2 launch orca_sim_bringup sim_launch.py world:=ice.world ice_layer:=True gzclient:=True
 ```
 
 - **Ice:** static model `ice_layer`, z = −0.3 … +0.1 m over the whole 200 × 200 m scene, with a
