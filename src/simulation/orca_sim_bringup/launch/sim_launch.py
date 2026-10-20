@@ -91,6 +91,7 @@ def generate_launch_description():
     sim_sensors_dir = get_package_share_directory('orca_sim_sensors')
     ekf_localization_dir = get_package_share_directory('ekf_localization_pkg')
     pressure_pose_dir = get_package_share_directory('pressure_pose_pkg')
+    ice_touch_detection_dir = get_package_share_directory('ice_touch_detection_pkg')
 
     ardusub_params_file = os.path.join(sim_bringup_dir, 'cfg', 'sub.parm')
     world_file = PathJoinSubstitution(
@@ -315,6 +316,26 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(
                 os.path.join(mavlink_bridge_dir, 'launch', 'mavlink_bridge.launch.py')),
         ),
+
+        # Inputs of orca_nav2/IceApproachTaskExecutor, as on the vehicle:
+        # mode_control_node mirrors the Pixhawk heartbeat mode on /mode_control/current_mode
+        # (without /joy it never sends mode or arm commands itself), and ice touch detection
+        # publishes /ice_touch_detection/touching. In the sim only its geometric check works
+        # (top ultrasonic + attitude): the Keller sensor and /imu/acceleration are not simulated.
+        GroupAction([
+            SetParameter('use_sim_time', True),
+            Node(
+                package='mode_control_pkg',
+                executable='mode_control_node',
+                name='mode_control_node',
+                output='screen',
+            ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(ice_touch_detection_dir, 'launch',
+                                 'ice_touch_detection.launch.py')),
+            ),
+        ]),
 
         Node(
             package='foxglove_bridge',

@@ -202,8 +202,19 @@ The CSV must lie near the sim origin, the lat/lon/alt in
 [`missions/default_mission_origin.json`](../autonomy/autonomy_bringup_pkg/missions/default_mission_origin.json)
 (ArduSub `--home` and the synthetic GNSS both use it). `smaller_square.csv` and
 `default_wgs84_mission.csv` are written for it; the Goldbach and pool missions are kilometres away.
-`alt` is HAE, so `alt` = origin alt (1822.0) is the surface and 1817.0 is 5 m deep. The CSV columns
-`up_down`, `delta_z_m` and `hold_s` are parsed but not acted on yet.
+`alt` is HAE, so `alt` = origin alt (1822.0) is the surface and 1817.0 is 5 m deep.
+
+**Under the ice** (`world:=ice.world`) use `sim_ice_square.csv`: it dives to 2 m inside the hole,
+flies a 15 m square west and north of it (on Lake St. Moritz: the origin is 9 m from its east
+shore, so the square goes into the lake), runs an ice approach (`up_down`) at its three far
+corners, returns under the hole and surfaces. Missions at `alt` 1822.0 can't be flown under
+the ice: the vehicle stops about 0.55 m below the surface, outside Nav2's depth tolerance.
+
+`up_down`, `delta_z_m` and `hold_s` drive `orca_nav2/IceApproachTaskExecutor` at each waypoint
+(rise until `/ice_touch_detection/touching`, hold, descend). `sim_launch.py` starts its inputs
+as on the vehicle: `mode_control_node` (`/mode_control/current_mode`, mirrored from the Pixhawk
+heartbeat) and ice touch detection, which in the sim only has its geometric check (top
+ultrasonic + attitude): the Keller sensor and `/imu/acceleration` are not simulated.
 
 **Run it** in a second shell:
 
