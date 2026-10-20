@@ -139,6 +139,7 @@ def generate_launch_description():
         output='screen',
         respawn=respawn,
         respawn_delay=respawn_delay,
+        parameters=[{'mission_csv': sbl_line_csv}],
     )
 
     nav2_arm_watchdog = Node(
