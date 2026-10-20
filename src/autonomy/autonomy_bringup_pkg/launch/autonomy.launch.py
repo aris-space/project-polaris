@@ -132,6 +132,8 @@ def generate_launch_description():
         parameters=[{'mission_csv': sbl_line_csv}],
     )
 
+    # Same mission as the map, so `go_to_waypoint --index N` drives to the SBL line points
+    # (the loader reads mission_csv only at startup; it used to fall back to the old grid).
     mission_waypoint_loader = Node(
         package='autonomy_bringup_pkg',
         executable='mission_waypoint_loader',
@@ -139,6 +141,7 @@ def generate_launch_description():
         output='screen',
         respawn=respawn,
         respawn_delay=respawn_delay,
+        parameters=[{'mission_csv': sbl_line_csv}],
     )
 
     nav2_arm_watchdog = Node(
