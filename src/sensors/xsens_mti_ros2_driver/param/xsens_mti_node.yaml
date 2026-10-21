@@ -247,13 +247,19 @@
 
         # Enable or disable manual gyro bias estimation.
         # If enabled, specify the 'event_interval' and 'duration' in 'manual_gyro_bias_param'.
-        enable_manual_gyro_bias: false  # TODO: try true if IMU has frequent stationary periods (e.g. docked), monitor /status
+        # true + event_interval 0: no periodic MGBE (would corrupt the bias while moving), only the
+        # on-demand trigger: ros2 topic pub --once /gyro_bias_trigger std_msgs/msg/Empty
+        # Vehicle must be completely still (on land) for `duration` s; check /status
+        # no_rotation_update_status 3 (running) -> 0 (ok), 2 = aborted (rotation detected).
+        # The automatic 6 s MGBE at driver start aborted in every in-water session (status 2)
+        # -> uncorrected z-gyro bias -> 3-4 deg/min heading drift (2026-10 pool bags).
+        enable_manual_gyro_bias: true
 
         # Parameters for manual gyro bias estimation:
         # - 'event_interval': Time in seconds between two consecutive invocations.
         # - 'duration': Time in seconds for which the MGBE process executes each time.
         #   The minimum value for 'event_interval' is 10 seconds, for 'duration' is 2 seconds.
-        manual_gyro_bias_param: [15, 5] # [event_interval, duration]
+        manual_gyro_bias_param: [0, 5] # [event_interval (0 = trigger only), duration s]
 
         # Monitoring MGBE Success:
         # To verify if MGBE was successful, use 'rostopic echo /status'.

@@ -288,9 +288,12 @@ class GnssDatumWatchdog(Node):
         )
 
         # Cache latest local EKF odom so we can log its position at datum-set time.
+        # sensor_data QoS: odometry_validator publishes /odometry/filtered/local_validated
+        # BEST_EFFORT; a RELIABLE subscription is incompatible and never receives anything
+        # ("No local odom at datum lock" -> set_pose bootstrap skipped, odom origin = datum).
         self._latest_local_odom: Odometry | None = None
         self._diag_local_sub = self.create_subscription(
-            Odometry, self._odom_topic, self._on_local_odom, 10
+            Odometry, self._odom_topic, self._on_local_odom, qos_profile_sensor_data
         )
 
         self._fix_sub = self.create_subscription(
@@ -686,7 +689,11 @@ class GnssDatumWatchdog(Node):
             # subsequent _on_local_odom updates of self._latest_local_odom.
             self._local_anchor_x = float(lx)
             self._local_anchor_y = float(ly)
-            self._local_anchor_z = float(lz)
+            # z is NOT anchored: local z is the pressure depth, already referenced to the
+            # water surface. Subtracting the depth at lock would make the global EKF's z
+            # (via pressure_pose_frame_fix) depth-relative-to-lock: 10-16 cm off in the
+            # 2026-10-20 replay. Keep map z == pressure depth (as before this anchor was live).
+            self._local_anchor_z = 0.0
             self._local_anchor_yaw = float(lyaw)
             self._local_anchor_valid = True
         self.get_logger().info(

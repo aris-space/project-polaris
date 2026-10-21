@@ -109,9 +109,14 @@ class EkfReady(Node):
                 yaw_ok = row(None, "Pixhawk yaw agrees with ours", "no comparison yet")
                 yaw_ok = bool(fwd)
             else:
+                st = ex.get("yaw_state")
+                hint = {"converging": " (converging after recalibration — wait)",
+                        "latched": " -> not converging: reboot the Pixhawk while DISARMED",
+                        "mismatch": " (watching whether it converges)"}.get(st, "")
+                if abs(d) > 10.0 and st is None:  # bridge without yaw_state
+                    hint = " -> reboot the Pixhawk while DISARMED if it does not shrink"
                 yaw_ok = row(abs(d) <= 10.0, "Pixhawk yaw agrees with ours",
-                             f"{d:+.1f} deg" + ("" if abs(d) <= 10.0 else
-                                                 " -> reboot the Pixhawk while DISARMED"))
+                             f"{d:+.1f} deg" + ("" if abs(d) <= 10.0 else hint))
         guided = bool(nav2 and fwd and yaw_ok)
 
         cal = self.v.get("cal")

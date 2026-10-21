@@ -13,6 +13,7 @@ from rcl_interfaces.msg import SetParametersResult
 import logging, os
 import math
 import time
+from collections import deque
 from datetime import datetime
 from config_pkg.constants import Logs, Comms, Ports
 
@@ -297,6 +298,8 @@ class MavlinkBridgeReceiver(Node):
         self.declare_parameter("extnav_settle_time_s", 1.0)
         self.declare_parameter("extnav_settle_timeout_s", 10.0)
         self.declare_parameter("extnav_yaw_mismatch_warn_deg", 10.0)
+        # Mismatch above warn_deg that has not shrunk for this long -> "latched" + reboot warning.
+        self.declare_parameter("extnav_yaw_mismatch_reboot_s", 20)
         self._imu_corr_yaw = None          # (yaw ENU rad, monotonic t)
         self._yaw_offset_deg = None        # latest /imu_yaw_correction/yaw_offset_deg
         self._cal_ok_offset_deg = None     # offset applied by the last ok calibration
@@ -309,6 +312,9 @@ class MavlinkBridgeReceiver(Node):
         self._sent_yaw = None              # (yaw NED rad, monotonic t) last forwarded
         self._yaw_mismatch_count = 0
         self._yaw_mismatch_deg = None
+        self._yaw_mismatch_hist = deque()  # (monotonic t, |mismatch| deg), last ~5 s
+        self._yaw_stuck_s = 0              # s above warn_deg without converging
+        self._yaw_state = None             # ok / converging / mismatch / latched
         self.create_subscription(
             Imu, "/imu/data_corrected", self._imu_corr_cb, qos_profile_sensor_data
         )
@@ -689,17 +695,44 @@ class MavlinkBridgeReceiver(Node):
                 and now - fc[1] < 1.0 and now - sent[1] < 1.0):
             d = math.degrees(math.atan2(math.sin(fc[0] - sent[0]), math.cos(fc[0] - sent[0])))
             self._yaw_mismatch_deg = d
+            self._yaw_mismatch_hist.append((now, abs(d)))
+            while self._yaw_mismatch_hist and now - self._yaw_mismatch_hist[0][0] > 5.5:
+                self._yaw_mismatch_hist.popleft()
             if abs(d) > float(self.get_parameter("extnav_yaw_mismatch_warn_deg").value):
                 self._yaw_mismatch_count += 1
-                if self._yaw_mismatch_count >= 3 and self._yaw_mismatch_count % 10 == 3:
-                    self.get_logger().warn(
-                        f"Pixhawk yaw differs from external nav by {d:+.1f} deg for "
-                        f"{self._yaw_mismatch_count} s — EKF3 latched an old heading and "
-                        "rejects ours (GUIDED may be refused: 'requires position'). "
-                        "Reboot the Pixhawk while DISARMED."
-                    )
+                # After a recalibration step of ~20 deg EKF3 follows our yaw by itself
+                # (2026-10-20: -20 -> 0 deg in ~20 s, ~1 deg/s). Only a mismatch that is
+                # NOT shrinking means EKF3 latched/rejects ours -> reboot needed.
+                old = self._yaw_mismatch_hist[0]
+                converging = now - old[0] >= 4.0 and old[1] - abs(d) >= 1.0
+                if converging:
+                    self._yaw_state = "converging"
+                    self._yaw_stuck_s = 0
+                    if self._yaw_mismatch_count % 10 == 3:
+                        self.get_logger().info(
+                            f"Pixhawk yaw differs from external nav by {d:+.1f} deg but is "
+                            "converging (EKF3 follows the new heading) — wait before GUIDED."
+                        )
+                else:
+                    self._yaw_stuck_s += 1
+                    reboot_s = int(self.get_parameter("extnav_yaw_mismatch_reboot_s").value)
+                    if self._yaw_stuck_s >= reboot_s:
+                        self._yaw_state = "latched"
+                        if (self._yaw_stuck_s - reboot_s) % 10 == 0:
+                            self.get_logger().warn(
+                                f"Pixhawk yaw differs from external nav by {d:+.1f} deg and has "
+                                f"not converged for {self._yaw_stuck_s} s — EKF3 latched an old "
+                                "heading and rejects ours (GUIDED may be refused: 'requires "
+                                "position'). Reboot the Pixhawk while DISARMED."
+                            )
+                    else:
+                        self._yaw_state = "mismatch"
             else:
                 self._yaw_mismatch_count = 0
+                self._yaw_stuck_s = 0
+                self._yaw_state = "ok"
+        else:
+            self._yaw_state = None
         odom_age = None if self._odom_last_rx is None else now - self._odom_last_rx
         self._extnav_status_pub.publish(String(data=json.dumps(dict(
             forwarding=self._extnav_forwarding,
@@ -710,6 +743,7 @@ class MavlinkBridgeReceiver(Node):
             pixhawk_yaw_minus_extnav_deg=(None if self._yaw_mismatch_deg is None
                                           else round(self._yaw_mismatch_deg, 1)),
             yaw_mismatch_s=self._yaw_mismatch_count,
+            yaw_state=self._yaw_state,
             reset_counter=self._odom_reset_counter,
         ))))
 
