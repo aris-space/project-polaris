@@ -120,7 +120,8 @@ def generate_launch_description():
     # Default to the SBL range-sweep line for the pool/lake trial. Override at runtime with
     #   ros2 param set /mission_waypoints_publisher mission_csv <path>
     # and point it at a captured single-waypoint .json (from capture_waypoint) for pool tests.
-    sbl_line_csv = os.path.join(orca_bringup_dir, 'missions', 'sbl_line_goldbach.csv')
+    # SHORT line (3..15 m) for the 20 m cable; the long-cable line is sbl_line_goldbach.csv (10..50 m).
+    sbl_line_csv = os.path.join(orca_bringup_dir, 'missions', 'sbl_line_goldbach_short.csv')
 
     mission_waypoints_publisher = Node(
         package='autonomy_bringup_pkg',
