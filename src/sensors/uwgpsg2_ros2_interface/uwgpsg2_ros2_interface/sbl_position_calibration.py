@@ -22,6 +22,7 @@ import requests
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 
 from sensor_msgs.msg import NavSatFix
 from ublox_ubx_msgs.msg import UBXNavPVT, UBXNavHPPosLLH
@@ -44,7 +45,7 @@ class SblPositionCalibration(Node):
 
         self.require_rtk_fixed = bool(p("require_rtk_fixed", True).value)
         self.h_acc_max_m = float(p("h_acc_max_m", 0.50).value)
-        self.collect_seconds = float(p("collect_seconds", 5.0).value)
+        self.collect_seconds = float(p("collect_seconds", 10.0).value)
         self.min_fixes = int(p("min_fixes", 10).value)
         self.max_spread_m = float(p("max_spread_m", 0.5).value)
 
@@ -68,9 +69,14 @@ class SblPositionCalibration(Node):
         self._collecting = False
 
         if self.source == "gnss":
-            self.create_subscription(NavSatFix, self.fix_topic, self._on_fix, 10)
-            self.create_subscription(UBXNavPVT, self.pvt_topic, self._on_pvt, 10)
-            self.create_subscription(UBXNavHPPosLLH, self.hpposllh_topic, self._on_hp, 10)
+            # sensor_data QoS (BEST_EFFORT): ublox_nav_sat_fix_hp_node publishes /fix with
+            # SensorDataQoS; a RELIABLE subscription is incompatible and receives nothing
+            # ("no messages on /fix" -> abort). BEST_EFFORT also matches the RELIABLE UBX topics.
+            self.create_subscription(NavSatFix, self.fix_topic, self._on_fix, qos_profile_sensor_data)
+            self.create_subscription(UBXNavPVT, self.pvt_topic, self._on_pvt, qos_profile_sensor_data)
+            self.create_subscription(
+                UBXNavHPPosLLH, self.hpposllh_topic, self._on_hp, qos_profile_sensor_data
+            )
 
     # --- callbacks ---
     def _on_pvt(self, msg):

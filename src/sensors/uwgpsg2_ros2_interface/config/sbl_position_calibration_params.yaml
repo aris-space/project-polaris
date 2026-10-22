@@ -11,7 +11,7 @@ sbl_position_calibration:
 
     require_rtk_fixed: true        # true = carr_soln FIXED only; false = accept FLOAT+
     h_acc_max_m: 0.50             # horizontal-accuracy gate (matches stack)
-    collect_seconds: 5.0
+    collect_seconds: 10.0          # /fix is 2 Hz -> ~20 fixes (5 s gave exactly min_fixes=10, no margin)
     min_fixes: 10
     max_spread_m: 0.5            # reject scattered fixes
 
