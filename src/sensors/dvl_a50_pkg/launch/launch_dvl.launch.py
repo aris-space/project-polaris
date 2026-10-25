@@ -162,7 +162,7 @@ def _launch_setup(context, *args, **kwargs):
                 # Plausibility gate on 4-beam samples (see odometry_covariance_node.py):
                 # |v| cap and jump vs last accepted sample -> no-lock. Real max |v| in
                 # 2026 bags 0.71 m/s, real |dv| <= 0.81 m/s; glitches >= 1.7 m/s.
-                "max_speed": 1.2,
+                "max_speed": 0.9,
                 "max_velocity_jump": 0.5,
                 "max_acceleration": 2.0,
                 "max_velocity_jump_limit": 1.0,

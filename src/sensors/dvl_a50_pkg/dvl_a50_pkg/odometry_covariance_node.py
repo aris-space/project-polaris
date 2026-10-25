@@ -55,7 +55,7 @@ Parameters:
     lock_variance_vz_floor (double): max(raw vz variance, floor); set 0 to disable
     angular_covariance (double): Angular rate variance (unused by DVL)
     velocity_stale_timeout_sec (double): lock flag timeout [s] (default: 0.5)
-    max_speed          (double): |v| cap [m/s]; above -> no-lock (default 1.2; <=0 off)
+    max_speed          (double): |v| cap [m/s]; above -> no-lock (default 0.9; <=0 off)
     max_velocity_jump  (double): jump threshold at dt=0 [m/s] (default 0.5; <=0 off)
     max_acceleration   (double): threshold growth per second since last accepted
                                  sample [m/s^2] (default 2.0)
@@ -117,7 +117,7 @@ class OdometryCovarianceNode(Node):
         self.declare_parameter("min_good_beams", 4)
         # Plausibility gate on 4-beam samples (defaults derived from 26 bags, see the
         # module docstring and velocity_jump_gate.py).
-        self.declare_parameter("max_speed", 1.2)
+        self.declare_parameter("max_speed", 0.9)
         self.declare_parameter("max_velocity_jump", 0.5)
         self.declare_parameter("max_acceleration", 2.0)
         self.declare_parameter("max_velocity_jump_limit", 1.0)
