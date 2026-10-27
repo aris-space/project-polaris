@@ -26,6 +26,19 @@ beams, the solution has no redundancy (a bad beam can produce a wild velocity wi
 low FOM), so the update is treated as no-lock. A Mahalanobis gate on the EKF side
 (odom0_twist_rejection_threshold in ekf_local/global.yaml) is the independent backstop.
 
+Plausibility gate (after the beam-count gate, see velocity_jump_gate.py): a 4-beam
+sample is also treated as no-lock if |v| > max_speed, or if it jumps more than
+min(max_velocity_jump + max_acceleration * dt, max_velocity_jump_limit) from the last
+accepted sample (dt from header stamps). After jump_reaccept_samples consecutive
+mutually consistent rejected samples the new velocity is accepted (genuine fast
+change). Needed because a single 4-beam glitch (1.95 m/s, FOM variance 3.5e-4, June
+2026 grid_03) passed the EKF Mahalanobis gate with larger velocity process noise
+(PR #29); this keeps glitch rejection independent of EKF tuning. Defaults from 26 bags (2026-06 + 2026-10, 144k 4-beam samples
+incl. lake waves 2026-10-22): real |v| max 0.71 m/s (p99.9 0.56), consecutive |dv|
+p99.9 0.20 / max 0.81 m/s (max 0.74 at dt<0.25 s); all 5 known 4-beam glitches
+have |v| >= 1.71 and |dv| >= 1.66 m/s. With the defaults: 0 real samples rejected,
+all glitches rejected by either check alone.
+
 When bottom lock is lost or velocity topic is stale: linear variances set to
 no_lock_variance (large m²/s²) so the EKF effectively ignores the update.
 
@@ -42,6 +55,14 @@ Parameters:
     lock_variance_vz_floor (double): max(raw vz variance, floor); set 0 to disable
     angular_covariance (double): Angular rate variance (unused by DVL)
     velocity_stale_timeout_sec (double): lock flag timeout [s] (default: 0.5)
+    max_speed          (double): |v| cap [m/s]; above -> no-lock (default 0.9; <=0 off)
+    max_velocity_jump  (double): jump threshold at dt=0 [m/s] (default 0.5; <=0 off)
+    max_acceleration   (double): threshold growth per second since last accepted
+                                 sample [m/s^2] (default 2.0)
+    max_velocity_jump_limit (double): upper bound of the jump threshold after long
+                                 gaps [m/s] (default 1.0; <=0 unbounded)
+    jump_reaccept_samples (int): consecutive consistent rejected samples that are
+                                 accepted as a real change (default 5)
 """
 
 
@@ -58,6 +79,7 @@ from dvl_a50_pkg.measurement_noise_constants import (
     DVL_LOCK_LINEAR_VARIANCE_Z_RAW_M2_S2,
     DEFAULT_LOCK_LINEAR_VARIANCE_Z_FLOOR_M2_S2,
 )
+from dvl_a50_pkg.velocity_jump_gate import REACCEPT, REJECT_SPEED, VelocityJumpGate
 
 # DVL-A50 long-term accuracy specs from Water Linked, used as the default
 # speed_sigma_scale. Replace with a value fitted from moving data when available.
@@ -93,6 +115,13 @@ class OdometryCovarianceNode(Node):
         # and nothing in the sensor can flag it. Require 4 by default; fewer -> treat
         # as no-lock (no_lock_variance) so the EKF ignores the update.
         self.declare_parameter("min_good_beams", 4)
+        # Plausibility gate on 4-beam samples (defaults derived from 26 bags, see the
+        # module docstring and velocity_jump_gate.py).
+        self.declare_parameter("max_speed", 0.9)
+        self.declare_parameter("max_velocity_jump", 0.5)
+        self.declare_parameter("max_acceleration", 2.0)
+        self.declare_parameter("max_velocity_jump_limit", 1.0)
+        self.declare_parameter("jump_reaccept_samples", 5)
 
         self._cov_model = (
             self.get_parameter("twist_linear_covariance_model").value or "stationary_tep"
@@ -129,6 +158,16 @@ class OdometryCovarianceNode(Node):
             self.get_parameter("velocity_stale_timeout_sec").value
         )
         self.min_good_beams = int(self.get_parameter("min_good_beams").value)
+        self._jump_gate = VelocityJumpGate(
+            max_speed=float(self.get_parameter("max_speed").value),
+            max_jump=float(self.get_parameter("max_velocity_jump").value),
+            max_accel=float(self.get_parameter("max_acceleration").value),
+            max_jump_limit=float(self.get_parameter("max_velocity_jump_limit").value),
+            reaccept_samples=int(self.get_parameter("jump_reaccept_samples").value),
+        )
+        self._n_rejected_speed = 0
+        self._n_rejected_jump = 0
+        self._n_reaccepted = 0
 
         self.bottom_lock = False
         self.last_velocity_stamp = None
@@ -163,6 +202,11 @@ class OdometryCovarianceNode(Node):
             f"no_lock_variance={self.no_lock_var}, "
             f"velocity_stale_timeout_sec={self.velocity_stale_timeout_sec}, "
             f"min_good_beams={self.min_good_beams}, "
+            f"max_speed={self._jump_gate.max_speed:g}, "
+            f"max_velocity_jump={self._jump_gate.max_jump:g}, "
+            f"max_acceleration={self._jump_gate.max_accel:g}, "
+            f"max_velocity_jump_limit={self._jump_gate.max_jump_limit:g}, "
+            f"jump_reaccept_samples={self._jump_gate.reaccept_samples}, "
             f"lock_var_vx_vy_vz=({vxv:g},{vyv:g},{vzv:g})"
             + (
                 f", speed_dep: variant={variant}, "
@@ -205,6 +249,31 @@ class OdometryCovarianceNode(Node):
         age = (self.get_clock().now() - self.last_velocity_stamp).nanoseconds / 1e9
         return age > self.velocity_stale_timeout_sec
 
+    def _passes_jump_gate(self, msg: Odometry) -> bool:
+        """Absolute speed cap + jump check (velocity_jump_gate.py); logs rejections."""
+        lin = msg.twist.twist.linear
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        ok, reason = self._jump_gate.check((lin.x, lin.y, lin.z), stamp)
+        speed = math.sqrt(lin.x * lin.x + lin.y * lin.y + lin.z * lin.z)
+        if ok:
+            if reason == REACCEPT:
+                self._n_reaccepted += 1
+                self.get_logger().warn(
+                    f"DVL velocity changed persistently, re-accepted |v|={speed:.2f} m/s "
+                    f"(re-accepts so far: {self._n_reaccepted})"
+                )
+            return True
+        if reason == REJECT_SPEED:
+            self._n_rejected_speed += 1
+        else:
+            self._n_rejected_jump += 1
+        self.get_logger().warn(
+            f"DVL sample rejected ({reason}): |v|={speed:.2f} m/s -> no-lock "
+            f"(rejected so far: speed_cap={self._n_rejected_speed}, "
+            f"jump={self._n_rejected_jump})"
+        )
+        return False
+
     def odometry_callback(self, msg: Odometry):
         cov = list(msg.twist.covariance)
         evx, evy, evz = self._stationary_lock_linear_variances_effective()
@@ -213,9 +282,11 @@ class OdometryCovarianceNode(Node):
             self._lock_is_stale()
             or not self.bottom_lock
             or self.num_good_beams < self.min_good_beams
+            or not self._passes_jump_gate(msg)
         ):
-            # No lock, stale, or too few beams for a redundant (outlier-checkable)
-            # solution -> make the update negligible so the EKF effectively ignores it.
+            # No lock, stale, too few beams for a redundant (outlier-checkable)
+            # solution, or implausible speed / jump -> make the update negligible so
+            # the EKF effectively ignores it.
             cov[0] = self.no_lock_var
             cov[7] = self.no_lock_var
             cov[14] = self.no_lock_var

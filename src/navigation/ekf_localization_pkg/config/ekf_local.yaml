@@ -125,6 +125,13 @@ ekf_local_node:
     pose0_relative: false
 
     # Process noise covariance (15x15, row-major)
+    # vz process noise 0.05 (was 0.0001): with the tight DVL twist covariance and
+    # odom0_twist_rejection_threshold 8, the old value rejected real heave above ~0.25 m/s^2
+    # (lake waves) -> EKF vz lagged 1.75 s, Pixhawk (fuses ext-nav vz via EK3_SRC1_VELXY=6)
+    # lost depth-loop damping. Replay of 2026-10-22 lake bag: lag 1.75 s -> ~0 s.
+    # vx/vy stay 0.0005/0.001: the depth problem is vertical only, and a larger horizontal Q
+    # let a single 4-beam DVL glitch (1.95 m/s) through the Mahalanobis gate. Such glitches
+    # are now also rejected upstream by the speed cap / jump gate in dvl_a50_pkg.
     process_noise_covariance: [
       0.00001, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.00001, 0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -134,7 +141,7 @@ ekf_local_node:
       0.0,  0.0,  0.0,  0.0,  0.0,  0.005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0,
