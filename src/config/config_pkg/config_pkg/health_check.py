@@ -111,7 +111,7 @@ TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
     ("SBL waterlinked", "/waterlinked_ugps/navsatfix", NavSatFix, "min_rate", 1.0),
     # ("Ultrasonic front", "/front/ultrasonic/distance", Float32, "min_rate", 5.0),
     ("Ultrasonic top", "/top/ultrasonic/distance", Float32, "min_rate", 5.0),
-    ("Camera front", "/front/camera/camera_info", CameraInfo, "received", None),
+    ("Camera front info", "/front/camera/camera_info", CameraInfo, "received", None),
     (
         "Camera front image",
         "/front/camera/image_raw/compressed",
@@ -127,7 +127,7 @@ TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
     #     "received",
     #     None,
     # ),
-    ("Ice measurement", ICE_MEASUREMENT_TOPIC, Distance, "min_rate", 2.0),
+    # ("Ice measurement", ICE_MEASUREMENT_TOPIC, Distance, "min_rate", 2.0),
     (
         "ublox DGNSS h_acc",
         "/ubx_nav_hp_pos_llh",
@@ -136,6 +136,17 @@ TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
         H_ACC_MAX_RAW,
     ),
 ]
+
+# Checks reported as one sensor in the service message and diagnostics:
+# check display name -> sensor name. Checks with the sensor's own name (e.g.
+# the "IMU" device + topic checks) are grouped automatically; list only the
+# ones whose names differ. The rest of the name labels the check ("info").
+SENSOR_OF_CHECK: Dict[str, str] = {
+    "Camera front info": "Camera front",
+    "Camera front image": "Camera front",
+    # "Camera tube info": "Camera tube",
+    # "Camera tube image": "Camera tube",
+}
 
 
 # ============================================================
@@ -231,14 +242,22 @@ SensorResult = Tuple[str, str, List[Tuple[str, str]]]
 
 
 def merge_by_sensor(results: List[CheckResult]) -> List[SensorResult]:
-    """Group checks that share a display name, so each sensor appears once.
+    """Group checks by sensor, so each sensor appears once.
 
-    A sensor with both a device and a topic check (e.g. IMU) becomes one
-    entry whose status is the worst of its checks. Order is first-seen.
+    Checks sharing a display name (e.g. the IMU device + topic checks) or
+    mapped together in SENSOR_OF_CHECK become one entry whose status is the
+    worst of its checks. Mapped checks keep a label from the rest of their
+    name, e.g. "Camera front image" -> "image received (40 msgs)".
+    Order is first-seen.
     """
     grouped: Dict[str, List[Tuple[str, str]]] = {}
     for status, name, _, detail in results:
-        grouped.setdefault(name, []).append((status, " ".join(detail.split())))
+        sensor = SENSOR_OF_CHECK.get(name, name)
+        label = ""
+        if name != sensor:
+            label = name[len(sensor):].strip() if name.startswith(sensor) else name
+        text = f"{label} {' '.join(detail.split())}".strip()
+        grouped.setdefault(sensor, []).append((status, text))
     return [
         (min((s for s, _ in checks), key=STATUS_RANK.__getitem__), name, checks)
         for name, checks in grouped.items()
@@ -502,7 +521,10 @@ class HealthCheckNode(Node):
             mon.timestamps = []
             mon.last_msg = None
 
-        ice_set_err = self.set_ice_recording(True)
+        # Only toggle the ice publisher's `recording` param when its topic is
+        # actually checked (the entry in TOPIC_CHECKS may be commented out).
+        check_ice = any(mon.topic == ICE_MEASUREMENT_TOPIC for mon in self.monitors)
+        ice_set_err = self.set_ice_recording(True) if check_ice else None
         interrupted = False
         try:
             self._sampling = True
@@ -511,7 +533,7 @@ class HealthCheckNode(Node):
             interrupted = True
         finally:
             self._sampling = False
-            if ice_set_err is None:
+            if check_ice and ice_set_err is None:
                 self.set_ice_recording(False)
 
         topic_results: List[CheckResult] = []
