@@ -1,0 +1,26 @@
+# Fit log: one entry per fit run, appended by results_log.log_fit(). Never rewritten by code.
+# Overview: python scripts/sysid/results_log.py   (--param NAME, --bag TEXT, --show ID)
+#
+# Per entry: id, date, script (with git state), manoeuvre, bags (path, window in seconds after
+# the first EKF message, size and fingerprint so a renamed or re-exported bag is recognisable),
+# model (path and version tag, which includes the thrust-map hashes), settings, params
+# (value, uncertainty, unit), metrics, status and notes. `status` may be edited by hand.
+
+- id: fit-0001
+  date: '2026-10-27T14:03:16+01:00'
+  script: scripts/sysid/fitting/fit_surge.py (git 4403f1de+dirty)
+  manoeuvre: ''
+  bags:
+  - path: recordings/zermatt_rectangle_07_2026_04_29-13_38_44_0.mcap
+    window_s: [null, null]
+    size_bytes: 37455519
+    fingerprint: 7fae0d9fdce2f61c
+  model: {path: scripts/sysid/model.yaml, version: 'polaris_sysid v0.0.1 (sha256 eae5c173, git 4403f1de+dirty, map ch0 4f9b5ecf, map ch2 003b7846, map ch3 003b7846, map ch4 003b7846)'}
+  settings: {rate_hz: 100.0, smooth_s: 1.0, filtering: consistent}
+  params:
+    m_tot: {value: 40.403943884630735, uncertainty: null, unit: kg}
+    X_u: {value: -9.378100759015478, uncertainty: null, unit: N s/m}
+    X_uu: {value: 102.63297307727905, uncertainty: null, unit: N s^2/m^2}
+  metrics: {}
+  status: candidate
+  notes: ''

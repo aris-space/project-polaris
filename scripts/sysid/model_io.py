@@ -8,8 +8,9 @@ Validation scripts:
     print(model.version_tag())                 # e.g. "polaris_sysid v0.0.1 (sha256 1a2b3c4d, git 104e240f)"
 
 Fit scripts:
-    update_parameters({"damping_linear.X_u": (12.3, 0.8)}, bags=["lake_step_01"])
-    # (value, uncertainty) per parameter; bumps the patch version and records the bags.
+    update_parameters({"damping_linear.X_u": (12.3, 0.8)}, bags=["lake_step_01"], fit_id="fit-0007")
+    # (value, uncertainty) per parameter; bumps the patch version and records the bags and the
+    # results_log entry (results/fit_log.yaml) the values came from.
 
 Dependency: pip install pyyaml
 """
@@ -127,8 +128,12 @@ def update_parameters(
     bags: list[str] | None = None,
     source: str = "fitted",
     note: str | None = None,
+    fit_id: str | None = None,
 ) -> None:
-    """Write new values into the model file, bump the patch version and record the bags used."""
+    """Write new values into the model file, bump the patch version and record the bags used.
+
+    fit_id: the results_log entry (e.g. "fit-0007") the values come from; recorded in
+    model.fit_ids so every model version points back to the fit log."""
     path = Path(path)
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     for key, new in updates.items():
@@ -144,6 +149,8 @@ def update_parameters(
     for bag in bags or []:
         if bag not in meta["fitted_from"]:
             meta["fitted_from"].append(bag)
+    if fit_id and fit_id not in meta.setdefault("fit_ids", []):
+        meta["fit_ids"].append(fit_id)
     if note:
         meta["notes"] = note
     path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
