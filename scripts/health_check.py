@@ -37,29 +37,22 @@ from custom_msgs.msg import Distance
 from rcl_interfaces.srv import SetParameters
 from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
 
-
 # ============================================================
 # Configuration
 # ============================================================
 
-DEFAULT_STARTUP_DELAY_SEC = 20
+DEFAULT_STARTUP_DELAY_SEC = 10
 DEFAULT_MEASUREMENT_SEC = 5
-
-# Thruster test defaults (MAV_CMD_DO_MOTOR_TEST, throttle_type=percentage)
-DEFAULT_NUM_THRUSTERS = 6
-DEFAULT_THRUSTER_THROTTLE_PCT = 20.0   # % throttle
-DEFAULT_THRUSTER_DURATION_SEC = 2.0    # seconds per motor
-DEFAULT_THRUSTER_BREAK_SEC = 1.0
 
 # h_acc field is uint32 in 0.1 mm units. 10 m == 100_000 raw.
 H_ACC_MAX_RAW = 100_000
 
 # Device presence checks: (display name, /dev symlink)
 DEVICE_CHECKS: List[Tuple[str, str]] = [
-    ("IMU (Xsens)",   "/dev/xsens_imu"),
+    ("IMU (Xsens)", "/dev/xsens_imu"),
     ("Keller sensor", "/dev/keller"),
-    ("Camera front",  "/dev/cam_front"),
-    ("Camera tube",   "/dev/cam_tube"),
+    ("Camera front", "/dev/cam_front"),
+    ("Camera tube", "/dev/cam_tube"),
 ]
 
 # Parameter toggle for the ice measurement publisher
@@ -73,19 +66,43 @@ ICE_MEASUREMENT_TOPIC = "/ping_sonar/distance"
 #   kind = "received"   -> threshold ignored, just need >=1 msg
 #   kind = "h_acc"      -> threshold is max raw h_acc value
 TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
-    ("IMU",                "/imu/data",                       Imu,             "min_rate",  50.0),
-    ("Pixhawk heartbeat",  "/pixhawk/heartbeat",              State,           "rate_band", (0.5, 2.0)),
-    ("BlueRobotics press", "/pixhawk/scaled_pressure",        FluidPressure,   "min_rate",  40.0),
-    ("Keller pressure",    "/sensors/keller26x/abs_pressure", FluidPressure,   "min_rate",  10.0),
-    ("SBL waterlinked",    "/waterlinked_ugps/navsatfix",     NavSatFix,       "min_rate",   1.0),
-    ("Ultrasonic front",   "/front/ultrasonic/distance",      Float32,         "min_rate",   5.0),
-    ("Ultrasonic top",     "/top/ultrasonic/distance",        Float32,         "min_rate",   5.0),
-    ("Camera front info",  "/front/camera/camera_info",              CameraInfo,      "received",  None),
-    ("Camera front image", "/front/camera/image_raw/compressed",     CompressedImage, "received",  None),
-    ("Camera tube info",   "/tube/camera/camera_info",               CameraInfo,      "received",  None),
-    ("Camera tube image",  "/tube/camera/image_raw/compressed",      CompressedImage, "received",  None),
-    ("Ice measurement",    ICE_MEASUREMENT_TOPIC,             Distance,        "min_rate",   2.0),
-    ("ublox DGNSS h_acc",  "/ubx_nav_hp_pos_llh",             UBXNavHPPosLLH,  "h_acc",     H_ACC_MAX_RAW),
+    ("IMU", "/imu/data", Imu, "min_rate", 50.0),
+    ("Pixhawk heartbeat", "/pixhawk/heartbeat", State, "rate_band", (0.5, 2.0)),
+    ("BlueRobotics press", "/pixhawk/scaled_pressure", FluidPressure, "min_rate", 40.0),
+    (
+        "Keller pressure",
+        "/sensors/keller26x/abs_pressure",
+        FluidPressure,
+        "min_rate",
+        10.0,
+    ),
+    ("SBL waterlinked", "/waterlinked_ugps/navsatfix", NavSatFix, "min_rate", 1.0),
+    # ("Ultrasonic front", "/front/ultrasonic/distance", Float32, "min_rate", 5.0),
+    ("Ultrasonic top", "/top/ultrasonic/distance", Float32, "min_rate", 5.0),
+    ("Camera front info", "/front/camera/camera_info", CameraInfo, "received", None),
+    (
+        "Camera front image",
+        "/front/camera/image_raw/compressed",
+        CompressedImage,
+        "received",
+        None,
+    ),
+    # ("Camera tube info", "/tube/camera/camera_info", CameraInfo, "received", None),
+    # (
+    #     "Camera tube image",
+    #     "/tube/camera/image_raw/compressed",
+    #     CompressedImage,
+    #     "received",
+    #     None,
+    # ),
+    ("Ice measurement", ICE_MEASUREMENT_TOPIC, Distance, "min_rate", 2.0),
+    (
+        "ublox DGNSS h_acc",
+        "/ubx_nav_hp_pos_llh",
+        UBXNavHPPosLLH,
+        "h_acc",
+        H_ACC_MAX_RAW,
+    ),
 ]
 
 
@@ -100,15 +117,15 @@ def _c(code: str) -> str:
     return code if USE_COLOR else ""
 
 
-GREEN  = _c("\033[32m")
-RED    = _c("\033[31m")
+GREEN = _c("\033[32m")
+RED = _c("\033[31m")
 YELLOW = _c("\033[33m")
-CYAN   = _c("\033[36m")
-BOLD   = _c("\033[1m")
-DIM    = _c("\033[2m")
-RESET  = _c("\033[0m")
+CYAN = _c("\033[36m")
+BOLD = _c("\033[1m")
+DIM = _c("\033[2m")
+RESET = _c("\033[0m")
 
-OK   = f"{GREEN}  OK  {RESET}"
+OK = f"{GREEN}  OK  {RESET}"
 FAIL = f"{RED} FAIL {RESET}"
 WARN = f"{YELLOW} WARN {RESET}"
 
@@ -131,6 +148,7 @@ def section(text: str) -> None:
 # ============================================================
 # Phase 1 — device presence
 # ============================================================
+
 
 def check_devices() -> List[Tuple[str, str, str, str]]:
     """Returns (status, display_name, path, detail) per device."""
@@ -168,6 +186,7 @@ def print_device_results(results) -> Tuple[int, int]:
 # Phase 2 — ROS topic health
 # ============================================================
 
+
 @dataclass
 class TopicMonitor:
     display_name: str
@@ -198,10 +217,13 @@ class HealthCheckNode(Node):
         def cb(msg):
             mon.timestamps.append(time.monotonic())
             mon.last_msg = msg
+
         return cb
 
 
-def set_ice_recording(node: Node, value: bool, timeout_sec: float = 3.0) -> Optional[str]:
+def set_ice_recording(
+    node: Node, value: bool, timeout_sec: float = 3.0
+) -> Optional[str]:
     """Toggle the `recording` parameter on the ice measurement publisher.
 
     Returns None on success, or an error string on failure.
@@ -291,101 +313,9 @@ def print_topic_results(results, window_sec: float) -> Tuple[int, int]:
 
 
 # ============================================================
-# Phase 3 — interactive thruster test
-# ============================================================
-
-def prompt_thruster_test() -> bool:
-    """Block until the user presses ENTER (run) or ESC (skip).
-
-    Falls back to skipping the test if stdin is not a TTY.
-    """
-    if not sys.stdin.isatty():
-        print(f"\n  {DIM}Skipping thruster test (non-interactive stdin).{RESET}")
-        return False
-
-    print()
-    print(f"{BOLD}{CYAN}Press ENTER to run thruster test, ESC to exit.{RESET}")
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        while True:
-            ch = sys.stdin.read(1)
-            if ch in ("\r", "\n"):
-                return True
-            if ch == "\x1b":
-                return False
-            # ignore other keys; keep waiting
-    finally:
-        termios.tcsetattr(fd, old, termios.TCSADRAIN)
-
-
-def run_thruster_test(
-    num_thrusters: int,
-    throttle_pct: float,
-    duration: float,
-    break_sec: float,
-) -> Tuple[int, int]:
-    """Sequence all thrusters via a single MAV_CMD_DO_MOTOR_TEST command.
-
-    Returns (fails, warns) for inclusion in the overall summary.
-    """
-    section("THRUSTER TEST")
-
-    print(f"  {DIM}Connecting to mavlink-router at {Comms.MAVLINK_ROUTER_TCP} ...{RESET}")
-    try:
-        port = mavutil.mavlink_connection(Comms.MAVLINK_ROUTER_TCP)
-        if port.wait_heartbeat(timeout=5) is None:
-            print(f" {FAIL}  no heartbeat from Pixhawk within 5 s")
-            return 1, 0
-    except Exception as exc:
-        print(f" {FAIL}  could not connect: {exc}")
-        return 1, 0
-
-    print(f"  {DIM}Heartbeat received from system {port.target_system}.{RESET}")
-    print(f"  {DIM}Throttle={throttle_pct:g}%, {duration:g}s per motor, "
-          f"{num_thrusters} motors in sequence.{RESET}\n")
-
-    print(f" {CYAN}->{RESET} Arming ...")
-    port.mav.command_long_send(
-        port.target_system, port.target_component,
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0, 1, 0, 0, 0, 0, 0, 0,
-    )
-    time.sleep(1.0)
-
-    print(f" {CYAN}->{RESET} Sending motor sequence (motors 1–{num_thrusters})")
-    port.mav.command_long_send(
-        port.target_system,
-        port.target_component,
-        mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-        0,                      # confirmation
-        1.0,                    # param1: start from motor 1
-        0.0,                    # param2: throttle_type (0 = percentage)
-        float(throttle_pct),    # param3: throttle (%)
-        float(duration),        # param4: timeout per motor (seconds)
-        float(num_thrusters),   # param5: motor count (6 = all)
-        0.0,                    # param6: test order (0 = default)
-        0.0,                    # param7: unused
-    )
-
-    time.sleep(num_thrusters * (duration + break_sec))
-
-    print(f" {CYAN}->{RESET} Disarming ...")
-    port.mav.command_long_send(
-        port.target_system, port.target_component,
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0, 0, 21196, 0, 0, 0, 0, 0,
-    )
-    time.sleep(1.0)
-
-    print(f"\n  {DIM}Thruster test complete.{RESET}")
-    return 0, 0
-
-
-# ============================================================
 # Main flow
 # ============================================================
+
 
 def countdown(seconds: int, label: str) -> None:
     if seconds <= 0:
@@ -407,22 +337,21 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Polaris system health check (devices + ROS topics).",
     )
-    parser.add_argument("--delay", type=int, default=DEFAULT_STARTUP_DELAY_SEC,
-                        help="seconds to wait for nodes to stabilize (default: %(default)s)")
-    parser.add_argument("--no-delay", action="store_true",
-                        help="skip the startup delay")
-    parser.add_argument("--window", type=float, default=DEFAULT_MEASUREMENT_SEC,
-                        help="topic measurement window in seconds (default: %(default)s)")
-    parser.add_argument("--skip-thruster-test", action="store_true",
-                        help="skip the interactive thruster test prompt")
-    parser.add_argument("--num-thrusters", type=int, default=DEFAULT_NUM_THRUSTERS,
-                        help="number of thrusters to cycle through (default: %(default)s)")
-    parser.add_argument("--thruster-throttle", type=float, default=DEFAULT_THRUSTER_THROTTLE_PCT,
-                        help="percentage throttle sent to each thruster (default: %(default)s)")
-    parser.add_argument("--thruster-duration", type=float, default=DEFAULT_THRUSTER_DURATION_SEC,
-                        help="seconds each thruster runs (default: %(default)s)")
-    parser.add_argument("--thruster-break", type=float, default=DEFAULT_THRUSTER_BREAK_SEC,
-                        help="seconds of pause between thrusters (default: %(default)s)")
+    parser.add_argument(
+        "--delay",
+        type=int,
+        default=DEFAULT_STARTUP_DELAY_SEC,
+        help="seconds to wait for nodes to stabilize (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--no-delay", action="store_true", help="skip the startup delay"
+    )
+    parser.add_argument(
+        "--window",
+        type=float,
+        default=DEFAULT_MEASUREMENT_SEC,
+        help="topic measurement window in seconds (default: %(default)s)",
+    )
     args = parser.parse_args(argv)
 
     delay = 0 if args.no_delay else max(0, args.delay)
@@ -477,16 +406,6 @@ def main(argv=None) -> int:
     node.destroy_node()
     rclpy.shutdown()
 
-    # Phase 3 — optional thruster test
-    thr_fails = thr_warns = 0
-    if not args.skip_thruster_test and prompt_thruster_test():
-        thr_fails, thr_warns = run_thruster_test(
-            num_thrusters=max(1, args.num_thrusters),
-            throttle_pct=args.thruster_throttle,
-            duration=max(0.1, args.thruster_duration),
-            break_sec=max(0.0, args.thruster_break),
-        )
-
     # Summary
     fails = dev_fails + topic_fails
     warns = dev_warns + topic_warns
@@ -498,7 +417,9 @@ def main(argv=None) -> int:
     elif fails == 0:
         print(f"  {YELLOW}{BOLD}RESULT: passed with {warns} warning(s){RESET}")
     else:
-        print(f"  {RED}{BOLD}RESULT: {fails} FAIL, {warns} WARN — system not fully operational{RESET}")
+        print(
+            f"  {RED}{BOLD}RESULT: {fails} FAIL, {warns} WARN — system not fully operational{RESET}"
+        )
     print(f"{BOLD}{CYAN}{'=' * 72}{RESET}\n")
 
     return 0 if fails == 0 else 1
