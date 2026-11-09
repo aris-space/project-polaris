@@ -74,8 +74,11 @@ does not oscillate; yaw is covered by the dynamic maneuvers below.
 - **Relevant rosbags:** _to be added_
 - **Results:** _to be added_
 
-#### 2.1.3 Roll free decay
+#### 2.1.3 Roll free decay (not needed)
 
+- **Not needed while roll is not modelled** (decision 2026-10-15, see the comment at the top of
+  `model.yaml`). POLARIS is passively roll-stable and the EKF roll is used wherever the angle
+  appears. Kept here in case roll is re-enabled.
 - **Identifies:** roll added inertia and roll damping, same method as 2.1.2 about the roll axis.
 - **Script:** fit `fit_free_decay.py` (placeholder)
 - **Relevant rosbags:** _to be added_
@@ -148,3 +151,91 @@ dominate it. Compare a few bags rather than trusting one long number.
 ## 4. Important Points
 
 The T500 thrust curves are from the T500 documentation. Interpolation was used between the curves at voltages 12, 14, 16 and 18V. The force reconstruction hence uses both pwm and the current voltage readings. 
+
+How the model is stepped forwared in time: Runge Kutta 4th order method. Here instead of using a method like euler forward u_next = u + dt*f(u), we rather use the rk4 function that projects forward according to the following schema:
+k1 = f(u)                    # slope at the start
+k2 = f(u + dt/2 * k1)        # slope at the midpoint, estimated using k1
+k3 = f(u + dt/2 * k2)        # slope at the midpoint again, estimated using k2
+k4 = f(u + dt * k3)          # slope at the end, estimated using k3
+u_next = u + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+
+There is no exact discretization because we dont have a linear model available, hence the matrix exponential cannot be computed. 
+
+
+TODO: Currently the model.yaml has a allocation section with the lever arms from the custom_frame_helper.py, these lever arms will naturally change as we update the pixhawk mixer as well for the new geometry. 
+
+base_link FLU is used as frame convention for the Fossen EOM moving forward. 
+
+Plan is to use a per axis approach to allow for proper error attribution. So apart from the one axis that we intend to test, we give the model the remaining quantities. Thereafter we fit on a certain set of runs, and leave another set of holdouts as validation. For each axis we can fit using the different maneuvres. 
+
+For coupling we can command two axes together and check if the per axis models still hold well. if so, then there is little coupling and the symmetry argument holds. if there is a systematic resutal, then we can fit a correction while leaving hte per axis numbers as they are.
+
+
+### Delays to measure before fitting added mass
+
+Added mass is read off the *initial acceleration* of a step, so anything that delays or smooths
+the first second of the response biases it — and always in the same direction: a response that
+looks slower than it was makes the vehicle look heavier, i.e. **over-estimates added mass**.
+Drag is unaffected, because it comes from steady state or from a decay over many seconds, where
+a few hundred ms is negligible. The bias only matters when a delay is comparable to the physical
+time constant being measured.
+
+Reference timescales (measured on `aut_no_z_surface_big_40_grid_03`):
+
+| | period | notes |
+|---|---|---|
+| surge time constant `m_tot / X_u` | **~1.4 s** | the thing being measured (dummy values; real value TBD) |
+| EKF `/odometry/filtered/local` | 33 ms (30 Hz) | ~44 samples per time constant |
+| DVL `/sensors/dvl/odometry_cov` | 132 ms (7.6 Hz) | ~11 samples per time constant - adequate |
+| DVL `/sensors/dvl/velocity` | 230 ms (4.3 Hz) | |
+| `servo_output_raw` | 100 ms (10 Hz) | 2 Hz in the older rectangle bags |
+
+So sample rate is not the limiting factor. The delays are.
+
+There are two *different* delays, and they need two different measurements:
+
+1. **Actuation + transport delay — compare `servo_output_raw` against the IMU.** This is the lag
+   from the PWM being logged to the vehicle actually moving. It mixes the MAVLink/bridge/
+   recorder transport delay (tens of ms; note `servo_output_raw` has no header, so its MCAP
+   log_time is when the Jetson recorded it, not when the Pixhawk applied it) with motor and
+   propeller spin-up (order 100-300 ms). This is exactly what `thrust.servo_delay_s` exists to
+   absorb, and it is still 0.0 - measuring it from a step is how it should be set.
+
+   **Use `/imu/data` `linear_acceleration.x`, not the DVL**, because you are timing an *edge*: a
+   thrust step is a near-instant STEP in acceleration but only the onset of a RAMP in velocity,
+   and the start of a ramp is intrinsically fuzzy to locate. The rates compound the difference -
+   IMU ~86 Hz (~12 ms resolution) against DVL 7.6 Hz (~130 ms, and soft). The signal is strong:
+   ~17 N on ~20 kg is about 0.85 m/s^2, far above MEMS noise. The IMU is identity-rotated to
+   base_link, so `linear_acceleration.x` is body-forward directly. The DVL is then a magnitude
+   cross-check - does the velocity ramp match the integrated acceleration - rather than the
+   primary instrument.
+
+   Transport and spin-up cannot be separated without a Pixhawk-side timestamp, and they do not
+   need to be: `servo_delay_s` shifts servo log_time to align with everything else, so the total
+   is exactly the quantity wanted.
+
+   Use both edges. `/sysid/event` publishes `thrust_on` and `thrust_cut`, and the cut is just as
+   sharp (acceleration drops to the drag-only value), so every run yields two measurements.
+
+   One confounder: the accelerometer measures specific force, so trim pitch projects `g*sin(theta)`
+   onto x, and the vehicle pitches slightly during the step because MOT_1 sits above the CoM. That
+   is a slow change arriving *after* the edge, so it does not corrupt the leading-edge timing -
+   just do not use the absolute magnitude without removing the trim component.
+
+   **Bonus: this also gives added mass more cleanly than any velocity signal.** `m - X_udot = F/a`
+   is read straight off the accelerometer at the instant of the step, with drag still ~0 from rest.
+   No differentiating a velocity signal and no filter in the path, so the EKF-smoothing concern in
+   (2) simply does not apply to that parameter.
+
+2. **Filter lag — compare the DVL against the EKF.** Both observe the same physical motion, so
+   their difference isolates the EKF's smoothing, with actuation delay common to both and
+   cancelled. Magnitude depends on the EKF tuning (process vs measurement noise), order
+   100-400 ms, i.e. 10-30 % of the surge time constant.
+
+Do this on one clean step before fitting added mass. Three outcomes: if DVL and EKF rise
+together, use the EKF for everything and drop the concern; if the EKF visibly trails, fit added
+mass against the DVL and keep the EKF for everything slower; if both look mushy, the step is too
+slow relative to the sample rates and the fix is a sharper command, not a different sensor.
+
+Caveat: the DVL is less lagged, not unlagged — check what internal ping averaging the A50 is
+configured for before treating it as the reference on the transient. 
