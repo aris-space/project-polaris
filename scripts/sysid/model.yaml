@@ -9,41 +9,60 @@ model:
   version: 0.0.1
   date: 2026-10-05
   frame: base_link
-  description: Initial skeleton, no parameters determined yet.
+  description: Initial skeleton, no parameters determined yet. Diagonal (symmetric-vehicle)
+    Fossen model in surge, sway, heave, pitch and yaw; roll is not modelled (EKF roll is used
+    where the angle appears); off-diagonal coupling terms are added only if the combined-axes
+    runs show a residual the diagonal model cannot explain.
   fitted_from: []   # rosbags used for the fitted parameters
+  fit_ids: []       # results/fit_log.yaml entries the fitted values came from
   notes: ""
+
+# Roll is not modelled (decision 2026-10-15). POLARIS is passively roll-stable and roll is never
+# commanded during identification, so the roll equation and every Coriolis product containing
+# the roll rate p are dropped. Wherever the roll angle phi still appears (restoring force,
+# kinematics) the EKF value is used, which is what dofs.roll: measured means. Recorded bags show
+# |phi - median| < 2.5 deg (95th percentile) while moving in the Zermatt rectangle runs, but up
+# to 14 deg in surface-wave runs (aut_no_z_surface_big_40_grid_03); check roll before fitting
+# sway or heave on a bag. To re-enable roll, restore I_xx, K_pdot, K_p, K_pp, K_phi, phi_0
+# from git history.
 
 parameters:
   rigid_body:
     m:     {value: null, unit: kg,      source: measured, uncertainty: null}
-    I_xx:  {value: null, unit: kg m^2,  source: measured, uncertainty: null}
     I_yy:  {value: null, unit: kg m^2,  source: measured, uncertainty: null}
     I_zz:  {value: null, unit: kg m^2,  source: measured, uncertainty: null}
 
   added_mass:
     X_udot: {value: null, unit: kg,      source: fitted, uncertainty: null}
-    K_pdot: {value: null, unit: kg m^2,  source: fitted, uncertainty: null}
+    Y_vdot: {value: null, unit: kg,      source: fitted, uncertainty: null}
+    Z_wdot: {value: null, unit: kg,      source: fitted, uncertainty: null}
     M_qdot: {value: null, unit: kg m^2,  source: fitted, uncertainty: null}
     N_rdot: {value: null, unit: kg m^2,  source: fitted, uncertainty: null}
 
   damping_linear:
     X_u: {value: null, unit: N s/m,      source: fitted, uncertainty: null}
-    K_p: {value: null, unit: N m s/rad,  source: fitted, uncertainty: null}
+    Y_v: {value: null, unit: N s/m,      source: fitted, uncertainty: null}
+    Z_w: {value: null, unit: N s/m,      source: fitted, uncertainty: null}
     M_q: {value: null, unit: N m s/rad,  source: fitted, uncertainty: null}
     N_r: {value: null, unit: N m s/rad,  source: fitted, uncertainty: null}
 
   damping_quadratic:
     X_uu: {value: null, unit: N s^2/m^2,      source: fitted, uncertainty: null}
-    K_pp: {value: null, unit: N m s^2/rad^2,  source: fitted, uncertainty: null}
+    Y_vv: {value: null, unit: N s^2/m^2,      source: fitted, uncertainty: null}
+    Z_ww: {value: null, unit: N s^2/m^2,      source: fitted, uncertainty: null}
     M_qq: {value: null, unit: N m s^2/rad^2,  source: fitted, uncertainty: null}
     N_rr: {value: null, unit: N m s^2/rad^2,  source: fitted, uncertainty: null}
 
   restoring:
-    K_phi:   {value: null, unit: N m/rad, source: fitted, uncertainty: null}   # roll stiffness
+    # Buoyancy force. With W = m g from rigid_body.m, the FLU heave restoring force is
+    # (B - W) cos(theta) cos(phi), positive up, with phi taken from the EKF; in surge and
+    # sway it enters through the pitch and roll angle. Measure W - B directly (spring scale
+    # on the submerged vehicle) if possible, since B - W is a small difference of two large
+    # numbers.
+    B:       {value: null, unit: N,       source: measured, uncertainty: null}
     M_theta: {value: null, unit: N m/rad, source: fitted, uncertainty: null}   # pitch stiffness
-    # Equilibrium (trim) angles the restoring torque pulls back towards. Zero only if the
+    # Equilibrium (trim) pitch the restoring torque pulls back towards. Zero only if the
     # vehicle floats exactly level; measure from a still, powered-down float.
-    phi_0:   {value: null, unit: rad, source: measured, uncertainty: null}     # roll trim
     theta_0: {value: null, unit: rad, source: measured, uncertainty: null}     # pitch trim
 
 # Actuation. Not fitted: the thruster curves come from the manufacturer datasheet (later the
@@ -60,36 +79,55 @@ thrust:
   # unknown (NaN), never as zero thrust.
   maps:
     0: thruster_curves/t500_force_vs_voltage.csv   # MOT_1 surge, Blue Robotics T500 datasheet
+    # PLACEHOLDER for the vertical thrusters (DD2838): the T500 shape scaled to the DD2838's 3.15 kgf
+    # rating. Only for running the heave pipeline; replace with the load-cell curves.
+    2: thruster_curves/PLACEHOLDER_dd2838_force_vs_voltage.csv   # MOT_3
+    3: thruster_curves/PLACEHOLDER_dd2838_force_vs_voltage.csv   # MOT_4
+    4: thruster_curves/PLACEHOLDER_dd2838_force_vs_voltage.csv   # MOT_5
   voltage_fallback_v: null    # used only when a bag has no BMS voltage on /diagnostics
   curve_file: null            # single-voltage table (pwm_us, force_kgf); used by dummy models
   source: manufacturer datasheet
 
-  # Per-axis thruster allocation. `channel` is the index into servo_output_raw (MOT_n -> n-1).
-  # `lever_m` is the ABSOLUTE moment arm in metres, taken from scripts/custom_frame_helper.py
-  # (r_i x d_i about the CoM, before that script normalises each column), so
+  # Per-axis thruster allocation, in base_link FLU (x forward, y left, z up).
+  # `channel` is the index into servo_output_raw (MOT_n -> n-1). `lever_m` is the absolute
+  # moment arm in metres, so
   #     tau_axis = sum_i lever_m_i * F(pwm_i, voltage)
-  # comes out directly in N m. For the translational axes lever_m is the dimensionless
-  # direction cosine and the sum is in N.
+  # comes out directly in N m. For translational axes lever_m is the direction cosine (N).
   #
-  # Channel mapping was resolved by matching the helper script's thruster numbering to the
+  # Values are the raw cross products r_i x d_i about the CoM from
+  # scripts/custom_frame_helper.py, with r_i and d_i in FLU. NOT that script's output columns:
+  # it applies roll=+tau_x, pitch=-tau_y, yaw=-tau_z, which is an FLU->FRD conversion for
+  # ArduSub. Taking those columns directly would put the angular axes in the wrong frame.
+  #
+  # FLU pitch is positive NOSE-DOWN (right-hand rule about +y, which points left). A rear
+  # vertical thruster pushing up therefore gives a positive pitch moment, which checks out.
+  #
+  # Channel mapping resolved by matching the helper script's thruster numbering to the
   # report's MOT rows by geometry: MOT_1=T1, MOT_2=T2, MOT_3=T4, MOT_4=T5, MOT_5=T6, MOT_6=T3.
   allocation:
     surge:                    # MOT_1 is the only thruster with forward authority
-      - {channel: 0, lever_m: 1.0}        # MOT_1, direction cosine (force, not torque)
-    pitch:                    # three vertical thrusters; sign convention pitch = -torque_y
-      - {channel: 2, lever_m: -0.5508}    # MOT_3 (helper T4, rear pair)
-      - {channel: 3, lever_m: -0.5508}    # MOT_4 (helper T5, rear pair)
-      - {channel: 4, lever_m:  0.6358}    # MOT_5 (helper T6, front)
-      - {channel: 0, lever_m: -0.0300}    # MOT_1: surge thruster sits 3 cm off the CoM in z,
-                                          # so it pitches the vehicle slightly. The report
-                                          # rounds this to 0; it is kept here because it makes
-                                          # surge and pitch weakly coupled through actuation.
+      - {channel: 0, lever_m: 1.0}        # MOT_1, d_x = +1
+    heave:                    # the three vertical thrusters, all d_z = +1 (push up, FLU z up)
+      # Assumes PWM > neutral pushes UP on every vertical thruster. MOT_n_DIRECTION is to be set
+      # on the vehicle so that this holds (MOT_4_DIRECTION was -1 per CHECK_AXIS.md); until then
+      # verify each sign on a pure-heave bag.
+      - {channel: 2, lever_m: 1.0}        # MOT_3 (rear left)
+      - {channel: 3, lever_m: 1.0}        # MOT_4 (rear right)
+      - {channel: 4, lever_m: 1.0}        # MOT_5 (front)
+    pitch:                    # three vertical thrusters, plus the surge thruster's z offset
+      - {channel: 2, lever_m:  0.5508}    # MOT_3 (helper T4, rear pair)
+      - {channel: 3, lever_m:  0.5508}    # MOT_4 (helper T5, rear pair)
+      - {channel: 4, lever_m: -0.6358}    # MOT_5 (helper T6, front)
+      - {channel: 0, lever_m:  0.0300}    # MOT_1 sits 3 cm ABOVE the CoM in FLU, so thrusting
+                                          # forward pitches the nose down. The report rounds
+                                          # this to 0; kept because it is the actuation-level
+                                          # surge-pitch coupling.
 
 # Which DOFs the propagation integrates, and which it takes from the EKF.
 dofs:
   surge: modelled
   sway: measured
   heave: measured
-  roll: measured
+  roll: measured              # not modelled at all; EKF roll used where phi appears
   pitch: measured
   yaw: measured
