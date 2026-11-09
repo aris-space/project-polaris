@@ -38,6 +38,7 @@ from rosbags.highlevel import AnyReader
 from rosbags.interfaces import ConnectionExtRosbag2
 from rosbags.rosbag2 import Writer
 from rosbags.rosbag2.enums import StoragePlugin
+from rosbags.typesys import Stores, get_typestore
 
 
 def _allow_empty_mcap_profile() -> None:
@@ -104,6 +105,9 @@ class OdomTrack:
     yaw_rate: np.ndarray  # (N,) [rad/s]
     frame_id: str
     child_frame_id: str
+    ang_vel: np.ndarray | None = None  # (N, 3) twist.twist.angular (p, q, r), in child_frame_id
+    roll: np.ndarray | None = None  # (N,) [rad]
+    pitch: np.ndarray | None = None  # (N,) [rad]
 
     def __len__(self) -> int:
         return self.t.size
@@ -184,7 +188,7 @@ def read_tracks(
     servo_topic: str = DEFAULT_SERVO_TOPIC,
 ) -> tuple[OdomTrack, ServoTrack]:
     """Read the EKF odometry and servo PWM from a bare .mcap or a rosbag2 directory."""
-    t, log_t, pos, quat, vel, yrate = [], [], [], [], [], []
+    t, log_t, pos, quat, vel, yrate, ang = [], [], [], [], [], [], []
     frame_id = child_frame_id = ""
     s_log_t, s_pwm = [], []
 
@@ -206,7 +210,9 @@ def read_tracks(
             pos.append((p.x, p.y, p.z))
             quat.append((q.x, q.y, q.z, q.w))
             vel.append((lin.x, lin.y, lin.z))
-            yrate.append(m.twist.twist.angular.z)
+            w = m.twist.twist.angular
+            yrate.append(w.z)
+            ang.append((w.x, w.y, w.z))
             frame_id = m.header.frame_id
             child_frame_id = m.child_frame_id
 
@@ -222,7 +228,8 @@ def read_tracks(
         raise ValueError(f"no messages on {servo_topic}")
 
     quat_arr = np.asarray(quat, dtype=np.float64)
-    yaw = Rot.from_quat(quat_arr).as_euler("xyz")[:, 2]
+    rpy = Rot.from_quat(quat_arr).as_euler("xyz")  # extrinsic xyz = intrinsic ZYX: roll, pitch, yaw
+    yaw = rpy[:, 2]
 
     odom = OdomTrack(
         t=np.asarray(t, dtype=np.float64),
@@ -233,6 +240,9 @@ def read_tracks(
         yaw_rate=np.asarray(yrate, dtype=np.float64),
         frame_id=frame_id,
         child_frame_id=child_frame_id,
+        ang_vel=np.asarray(ang, dtype=np.float64),
+        roll=rpy[:, 0],
+        pitch=rpy[:, 1],
     )
     servo = ServoTrack(
         log_t=np.asarray(s_log_t, dtype=np.float64),
@@ -529,6 +539,11 @@ def write_augmented_bag(src: Path, out_path: Path, series: OutputSeries,
 
     with AnyReader([src]) as reader:
         ts = reader.typestore
+        # The reader's typestore only knows the types recorded in `src`. The /sysid/* topics
+        # need Float64, Float64MultiArray, NavSatFix, ..., which a slim bag may not contain, so
+        # add every standard ROS 2 Jazzy type the bag does not define (never overriding one).
+        ref = get_typestore(Stores.ROS2_JAZZY)
+        ts.register({k: v for k, v in ref.fielddefs.items() if k not in ts.fielddefs})
         with Writer(out_dir, version=9, storage_plugin=StoragePlugin.MCAP) as writer:
             conn_map = {}
             for c in reader.connections:
