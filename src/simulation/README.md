@@ -445,6 +445,14 @@ ros2 launch orca_sim_bringup sim_launch.py world:=ice.world ice_layer:=True gzcl
 To change the ice, edit `worlds/ice.world`. Keep the ice as axis-aligned `<box>` collisions of the
 `ice_layer` model: the ultrasonic ray-casts against exactly those.
 
+**Run the mission**, as on the vehicle (set `mission_csv` to `sim_ice_square.csv` first, see 3.2):
+
+```bash
+ros2 topic echo --once /mission_waypoints_enu   # wait until the datum locks (about 30 s)
+ros2 run autonomy_bringup_pkg nav2_activate
+ros2 run autonomy_bringup_pkg wgs84_mission_starter
+```
+
 ## Ports
 
 | Port | Proto | Used by |
