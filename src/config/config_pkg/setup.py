@@ -28,6 +28,7 @@ setup(
         'console_scripts': [
             'mavlink_debugger = config_pkg.mavlink_debugger:main',
             'recorder_controller = config_pkg.recorder_controller:main',
+            'health_check = config_pkg.health_check:main',
         ],
     },
 )

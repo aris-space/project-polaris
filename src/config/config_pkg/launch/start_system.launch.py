@@ -54,6 +54,12 @@ def generate_launch_description():
         )
     )
 
+    health_check_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(config_pkg_dir, "launch", "launch_health_check.launch.py")
+        )
+    )
+
     foxglove_node = Node(
         package="foxglove_bridge",
         executable="foxglove_bridge",
@@ -139,6 +145,7 @@ def generate_launch_description():
             sensors_launch,
             navigation_launch,
             archimedes_measurement_launch,
+            health_check_launch,
             foxglove_node,
             recorder_controller_node,
         ]
