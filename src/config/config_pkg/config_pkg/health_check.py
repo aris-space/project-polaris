@@ -10,7 +10,8 @@ Two modes:
   * Service (--serve): stays up as node `polaris_health_check` and runs the
     checks on every call to /health_check (std_srvs/srv/Trigger).
     `success` is true when no check FAILed (warnings allowed); `message`
-    holds the plain-text report. Each run is also published on /diagnostics
+    is a one-line summary, e.g. "2 sensors failed (IMU, Keller pressure)".
+    The full report is printed to the node's output. Each run is also published on /diagnostics
     as a single `health_check` status (worst level, failing sensors named in
     the message, per-check results as emoji-badged key/values, worst first).
 
@@ -69,10 +70,10 @@ SERVICE_NAME = "/health_check"
 
 # In --serve mode every run is also published as ONE DiagnosticStatus with
 # this name, so it occupies a single row in the Foxglove Diagnostics panels
-# and is overwritten by the next run.
+# and is overwritten by the next run. hardware_id is left empty (like the
+# other /diagnostics publishers): Foxglove adds an extra entry per hardware_id.
 DIAGNOSTICS_TOPIC = "/diagnostics"
-DIAGNOSTIC_NAME = "health_check"
-DIAGNOSTIC_HARDWARE_ID = "polaris"
+DIAGNOSTIC_NAME = "polaris: health_check"
 
 # h_acc field is uint32 in 0.1 mm units. 10 m == 100_000 raw.
 H_ACC_MAX_RAW = 100_000
@@ -215,6 +216,23 @@ def format_report(
         )
     lines.append(rule)
     return "\n".join(lines)
+
+
+def summary_text(results: List[CheckResult]) -> str:
+    """One-line result for the service response, e.g. "2 sensors failed (IMU, Keller pressure)"."""
+    fail_names = [r[1] for r in results if r[0] == "FAIL"]
+    warn_names = [r[1] for r in results if r[0] == "WARN"]
+
+    def counted(names: List[str], what: str) -> str:
+        noun = "sensor" if len(names) == 1 else "sensors"
+        return f"{len(names)} {noun} {what} ({', '.join(names)})"
+
+    parts = []
+    if fail_names:
+        parts.append(counted(fail_names, "failed"))
+    if warn_names:
+        parts.append(counted(warn_names, "with warnings"))
+    return ", ".join(parts) if parts else "all sensors OK"
 
 
 # Diagnostics rendering: Foxglove only colours the overall level, so the
@@ -398,7 +416,6 @@ class HealthCheckNode(Node):
             level=level,
             name=DIAGNOSTIC_NAME,
             message=message,
-            hardware_id=DIAGNOSTIC_HARDWARE_ID,
             values=[KeyValue(key=k, value=v) for k, v in values],
         )
         msg = DiagnosticArray()
@@ -499,9 +516,7 @@ class HealthCheckNode(Node):
             self.publish_diagnostics(device_results, topic_results)
 
             response.success = fails == 0
-            response.message = format_report(
-                device_results, topic_results, self.window_sec, color=False
-            )
+            response.message = summary_text(device_results + topic_results)
             self.get_logger().info(f"Health check done: {fails} FAIL, {warns} WARN")
         except Exception as exc:  # report, don't kill the server
             self.get_logger().error(f"Health check error: {exc}")
