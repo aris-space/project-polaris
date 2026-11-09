@@ -33,3 +33,35 @@ settings.json
 mavlink_logs/
 CLAUDE.md
 
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.toc
+*.out
+*.nav
+*.snm
+*.vrb
+*.run.xml
+*.synctex.gz
+*.synctex(busy)
+*.xdv
+*.dvi
+*.idx
+*.ilg
+*.ind
+*.nlo
+*.nls
+*.glo
+*.gls
+*.glg
+*.ist
+*.lol
+*-eps-converted-to.pdf
+_minted*/
