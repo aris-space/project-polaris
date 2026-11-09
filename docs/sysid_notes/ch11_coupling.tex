@@ -1,0 +1,154 @@
+\chapter{The coupling check}
+\label{ch:coupling}
+
+Per-axis identification rests on the symmetry argument of \cref{ch:symmetry}. The coupling check in
+\file{fitting/coupling_check.py} tests that assumption on real data before any coupling term is
+added to the model. The question it answers is: \emph{does any signal from another axis explain
+what the surge model leaves unexplained?}
+
+\section{Procedure}
+
+\begin{enumerate}
+  \item \textbf{Own-axis fit.} Surge is fitted by least squares with only its own regressors
+        \eqref{eq:regression}.
+  \item \textbf{Residual.} The residual $\vect{\varepsilon}$ (in newtons) is whatever these terms
+        cannot explain.
+  \item \textbf{Partial correlation.} Each candidate coupling signal is cleaned of the part the own
+        regressors already explain, and then correlated with the residual.
+  \item \textbf{Significance.} Each correlation is compared with a threshold that accounts for
+        autocorrelation and for the number of candidates tested.
+\end{enumerate}
+
+\section{Why a partial correlation}
+
+A naive correlation between the residual and, say, $r$ is misleading. Almost every signal
+correlates with speed, and speed is in the model, so any leftover speed dependence would show
+up as a ``correlation'' with every candidate. The remedy is the Frisch--Waugh--Lovell theorem
+\cite{greene2012}. Let $\vect{P} = \vect{\Phi}\vect{\Phi}^+$ be the projector onto the own
+regressors and $\vect{M} = \vect{I} - \vect{P}$ its complement. Then:
+\begin{itemize}
+  \item the residual already satisfies $\vect{\varepsilon} = \vect{M}\vect{y}$;
+  \item the cleaned candidate is $\vect{c}_\perp = \vect{M}\vect{c}$, the part of $\vect{c}$
+        that the own regressors could not have used;
+  \item the coefficient that $\vect{c}$ would receive if added to the regression equals the
+        regression of $\vect{\varepsilon}$ on $\vect{c}_\perp$.
+\end{itemize}
+The partial correlation $r = \mathrm{corr}(\vect{\varepsilon}, \vect{c}_\perp)$ therefore measures
+exactly what adding the candidate would gain. $r^2$ is the share of the residual variance it
+would explain. In code this is \code{c_perp = c - X @ (pinv @ c)} in \code{partial_scan()}.
+
+\section{Significance with autocorrelated data}
+\label{sec:neff}
+
+For $N$ independent samples of two unrelated signals, $r$ is approximately normal with
+standard deviation $1/\sqrt N$. Time series are not independent. A smooth signal sampled at
+\qty{20}{\hertz} provides far fewer than 20 independent values per second. Bartlett's formula
+\cite{bartlett1946} gives the variance of the correlation between two autocorrelated series
+$a$ and $b$:
+\begin{equation}
+  \mathrm{Var}(r) \approx \frac{1}{N}\Bigl(1 + 2\sum_{k\ge1}\rho_a(k)\,\rho_b(k)\Bigr)
+  \;\eqqcolon\; \frac{1}{N_\mathrm{eff}} .
+  \label{eq:neff}
+\end{equation}
+\code{effective_n()} computes the autocorrelations with an FFT and truncates the sum as soon as
+either drops below \num{0.05}, so the noisy tail of the estimate does not dominate. The
+effect is large. In the test, two independent white-noise series of \num{4000} samples give
+$N_\mathrm{eff} = \num{4000}$, while two series smoothed over \qty{4}{\second} give
+$N_\mathrm{eff} = \num{149}$. The naive threshold would be about five times too strict
+($\sqrt{4000/149}\approx5$) and would flag spurious couplings.
+
+\paragraph{Multiple comparisons.} About 17 candidates are screened at once. At the usual
+$2\sigma$ level (\qty{5}{\percent} two-sided) roughly one in twenty unrelated candidates would
+be flagged by chance. The check therefore uses $z = 3$ at lag 0
+(\qty{0.27}{\percent} per test). It also scans lags up to $\pm\qty{0.5}{\second}$ to catch a
+delayed effect. Scanning many lags is itself many tests, so a lagged maximum only counts at
+$z = 3.5$:
+\begin{equation}
+  \text{flag if}\quad |r_0| > \frac{3}{\sqrt{N_\mathrm{eff}}}
+  \quad\text{or}\quad |r_\mathrm{best}| > \frac{3.5}{\sqrt{N_\mathrm{eff}}} .
+\end{equation}
+A positive lag means the candidate \emph{leads} the residual. A physical coupling should
+appear at lag 0, or at a small positive lag.
+
+\section{Candidates}
+
+\begin{table}[htbp]
+\centering
+\caption{Coupling candidates screened against the surge residual by \code{surge_candidates()}
+and the physical mechanism associated with each.}
+\label{tab:candidates}
+\small
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+Candidate & Mechanism \\
+\midrule
+$vr$, $wq$ & Rigid-body and added-mass Coriolis terms of \eqref{eq:surge-full} \\
+$r^2$, $q^2$ & Centripetal terms, present when the CoG is offset from the origin \\
+$v$, $w$, $p$, $q$, $r$, $|r|$ & Generic other-axis velocities (forbidden by symmetry where odd, which makes them a useful sanity check) \\
+$\sin\theta$ & Net buoyancy $(W-B)\sin\theta$ along $x$ \\
+$\phi$ & Roll attitude \\
+PWM of channels $\neq 0$ & Misaligned thrusters with an $x$ component, a proxy until their curves exist \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\section{Synthetic verification}
+
+\Cref{tab:coupling-results} shows the output of \code{partial_scan} on the synthetic data of
+\cref{tab:synthetic-fit}.
+
+\begin{table}[htbp]
+\centering
+\caption{Partial correlation of the surge residual with each candidate on synthetic data,
+without coupling ($k=0$) and with $k\,vr$, $k=-20$: lag-0 correlation $r_0$, effective sample
+size $N_\mathrm{eff}$, threshold $3/\sqrt{N_\mathrm{eff}}$ and flag.}
+\label{tab:coupling-results}
+\small
+\begin{tabular}{@{}l S[table-format=-1.3] S[table-format=4.0] S[table-format=1.3] l @{\hspace{8mm}} S[table-format=-1.3] S[table-format=3.0] S[table-format=1.3] l@{}}
+\toprule
+& \multicolumn{4}{c}{$k = 0$} & \multicolumn{4}{c}{$k = -20$} \\
+\cmidrule(lr){2-5}\cmidrule(l){6-9}
+Candidate & {$r_0$} & {$N_\mathrm{eff}$} & {Thr.} & Flag & {$r_0$} & {$N_\mathrm{eff}$} & {Thr.} & Flag \\
+\midrule
+$vr$ & -0.025 & 6000 & 0.039 & -- & -0.732 & 595 & 0.123 & \textbf{yes} \\
+$wq$ & 0.005 & 6000 & 0.039 & -- & 0.101 & 587 & 0.124 & -- \\
+$v$  & -0.004 & 6000 & 0.039 & -- & -0.004 & 506 & 0.133 & -- \\
+$w$  & -0.011 & 6000 & 0.039 & -- & 0.032 & 506 & 0.133 & -- \\
+$q$  & -0.022 & 6000 & 0.039 & -- & 0.027 & 502 & 0.134 & -- \\
+$r$  & 0.006 & 6000 & 0.039 & -- & 0.030 & 490 & 0.136 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+Two things are worth noticing.
+\begin{itemize}
+  \item Without coupling the residual is white noise, its autocorrelation vanishes immediately, and
+        $N_\mathrm{eff} = N = \num{6000}$. Nothing is flagged.
+  \item With coupling, the residual \emph{contains} the smooth signal $-20\,vr$. It is now
+        autocorrelated, $N_\mathrm{eff}$ falls to about 500, and the threshold widens to about
+        \num{0.13}. $vr$ is flagged with $r_0 = -0.73$ (so $r^2 \approx 0.54$ of the residual
+        variance), at lag 0 and with the injected sign. $wq$ reaches \num{0.10}, just below the
+        threshold, which shows why the threshold must widen when the residual is smooth.
+\end{itemize}
+
+\section{Interpreting a flag}
+
+A flag means that a signal explains part of what the axis model misses. That may be genuine
+coupling, but it may also be an unmodelled effect that \emph{moves with} the signal. In a
+closed-loop autonomy bag the controller reacts to both surge and yaw errors, so any surge
+model error correlates with yaw activity. Current and tether also change with heading. A
+flag is a pointer to which term to try, not proof of one. The answer comes from adding the
+term and checking whether the holdout prediction improves. Only bag sections with a
+trustworthy EKF should be analysed (\code{--t-start}, \code{--t-end}).
+
+\begin{questions}
+\begin{enumerate}
+  \item Why is $\vect{c}$ projected off the own regressors, but $\vect{\varepsilon}$ is not?
+  \item Two smoothed series of \num{4000} samples have $N_\mathrm{eff} = 149$. What correlation is
+        needed for a flag at lag 0?
+  \item The $v$ candidate is flagged in a real bag. Name two explanations other than a
+        physical $X_v$ term.
+\end{enumerate}
+\end{questions}

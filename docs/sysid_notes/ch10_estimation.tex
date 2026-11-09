@@ -1,0 +1,731 @@
+\chapter{Parameter estimation}
+\label{ch:estimation}
+
+With good data in hand, numbers have to be extracted from it. Two families of methods
+exist, and the repository uses one now and is set up for the other.
+
+\section{Linear regression form}
+
+The surge equation \eqref{eq:surge} is nonlinear in $u$ but \emph{linear in its parameters}:
+\begin{equation}
+  \underbrace{T_k}_{y_k} =
+  \underbrace{\begin{bmatrix} \dot u_k & u_k & |u_k|u_k & 1 \end{bmatrix}}_{\vect{\varphi}_k^\top}
+  \underbrace{\begin{bmatrix} \mtot \\ X_u \\ \Xuu \\ c \end{bmatrix}}_{\vect{\theta}}
+  + e_k ,
+  \label{eq:regression}
+\end{equation}
+where $c$ is an optional constant offset (tether, current) and $e_k$ the equation error.
+Stacking all samples gives $\vect{y} = \vect{\Phi}\vect{\theta} + \vect{e}$. This is exactly
+what \code{surge_terms()} builds in \file{fitting/coupling_check.py}.
+
+\section{Least squares}
+
+The least-squares estimate minimises $\lVert\vect{y} - \vect{\Phi}\vect{\theta}\rVert^2$. Setting
+the gradient to zero gives the \emph{normal equations}:
+\begin{equation}
+  \vect{\Phi}^\top\vect{\Phi}\,\hat{\vect{\theta}} = \vect{\Phi}^\top\vect{y}
+  \quad\Rightarrow\quad
+  \hat{\vect{\theta}} = (\vect{\Phi}^\top\vect{\Phi})^{-1}\vect{\Phi}^\top\vect{y}.
+  \label{eq:ls}
+\end{equation}
+Geometrically, $\vect{\Phi}\hat{\vect{\theta}}$ is the orthogonal projection of $\vect{y}$
+onto the column space of $\vect{\Phi}$, and the residual
+$\vect{\varepsilon} = \vect{y} - \vect{\Phi}\hat{\vect{\theta}}$ is orthogonal to every
+regressor. This fact is used again in \cref{ch:coupling}. In code,
+\code{np.linalg.lstsq} solves \eqref{eq:ls} through an orthogonal factorisation, which is more
+stable than forming $(\vect{\Phi}^\top\vect{\Phi})^{-1}$ explicitly.
+
+\paragraph{Goodness of fit.} The coefficient of determination
+$R^2 = 1 - \sum\varepsilon_k^2/\sum(y_k - \bar y)^2$ is the share of the variance in $\vect{y}$
+explained by the model.
+
+\paragraph{Uncertainty.} If the errors are white with variance $\sigma^2$, the covariance of the
+estimate is
+\begin{equation}
+  \mathrm{Cov}(\hat{\vect{\theta}}) = \sigma^2(\vect{\Phi}^\top\vect{\Phi})^{-1}.
+  \label{eq:cov}
+\end{equation}
+The diagonal gives the standard errors that \code{update_parameters()} can store in the
+\code{uncertainty} field. A large entry flags a poorly excited parameter, because
+$\vect{\Phi}^\top\vect{\Phi}$ is close to singular when two regressors move together.
+\textbf{Caveat:} residuals of time series are rarely white. Neighbouring samples are correlated,
+so the data contain fewer independent pieces of information than samples, and
+\eqref{eq:cov} is \emph{too optimistic}. The effective-sample-size correction of
+\cref{sec:neff} addresses the same problem for correlations.
+
+\section{Equation error: the role of \texorpdfstring{$\dot u$}{du/dt}}
+
+\Cref{eq:regression} needs the acceleration $\dot u$, which is not measured directly.
+Differentiating a noisy signal amplifies noise in proportion to frequency (the
+differentiator has gain $|j\omega| = \omega$). The code uses a \emph{Savitzky--Golay} (SG)
+filter \cite{savitzky1964}: around each sample, a low-order polynomial is fitted by least
+squares to a sliding window, and the smoothed value or its derivative is read off the
+polynomial. Two properties make it suitable:
+\begin{itemize}
+  \item it is \textbf{zero-phase} (the window is centred), so it introduces no delay, which would
+        otherwise bias the inertia as discussed in \cref{ch:timing};
+  \item smoothing and differentiation come from the same polynomial fit, so $u$ and $\dot u$
+        are mutually consistent.
+\end{itemize}
+\code{coupling_check.py} applies \emph{the same} SG filter (default window \qty{1}{\second},
+quadratic) to every signal: thrust, velocities, attitude and PWM. If only some columns were
+filtered, they would be smoothed differently, and the difference would appear as a spurious
+term. Samples near stale-PWM gaps and near the ends of the record are dropped, because the
+filter would mix bridged or missing data into them.
+
+\subsection{How the Savitzky--Golay filter works}
+\label{sec:sg-mechanics}
+
+\begin{revised}[title=Added 16 October 2026,breakable]
+\paragraph{Why the speed cannot be differentiated directly.} The EKF surge speed fluctuates from
+sample to sample. In \file{zermatt_rectangle_08} the measured sample-to-sample standard deviation
+is \qty{3.4}{\milli\metre\per\second}, at an EKF rate of about \qty{27}{\hertz}. (The first version
+of this paragraph assumed \qty{0.03}{\metre\per\second}. That value was ten times too large and
+was corrected on 21 October 2026, see \cref{sec:noise-budget}.) The finite difference
+$(u_{k+1}-u_k)/\Delta t$ divides that fluctuation by a small $\Delta t$. At \qty{100}{\hertz}
+it becomes an apparent acceleration of about \qty{0.3}{\metre\per\second\squared}, the same order
+as the physical surge accelerations of \qtyrange{0.05}{0.3}{\metre\per\second\squared}. The
+$\dot u$ column of $\vect{\Phi}$ would then be dominated by noise.
+
+\paragraph{The procedure.} For every sample $k$, a window of $n$ neighbouring samples centred on
+$k$ is taken, a polynomial of degree $p$ (here a parabola, $p = 2$) is fitted to them by least
+squares, and the value of that polynomial at the centre is returned as the smoothed sample.
+With the derivative option, the slope of the polynomial at the centre is returned instead. The
+window then moves on by one sample. A parabola cannot follow fluctuations at the sample rate,
+so these are averaged out, while slow changes pass through.
+
+\paragraph{Equivalent weighted average.} Because the least-squares fit is linear in the data, the
+result reduces to a fixed weighted sum of the window, with weights that depend only on $n$ and
+$p$. For $n = 5$ and $p = 2$,
+\begin{align}
+  \hat u_k &= \tfrac{1}{35}\bigl(-3u_{k-2} + 12u_{k-1} + 17u_k + 12u_{k+1} - 3u_{k+2}\bigr),
+  \label{eq:sg-smooth}\\
+  \dot{\hat u}_k &= \tfrac{1}{10\,\Delta t}\bigl(-2u_{k-2} - u_{k-1} + u_{k+1} + 2u_{k+2}\bigr).
+  \label{eq:sg-deriv}
+\end{align}
+The smoothing weights in \eqref{eq:sg-smooth} favour the centre and sum to one. The derivative
+weights in \eqref{eq:sg-deriv} are antisymmetric, so they measure the tilt of the window and
+vanish for a constant signal. \Cref{tab:sg-example} applies both to a short series. For the
+centre sample, \eqref{eq:sg-smooth} gives
+$(-3\cdot 2 + 12\cdot 2 + 17\cdot 5 + 12\cdot 4 - 3\cdot 5)/35 = 3.886$: the jump to 5 in the
+raw data is pulled back towards its neighbours.
+
+\paragraph{Why a polynomial and not a moving average.} A plain average over the window flattens
+peaks and returns a poor slope. The local parabola keeps peaks and slopes approximately
+correct, which matters because the slope $\dot u$ is the quantity of interest. The window is
+centred on the sample, so no delay is introduced.
+
+\paragraph{Ends of the record.} In the first and last half-window, the window extends past the
+data. SciPy then fits the polynomial to the first or last full window instead, which makes these
+values less reliable. They are removed by the \code{keep} mask.
+
+\paragraph{Gaps.} The filter requires a continuous series without missing values. Thrust samples
+with a stale PWM are therefore first replaced by linear interpolation between the valid samples
+(\code{np.interp}), filtered together with the rest, and then excluded from the regression by the
+\code{keep} mask, together with half a window on either side. The interpolated values never
+enter the fit.
+\end{revised}
+
+\begin{incode}
+\code{smooth(x, dt, window_s, poly=2, deriv=0)} in \file{fitting/coupling_check.py} converts the
+window from seconds to samples, $n = \operatorname{round}(\code{window_s}/\Delta t)$, and forces it
+to be odd (\code{| 1}), because the window needs a centre sample. At \qty{1}{\second} and
+\qty{20}{\hertz}, $n = 21$. It then calls \code{scipy.signal.savgol_filter} with \code{delta=dt},
+so that the derivative is returned in \si{\metre\per\second\squared} rather than per sample.
+\end{incode}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Savitzky--Golay filter with a window of five samples and a quadratic polynomial,
+    applied to a short series with unit sample spacing. Values computed with
+    \code{scipy.signal.savgol_filter}.}
+  \label{tab:sg-example}
+  \begin{tabular}{lrrrrrrr}
+    \toprule
+    Sample $k$ & 0 & 1 & 2 & 3 & 4 & 5 & 6 \\
+    \midrule
+    Raw $u_k$ & 1 & 2 & 2 & 5 & 4 & 5 & 6 \\
+    Smoothed $\hat u_k$ & 0.857 & 1.971 & 2.943 & 3.886 & 4.686 & 5.343 & 5.714 \\
+    Slope $\dot{\hat u}_k$ & 1.186 & 1.043 & 0.900 & 0.800 & 0.800 & 0.514 & 0.229 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\FloatBarrier
+
+\begin{revised}[title=Added 14 October 2026: the window length biases the fit]
+Zero phase is not the same as harmless. On a synthetic bag with perfect data, the
+\qty{1}{\second} default window returns $\mtot$ \qty{14}{\percent} and $X_u$ \qty{18}{\percent}
+too high, because the window is long against the surge transients ($\taueff \approx
+\qty{0.2}{\second}$ with the dummy coefficients). A \qty{0.15}{\second} window removes that bias
+on perfect data, but on noisy data it lets the noise of $\dot u$ through and underestimates
+$\mtot$ (errors-in-variables, below). The window must be tuned against $\taueff$ and the noise
+level, see \cref{tab:synth-window}. Whether the long default also affects the coupling
+\emph{screen} (whose verdicts rest on correlations, not on the coefficients) has not been
+checked yet. The synthetic bench cannot check it, because it simulates no coupling.
+\end{revised}
+
+\paragraph{Errors-in-variables.} Least squares assumes noise only in $\vect{y}$. Here the
+regressors ($\dot u$ in particular) are also noisy, which biases the corresponding coefficient
+toward zero (attenuation bias) \cite{greene2012}. Smoothing reduces this effect but cannot remove it entirely.
+
+\section{Output error}
+\label{sec:output-error}
+
+The alternative is to simulate the model and compare the \emph{outputs}:
+\begin{equation}
+  \hat{\vect{\theta}} = \arg\min_{\vect{\theta}} \sum_k \bigl(u^\mathrm{meas}_k - u^\mathrm{sim}_k(\vect{\theta})\bigr)^2,
+  \label{eq:output-error}
+\end{equation}
+where $u^\mathrm{sim}(\vect{\theta})$ comes from integrating \eqref{eq:surge} with the recorded
+thrust. No derivative of noisy data is needed, a delay can be added as a parameter, and the
+criterion is the one that matters for prediction. The cost is that \eqref{eq:output-error} is
+nonlinear in $\vect{\theta}$ and needs an iterative solver (Gauss--Newton or
+Levenberg--Marquardt, e.g.\ \code{scipy.optimize.least_squares}) and a reasonable starting
+point. The equation-error estimate is the natural starting point \cite{klein2006}.
+
+\begin{keyidea}
+The two methods complement each other. Equation error is fast, linear and gives
+diagnostics (residuals, partial correlations). Output error is robust to differentiation
+noise and to delays, and it optimises the prediction directly. The pieces for output error
+already exist: \code{rk4_step} is the simulator, and \code{propagate()} is almost
+$u^\mathrm{sim}(\vect{\theta})$.
+\end{keyidea}
+
+\section{Verified on synthetic data}
+
+\file{tests/test_coupling_check.py} generates \qty{300}{\second} of synthetic surge data with
+known coefficients and white noise of \qty{0.3}{\newton}, and checks that the equation-error fit
+recovers them. \Cref{tab:synthetic-fit} shows the result produced by the repository code.
+
+\begin{table}[htbp]
+\centering
+\caption{Coefficients recovered by \code{own_axis_fit} from the synthetic data of
+\file{tests/test_coupling_check.py}, without coupling ($k = 0$) and with an injected
+coupling $k\,vr$, $k = -20$.}
+\label{tab:synthetic-fit}
+\begin{tabular}{@{}l S[table-format=3.1] S[table-format=3.2] S[table-format=3.2]@{}}
+\toprule
+Parameter & {True} & {Fit, $k=0$} & {Fit, $k=-20$} \\
+\midrule
+$\mtot$ / \unit{\kilogram} & 36.0 & 36.01 & 36.05 \\
+$X_u$ / \unit{\newton\second\per\meter} & 8.0 & 7.92 & 7.95 \\
+$\Xuu$ / \unit{\newton\second\squared\per\meter\squared} & 150.0 & 150.1 & 150.0 \\
+offset / \unit{\newton} & 2.0 & 2.00 & 2.01 \\
+$R^2$ & {--} & 0.99974 & 0.99943 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+The coefficients are recovered even when the coupling term is present but missing from the
+model. In this synthetic case $vr$ is uncorrelated with the own regressors, so leaving it out
+does not bias them. It only lowers $R^2$ slightly. In real data the omitted term will rarely be
+so cleanly uncorrelated, which is why it must be detected (\cref{ch:coupling}).
+
+\section{Bias study of the surge fit}
+\label{sec:bias-study}
+
+\begin{revised}[title={New section, added 16 October 2026},breakable]
+The first run of \file{fitting/fit_surge.py} on a perfect synthetic bag returned $\mtot$
+\qty{8}{\percent} and $X_u$ \qty{13}{\percent} too high, and $\Xuu$ \qty{3}{\percent} too low,
+at a \qty{20}{\hertz} grid and a \qty{1}{\second} smoothing window. That result raised three
+questions: whether the smoothing alone causes such errors, whether the IMU accelerometer would be
+the better source of $\dot u$, and how much a higher ArduSub publishing rate would help. This
+section answers them. Every number is produced by \file{gen_biasstudy.py}. The script
+\file{fit_surge.py} itself was not changed.
+\end{revised}
+
+Three variants of the equation-error fit of \eqref{eq:surge} are compared. Let $\mathcal{H}$
+denote the Savitzky--Golay smoother with window $t_\mathrm{w}$.
+\begin{description}[style=nextline]
+  \item[A, current] As in \file{fit_surge.py}: $\mathcal{H}u$, the Savitzky--Golay derivative of
+        $u$, $\mathcal{H}T$, and $|\mathcal{H}u|\,\mathcal{H}u$ as the quadratic regressor.
+  \item[B, consistent] The same filter on every term, with the quadratic term formed from the raw
+        speed before filtering and $\dot u$ taken as the derivative of the filtered speed:
+        \begin{equation}
+          \mathcal{H}T = \mtot\,\tfrac{\mathrm{d}}{\mathrm{d}t}(\mathcal{H}u)
+            + X_u\,\mathcal{H}u + \Xuu\,\mathcal{H}(|u|u).
+          \label{eq:consistent}
+        \end{equation}
+  \item[C, IMU] As B, but $\dot u$ replaced by $\mathcal{H}(f_x + g\sin\theta_0)$, the filtered
+        accelerometer specific force with gravity removed.
+\end{description}
+The synthetic bags use the \code{steps} programme and the dummy T500 truth of
+\cref{ch:synthetic}: \emph{ideal} (no imperfection), \emph{noise only} (default noise, no lags)
+and \emph{all defaults} (noise, \qty{0.15}{\second} actuation lag, \qty{0.05}{\second} spin-up,
+\qty{0.1}{\second} EKF lag).
+
+\subsection{The idea in plain words}
+\label{sec:plain-filter}
+
+\begin{revised}[title={Added 16 October 2026},breakable]
+\paragraph{Why smoothing is needed.} The fit balances, at every sample, thrust against mass
+times acceleration plus drag. The acceleration is not recorded and has to be obtained from the
+EKF speed. The speed wobbles by a few \unit{\centi\meter\per\second} between samples, and
+dividing that wobble by \qty{0.05}{\second} produces a fake acceleration larger than the real one.
+The speed is therefore smoothed first, by averaging each value with its neighbours over a window
+of about a second. Savitzky--Golay is one recipe for that averaging.
+
+\paragraph{The catch.} Smoothing spreads out every sudden change. When the thrust steps up, the
+smoothed speed begins to rise slightly before the step and finishes slightly after it. If a
+smoothed speed is compared with an unsmoothed thrust, the balance is wrong around every step,
+and the least-squares fit distorts mass and drag to compensate.
+
+\paragraph{The rule.} Every term is smoothed with the \emph{same} recipe. Smoothing is a
+weighted average, and averages pass through sums and constant factors unchanged, so the balance
+then still holds with the same coefficients. With mass 2, no drag and a three-point average:
+\begin{center}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Sample & 1 & 2 & 3 & 4 & 5 \\
+\midrule
+Acceleration & 0 & 0 & 3 & 0 & 0 \\
+Thrust ($= 2\times$ acceleration) & 0 & 0 & 6 & 0 & 0 \\
+Smoothed acceleration & 0 & 1 & 1 & 1 & 0 \\
+Smoothed thrust & 0 & 2 & 2 & 2 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+The smoothed thrust is still exactly twice the smoothed acceleration. The fit returns the same
+mass, without the noise.
+
+\paragraph{Where the original script broke the rule.}
+\begin{itemize}
+  \item \emph{Acceleration.} The derivative mode of Savitzky--Golay returns the slope of each
+        window's own parabola, which is a slightly different averaging from the one applied to the
+        thrust. Now the speed is smoothed with the normal mode and the plain slope between
+        neighbouring smoothed samples is taken (\code{np.gradient}). The slope of the smoothed
+        speed equals the smoothed acceleration, so the recipe is the same.
+  \item \emph{Quadratic drag.} Smoothing first and squaring afterwards is not the same as squaring
+        first and smoothing afterwards. Speeds 0 and 2 give $1^2 = 1$ in the first case and
+        $(0+4)/2 = 2$ in the second. The smoothed thrust contains the drag that actually acted,
+        that is, an average of squares, so the drag column must be an average of squares too.
+\end{itemize}
+Savitzky--Golay itself was not replaced. It still performs the averaging. Only its separate
+derivative mode is no longer used.
+\end{revised}
+
+\subsection{Two separate mechanisms on perfect data}
+
+\paragraph{Filter inconsistency.} A linear time-invariant filter commutes with every linear
+operation. If all four terms of the surge equation pass through the same $\mathcal{H}$, the
+filtered signals satisfy \eqref{eq:consistent} \emph{exactly}, whatever the window, and the
+filter introduces no bias on noise-free data. Variant A breaks this in two places. First, the
+Savitzky--Golay derivative filter of \eqref{eq:sg-deriv} is not the derivative of the smoothing
+filter \eqref{eq:sg-smooth}. Their frequency responses differ by more than the factor $j\omega$,
+so $\dot u$ and $T$ are effectively filtered differently. Second, $|\mathcal{H}u|\,\mathcal{H}u
+\neq \mathcal{H}(|u|u)$, because the quadratic term is nonlinear. Both errors grow with the
+window and are largest at the steps, which is exactly where $\mtot$ is determined.
+\Cref{tab:bias-filter} separates them from the grid effect by using a \qty{200}{\hertz} grid.
+
+\begin{table}[htbp]
+\centering
+\caption{Relative error in percent of the surge coefficients fitted to the ideal synthetic bag
+on a \qty{200}{\hertz} grid, for variant A (current) and variant B (consistent filtering), against
+the smoothing window $t_\mathrm{w}$.}
+\label{tab:bias-filter}
+\small
+\begin{tabular}{@{}c ccc ccc@{}}
+\toprule
+& \multicolumn{3}{c}{A, current} & \multicolumn{3}{c}{B, consistent} \\
+\cmidrule(lr){2-4}\cmidrule(l){5-7}
+$t_\mathrm{w}$ (\unit{\second}) & $\mtot$ & $X_u$ & $\Xuu$ & $\mtot$ & $X_u$ & $\Xuu$ \\
+\midrule
+\inputrows data/bias_filter_rows.tex
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\paragraph{Grid quantisation of the thrust step.} The thrust is reconstructed from a held PWM,
+so it jumps at the logged edge. On the analysis grid the jump appears at the first grid point
+after the edge, between $0$ and $1/f_\mathrm{grid}$ late, on average $1/(2f_\mathrm{grid})$.
+The speed, being continuous, is interpolated without that delay. The thrust column therefore
+lags the speed by \qty{25}{\milli\second} on average at \qty{20}{\hertz}. That is a small fraction
+of $\taueff \approx \qty{0.2}{\second}$, but it acts like the timing errors of \cref{ch:timing}
+and lowers $\mtot$, as \cref{tab:bias-grid} shows.
+
+\begin{table}[htbp]
+\centering
+\caption{Relative error in percent of $\mtot$ and $X_u$ fitted to the ideal synthetic bag with a
+\qty{1}{\second} window, against the analysis grid rate $f_\mathrm{grid}$, for the three variants
+(only $\mtot$ for C).}
+\label{tab:bias-grid}
+\small
+\begin{tabular}{@{}c cc cc c@{}}
+\toprule
+& \multicolumn{2}{c}{A, current} & \multicolumn{2}{c}{B, consistent} & C, IMU \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(l){6-6}
+$f_\mathrm{grid}$ (\unit{\hertz}) & $\mtot$ & $X_u$ & $\mtot$ & $X_u$ & $\mtot$ \\
+\midrule
+\inputrows data/bias_grid_rows.tex
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\begin{keyidea}
+The \qty{8}{\percent} error of $\mtot$ at \qty{20}{\hertz} and \qty{1}{\second} is the
+\emph{sum} of two biases of opposite sign: the filter inconsistency (about
+\qty{+18}{\percent}) and the grid quantisation (about \qty{-8}{\percent}). Smoothing alone is
+worse than the first result suggested. Both biases can be removed without new data: consistent
+filtering \eqref{eq:consistent} removes the first at any window, and a grid of
+\qtyrange{100}{200}{\hertz} reduces the second to one or two percent. The window then only trades
+noise against resolution and no longer biases the fit on clean data.
+\end{keyidea}
+
+\subsection{Is the IMU a better source of \texorpdfstring{$\dot u$}{du/dt}?}
+
+\paragraph{No acceleration from the EKF (added 16 October 2026).} The EKF does not estimate
+acceleration. \code{publish_acceleration} is \code{false} in both \file{ekf_local.yaml} and
+\file{ekf_global.yaml}. The global configuration also locks the acceleration states at zero
+with a tiny initial covariance, because nothing measures them and they drifted otherwise. Even
+if published, an EKF acceleration would be a filtered difference of velocities, with the same
+problem as above plus an unknown lag. The only direct measurement of acceleration is the IMU.
+The bags also contain \code{/filter/free_acceleration}, the Xsens' own gravity-free
+acceleration, computed with its internal attitude estimate. It may avoid the gravity-leakage
+problem discussed below. It is expressed in the world frame, so it must be rotated by the heading
+to give the surge component, and its timestamps have the same question mark. It has not been
+tested yet.
+
+\paragraph{Noise budget (added 21 October 2026).}
+\label{sec:noise-budget}
+The sensor noise has been measured in this repository.
+\file{src/sensors/dvl_a50_pkg/dvl_a50_pkg/measurement_noise_constants.py} and the docstrings of
+\file{scripts/stationary_noise_comparison.py} and \file{scripts/stationary_allan_variance.py}
+give values from a 64-minute stationary recording (2026-04-19). The POLARIS final report
+(\file{scripts/sysid/Final_Report_POLARIS.pdf}, Section 5.3.1 and Appendix E.7) describes the setup:
+the DVL was removed from the vehicle and fixed rigidly in the water, and the IMU was logged on the
+vehicle resting on land. The report places the recording at Lake Zurich, while the script docstrings
+say St.~Moritz. The values are:
+\begin{itemize}
+  \item IMU (Xsens Sirius, about \qty{86}{\hertz}): accelerometer $x$ standard deviation
+        \qty{0.0144}{\metre\per\second\squared};
+  \item DVL $v_x$ standard deviation \qtyrange{2.1}{7.5}{\milli\metre\per\second}
+        (\code{stationary_11} and \code{stationary_02}).
+\end{itemize}
+On the vehicle, the EKF surge speed of \file{zermatt_rectangle_08} has a noise of about
+\qty{1.5}{\milli\metre\per\second} around a one-second running median. The EKF speed is driven
+by the DVL at about \qty{8}{\hertz}, so a window $t_\mathrm{w}$ holds roughly $8\,t_\mathrm{w}$
+independent samples. The least-squares slope over $n$ independent samples spaced across
+$t_\mathrm{w}$ has a standard deviation of about $\sigma_u\sqrt{12/n}/t_\mathrm{w}$. The averaged
+accelerometer has about $\sigma_a/\sqrt{86\,t_\mathrm{w}}$. \Cref{tab:noise-budget} compares the
+two.
+
+\begin{table}[htbp]
+\centering
+\caption{Estimated random error of $\dot u$ for the differentiated EKF speed and for the averaged
+accelerometer against the window $t_\mathrm{w}$, from the measured noise levels.}
+\label{tab:noise-budget}
+\small
+\begin{tabular}{@{}ccc@{}}
+\toprule
+$t_\mathrm{w}$ (\unit{\second}) & EKF speed, differentiated (\unit{\milli\metre\per\second\squared}) & IMU, averaged (\unit{\milli\metre\per\second\squared}) \\
+\midrule
+0.25 & 14.7 & 3.1 \\
+0.5  & 5.2  & 2.2 \\
+1.0  & 1.8  & 1.6 \\
+2.0  & 0.6  & 1.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+For windows of half a second or more, both routes give random errors of a few
+\unit{\milli\metre\per\second\squared}. Against step accelerations of
+\qtyrange{50}{300}{\milli\metre\per\second\squared}, noise is then not what decides between them. The
+final report, however, measured much smaller accelerations in closed loop. Its Table 6.2 gives a
+maximum trackable surge acceleration of only \qty{0.02}{\metre\per\second\squared} from ramp
+responses in Lake Zurich. That is the acceleration the velocity controller achieved, not the
+open-loop step response, which should be larger. If the real step accelerations are nearer
+\qty{20}{\milli\metre\per\second\squared}, the \qty{5}{\milli\metre\per\second\squared} of a
+\qty{0.5}{\second} window is a quarter of the signal and biases $\mtot$ low through errors in
+variables. A window of \qty{1}{\second} or more is then needed for the speed route. The first clean
+step bag will settle this. The IMU wins clearly only below about \qty{0.3}{\second}, where the
+differentiated speed grows as $t_\mathrm{w}^{-3/2}$. Short windows matter only if $\taueff$ is
+short. The systematic errors are what decide. A pitch error of \qty{1}{\degree} leaks
+\qty{171}{\milli\metre\per\second\squared} of gravity into the accelerometer, a hundred times its
+averaged noise, and the IMU timestamps arrive in bursts. With the measured noise levels, the
+Savitzky--Golay route on the EKF speed is therefore the better choice for now. Three caveats
+apply. The stationary IMU figure was measured on the vehicle at rest on land, with the thrusters
+off, not under thruster vibration (\qty{0.42}{\metre\per\second\squared} above \qty{5}{\hertz} on the vehicle, which the
+window removes). The Allan-variance output (\file{stationary11_allan_params.json}) is not in the
+repository. The low EKF speed noise is partly bought with the EKF's own lag.
+
+\paragraph{Measurement, not integration.} Integrating the accelerometer to obtain a speed does
+not help. A bias of \qty{0.01}{\meter\per\second\squared} alone gives a drift of
+\qty{0.6}{\meter\per\second} after one minute, and fusing the IMU with the DVL and GNSS is what
+the EKF already does. The useful idea is the opposite one: the accelerometer \emph{measures}
+$\dot u$ directly, so nothing has to be differentiated. In FLU, with pitch positive nose-down
+and neglecting lever-arm terms, $\dot u = f_x + g\sin\theta$ (\cref{ch:synthetic}).
+
+\paragraph{On synthetic data.} \Cref{tab:bias-method} compares the three variants on a
+\qty{100}{\hertz} grid. With noise but no lags, the IMU variant returns $\mtot$ within a few
+percent at every window. The differentiated speed (B) underestimates it strongly at short
+windows. That is the errors-in-variables effect of \cref{sec:sg-mechanics}: noise in the $\dot u$
+regressor attenuates its coefficient. With the default lags, every variant misses $\mtot$ by
+tens of percent, from \qty{-32}{\percent} (B, shortest window) to \qty{+102}{\percent} (A,
+\qty{1}{\second}). The IMU does not remove the actuation lag between the logged PWM
+and the real thrust. Because its acceleration edge is sharp, it even shows that lag more
+clearly than the differentiated speed.
+
+\begin{table}[htbp]
+\centering
+\caption{Relative error in percent of $\mtot$ and $X_u$ on a \qty{100}{\hertz} grid for the three
+variants, three synthetic bags and three smoothing windows.}
+\label{tab:bias-method}
+\small
+\begin{tabular}{@{}lc cc cc cc@{}}
+\toprule
+& & \multicolumn{2}{c}{A, current} & \multicolumn{2}{c}{B, consistent} & \multicolumn{2}{c}{C, IMU} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(l){7-8}
+Bag & $t_\mathrm{w}$ (\unit{\second}) & $\mtot$ & $X_u$ & $\mtot$ & $X_u$ & $\mtot$ & $X_u$ \\
+\midrule
+\inputrows data/bias_method_rows.tex
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\paragraph{On POLARIS.} The synthetic IMU is idealised: perfect timestamps, a constant and
+exactly known pitch, no vibration and no lever arm. The real \code{/imu/data} of
+\file{zermatt_rectangle_08} differs in three ways that matter.
+\begin{enumerate}
+  \item \textbf{Timestamps.} About \qty{86}{\hertz} on average, but delivered in bursts. The
+        median spacing of the header stamps is \qty{0.1}{\milli\second}, with gaps of up to
+        \qty{72}{\milli\second}. The stamps are batch arrival times, not sample times. Their
+        error is of the same order as the timing errors that bias $\mtot$
+        (\cref{tab:bias-grid,tab:bias-servo}).
+  \item \textbf{Gravity leakage.} A pitch error $\delta\theta$ adds $g\sin\delta\theta$, which is
+        \qty{0.17}{\meter\per\second\squared} per degree. A constant pitch error is absorbed by an
+        offset term. However, \code{MOT_1} sits above the
+        centre of mass (\cref{ch:symmetry}), so the pitch changes \emph{with the thrust}, and any
+        error in that change leaks into $\dot u$ correlated with $T$. \Cref{tab:bias-leak}
+        shows the effect.
+  \item \textbf{Vibration.} About \qty{0.42}{\meter\per\second\squared} rms above
+        \qty{5}{\hertz}. This is removed by any window of a few tenths of a second, so it is the
+        least serious of the three.
+\end{enumerate}
+
+\begin{table}[htbp]
+\centering
+\caption{Relative error in percent of the IMU variant C on the ideal synthetic bag
+(\qty{100}{\hertz} grid, \qty{0.5}{\second} window) when a pitch error proportional to the thrust,
+reaching $\delta\theta_\mathrm{max}$ at the largest thrust, leaks gravity into the accelerometer.}
+\label{tab:bias-leak}
+\small
+\begin{tabular}{@{}cc ccc@{}}
+\toprule
+$\delta\theta_\mathrm{max}$ (\unit{\degree}) & $g\sin\delta\theta_\mathrm{max}$ (\unit{\meter\per\second\squared}) & $\mtot$ & $X_u$ & $\Xuu$ \\
+\midrule
+\inputrows data/bias_leak_rows.tex
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\begin{keyidea}
+The IMU is the better $\dot u$ \emph{in principle}: nothing is differentiated, so the
+noise-versus-window dilemma disappears. On POLARIS today it is not yet the better choice.
+Its timestamps are unreliable at the tens-of-milliseconds level, and its gravity correction
+depends on a pitch that changes with the thrust. Its best use now is to measure the actuation
+delay from the sharp acceleration edge at a step (\cref{ch:timing}), and later to cross-check
+$\mtot$ once the timestamps are fixed. Consistent filtering of the EKF speed remains the main
+route, and output error (\cref{sec:output-error}) needs no $\dot u$ at all.
+\end{keyidea}
+
+\subsection{The servo log rate}
+
+\code{servo_output_raw} is not the PWM itself but a sampled view of it. ArduSub changes the PWM
+in its own fast loop as soon as the command changes. The topic only reports the current value
+at its publishing rate $f_\mathrm{log}$. A step edge therefore appears in the log between $0$ and
+$1/f_\mathrm{log}$ late, on average $1/(2f_\mathrm{log})$. This is a random lag of exactly the
+kind that biases $\mtot$. The existing bags log it at \qty{2}{\hertz} (rectangle runs),
+\qty{10}{\hertz} (June surface run) and \qty{20}{\hertz} (grid runs).
+
+The synthetic bench cannot show this effect, because there the thrust follows the
+\emph{logged} PWM (\cref{sec:synth-limits}). \file{gen_biasstudy.py} therefore uses a small
+standalone simulation instead. The thrust switches at the command time, the PWM is logged at
+$f_\mathrm{log}$ with a random phase, and variant B is fitted on a \qty{100}{\hertz} grid with a
+\qty{0.5}{\second} window. Each rate is repeated with twelve random phases.
+
+\begin{table}[htbp]
+\centering
+\caption{Relative error in percent of the fitted coefficients against the publishing rate
+$f_\mathrm{log}$ of \code{servo_output_raw}, on an otherwise ideal surge run (mean over twelve random
+log phases, and the range of $\mtot$).}
+\label{tab:bias-servo}
+\small
+\begin{tabular}{@{}l c c c c@{}}
+\toprule
+$f_\mathrm{log}$ (\unit{\hertz}) & $\mtot$ (mean) & $\mtot$ (range) & $X_u$ & $\Xuu$ \\
+\midrule
+\inputrows data/bias_servo_rows.tex
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\Cref{tab:bias-servo} shows the following.
+\begin{itemize}
+  \item At \qty{2}{\hertz}, $\mtot$ cannot be identified: the edge uncertainty of up to
+        \qty{0.5}{\second} exceeds $\taueff$. The damping coefficients survive, because they come
+        from the steady states, which do not depend on the edge timing.
+  \item \qty{50}{\hertz} reduces the bias of $\mtot$ to about \qty{2}{\percent}, with a spread of a
+        few percent. That is below the other error sources, so raising the rate to
+        \qty{50}{\hertz} is worthwhile. \qty{100}{\hertz} gains little more.
+  \item The numbers assume the dummy $\taueff \approx \qty{0.2}{\second}$. The bias scales
+        roughly with $1/(f_\mathrm{log}\,\taueff)$, so a slower vehicle is less sensitive.
+\end{itemize}
+For the scripted manoeuvres there is also a way around the rate. The command scripts publish
+\code{manual_control} at \qty{20}{\hertz} and mark every edge with \code{/sysid/event}, so the
+command time of each edge is known to within a few milliseconds. With the command-to-PWM mapping
+(open item 12 in \cref{ch:status}), the PWM can be reconstructed from the commands with exact
+edges. ArduSub's internal latency then becomes part of the actuation delay, which is measured
+anyway.
+
+\subsection{Consequences}
+\begin{enumerate}
+  \item Filter every term of the surge equation with the same filter, and form $|u|u$ before
+        filtering \eqref{eq:consistent}. This removes the window bias on clean data.
+        \emph{Done in \file{fit_surge.py} on 16 October 2026}, see below.
+  \item Use an analysis grid of at least \qty{100}{\hertz} (the cost is negligible).
+        \emph{Done}: \code{RATE_HZ = 100}.
+  \item Raise the \code{servo_output_raw} rate to \qty{50}{\hertz}, or reconstruct the PWM edges
+        from \code{manual_control} and \code{/sysid/event}. Bags at \qty{2}{\hertz} are only
+        good for the damping coefficients.
+  \item The dominant bias remains timing, namely actuation lag and EKF lag, at
+        \qtyrange{20}{100}{\percent} in $\mtot$ (\cref{tab:bias-method}). Measure the delay and
+        compensate it (\cref{ch:synthetic,ch:timing}) before trusting any $\mtot$.
+  \item Use the IMU to measure the delay now, and as a $\dot u$ source only once its timestamps
+        are reliable.
+\end{enumerate}
+
+\begin{revised}[title={Applied to \file{fit_surge.py}, 16 October 2026}]
+On request, items 1 and 2 were applied to \file{fit_surge.py}. The speed is smoothed once, and
+$\dot u$ is \code{np.gradient} of the smoothed speed. $|u|u$ is formed from the raw speed and
+then smoothed, the thrust passes through the same filter, and \code{RATE_HZ} went from 20 to
+\qty{100}{\hertz}. The fit log records \code{filtering: consistent}. On the synthetic bags of
+\cref{tab:bias-method} with a \qty{1}{\second} window, the script now returns the following.
+\begin{center}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Bag & $\mtot$ & $X_u$ & $\Xuu$ \\
+\midrule
+ideal        & \qty{-1.6}{\percent} & \qty{-0.1}{\percent} & \qty{+0.1}{\percent} \\
+noise only   & \qty{-5.6}{\percent} & \qty{+4.0}{\percent} & \qty{-0.9}{\percent} \\
+all defaults & \qty{+60}{\percent}  & \qty{+15}{\percent}  & \qty{-7}{\percent} \\
+\bottomrule
+\end{tabular}
+\end{center}
+This matches variant B in \cref{tab:bias-method}. The remaining error on the ideal bag is the
+grid quantisation at \qty{100}{\hertz}. The large error with all defaults is the timing (item 4),
+which no filtering can remove.
+
+Fixing only the quadratic term, while keeping the Savitzky--Golay derivative filter for $\dot u$,
+is not enough. On the ideal bag with a \qty{1}{\second} window, $\mtot$ is then still
+\qty{13}{\percent} too high at \qty{100}{\hertz} ($X_u$ \qty{+6}{\percent}). At
+\qty{20}{\hertz} it is \qty{+6}{\percent}, but only because the grid bias of the opposite sign
+hides part of the error. The mismatched derivative filter is therefore the larger of the two
+inconsistencies.
+\end{revised}
+
+\section{Writing results back}
+
+\code{model_io.update_parameters(\{"damping_linear.X_u": (12.3, 0.8)\}, bags=[...])} writes
+value and uncertainty, sets \code{source: fitted}, bumps the patch version, stamps the
+date, and appends the bag names to \code{fitted_from}. \code{Model.version_tag()} combines
+the version, the sha256 of the model file and of every thrust table, and the git commit
+(with \code{+dirty} if the file has uncommitted changes). Every propagation output and summary carries
+this tag, so it can always be traced back to the model that produced it.
+
+\begin{caution}
+\code{update_parameters()} rewrites \file{model.yaml} with PyYAML, which \textbf{drops all comments}.
+The comments in the \code{thrust:} and \code{allocation:} sections explain non-obvious
+decisions, such as the frame conversion and the channel mapping. They should be preserved by
+committing before the first automated update or by switching to a comment-preserving YAML library.
+\end{caution}
+
+\section{The fit log}
+\label{sec:fit-log}
+
+\begin{revised}[title={New section, added 16 October 2026}]
+\file{results_log.py} and \file{results/fit_log.yaml} are new. \code{update_parameters()} gained
+the argument \code{fit_id}, and \file{model.yaml} the field \code{model.fit_ids}.
+\end{revised}
+
+\file{model.yaml} only holds the \emph{current} values. When a coefficient is refitted, the
+earlier value, the bag it came from and the settings that produced it are only in git
+history, if at all. Fits that were never written into the model, such as trial runs,
+rejected windows or a different smoothing window, leave no trace. The fit log closes that gap.
+Every run of a fit script appends one entry to \file{scripts/sysid/results/fit_log.yaml}, which
+is committed together with the code. The bags themselves are git-ignored, so each entry
+identifies a bag by its path \emph{and} by a fingerprint.
+
+\begin{table}[htbp]
+\centering
+\caption{Fields of one fit-log entry, as written by \code{results_log.log_fit()}.}
+\label{tab:fit-log}
+\small
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+Field & Content \\
+\midrule
+\code{id} & \code{fit-0001}, \code{fit-0002}, \dots, assigned in order \\
+\code{date} & Local time with UTC offset \\
+\code{script} & Repo-relative path of the fit script and its git state (\code{+dirty} if it has uncommitted changes) \\
+\code{manoeuvre} & Free text, for example ``surge steps'' or ``coast-down'' \\
+\code{bags} & Per bag: path, fit window \code{window_s} in seconds after the first EKF message
+  (the \texttt{-{}-t-start}/\texttt{-{}-t-end} convention), size, and a fingerprint (sha256 over the
+  size and the first and last \qty{1}{\mebi\byte}) \\
+\code{model} & Path and \code{version_tag()} of the model file used, which includes the hashes
+  of the thrust tables. A T200 fit and a T500 fit can therefore never be confused. \\
+\code{settings} & Free dictionary: smoothing window, grid rate, \code{servo_delay_s}, \dots \\
+\code{params} & Per parameter: value, uncertainty, unit. Names are free (for example \code{m_tot},
+  which is not a \file{model.yaml} key). For model keys the unit is read from the model. \\
+\code{metrics} & Free dictionary: $R^2$, residual standard deviation, sample count, condition number, \dots \\
+\code{status} & \code{candidate} when written; may be edited by hand to \code{accepted} or \code{rejected} \\
+\code{notes} & Free text \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\paragraph{Append only.} The code never rewrites the log. It reads the file only to count
+the entries for the next id, and then appends one YAML list item. Comments and hand edits,
+such as setting \code{status} to \code{rejected} with a comment giving the reason, therefore
+survive. This is the opposite
+of \code{update_parameters()}, which rewrites \file{model.yaml}.
+
+\paragraph{Link to the model.} \code{update_parameters(..., fit_id="fit-0007")} appends the
+id to \code{model.fit_ids}. A value in \file{model.yaml} can thus be traced to the entry
+that produced it, and from there to the bag, the window and the settings.
+
+\begin{incode}
+At the end of a fit script, after the solve:
+\begin{lstlisting}
+from results_log import log_fit
+fit_id = log_fit(__file__, [(args.bag, args.t_start, args.t_end)],
+                 {"m_tot": (theta[0], se[0]),
+                  "X_u": (theta[1], se[1]),
+                  "X_uu": (theta[2], se[2])},
+                 units={"m_tot": "kg", "X_u": "N s/m", "X_uu": "N s^2/m^2"},
+                 manoeuvre="surge steps", model=args.model,
+                 settings={"smooth_s": args.smooth_s, "rate_hz": args.rate},
+                 metrics={"r2": r2, "n_samples": y.size})
+\end{lstlisting}
+The overview is printed by \code{python scripts/sysid/results_log.py}, which accepts
+\texttt{-{}-param X\_u} (history of one parameter), \texttt{-{}-bag rectangle\_08} and
+\texttt{-{}-show fit-0003}. The same \code{_append()} and \code{read_log()} are intended to carry
+a validation log later.
+\end{incode}
+
+\begin{questions}
+\begin{enumerate}
+  \item Show that the least-squares residual is orthogonal to every column of $\vect{\Phi}$.
+  \item Why would applying a causal (one-sided) low-pass filter to $u$ but not to $T$ bias $\mtot$?
+  \item Name two advantages of output error over equation error for the step-from-rest manoeuvre.
+\end{enumerate}
+\end{questions}

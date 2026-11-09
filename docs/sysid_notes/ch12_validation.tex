@@ -1,0 +1,196 @@
+\chapter{Validation by propagation}
+\label{ch:validation}
+
+A fitted model is judged by whether it \emph{predicts}: whether it can be run forward from the recorded thrust
+alone and stay close to what the vehicle actually did. \file{validation/propagate_model.py}
+does this offline over any recorded bag and writes the result into a new MCAP file for
+Foxglove.
+
+\section{Algorithm}
+
+\begin{lstlisting}[caption={Outline of \code{propagate_model.main()} and \code{propagate()}.},label={lst:propagate}]
+model = load_model(path)              # refuse if m, X_udot, X_u, X_uu are null
+odom, servo = read_tracks(bag)        # EKF on header.stamp, servo on log_time
+servo.log_t -= thrust.servo_delay_s
+verify_timestamps(odom, servo)        # rates, gaps, clock offset, overlap
+sign_check(pwm, ekf_surge)            # does PWM > 1500 mean forward motion?
+for each EKF sample k:                # output grid ~30 Hz
+    for each sub-step of <= dt:       # internal grid, default 10 ms
+        T   = thrust(held_pwm, held_voltage)
+        psi, v = interp(EKF yaw, EKF sway)
+        x, y  += h * R(psi) @ [u, v]   # eq. (planar kinematics)
+        u      = rk4_step(u, T, h)     # eq. (surge model)
+    if pwm stale:        restart from EKF (thrust unknown, not zero)
+    if horizon >= reinit_s: restart from EKF (x, y, u)
+    z = EKF z                          # heave is measured
+write augmented bag + summary
+\end{lstlisting}
+
+The sign check correlates $\mathrm{sign}(p - p_0)$ with the sign of the EKF surge velocity. A
+negative correlation is \emph{reported} with the suggestion \code{thrust.sign: -1}, but never
+applied automatically.
+
+\section{Free run versus re-initialisation}
+
+\paragraph{Free run} (\code{--reinit-s 0}, or the default \qty{1800}{\second}, which is longer than any bag).
+The model is started once from the EKF and never corrected. A wrong thrust scale, drag or
+mass shows up as steadily growing error that nothing can hide. This is the verdict on whether
+the model is right.
+
+\paragraph{Re-initialisation} (e.g.\ \code{--reinit-s 10}). Every $N$ seconds position and surge speed
+are reset to the EKF. This measures a narrower property, how well the model predicts $N$
+seconds ahead from a known state, and it yields many independent samples instead of one. The
+\emph{shape} of the error against the time since the reset (\code{/sysid/horizon_s}) is a
+diagnostic of which parameter is wrong.
+
+\section{Reading the error-versus-horizon curve}
+
+\paragraph{Thrust scale or drag wrong.} Both shift the steady-state speed \eqref{eq:uss}. The
+model then has a persistent velocity bias $\delta u$ and the position error grows
+\emph{linearly}, $\delta x \approx \delta u\,t$.
+
+\paragraph{Inertia wrong.} $\mtot$ does not affect the steady state. It only changes how fast
+each transient settles. After a thrust change the velocity error is a transient that decays
+with $\taueff$, so the position error from each transient is \emph{bounded} (of order
+$\delta\taueff\,\Delta u$). For horizons much shorter than $\taueff$ the error starts out
+quadratic ($\tfrac12\delta a\,t^2$, the case described in \file{maneuvers.md}). Over longer
+horizons it grows only as successive transients add up, with random signs, so roughly like
+$\sqrt t$.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wide,xlabel={Horizon since re-initialisation / \unit{\second}},ylabel={RMS position error / \unit{\meter}},xmin=0,xmax=10,ymin=0]
+\addplot[red] table[x=h,y=thrust]{data/horizon.dat};
+\addplot[blue,dashed] table[x=h,y=mass]{data/horizon.dat};
+\legend{thrust \qty{15}{\percent} low,$\mtot$ \qty{50}{\percent} high}
+\end{axis}
+\end{tikzpicture}
+\caption{RMS position error against prediction horizon for a surge model whose thrust is
+\qty{15}{\percent} too low and for one whose total inertia is \qty{50}{\percent} too high,
+averaged over \qty{10}{\second} prediction windows started every \qty{2}{\second} on
+\qty{600}{\second} of a simulated
+piecewise-constant thrust profile, with the dummy BlueROV2 coefficients as ground truth.}
+\label{fig:horizon}
+\end{figure}
+\FloatBarrier
+
+\Cref{fig:horizon} shows the two signatures. The thrust error grows almost linearly. The
+inertia error, even at \qty{50}{\percent}, grows sub-linearly and stays small. With the dummy
+coefficients $\taueff$ is a few tenths of a second, so the quadratic phase is too short to see,
+and the practical signature of an inertia error is a \emph{saturating}, step-correlated error
+rather than a quadratic one. In practice: a straight line indicates a check of thrust and drag, and an
+error concentrated just after thrust changes indicates a check of inertia and delay.
+
+\section{Metrics in the summary}
+
+For each predictor (model, and the power-law baseline) the summary reports:
+\begin{itemize}
+  \item \textbf{Surge RMS error and its ratio to the EKF surge standard deviation.} A ratio of
+        \qty{100}{\percent} means the prediction is no better than always guessing the mean speed.
+        For an unbiased predictor the ratio is $\sqrt{1 - R^2}$.
+  \item \textbf{Position RMS error and final drift}, absolute and as a percentage of the distance travelled.
+  \item \textbf{Path length}, predicted against EKF. This is a quick check of the overall speed scale.
+\end{itemize}
+The baseline matters because a dynamic model that cannot beat \eqref{eq:powerlaw} has not
+earned its complexity.
+
+\section{Output topics}
+
+\begin{table}[htbp]
+\centering
+\caption{Topics added to the augmented bag by \file{propagate_model.py}.}
+\label{tab:topics}
+\small
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Topic & Type & Content \\
+\midrule
+\code{/sysid/model_odom} & \code{Odometry} & Model prediction, same frames as the EKF \\
+\code{/sysid/powerlaw_odom} & \code{Odometry} & Baseline prediction \\
+\code{/sysid/model_navsatfix} & \code{NavSatFix} & Prediction projected to latitude and longitude for the Map panel \\
+\code{/sysid/model_info} & \code{String} & Version tag, coefficients, settings (\qty{1}{\hertz}) \\
+\code{/sysid/error/position_m} & \code{Float64} & Horizontal position error against the EKF \\
+\code{/sysid/error/surge_mps} & \code{Float64} & Surge speed error against the EKF \\
+\code{/sysid/horizon_s} & \code{Float64} & Time since the last re-initialisation \\
+\code{/sysid/thruster_forces} & \code{Float64MultiArray} & Force on all six channels (NaN = no curve) \\
+\code{/sysid/battery_voltage} & \code{Float64} & Voltage the thrust was evaluated at \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\section{Geographic projection: the Kabsch fit}
+
+The \code{odom} frame is local. To draw the prediction on a map, the transform from
+\code{odom} to UTM is needed. \code{/gps/filtered} is the EKF output pushed through
+\code{navsat_transform}'s fixed transform, so a rigid 2-D transform $\vect{y}_k = \vect{R}\vect{x}_k + \vect{t}$
+fits it exactly. \code{fit_geo_anchor()} recovers it with the Kabsch algorithm \cite{kabsch1976}:
+\begin{enumerate}
+  \item centre both point sets: $\tilde{\vect{X}} = \vect{X} - \bar{\vect{x}}$, $\tilde{\vect{Y}} = \vect{Y} - \bar{\vect{y}}$;
+  \item take the SVD $\tilde{\vect{X}}^\top\tilde{\vect{Y}} = \vect{U}\vect{\Sigma}\vect{V}^\top$;
+  \item $\vect{R} = \vect{V}\,\mathrm{diag}(1, d)\,\vect{U}^\top$ with
+        $d = \mathrm{sign}\det(\vect{V}\vect{U}^\top)$, which guarantees a rotation rather than a reflection;
+  \item $\vect{t} = \bar{\vect{y}} - \vect{R}\bar{\vect{x}}$.
+\end{enumerate}
+The scale is pinned to 1 because metres in \code{odom} are metres in UTM. The fit is valuable
+because the map frame is \emph{not} ENU-aligned: it is off by about \qty{17}{\degree} on the June bags.
+Assuming ENU would put the predicted track in the wrong place.
+
+\section{Reading the existing summaries}
+
+\file{recordings/sysid/} holds several summaries produced while the pipeline was being built.
+All of them used the dummy BlueROV2 model, so none says anything about POLARIS
+coefficients. They are still instructive for how the outputs are read.
+
+\begin{table}[htbp]
+\centering
+\caption{Key figures of the propagation summaries in \file{recordings/sysid/} (dummy
+BlueROV2 model, free run).}
+\label{tab:summaries}
+\small
+\begin{tabular}{@{}l l S[table-format=1.3] S[table-format=3.1] S[table-format=4.1] S[table-format=4.1]@{}}
+\toprule
+Bag & Predictor & {Surge RMS / \unit{\meter\per\second}} & {Ratio / \unit{\percent}} & {Path pred. / \unit{\meter}} & {Path EKF / \unit{\meter}} \\
+\midrule
+\code{zermatt_rectangle_07} & model & 0.089 & 76.6 & 2.8 & 9.1 \\
+\code{zermatt_rectangle_07} & power law & 0.093 & 79.5 & 2.9 & 9.1 \\
+\code{aut_..._grid_03} & model & 1.198 & 100.0 & 298.2 & 2718.8 \\
+\code{aut_..._grid_03} & power law & 1.198 & 100.1 & 329.9 & 2718.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\paragraph{\code{zermatt_rectangle_07}.} Both predictors explain only about
+\qty{40}{\percent} of the surge variance ($1 - 0.766^2$) and cover about a third of the EKF path. The model and the power law fail in the same way
+even though they have nothing in common except the PWM input. That points at the input rather than at
+either model. The servo stream in the April rectangle bags runs at only about \qty{2}{\hertz} and the
+surge PWM never exceeds \qty{1683}{\micro\second}, so much of the motion may be driven by
+something the surge channel does not see (other thrusters, current, sway).
+
+\paragraph{\code{aut_no_z_surface_big_40_grid_03}.} A ratio of exactly \qty{100}{\percent} for
+\emph{both} predictors, and an EKF path nine times longer than either prediction, are the
+signature of a broken reference rather than a bad model. A direct check of the bag confirms it:
+the EKF surge velocity reaches \qty{62}{\meter\per\second} in places (182 samples above
+\qty{2}{\meter\per\second}), and the EKF position jumps by up to \qty{842}{\meter} between
+consecutive samples. Without jumps larger than \qty{1}{\meter} the EKF path is \qty{479}{\meter},
+not \qty{2719}{\meter}. The spikes inflate the ``spread'' to \qty{1.2}{\meter\per\second} and
+dominate every metric. This bag should be used only on cropped windows where the EKF is
+continuous.
+
+\begin{keyidea}
+Validation compares the model against the EKF, and the EKF is also only an estimate. Before a
+large error is blamed on the model, the reference has to be checked: velocity spikes, position jumps,
+resets. Agreement between model and baseline on a bad number is a strong hint that the shared
+input or the reference is at fault.
+\end{keyidea}
+
+\begin{questions}
+\begin{enumerate}
+  \item Why is a free-run error the ``verdict'' but a re-initialised error only a ``diagnostic''?
+  \item The position error grows linearly with horizon at \qty{0.05}{\meter\per\second}. Which
+        coefficients are suspects, and which manoeuvre would separate them?
+  \item What would \file{propagate_model.py} report if the surge thruster were mounted backwards?
+\end{enumerate}
+\end{questions}

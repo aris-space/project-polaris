@@ -1,0 +1,360 @@
+\chapter{Synthetic test bench}
+\label{ch:synthetic}
+
+\begin{revised}[title={New chapter, added 14 October 2026}]
+This chapter documents \file{scripts/sysid/simulation/synth_bag.py} and its tests, which were
+added after the first edition of these notes. All numbers below are produced by
+\file{docs/sysid_notes/gen_synthdata.py}, which runs the repository's own propagation and fit
+code on freshly generated bags. \Cref{app:changelog} lists every change made in this revision.
+\end{revised}
+
+\section{Why ground truth is needed}
+
+A fit of a real recording returns numbers, but nothing says whether they are \emph{right}: the
+true coefficients of POLARIS are exactly what is unknown. An estimator can be biased by its
+own construction (filtering, delays, the choice of regressors), and that bias is invisible in
+real data. It looks like a property of the vehicle.
+
+The standard remedy is to test the method on data whose truth is known
+\cite{ljung1999,klein2006}. A simulated vehicle with chosen coefficients is driven through the
+same manoeuvres, its sensors are imitated with chosen delays and noise, and the result is
+written in the same format as a real recording. Any difference between the fitted and the
+chosen coefficients is then an error \emph{of the method}, and it can be traced to the
+imperfection that caused it by switching imperfections on one at a time.
+
+\begin{keyidea}
+Passing on synthetic data is \emph{necessary}, not sufficient. A fit that cannot recover the
+coefficients of a bag whose truth is known will not recover them from the lake either. A fit
+that does recover them may still fail on effects the simulation leaves out (\cref{sec:synth-limits}).
+\end{keyidea}
+
+\section{What is simulated}
+
+\file{synth_bag.py} integrates the surge model of \cref{ch:surge} on a \qty{1}{\kilo\hertz} grid
+with the coefficients and thrust map of a \emph{truth model} file (by default the dummy
+\file{dummy_bluerov2_heavy_t500.yaml}: BlueROV2 coefficients with the real T500 map):
+\begin{equation}
+  \mtot\,\dot u = k\,T_\mathrm{act}(t) + F_\mathrm{off} - X_u u - \Xuu|u|u .
+  \label{eq:synth-plant}
+\end{equation}
+The imperfections are layered on top as follows.
+\begin{description}[style=nextline]
+  \item[Actuation] The force follows the \emph{logged} servo PWM $p_\mathrm{log}$ after a pure delay $L$
+        (\code{actuation_lag_s}) and a first-order motor spin-up $\tau_m$
+        (\code{spinup_tau_s}):
+        \begin{equation}
+          \tau_m\,\dot T_\mathrm{act} = F\bigl(p_\mathrm{log}(t - L),\, V(t)\bigr) - T_\mathrm{act}.
+        \end{equation}
+        $k$ (\code{thrust_scale}) scales the true thrust against the table, which models a
+        datasheet error. $F_\mathrm{off}$ (\code{offset_n}) is a constant tether or current force.
+  \item[Battery] $V(t)$ sags linearly from \code{v_start} to \code{v_end}. The BMS publishes it at
+        \qty{1}{\hertz} as the same text status (\code{"16.20V"}) as \code{bms_node}.
+  \item[EKF] The surge velocity passes through a first-order lag $\tau_e$
+        (\code{ekf_lag_s}), $\tau_e\dot{\hat u} = u - \hat u$, plus white noise. The pose is the
+        integral of $\hat u$ along a constant heading, so pose and twist stay consistent.
+  \item[IMU] Specific force in FLU, $\vect{f} = \dot{\vect{v}} - \vect{R}^\top[0,0,-g]^\top$, which at
+        constant trim pitch $\theta_0$ gives $f_x = \dot u - g\sin\theta_0$ and
+        $f_z = g\cos\theta_0$ (\cref{ch:timing}), plus white noise.
+  \item[DVL] The body velocity rotated into \code{dvl_a50_link} with the real mount from
+        \code{/tf_static} ($\vect{v}_\mathrm{dvl} = \vect{R}_\mathrm{d}^\top\vect{v}_b$), optionally
+        delayed, plus white noise.
+  \item[Scripts] The \code{/pixhawk/manual_control} messages and the \code{/sysid/event}
+        markers are reproduced message for message from \file{_step_common.py}: 20 Hz commands,
+        \code{thrust_on}, \code{thrust_cut}, a neutral burst and \code{done}.
+\end{description}
+
+\begin{table}[htbp]
+\centering
+\caption{Imperfections of the synthetic vehicle: command-line flag, default value, and
+value with \code{--ideal}. Defaults are plausible guesses, not measurements.}
+\label{tab:synth-config}
+\small
+\begin{tabular}{@{}l l S[table-format=2.3] S[table-format=2.3]@{}}
+\toprule
+Quantity & Flag & {Default} & {Ideal} \\
+\midrule
+Actuation lag $L$ / \unit{\second} & \code{--actuation-lag-s} & 0.15 & 0 \\
+Spin-up $\tau_m$ / \unit{\second} & \code{--spinup-tau-s} & 0.05 & 0 \\
+Thrust scale $k$ & \code{--thrust-scale} & 1 & 1 \\
+Force offset / \unit{\newton} & \code{--offset-n} & 0 & 0 \\
+Battery start, end / \unit{\volt} & \code{--v-start}, \code{--v-end} & {16.2, 15.6} & {16.2, 16.2} \\
+EKF lag $\tau_e$ / \unit{\second} & \code{--ekf-lag-s} & 0.10 & 0 \\
+EKF noise / \unit{\meter\per\second} & \code{--ekf-noise-mps} & 0.01 & 0 \\
+IMU noise / \unit{\meter\per\second\squared} & \code{--imu-noise-mps2} & 0.02 & 0 \\
+DVL noise / \unit{\meter\per\second} & \code{--dvl-noise-mps} & 0.005 & 0 \\
+DVL delay / \unit{\second} & \code{--dvl-lag-s} & 0 & 0 \\
+PWM per command unit / \unit{\micro\second} & \code{--pwm-per-cmd} & 0.4 & 0.4 \\
+Trim pitch $\theta_0$ / \unit{\radian} & \code{--trim-pitch-rad} & 0.02 & 0.02 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+The PWM mapping $p = 1500 + 0.4\,c$ (command 500 $\to$ \qty{1700}{\micro\second}) is an
+\emph{assumption}. ArduSub's real mapping depends on its pilot gain and motor parameters. The
+first lake bag that records both \code{/pixhawk/manual_control} and
+\code{/pixhawk/servo_output_raw} settles it.
+
+\begin{table}[htbp]
+\centering
+\caption{Topics written by \file{synth_bag.py}, with message type and rate. Types and frames are
+identical to the real recordings (ROS~2 Jazzy).}
+\label{tab:synth-topics}
+\small
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
+\toprule
+Topic & Type & Rate & Note \\
+\midrule
+\code{/odometry/filtered/local} & \code{nav_msgs/Odometry} & \qty{30}{\hertz} & \code{odom} $\to$ \code{base_link} \\
+\code{/pixhawk/servo_output_raw} & \code{std_msgs/Int16MultiArray} & \qty{10}{\hertz} & no header, other channels \num{1500} \\
+\code{/pixhawk/manual_control} & \code{std_msgs/Int16MultiArray} & \qty{20}{\hertz} & only while a script runs \\
+\code{/imu/data} & \code{sensor_msgs/Imu} & \qty{100}{\hertz} & \code{imu_link} \\
+\code{/sensors/dvl/velocity} & \code{marine_acoustic_msgs/Dvl} & \qty{7.6}{\hertz} & definition in \file{simulation/Dvl.msg} \\
+\code{/diagnostics} & \code{diagnostic_msgs/DiagnosticArray} & \qty{1}{\hertz} & BMS current, voltage, percentage \\
+\code{/sysid/event} & \code{std_msgs/String} & events & JSON as \file{_step_common.py} \\
+\code{/sysid/synthetic_truth} & \code{std_msgs/String} & once & the truth as JSON \\
+\code{/tf_static} & \code{tf2_msgs/TFMessage} & once & \code{imu_link}, \code{dvl_a50_link} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+Next to every bag, \file{<stem>_truth.yaml} records the true $m$, $\Xud$, $\mtot$, $X_u$,
+$\Xuu$, every timing parameter (including the equivalent \code{servo_delay_s}, see below),
+the full configuration, the manoeuvre programme and the time of every event.
+
+\section{Using it}
+
+\begin{lstlisting}[language=bash,caption={Generating synthetic bags (run from the repository root).}]
+# the full suite (four steps and a coast-down) with default imperfections
+python scripts/sysid/simulation/synth_bag.py --program suite
+
+# perfect data: no delay, no noise, constant voltage
+python scripts/sysid/simulation/synth_bag.py --program steps --ideal
+
+# perfect data except one imperfection, here a 0.2 s actuation lag
+python scripts/sysid/simulation/synth_bag.py --program steps --ideal --actuation-lag-s 0.2
+
+# several noise realisations of the same experiment
+for s in 0 1 2 3 4; do python scripts/sysid/simulation/synth_bag.py --seed $s; done
+\end{lstlisting}
+
+Output goes to \file{recordings/sysid/synthetic/} (git-ignored) unless \code{--out} is given.
+A suggested workflow for each fit script:
+\begin{enumerate}
+  \item \textbf{Ideal bag.} The fit must return the truth up to discretisation. If it does not,
+        the method itself is biased, and the remaining steps would only add noise on top.
+  \item \textbf{One imperfection at a time.} Each bias can then be attributed to its cause
+        (\cref{tab:synth-fit}).
+  \item \textbf{Default imperfections, several seeds.} The spread of the estimates over seeds is the
+        statistical uncertainty of the method. Their mean against the truth is its bias.
+  \item \textbf{Only then real bags.}
+\end{enumerate}
+
+\section{Result 1: the propagation reproduces the truth}
+
+\Cref{tab:synth-prop} runs \code{propagate()} from \file{propagate_model.py} with the truth
+model over two bags of the \code{steps} programme: one ideal, one with only a
+\qty{0.2}{\second} actuation lag.
+
+\begin{table}[htbp]
+\centering
+\caption{RMS surge error of the free-run propagation of the truth model over synthetic bags,
+for two actuation lags $L$ and three values of \code{thrust.servo_delay_s}.}
+\label{tab:synth-prop}
+\begin{tabular}{@{}c c l@{}}
+\toprule
+Lag $L$ / \unit{\second} & \code{servo_delay_s} / \unit{\second} & Surge RMS / \unit{\meter\per\second} \\
+\midrule
+\inputrows{data/synth_prop_rows.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+On the ideal bag the propagation matches the truth to about \qty{1e-8}{\meter\per\second}. This
+single number checks every link at once: bag format and reading, timestamps, BMS voltage
+parsing, the T500 map, zero-order hold and RK4.
+
+\begin{caution}[title={The sign of \code{servo_delay_s}}]
+The lagged bag is reproduced exactly with $\code{servo_delay_s} = -0.2$, and a \emph{positive}
+value makes it \emph{worse}. Both \file{propagate_model.py} and \file{coupling_check.py}
+\emph{subtract} \code{servo_delay_s} from the servo log time, so a positive value moves the
+thrust \emph{earlier} than its log entry. That compensates transport delay (the log arrives after
+the Pixhawk applied the PWM) but not motor spin-up (the thrust arrives after the log). If the IMU
+shows the vehicle accelerating \qty{150}{\milli\second} after the logged PWM step,
+\textbf{the value to enter is $\code{servo_delay_s} = -0.15$}.
+\file{maneuvers.md} and the first edition of \cref{ch:timing} read as if it were positive. The
+convention is unchanged in the code. Whether to keep it and document it, or to flip it, is a
+decision still to be made (\cref{ch:status}).
+\end{caution}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wide,xlabel={Time after \code{thrust_on} / \unit{\second}},ylabel={$u$ / \unit{\meter\per\second}},
+  xmin=-0.5,xmax=2.5,ymin=-0.03]
+\addplot[black,very thick] table[x=t,y=truth]{data/synth_step.dat};
+\addplot[gray,only marks,mark=*,mark size=0.8pt] table[x=t,y=ekf]{data/synth_step.dat};
+\addplot[red,dashed] table[x=t,y=delay0]{data/synth_step.dat};
+\addplot[blue,dashdotted] table[x=t,y=delaycomp]{data/synth_step.dat};
+\legend{truth,EKF,model $\code{servo_delay_s}=0$,model $\code{servo_delay_s}=-0.15$}
+\end{axis}
+\end{tikzpicture}
+\caption{Surge speed around the surge-500 step of a synthetic suite bag with default
+imperfections: true speed, EKF measurement, and free-run propagation of the truth model with
+\code{servo_delay_s} of \num{0} and \qty{-0.15}{\second}.}
+\label{fig:synth-step}
+\end{figure}
+\FloatBarrier
+
+\Cref{fig:synth-step} shows the same on a bag with all default imperfections. Without
+compensation the model leads the truth by the actuation lag. With $-0.15$ it follows the
+truth closely. The small remaining lead is the \qty{0.05}{\second} motor spin-up, which a pure
+time shift cannot represent. The EKF trails both, because of its own
+\qty{0.1}{\second} lag, which is the filter lag of \cref{ch:timing}.
+
+\section{Result 2: biases of the equation-error fit}
+
+\Cref{tab:synth-fit} applies the own-axis least-squares fit of \file{coupling_check.py}
+(\cref{ch:estimation}; Savitzky--Golay window \qty{1}{\second}, \qty{50}{\hertz} grid) to suite
+bags that each carry a single known imperfection. The truth is $\mtot = \qty{19.86}{\kilogram}$,
+$X_u = \qty{13.7}{\newton\second\per\meter}$, $\Xuu = \qty{141}{\newton\second\squared\per\meter\squared}$.
+
+\begin{table}[htbp]
+\centering
+\caption{Coefficients returned by the equation-error fit of \file{coupling_check.py} on
+synthetic suite bags with one imperfection each, with the deviation from the truth in brackets.}
+\label{tab:synth-fit}
+\small
+\begin{tabular}{@{}l l l l@{}}
+\toprule
+Bag & $\mtot$ / \unit{\kilogram} & $X_u$ / \unit{\newton\second\per\meter} & $\Xuu$ / \unit{\newton\second\squared\per\meter\squared} \\
+\midrule
+\inputrows{data/synth_fit_rows.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+Four lessons follow, each one invisible on real data.
+\begin{enumerate}
+  \item \textbf{The ideal bag is not fitted exactly.} $\mtot$ comes out \qty{14}{\percent} high and
+        $X_u$ \qty{18}{\percent} high on perfect data. The cause is the \qty{1}{\second}
+        smoothing window, which is long against $\taueff \approx \qty{0.2}{\second}$
+        (\cref{sec:taueff}). Smoothing $u$ and then forming $|u|u$ is not the same as smoothing
+        $|u|u$, and the step edges are smeared over the whole window.
+  \item \textbf{Delays inflate the inertia}, exactly as argued in \cref{ch:timing}. A
+        \qty{0.15}{\second} actuation lag raises the error of $\mtot$ from \qty{14}{\percent} to
+        \qty{65}{\percent}, and a \qty{0.1}{\second} EKF lag raises it to \qty{53}{\percent}. Drag barely moves.
+  \item \textbf{A thrust-scale error rescales everything} by $1/k$, as derived in
+        \cref{sec:identifiability}. Here $\mtot$ happens to land on the truth, because the
+        \qty{14}{\percent} smoothing bias and the factor $1/1.15$ cancel. A single coefficient
+        that ``looks right'' proves nothing.
+  \item \textbf{Errors add up.} With all defaults combined, $\mtot$ is twice its true value.
+\end{enumerate}
+
+\paragraph{The smoothing window.} \Cref{tab:synth-window} repeats the fit for shorter windows.
+
+\begin{table}[htbp]
+\centering
+\caption{Total inertia $\mtot$ returned by the equation-error fit for four Savitzky--Golay window
+lengths, on the ideal, the lagged and the default synthetic suite bags (truth \qty{19.86}{\kilogram}).}
+\label{tab:synth-window}
+\small
+\begin{tabular}{@{}c l l l@{}}
+\toprule
+Window / \unit{\second} & ideal & lag \qty{0.15}{\second} & all defaults \\
+\midrule
+\inputrows{data/synth_win_rows.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+On ideal data, shortening the window removes the bias (\qty{0.15}{\second}:
+\qty{0}{\percent}). With noise, a short window lets the noise of the differentiated $\dot u$
+into the regressor, and the estimate falls \emph{below} the truth: this is the
+errors-in-variables attenuation of \cref{ch:estimation}. The window is therefore a
+bias--variance trade-off that has to be chosen against $\taueff$ and the noise level, and the
+synthetic bench is where it can be tuned. The lag bias, finally, does not go away with any window.
+
+\paragraph{Compensating the delay.} \Cref{tab:synth-comp} fits the lagged bag again with a copy
+of the truth model whose \code{servo_delay_s} is set.
+
+\begin{table}[htbp]
+\centering
+\caption{Total inertia $\mtot$ returned by the equation-error fit on the bag with a
+\qty{0.15}{\second} actuation lag, for three values of \code{servo_delay_s} and two window
+lengths (truth \qty{19.86}{\kilogram}).}
+\label{tab:synth-comp}
+\small
+\begin{tabular}{@{}c l l@{}}
+\toprule
+\code{servo_delay_s} / \unit{\second} & window \qty{1}{\second} & window \qty{0.25}{\second} \\
+\midrule
+\inputrows{data/synth_comp_rows.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+With $-0.15$ the fit returns the same values as on the ideal bag (compare
+\cref{tab:synth-window}), so the lag is fully removed and only the window bias remains. With
+$+0.15$ the estimate never improves: it worsens to \qty{99}{\percent} with the
+\qty{1}{\second} window and stays at \qty{25}{\percent} with \qty{0.25}{\second}. This is the
+same sign convention as in \cref{tab:synth-prop}, now confirmed through a second, independent
+code path.
+
+\section{A bug found on the way}
+
+The first attempt to run \file{propagate_model.py} on a synthetic bag crashed with
+\code{Type 'std_msgs/msg/Float64' is unknown}. \code{write_augmented_bag()} in
+\file{bag_io.py} built the new \code{/sysid/*} messages from the \emph{input} bag's
+typestore, which only knows the types that happen to be recorded in it. The large autonomy
+bags contain \code{Float64}, \code{NavSatFix} and the others by coincidence. A slim recording
+made only for system identification would not. The fix registers every standard ROS~2 Jazzy
+type the input bag does not define, and never overrides a recorded definition. A regression run on
+\code{zermatt_rectangle_07} reproduces the committed summary digit for digit.
+
+\section{Limitations}
+\label{sec:synth-limits}
+
+The bench imitates what the surge model assumes. It does not test effects outside it:
+\begin{itemize}[nosep]
+  \item surge only, at a constant heading. There is no yaw, sway, heave or pitch motion, and so
+        no coupling;
+  \item no current dynamics, waves or tether. Only a constant force offset is available;
+  \item the EKF is a first-order lag, not a Kalman filter, and all sensor noise is white and Gaussian;
+  \item the IMU sits at the centre of mass (no lever-arm accelerations) with a constant pitch;
+  \item the motor is a pure delay plus a first-order lag, and the true thrust is the
+        datasheet table times a constant;
+  \item (added 16 October 2026) the thrust follows the \emph{logged} PWM, so the edges always
+        coincide with a log sample. The effect of a slow \code{servo_output_raw} rate is therefore
+        invisible on the bench. It is studied separately in \cref{tab:bias-servo};
+  \item (added 16 October 2026) the IMU has perfect timestamps and no vibration, unlike the real
+        \code{/imu/data} (\cref{sec:bias-study}).
+\end{itemize}
+The default imperfections are educated guesses. Once the delays and noise levels have been measured
+at the lake (\cref{ch:timing}), they should replace the defaults so that the bench imitates
+POLARIS rather than a generic vehicle.
+
+\begin{incode}
+\file{tests/test_synth_bag.py} (8 tests) checks that the ideal bag is reproduced by the
+propagation to \qty{1e-6}{\meter\per\second}; that a lag $L$ is removed by
+$\code{servo_delay_s} = -L$ and made worse by $+L$; that the events bracket the PWM edges; that
+voltage and frames read back as from a real bag; that the IMU reads $-g\sin\theta_0$ at rest;
+that the DVL velocity rotates back to the body velocity through \code{/tf_static}; and that the
+\file{propagate_model.py} command line runs end to end on a synthetic bag.
+\end{incode}
+
+\begin{questions}
+\begin{enumerate}
+  \item Why must a fit be tested on the ideal bag before the bags with imperfections?
+  \item The IMU shows the acceleration edge \qty{120}{\milli\second} after the logged PWM step. What
+        value goes into \code{servo_delay_s}?
+  \item In \cref{tab:synth-fit}, $\mtot$ of the thrust-scale bag is almost exactly right. Why is
+        that not reassuring?
+  \item Why does a shorter smoothing window \emph{under}estimate $\mtot$ on the noisy bag?
+\end{enumerate}
+\end{questions}

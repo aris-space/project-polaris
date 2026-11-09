@@ -1,0 +1,135 @@
+% POLARIS system identification - study notes on scripts/sysid (branch feature/sysid).
+% Build: latexmk -pdf sysid_notes.tex   (run python gen_figdata.py first to refresh data/)
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{placeins}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,3d}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{groupplots}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=green!40!black,urlcolor=blue!50!black]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
+
+\sisetup{per-mode=symbol,range-phrase=--,range-units=single}
+\captionsetup{font=small,labelfont=bf}
+\setlist{itemsep=2pt,topsep=4pt}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!60!black}\bfseries,
+  commentstyle=\color{green!40!black}\itshape,
+  stringstyle=\color{red!50!black},
+  frame=lines,
+  numbers=none,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  showstringspaces=false
+}
+
+% ---------------------------------------------------------------- boxes
+\newtcolorbox{keyidea}[1][]{colback=blue!4,colframe=blue!50!black,fonttitle=\bfseries,
+  title=Key idea,#1}
+\newtcolorbox{incode}[1][]{colback=gray!6,colframe=gray!60!black,fonttitle=\bfseries,
+  title=In the code,#1}
+\newtcolorbox{caution}[1][]{colback=red!4,colframe=red!60!black,fonttitle=\bfseries,
+  title=Caution,#1}
+\newtcolorbox{revised}[1][]{colback=orange!6,colframe=orange!75!black,fonttitle=\bfseries,
+  title=Revised,#1}
+\newtcolorbox{inmywords}[1][]{colback=violet!4,colframe=violet!60!black,fonttitle=\bfseries,
+  title=In my own words,breakable,#1}
+\newtcolorbox{questions}[1][]{colback=green!4,colframe=green!40!black,fonttitle=\bfseries,
+  title=Check your understanding,#1}
+
+% ---------------------------------------------------------------- macros
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\file}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\mtot}{m_\mathrm{tot}}
+\newcommand{\Xud}{X_{\dot u}}
+\newcommand{\Xuu}{X_{u|u|}}
+\newcommand{\taueff}{\tau_\mathrm{eff}}
+% Primitive (expandable) \input, for generated table rows followed by \bottomrule.
+\makeatletter\let\inputrows\@@input\makeatother
+
+\pgfplotsset{
+  notes/.style={width=\linewidth,height=5.2cm,grid=major,
+    legend style={at={(0.5,1.03)},anchor=south,legend columns=-1,/tikz/every even column/.append style={column sep=4pt}},
+    grid style={gray!25},tick label style={font=\footnotesize},
+    label style={font=\small},legend style={font=\footnotesize,draw=none,fill=white,fill opacity=0.8,text opacity=1},
+    every axis plot/.append style={line width=1pt}},
+  wide/.style={notes,width=0.85\textwidth,height=6.5cm},
+}
+
+\title{\textbf{System Identification of POLARIS}\\[4pt]
+  \large Theory and implementation notes on \file{scripts/sysid}\\[2pt]
+  \normalsize Study companion to the \file{feature/sysid} branch}
+\author{POLARIS project}
+\date{First edition 9 October 2026\\ Revised 16 October 2026 (see Appendix~\ref{app:changelog})}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+These notes explain the theory behind every part of the POLARIS system identification
+code: the frame conventions, Fossen's six-degree-of-freedom manoeuvring model and how
+it collapses to a one-degree-of-freedom surge equation, the thruster map from PWM and
+battery voltage to force, the Runge--Kutta integration, the design of the identification
+manoeuvres, the timing problems that bias the estimates, least-squares estimation, the
+statistical coupling check, and validation by open-loop propagation over recorded
+rosbags. Each chapter connects the theory to the file and function that implements it.
+All numerical examples use the dummy BlueROV2 Heavy coefficients from the literature
+that the repository uses as a test fixture. No POLARIS coefficients have been identified
+yet, so none of the numbers here describe the POLARIS vehicle. All plots were generated
+by \file{gen_figdata.py}, which calls the repository's own modules.
+\end{abstract}
+
+\tableofcontents
+
+\input{nomenclature}
+
+\input{ch00_overview}
+\input{ch01_intro}
+\input{ch02_frames}
+\input{ch03_fossen}
+\input{ch04_symmetry}
+\input{ch05_surge}
+\input{ch06_actuation}
+\input{ch07_integration}
+\input{ch08_maneuvers}
+\input{ch09_timing}
+\input{ch10_estimation}
+\input{ch11_coupling}
+\input{ch12_validation}
+\input{ch12b_synthetic}
+\input{ch13_status}
+\input{ch14_personal}
+
+\appendix
+\input{appA_codemap}
+\input{appB_answers}
+\input{appC_changelog}
+
+\bibliographystyle{plain}
+\bibliography{bibliography}
+
+\end{document}

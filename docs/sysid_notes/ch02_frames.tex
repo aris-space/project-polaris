@@ -1,0 +1,149 @@
+\chapter{Frames, kinematics and notation}
+\label{ch:frames}
+
+\section{The two frames that matter}
+
+Two reference frames are needed to describe a vehicle:
+\begin{itemize}
+  \item a \emph{world} frame fixed to the Earth (\code{odom}), in which position and attitude
+        $\vect{\eta} = [x, y, z, \phi, \theta, \psi]^\top$ are expressed;
+  \item a \emph{body} frame fixed to the vehicle (\code{base_link}), in which the velocities
+        $\vect{\nu} = [u, v, w, p, q, r]^\top$ and the forces $\vect{\tau}$ are expressed.
+\end{itemize}
+The equations of motion are written in the body frame because the inertia, the added mass
+and the damping are constant there. A thruster always pushes along the same body axis,
+and the drag of a forward-moving hull always opposes body-forward motion.
+
+\subsection{FLU/ENU (POLARIS) versus FRD/NED (Fossen)}
+
+Marine textbooks, including Fossen \cite{fossen2011}, use the SNAME convention. The body
+axes are Forward--Right--Down (FRD) and the world axes North--East--Down (NED). ROS uses
+REP-103: body axes Forward--Left--Up (FLU) and world axes East--North--Up (ENU). POLARIS
+follows ROS, because every measured signal already arrives in that convention. The EKF
+twist is in \code{base_link}, the IMU is identity-rotated to \code{base_link}, and the DVL is
+rotated by its TF. \Cref{fig:frames} compares the two body frames.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}[scale=1.2,>=Stealth]
+  \draw[fill=gray!15,rounded corners=6pt] (-1.4,-0.35) rectangle (1.2,0.35);
+  \draw[fill=gray!30] (1.2,-0.25) -- (1.6,0) -- (1.2,0.25) -- cycle;
+  \draw[->,very thick,red] (0,0) -- (2.2,0) node[right]{$x$ (forward)};
+  \draw[->,very thick,green!50!black] (0,0) -- (-0.9,1.0) node[above left]{$y$ (left)};
+  \draw[->,very thick,blue] (0,0) -- (0,1.6) node[above]{$z$ (up)};
+  \node[orange!80!black,font=\scriptsize] at (0,-0.75) {positive pitch: nose down};
+\end{tikzpicture}
+\caption{FLU (\code{base_link}, REP-103)}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}[scale=1.2,>=Stealth]
+  \draw[fill=gray!15,rounded corners=6pt] (-1.4,-0.35) rectangle (1.2,0.35);
+  \draw[fill=gray!30] (1.2,-0.25) -- (1.6,0) -- (1.2,0.25) -- cycle;
+  \draw[->,very thick,red] (0,0) -- (2.2,0) node[right]{$x$ (forward)};
+  \draw[->,very thick,green!50!black] (0,0) -- (0.9,-1.0) node[below right]{$y$ (right)};
+  \draw[->,very thick,blue] (0,0) -- (0,-1.6) node[below]{$z$ (down)};
+  \node[orange!80!black,font=\scriptsize] at (-1.0,0.65) {positive pitch: nose up};
+\end{tikzpicture}
+\caption{FRD (Fossen, SNAME, MAVLink)}
+\end{subfigure}
+\caption{Body-fixed axes in the FLU convention used by POLARIS and in the FRD convention
+used by Fossen, with the sense of positive pitch rate $q$ in each.}
+\label{fig:frames}
+\end{figure}
+\FloatBarrier
+
+The two body frames differ by a rotation of \qty{180}{\degree} about $x$:
+$\vect{S} = \mathrm{diag}(1,-1,-1)$. This maps $(u,v,w)\mapsto(u,-v,-w)$ and
+$(p,q,r)\mapsto(p,-q,-r)$. It is a proper rotation (determinant $+1$), so cross products,
+and therefore the whole Newton--Euler machinery, keep their form.
+
+\begin{keyidea}
+\textbf{Pitch is positive nose-down in FLU.} The right-hand rule about $+y$, which points
+\emph{left}, turns the nose \emph{down}. This is the opposite of FRD, where $+y$ points
+right and positive pitch is nose up. The allocation comments in \file{model.yaml} rely on
+this: a rear vertical thruster that pushes up produces a positive pitch moment.
+\end{keyidea}
+
+\section{Kinematics}
+
+The velocity in the world frame follows from the body velocity through the kinematic
+transformation \cite[ch.~2]{fossen2011}:
+\begin{equation}
+  \dot{\vect{\eta}} = \vect{J}(\vect{\eta})\,\vect{\nu},
+  \qquad
+  \vect{J}(\vect{\eta}) = \begin{bmatrix} \vect{R}(\vect{\Theta}) & \vect{0} \\ \vect{0} & \vect{T}(\vect{\Theta}) \end{bmatrix},
+  \label{eq:kinematics}
+\end{equation}
+with the ZYX (yaw--pitch--roll) rotation $\vect{R} = \vect{R}_z(\psi)\vect{R}_y(\theta)\vect{R}_x(\phi)$
+and the Euler-rate transformation $\vect{T}$. The formula is the same in FLU/ENU and in
+FRD/NED. Only the meaning of the angles changes: in ENU, $\psi$ is measured
+counter-clockwise from East.
+
+The propagation script needs only the planar part. With roll and pitch small, the
+horizontal position rate is
+\begin{equation}
+\begin{aligned}
+  \dot x &= u\cos\psi - v\sin\psi, \\
+  \dot y &= u\sin\psi + v\cos\psi.
+\end{aligned}
+\label{eq:planar-kin}
+\end{equation}
+
+\begin{incode}
+\Cref{eq:planar-kin} is exactly the position update inside \code{propagate()} in
+\file{validation/propagate_model.py}: \code{pos[0] += h*(c*u - s*v_sub)} and
+\code{pos[1] += h*(s*u + c*v_sub)}, with $u$ from the model and $v$, $\psi$ from the EKF.
+The Euler angles are extracted in \file{bag_io.py} with
+\code{Rotation.from_quat(q).as_euler("xyz")}. Lower-case \code{"xyz"} means
+\emph{extrinsic} rotations about fixed axes, which is the same rotation as intrinsic ZYX, so
+the result is (roll, pitch, yaw) in the standard aerospace sense.
+\end{incode}
+
+\section{Converting coefficients from the literature}
+
+Literature coefficients, such as the BlueROV2 values in \file{dummy_bluerov2_heavy.yaml}
+\cite{vonbenzon2022}, are given in FRD. Under the reflection $\vect{S}$ each velocity component
+either keeps its sign ($u$, $p$) or flips it ($v$, $w$, $q$, $r$), and the same holds for the
+corresponding force component ($X$, $K$ keep, $Y$, $Z$, $M$, $N$ flip). A coefficient
+$A_{ab} = \partial A/\partial b$ relates force component $A$ to velocity component $b$, so
+it transforms as
+\begin{equation}
+  A_{ab}^\mathrm{FLU} = s_A\,s_b\,A_{ab}^\mathrm{FRD}, \qquad s \in \{+1, -1\}.
+  \label{eq:coef-flip}
+\end{equation}
+
+\begin{keyidea}
+A coefficient changes sign exactly when \emph{one} of its two indices flips.
+\begin{itemize}[nosep]
+  \item $X_q$: $X$ keeps, $q$ flips $\Rightarrow$ sign changes.
+  \item $Y_r$: both flip $\Rightarrow$ unchanged.
+  \item Diagonal terms ($\Xud$, $X_u$, $N_r$, \dots): the same index twice $\Rightarrow$ \textbf{never} change.
+\end{itemize}
+The surge model in this repository uses only diagonal terms, so the BlueROV2 values were
+copied without any sign change apart from the added-mass convention in \cref{sec:addedmass}.
+\end{keyidea}
+
+The rule that was adopted is to never copy component tables from Fossen and flip signs by hand.
+Every term should instead be built from its vector definition with FLU/ENU inputs. The restoring
+vector in \cref{sec:restoring} is the example where this matters most.
+
+\begin{caution}
+\file{scripts/custom_frame_helper.py} computes the cross products $\vect{r}_i\times\vect{d}_i$
+correctly in FLU, but its \emph{output columns} apply $\text{roll}=+\tau_x$,
+$\text{pitch}=-\tau_y$, $\text{yaw}=-\tau_z$, which converts FLU to FRD for ArduSub. The
+allocation in \file{model.yaml} uses the raw FLU cross products, not those columns. The
+command topic \code{/pixhawk/manual_control} is MAVLink FRD, a third convention handled
+by the bridge. It concerns the command scripts only, not the model.
+\end{caution}
+
+\begin{questions}
+\begin{enumerate}
+  \item A paper lists $N_v = \qty{-2.0}{\newton\second}$ in FRD. What is its value in FLU?
+  \item Why can $\Xud$, $X_u$ and $\Xuu$ be copied from an FRD paper without change?
+  \item The EKF publishes twist in \code{base_link} and pose in \code{odom}. Which of the two
+        is needed to evaluate the drag force, and which to compare predicted and measured tracks?
+\end{enumerate}
+\end{questions}

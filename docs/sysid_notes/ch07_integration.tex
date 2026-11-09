@@ -1,0 +1,122 @@
+\chapter{Numerical integration}
+\label{ch:integration}
+
+To compare the model with a recording, \eqref{eq:surge} must be integrated over time with the
+recorded thrust. This chapter explains the choice of the classical Runge--Kutta method and
+the way it is wired into the propagation.
+
+\section{The initial-value problem}
+
+Write \eqref{eq:surge} as $\dot u = f(u, T)$ with
+$f(u, T) = (T - X_u u - \Xuu|u|u)/\mtot$ (\code{surge_accel}). The thrust is known only at
+the servo sample times. Between samples it is held constant (\emph{zero-order hold}, ZOH),
+which matches what the ESC actually does: it keeps the last pulse width until a new one
+arrives.
+
+\section{Euler versus RK4}
+
+The explicit Euler method takes one slope at the start of the step,
+\begin{equation}
+  u_{k+1} = u_k + h\,f(u_k, T_k).
+  \label{eq:euler-step}
+\end{equation}
+Its \emph{local} error (the error committed in one step) is $\mathcal{O}(h^2)$. Over a fixed
+time span of $t/h$ steps these accumulate to a \emph{global} error of $\mathcal{O}(h)$.
+Halving the step only halves the error.
+
+The classical fourth-order Runge--Kutta method (RK4) \cite{butcher2016} samples the slope four
+times and takes a weighted average:
+\begin{equation}
+\begin{aligned}
+  k_1 &= f(u_k), &
+  k_2 &= f\bigl(u_k + \tfrac{h}{2}k_1\bigr), \\
+  k_3 &= f\bigl(u_k + \tfrac{h}{2}k_2\bigr), &
+  k_4 &= f\bigl(u_k + h\,k_3\bigr), \\
+  u_{k+1} &= u_k + \tfrac{h}{6}\,(k_1 + 2k_2 + 2k_3 + k_4). &&
+\end{aligned}
+\label{eq:rk4}
+\end{equation}
+The weights $1,2,2,1$ are Simpson's rule applied to the slope over the interval, and they
+make the Taylor expansion of $u_{k+1}$ agree with the exact solution up to $h^4$. The local
+error is $\mathcal{O}(h^5)$ and the global error $\mathcal{O}(h^4)$. Halving the step reduces
+the error sixteenfold. \Cref{fig:conv} confirms both orders on the quadratic coast-down,
+whose exact solution is \eqref{eq:decay-quad}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{loglogaxis}[wide,xlabel={Step size $h$ / \unit{\second}},ylabel={$|u(t{=}\qty{2}{\second}) - u_\mathrm{exact}|$ / \unit{\meter\per\second}},xmin=8e-4,xmax=0.3]
+\addplot[red,mark=o] table[x=h,y=euler]{data/conv.dat};
+\addplot[blue,mark=square] table[x=h,y=rk4]{data/conv.dat};
+\addplot[gray,dashed,domain=1e-3:0.2] {0.0057*(x/0.01)};
+\addplot[gray,dotted,domain=1e-3:0.2] {1.7e-10*(x/0.01)^4};
+\legend{explicit Euler,RK4 (\code{rk4_step}),slope 1,slope 4}
+\end{loglogaxis}
+\end{tikzpicture}
+\caption{Absolute error at $t = \qty{2}{\second}$ of the explicit Euler method and of RK4
+against step size, for a thrust-free quadratic decay from \qty{0.5}{\meter\per\second} with
+$\mtot = \qty{19.86}{\kilogram}$ and $\Xuu = \qty{141}{\newton\second\squared\per\meter\squared}$,
+with reference lines of slope 1 and 4.}
+\label{fig:conv}
+\end{figure}
+\FloatBarrier
+
+At the default internal step $h = \qty{0.01}{\second}$, Euler is off by
+\qty{5.7e-4}{\meter\per\second} and RK4 by \qty{1.7e-10}{\meter\per\second}. RK4 costs four
+evaluations of $f$ per step, but $f$ is one line of arithmetic, so the extra accuracy is
+almost free.
+
+\section{Stability}
+
+Accuracy is one concern and stability is another. Linearising around $u_0$ gives
+$\dot{\delta u} = \lambda\,\delta u$ with $\lambda = -1/\taueff$ from \eqref{eq:taueff}. Euler
+is stable only for $|1 + h\lambda| < 1$, that is $h < 2\taueff$. RK4 is stable for
+$h|\lambda| \lesssim 2.785$. With the dummy coefficients at \qty{0.5}{\meter\per\second},
+$\taueff \approx \qty{0.13}{\second}$, so Euler would need $h < \qty{0.26}{\second}$ and
+RK4 $h < \qty{0.36}{\second}$. The \qty{0.01}{\second} default is far inside both limits.
+
+\section{Why not an exact discretisation?}
+
+For a \emph{linear} system $\dot{\vect{x}} = \vect{A}\vect{x} + \vect{B}\vect{u}$ with ZOH input
+there is an exact discrete-time equivalent,
+\begin{equation}
+  \vect{x}_{k+1} = e^{\vect{A}h}\,\vect{x}_k + \vect{A}^{-1}\bigl(e^{\vect{A}h} - \vect{I}\bigr)\vect{B}\,\vect{u}_k,
+\end{equation}
+which needs no step-size choice at all. The quadratic damping makes \eqref{eq:surge}
+nonlinear: no single matrix $\vect{A}$ exists and the matrix exponential is unavailable. That
+is the reason given in \file{maneuvers.md} for using RK4. (The scalar surge equation with constant
+thrust does have the closed forms of \cref{sec:closedform}, but they do not generalise once
+more DOFs are coupled, so a general integrator is the right tool.)
+
+\section{How the propagation uses it}
+
+\code{propagate()} in \file{propagate_model.py} produces output on the EKF time grid
+(about \qty{30}{\hertz}). Between two EKF samples it sub-steps at
+$h = \Delta t/\lceil \Delta t/\code{dt}\rceil \le \code{dt}$. On every sub-step it:
+\begin{enumerate}
+  \item looks up the held PWM (ZOH) and the held battery voltage and evaluates the thrust;
+  \item interpolates heading and sway from the EKF;
+  \item advances the horizontal position with \eqref{eq:planar-kin}, using the surge speed at
+        the start of the sub-step (an explicit Euler step for position);
+  \item advances $u$ with \code{rk4_step}.
+\end{enumerate}
+Position integration is only first-order. At $h = \qty{0.01}{\second}$ its error is orders of
+magnitude below any modelling error, so this is not a practical limitation.
+
+\begin{incode}
+\file{tests/test_dynamics.py} checks the integrator against the closed forms of
+\cref{sec:closedform}: quadratic decay \eqref{eq:decay-quad} and linear decay \eqref{eq:decay-lin}
+to a relative error of $10^{-6}$, the $\sqrt{T/\Xuu}$ steady state, agreement of
+\code{steady_state_speed} with a long rollout, and odd symmetry in thrust. Testing against
+analytic solutions is the standard way to verify an integrator.
+\end{incode}
+
+\begin{questions}
+\begin{enumerate}
+  \item Reading \cref{fig:conv}: by what factor does the RK4 error shrink when $h$ is reduced
+        from \qty{0.02}{\second} to \qty{0.01}{\second}? Is that consistent with fourth order?
+  \item Why is thrust held constant across an RK4 step instead of being interpolated between
+        servo samples?
+  \item Under what circumstances could the \qty{0.01}{\second} step become unstable?
+\end{enumerate}
+\end{questions}

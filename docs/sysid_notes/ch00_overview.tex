@@ -1,0 +1,17 @@
+% High-level overview, written by the author. Only changed on the author's explicit request,
+% with the author's wording kept exactly.
+\chapter*{System identification pipeline: high-level overview}
+\addcontentsline{toc}{chapter}{System identification pipeline: high-level overview}
+\label{ch:overview}
+
+\begin{itemize}
+  \item \textbf{Step 1:} Run per-axis Ordinary Least Squares (OLS) using filtered EKF velocities to
+        establish a baseline model.
+  \item \textbf{Step 2:} Perform residual analysis and coupling checks to identify missing
+        cross-coupling terms and design targeted maneuvers.
+  \item \textbf{Step 3:} Evaluate frequency-domain chirps (though likely skipped due to tether
+        dynamics and nonlinear drag constraints).
+  \item \textbf{Step 4:} Execute a non-linear optimization layer (Output Error via RK4
+        simulation) using short dynamic slices or full bags to fine-tune the final coefficients
+        within physical bounds.
+\end{itemize}

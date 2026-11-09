@@ -1,0 +1,6 @@
+bag: zermatt_rectangle_08_2026_04_29-13_48_42_0.mcap
+imu samples 54299 over 628.0 s -> mean rate 86.5 Hz
+header-stamp spacing: median 0.097 ms, 95th pct 43.4 ms, max 72 ms
+f_x rms per band: 0-1 Hz: 0.551 m/s^2; 1-5 Hz: 0.169 m/s^2; 5-43 Hz: 0.423 m/s^2
+servo_output_raw rate 2.0 Hz
+std of EKF du/dt (1 s mean) while thrusting: 0.715 m/s^2

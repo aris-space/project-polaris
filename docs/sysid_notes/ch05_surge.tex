@@ -1,0 +1,234 @@
+\chapter{The surge model}
+\label{ch:surge}
+
+\section{From six DOFs to one}
+
+Starting from \eqref{eq:surge-full} with the damping \eqref{eq:damping}, the following
+assumptions reduce surge to a scalar equation:
+\begin{enumerate}
+  \item The products $vr$ and $wq$ are small during surge manoeuvres (straight-line runs)
+        or are absorbed into the residual. The coupling check tests this assumption.
+  \item Pitch stays small, so $(W-B)\sin\theta$ is negligible.
+  \item Current and tether are neglected, or absorbed into a constant offset.
+  \item The thrust $T$ is known from the PWM and the battery voltage.
+\end{enumerate}
+This gives the model implemented in \file{dynamics.py}:
+\begin{equation}
+  \boxed{\;\mtot\,\dot u = T - X_u\,u - \Xuu\,|u|\,u, \qquad \mtot = m - \Xud\;}
+  \label{eq:surge}
+\end{equation}
+Three numbers describe it completely: $\mtot$, $X_u$ and $\Xuu$. These are the three
+\code{REQUIRED} keys checked by \file{propagate_model.py} ($m$ and $\Xud$ are stored
+separately and combined into $\mtot$).
+
+\section{Steady state}
+
+At constant thrust the acceleration vanishes, and \eqref{eq:surge} becomes a quadratic in
+$u_\mathrm{ss}$ (for $T > 0$):
+\begin{equation}
+  \Xuu\,u_\mathrm{ss}^2 + X_u\,u_\mathrm{ss} - T = 0
+  \quad\Rightarrow\quad
+  u_\mathrm{ss} = \frac{-X_u + \sqrt{X_u^2 + 4\Xuu T}}{2\Xuu}.
+  \label{eq:uss}
+\end{equation}
+For $T<0$ the result is mirrored, $u_\mathrm{ss}(-T) = -u_\mathrm{ss}(T)$. This is
+\code{steady_state_speed()}. The steady state does \emph{not} depend on $\mtot$: mass only
+decides how quickly the steady state is reached. \Cref{fig:drag} (left) shows the two damping
+contributions for the dummy coefficients. The quadratic part dominates above about
+\qty{0.1}{\meter\per\second}, where $\Xuu u = X_u$.
+
+\section{Local time constant}
+\label{sec:taueff}
+
+Linearising \eqref{eq:surge} about an operating speed $u_0 > 0$ with $u = u_0 + \delta u$:
+\begin{equation}
+  \mtot\,\dot{\delta u} = \delta T - (X_u + 2\Xuu u_0)\,\delta u
+  \quad\Rightarrow\quad
+  \taueff(u_0) = \frac{\mtot}{X_u + 2\Xuu\,|u_0|}.
+  \label{eq:taueff}
+\end{equation}
+At $u_0 = 0$ this is the number quoted in \file{maneuvers.md},
+$\mtot/X_u = 19.86/13.7 = \qty{1.45}{\second}$. Because the quadratic damping stiffens rapidly
+with speed, the time constant at cruising speed is much shorter (\cref{tab:taueff},
+\cref{fig:drag} right).
+
+\begin{table}[htbp]
+\centering
+\caption{Steady-state speed and local time constant of the surge model at four thrust
+levels, for the dummy BlueROV2 coefficients $\mtot = \qty{19.86}{\kilogram}$,
+$X_u = \qty{13.7}{\newton\second\per\meter}$, $\Xuu = \qty{141}{\newton\second\squared\per\meter\squared}$.}
+\label{tab:taueff}
+\begin{tabular}{@{}S[table-format=2.0] S[table-format=1.3] S[table-format=1.3]@{}}
+\toprule
+{Thrust $T$ / \unit{\newton}} & {$u_\mathrm{ss}$ / \unit{\meter\per\second}} & {$\taueff$ / \unit{\second}} \\
+\midrule
+0  & 0.000 & 1.450 \\
+5  & 0.146 & 0.362 \\
+10 & 0.222 & 0.260 \\
+20 & 0.331 & 0.185 \\
+40 & 0.486 & 0.132 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\begin{keyidea}
+``The surge time constant'' is not a single number for a quadratically damped vehicle. With
+the dummy coefficients it falls from \qty{1.45}{\second} at rest to under
+\qty{0.2}{\second} at \qty{0.3}{\meter\per\second}. The delays discussed in \cref{ch:timing}
+(\qtyrange{100}{300}{\milli\second}) are compared against the $\taueff$ \emph{at the speed
+of the manoeuvre}, which makes them far more significant than the \qty{1.4}{\second} figure
+suggests. The real POLARIS value must be checked once $X_u$ and $\Xuu$ are known.
+\end{keyidea}
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$u$ / \unit{\meter\per\second}},ylabel={Damping force / \unit{\newton}},xmin=0,xmax=0.8,ymin=0]
+\addplot[blue,dashed] table[x=u,y=lin]{data/drag.dat};
+\addplot[red,dashdotted] table[x=u,y=quad]{data/drag.dat};
+\addplot[black] table[x=u,y=tot]{data/drag.dat};
+\legend{$X_u u$,$\Xuu u^2$,total}
+\end{axis}
+\end{tikzpicture}
+\caption{Damping force}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$u_0$ / \unit{\meter\per\second}},ylabel={$\taueff$ / \unit{\second}},
+  xmin=0,xmax=0.8,ymin=0,ymax=1.6]
+\addplot[black] table[x=u,y=tau]{data/drag.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Local time constant \eqref{eq:taueff}}
+\end{subfigure}
+\caption{Linear, quadratic and total surge damping force, and the local time constant
+$\taueff$, as functions of surge speed for the dummy BlueROV2 coefficients.}
+\label{fig:drag}
+\end{figure}
+\FloatBarrier
+
+\section{Closed-form solutions}
+\label{sec:closedform}
+
+\Cref{eq:surge} is a first-order nonlinear ODE, but several special cases have closed-form
+solutions. They are the backbone of the unit tests and of the manoeuvre design.
+
+\paragraph{Thrust-free, linear damping only.} $\mtot\dot u = -X_u u$ gives an exponential decay:
+\begin{equation}
+  u(t) = u_0\,e^{-X_u t/\mtot}.
+  \label{eq:decay-lin}
+\end{equation}
+
+\paragraph{Thrust-free, quadratic damping only.} $\mtot\dot u = -\Xuu u^2$ (for $u>0$) is
+separable, $-\mathrm{d}u/u^2 = (\Xuu/\mtot)\,\mathrm{d}t$, and gives a hyperbolic decay:
+\begin{equation}
+  u(t) = \frac{u_0}{1 + \Xuu u_0 t/\mtot}
+  \quad\Longleftrightarrow\quad
+  \frac{1}{u(t)} = \frac{1}{u_0} + \frac{\Xuu}{\mtot}\,t .
+  \label{eq:decay-quad}
+\end{equation}
+The reciprocal speed grows \emph{linearly} in time. The quadratic decay has a long tail: it
+never reaches zero in finite time and is slower than the exponential at low speed.
+
+\paragraph{Thrust-free, both terms.} $\mtot\dot u = -a u - b u^2$ with $a = X_u$, $b = \Xuu$
+is a Bernoulli equation. Substituting $z = 1/u$ makes it linear,
+$\dot z = (a/\mtot)\,z + b/\mtot$, with the solution
+\begin{equation}
+  u(t) = \frac{a\,u_0\,e^{-a t/\mtot}}{a + b\,u_0\,\bigl(1 - e^{-a t/\mtot}\bigr)} .
+  \label{eq:decay-both}
+\end{equation}
+It reduces to \eqref{eq:decay-lin} for $b\to0$ and to \eqref{eq:decay-quad} for $a\to0$.
+
+\paragraph{Constant thrust from rest, quadratic damping only.} $\mtot\dot u = T - b u^2$ gives
+\begin{equation}
+  u(t) = U\tanh\!\Bigl(\frac{t}{\tau_q}\Bigr), \qquad U = \sqrt{T/b}, \qquad \tau_q = \frac{\mtot}{\sqrt{T b}} .
+  \label{eq:tanh}
+\end{equation}
+The initial slope is $U/\tau_q = T/\mtot$, which is the basis of the step-from-rest
+manoeuvre. \Cref{fig:step} shows step responses of the full model at four thrust levels and
+the three coast-down laws.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$t$ / \unit{\second}},ylabel={$u$ / \unit{\meter\per\second}},xmin=0,xmax=3,ymin=0]
+\addplot[blue!40] table[x=t,y=T5]{data/step.dat};
+\addplot[blue!65] table[x=t,y=T10]{data/step.dat};
+\addplot[blue!85!black] table[x=t,y=T20]{data/step.dat};
+\addplot[black] table[x=t,y=T40]{data/step.dat};
+\legend{\qty{5}{\newton},\qty{10}{\newton},\qty{20}{\newton},\qty{40}{\newton}}
+\end{axis}
+\end{tikzpicture}
+\caption{Step from rest}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$t$ / \unit{\second}},ylabel={$u$ / \unit{\meter\per\second}},xmin=0,xmax=6,ymin=0,ymax=0.52]
+\addplot[blue,dashed] table[x=t,y=lin]{data/coast.dat};
+\addplot[red,dashdotted] table[x=t,y=quad]{data/coast.dat};
+\addplot[black] table[x=t,y=both]{data/coast.dat};
+\legend{linear only,quadratic only,both}
+\end{axis}
+\end{tikzpicture}
+\caption{Coast-down from \qty{0.5}{\meter\per\second}}
+\end{subfigure}
+\caption{Surge speed after a thrust step from rest at four thrust levels, and after a thrust
+cut from \qty{0.5}{\meter\per\second} with linear damping only, quadratic damping only and
+both, computed with \code{rk4_step} for the dummy BlueROV2 coefficients.}
+\label{fig:step}
+\end{figure}
+\FloatBarrier
+
+\section{Identifiability: what each experiment can and cannot determine}
+\label{sec:identifiability}
+
+A parameter is \emph{identifiable} from an experiment if different values of it produce
+different measurable responses. Three observations about \eqref{eq:surge} matter for the plan.
+
+\begin{enumerate}
+  \item \textbf{Coast-down determines only ratios.} With $T=0$, multiplying $\mtot$, $X_u$ and
+        $\Xuu$ by the same factor leaves \eqref{eq:surge} unchanged. A thrust-free decay
+        therefore determines $X_u/\mtot$ and $\Xuu/\mtot$, not the absolute drag.
+        \file{maneuvers.md} says coast-down gives the damping ``independently of the thrust
+        curve calibration''. That is true of the \emph{ratios}. The absolute value still needs
+        $\mtot$ from elsewhere.
+  \item \textbf{Steady states determine $X_u$ and $\Xuu$, given $T$.} \Cref{eq:uss} is linear in the
+        two unknowns once $T$ is known, and it does not involve $\mtot$.
+  \item \textbf{The overall scale rests on the thrust curve.} If the true thrust is $k$ times the
+        tabulated one, then $(k\mtot, kX_u, k\Xuu)$ with the tabulated thrust reproduces every
+        trajectory exactly. No surge-only experiment can detect $k$.
+\end{enumerate}
+
+\begin{keyidea}
+\textbf{Scale ambiguity.} From surge data alone the model is identifiable only up to a common
+factor that is fixed by the thrust map. For \emph{predicting speed and position}, which is the
+validation use case, $k$ does not matter, because the predictions are identical. For
+\emph{physical} coefficients it matters, for example when comparing with literature or
+building a force-level controller. The factor can be fixed by an independent anchor: a
+load-cell (bollard pull) measurement of the thruster, which the \code{thrust:} comment in
+\file{model.yaml} already anticipates, or a weighed dry mass $m$ combined with a plausible
+added-mass ratio as a sanity bound.
+\end{keyidea}
+
+The combination of experiments also gives a built-in cross-check. Steady states give
+$X_u, \Xuu$ in thrust units, and coast-down gives $X_u/\mtot, \Xuu/\mtot$, so their quotient
+is an estimate of $\mtot$. It must agree with the initial-acceleration estimate from a step.
+Disagreement points to a timing or thrust-curve-shape problem.
+
+\begin{questions}
+\begin{enumerate}
+  \item Derive \eqref{eq:uss} and show that $u_\mathrm{ss}$ does not depend on $\mtot$.
+  \item Using \eqref{eq:decay-quad}, what plot of coast-down data should be a straight line
+        if the damping is purely quadratic? What should be straight if it is purely linear?
+  \item Two models, $(\mtot, X_u, \Xuu) = (20, 14, 140)$ with the T500 table, and
+        $(22, 15.4, 154)$ with the T500 table scaled by \num{1.1}, are fitted to the same data. Which
+        fits better?
+\end{enumerate}
+\end{questions}

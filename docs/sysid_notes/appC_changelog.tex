@@ -1,0 +1,201 @@
+\chapter{Change log}
+\label{app:changelog}
+
+Every change after the first edition (9 October 2026) is listed here. In the text, changed or
+added passages are marked with an orange \emph{Revised} or \emph{Added} box.
+
+\section*{21 October 2026}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item \Cref{sec:sg-mechanics}: the EKF speed fluctuation was corrected from an assumed
+        \qty{0.03}{\metre\per\second} to the measured \qty{3.4}{\milli\metre\per\second}
+        (sample to sample, \file{zermatt_rectangle_08}), together with the resulting fake
+        acceleration.
+  \item \Cref{sec:bias-study}: new paragraph ``Noise budget'' (\cref{sec:noise-budget},
+        \cref{tab:noise-budget}). The documented IMU and DVL noise
+        (\file{measurement_noise_constants.py}, \file{stationary_noise_comparison.py}) is compared
+        with the differentiated EKF speed. Conclusion: for windows of half a second or more noise
+        does not decide, and the systematic IMU errors favour the Savitzky--Golay route for now.
+  \item Same paragraph, after reading the final report (\file{scripts/sysid/Final_Report_POLARIS.pdf}):
+        the measurement setup was corrected (the IMU was on the vehicle on land, not mounted alone),
+        a location discrepancy was noted (Lake Zurich in the report, St.~Moritz in the script
+        docstrings), and a caveat was added. The report's measured closed-loop surge acceleration
+        (\qty{0.02}{\metre\per\second\squared}) would make the noise of a \qty{0.5}{\second} window
+        significant.
+\end{itemize}
+
+\section*{30 October 2026}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item \Cref{ch:timing}: new \cref{sec:thruster-delay}, ``Thruster delay: what is measured, and
+        telling it apart from mixer errors'', with \cref{tab:delay-parts}. Covers what the IMU
+        onset contains, isolating the parts of the delay, per-thruster tests, separating a timing
+        mismatch (transient kicks) from a static error (steady cross-axis force), which static
+        error remains once the bench curves exist, and refining the allocation and the mixer
+        after the hardware is final.
+\end{itemize}
+
+\section*{28 October 2026}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item \Cref{ch:actuation}: new \cref{sec:thrust-bench}, ``Thrust bench (planned)'', summarising
+        the concept document for the DD2838 thrust bench (set-up, procedure, analysis, output
+        format) with \cref{tab:bench-procedure} and the corrections from its review (excitation
+        voltage, reverse sweeps, finer steps near neutral, voltage range, same ESC). Decided the
+        same day: the bench is run in water.
+\end{itemize}
+
+\section*{17 October 2026}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item \textbf{New chapter} \cref{ch:personal}, ``Personal notes'': ideas worked out with the
+        Feynman technique, recorded in the author's own words in a new violet \code{inmywords}
+        box, with a template for each entry. No entries yet.
+  \item \textbf{New} unnumbered chapter before \cref{ch:intro}, ``System identification pipeline:
+        high-level overview'', written by the author (four steps). It is changed only on the
+        author's request, in the author's words.
+\end{itemize}
+
+\section*{16 October 2026}
+
+\paragraph{Code (\file{scripts/sysid}, uncommitted).}
+\begin{itemize}
+  \item \textbf{New} \file{results_log.py}: append-only fit log. \code{log_fit()} writes one entry
+        per fit run with the bags (path, window, size, fingerprint), the model version tag, settings,
+        parameters, metrics, status and notes. A CLI prints the overview.
+  \item \textbf{New} \file{results/fit_log.yaml}: the log itself, created with only its header
+        comment and no entries.
+  \item \file{model_io.py}: \code{update_parameters()} takes an optional \code{fit_id} and
+        appends it to \code{model.fit_ids}. \file{model.yaml}: new field \code{fit_ids: []}.
+  \item \textbf{New} \file{tests/test_results_log.py}: 5 tests (37 in total, all passing).
+  \item \file{fitting/fit_surge.py} (written by its author): on request, a single
+        \code{log_fit()} call was added after the printout. It records the bag, the three
+        coefficients with units, the model file (so \code{--dummy}, the T200 polynomial, is
+        distinguishable from the T500 table) and the grid rate and smoothing window. Nothing
+        else in the script was changed.
+  \item \file{fitting/fit_surge.py}, on request: consistent filtering (\code{du = np.gradient}
+        of the smoothed speed, $|u|u$ smoothed from the raw speed, same filter on the thrust) and
+        \code{RATE_HZ} from 20 to \qty{100}{\hertz}. \code{prepare()} now also returns \code{uu},
+        and \code{build_regression()} takes it. Results on the synthetic bags are in the box at
+        the end of \cref{sec:bias-study}.
+  \item \textbf{New} \file{docs/sysid_notes/gen_biasstudy.py}: reproduces the bias study
+        (\cref{sec:bias-study}) into \file{data/bias_*}.
+\end{itemize}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item \Cref{ch:estimation}: new \cref{sec:fit-log}, ``The fit log'', with \cref{tab:fit-log}.
+        \Cref{app:codemap}: two rows and the overview command. \Cref{ch:status},
+        \cref{tab:scaffolding}: S12 (fit log, done) and S13 (validation log, open).
+  \item \Cref{ch:estimation}: new \cref{sec:bias-study}, ``Bias study of the surge fit'', with
+        \cref{tab:bias-filter,tab:bias-grid,tab:bias-method,tab:bias-leak,tab:bias-servo}. It
+        separates the error of \file{fit_surge.py} on perfect data into filter inconsistency
+        and grid quantisation, assesses the IMU as a source of $\dot u$ on synthetic and real
+        data, and quantifies the effect of the \code{servo_output_raw} log rate. The finding
+        that the first result (\qty{8}{\percent}) was a partial cancellation of two biases
+        corrects the explanation given in conversation, which attributed it to the smoothing
+        window alone.
+  \item \Cref{ch:estimation}: new \cref{sec:plain-filter}, ``The idea in plain words'' (the
+        same-filter rule with a worked example, and what replaced what). In the IMU discussion, a
+        paragraph stating that the EKF publishes no acceleration and that
+        \code{/filter/free_acceleration} exists (not yet tested). The box ``Applied to
+        \file{fit_surge.py}'' was extended with the half-fixed variant (quadratic term fixed,
+        Savitzky--Golay derivative kept).
+  \item \Cref{ch:synthetic}, \cref{sec:synth-limits}: two limitations added (thrust follows the
+        logged PWM; idealised IMU). \Cref{ch:status}: open item 14 (log and filter timing) and
+        scaffolding item S14. Nomenclature: $f_x$, $\mathcal{H}$, $t_\mathrm{w}$,
+        $f_\mathrm{grid}$, $f_\mathrm{log}$, $\delta\theta$. \Cref{app:codemap}: generator command.
+  \item \Cref{ch:estimation}: new \cref{sec:sg-mechanics}, ``How the Savitzky--Golay filter
+        works'', with the noise-amplification estimate, the equivalent weighted-average form
+        (\cref{eq:sg-smooth,eq:sg-deriv}), a worked example (\cref{tab:sg-example}), the handling
+        of the record ends and of stale-PWM gaps, and how \code{smooth()} sizes the window.
+\end{itemize}
+
+\section*{15 October 2026}
+
+\paragraph{Code (\file{scripts/sysid}, uncommitted).}
+\begin{itemize}
+  \item \file{model.yaml}: new slots \code{added_mass.Y_vdot}, \code{added_mass.Z_wdot},
+        \code{damping_linear.Y_v}, \code{damping_linear.Z_w}, \code{damping_quadratic.Y_vv},
+        \code{damping_quadratic.Z_ww} and \code{restoring.B}, all \code{null}. The model
+        description now states that it is the diagonal 6-DOF model. The file has 27
+        parameters instead of 20. No code reads the new entries yet, and all 32 tests pass
+        unchanged.
+  \item \file{model.yaml}, later the same day: \textbf{roll removed}. Deleted
+        \code{rigid_body.I_xx}, \code{added_mass.K_pdot}, \code{damping_linear.K_p},
+        \code{damping_quadratic.K_pp}, \code{restoring.K_phi} and \code{restoring.phi_0}, leaving
+        21 parameters. A header comment records the decision, the evidence and how to undo it.
+        \code{dofs.roll} stays \code{measured}. No code referenced the removed keys, and all 32
+        tests pass.
+  \item \file{maneuvers.md}: section 2.1.3 (roll free decay) marked as not needed.
+\end{itemize}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item \Cref{ch:fossen}: new \cref{sec:model-schema}, with the diagonal sway and heave
+        equations, \cref{tab:model-schema}, what the schema leaves out, and a caution on
+        measuring $B - W$.
+  \item \Cref{ch:intro}, \cref{tab:status}: the ``Model store'' row corrected. The first
+        edition claimed that the schema was complete.
+  \item \Cref{ch:status}, \cref{tab:scaffolding}: S9 marked done.
+  \item Roll removal: new \cref{sec:no-roll} with the removed Coriolis terms
+        (\cref{tab:roll-terms}) and the EKF roll statistics of the existing bags
+        (\cref{tab:roll-evidence}). The equations of \cref{sec:model-schema} were rewritten
+        with explicit Coriolis products and without roll. Revision boxes were added in
+        \cref{ch:symmetry} and \cref{ch:maneuvers}, \cref{tab:maneuvers} was reduced to pitch,
+        open items 8 and 13 and step 1 of the work order were changed in \cref{ch:status}, and
+        an answer in \cref{app:answers} was annotated. New nomenclature: $m_{ii}$, $I_{ii}$,
+        $\vect{M}_t$, $\vect{I}_t$, $\vect{\omega}$, $\vect{v}$, $|\Delta\phi|_{95}$.
+  \item Nomenclature: sway and heave coefficients, $\tau_{X,Y,Z}$, $c_{X,Y,Z}$, $g_Y$,
+        $\rho$, $A_\mathrm{wp}$.
+\end{itemize}
+
+\section*{14 October 2026}
+
+\paragraph{Code (\file{scripts/sysid}, all uncommitted).}
+\begin{itemize}
+  \item \textbf{New} \file{simulation/synth_bag.py}: synthetic ground-truth bags
+        (\cref{ch:synthetic}). It simulates the surge model with the coefficients of a truth
+        model file, adds actuation lag, spin-up, battery sag, EKF lag and noise, IMU, DVL and BMS,
+        reproduces the command scripts' \code{manual_control} and \code{/sysid/event} messages,
+        and writes an MCAP with the same topics and types as a real recording, plus a
+        \file{_truth.yaml}.
+  \item \textbf{New} \file{simulation/Dvl.msg}: the \code{marine_acoustic_msgs/Dvl} definition,
+        copied verbatim from \file{aut_no_z_surface_big_40_grid_03}, so the synthetic DVL can be
+        serialised without the package installed.
+  \item \textbf{New} \file{tests/test_synth_bag.py}: 8 tests (32 in total, all passing).
+  \item \textbf{Fix} \file{bag_io.py}, \code{write_augmented_bag()}: register the standard ROS~2
+        Jazzy types that the input bag does not define, so that the \code{/sysid/*} topics can
+        be written for any input bag. Before the fix the function relied on the input bag
+        containing \code{Float64}, \code{NavSatFix} and \code{Float64MultiArray}. A regression run
+        on \file{zermatt_rectangle_07} reproduces the committed summary exactly.
+  \item \textbf{Not changed, but found:} the sign convention of \code{thrust.servo_delay_s}
+        (a lag $L$ is entered as $-L$). It is documented here and flagged as open item 2 in
+        \cref{ch:status}. \file{maneuvers.md} still reads as if it were positive.
+\end{itemize}
+
+\paragraph{Notes (\file{docs/sysid_notes}).}
+\begin{itemize}
+  \item \textbf{New chapter} \cref{ch:synthetic}, ``Synthetic test bench'', with five tables and one
+        figure. All are generated by the new \file{gen_synthdata.py} into
+        \file{data/synth_*}.
+  \item \Cref{ch:intro}, \cref{tab:status}: rows ``Synthetic test bench'' (new) and ``Tests''
+        (24 $\to$ 32).
+  \item \Cref{ch:timing}, actuation delay paragraph: the sign of \code{servo_delay_s} explained.
+        The first edition said it shifts the log time ``by the total, which is exactly the
+        quantity needed'', which hid the sign.
+  \item \Cref{ch:estimation}, Savitzky--Golay section: the window length biases the
+        coefficients, with a reference to the measured trade-off.
+  \item \Cref{ch:status}: \cref{tab:commits} extended. Open item 2 rewritten (sign convention),
+        items 11 (smoothing window) and 12 (command-to-PWM mapping) added. New
+        \cref{sec:scaffolding}, ``Remaining scaffolding that needs no data''. New step 2 in the
+        suggested order of work.
+  \item \Cref{app:codemap}: rows for the new files and commands for the generator and for
+        \file{gen_synthdata.py}.
+  \item \Cref{app:answers}: answers for the questions of \cref{ch:synthetic}.
+  \item This change log, and the orange revision boxes.
+\end{itemize}

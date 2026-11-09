@@ -1,0 +1,111 @@
+\chapter*{Nomenclature}
+\addcontentsline{toc}{chapter}{Nomenclature}
+
+\begin{table}[htbp]
+\centering
+\caption{Symbols used in these notes, with their descriptions and SI units.}
+\label{tab:nom-symbols}
+\small
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+Symbol & Description & Unit \\
+\midrule
+$\vect{\eta}=[x,y,z,\phi,\theta,\psi]^\top$ & Pose: position in \code{odom} and ZYX Euler angles & \unit{\meter}, \unit{\radian} \\
+$\vect{\nu}=[u,v,w,p,q,r]^\top$ & Body velocity in \code{base_link}: surge, sway, heave, roll, pitch and yaw rate & \unit{\meter\per\second}, \unit{\radian\per\second} \\
+$\vect{\nu}_c$, $\vect{\nu}_r$ & Current velocity, velocity relative to the water & \unit{\meter\per\second} \\
+$\vect{\tau}$ & Generalised force vector (forces and moments) & \unit{\newton}, \unit{\newton\meter} \\
+$\vect{M}_\mathrm{RB}$, $\vect{M}_\mathrm{A}$ & Rigid-body and added-mass inertia matrices & \unit{\kilogram}, \unit{\kilogram\meter\squared} \\
+$\vect{C}_\mathrm{RB}$, $\vect{C}_\mathrm{A}$ & Rigid-body and added-mass Coriolis--centripetal matrices & -- \\
+$\vect{D}(\vect{\nu})$ & Damping matrix & -- \\
+$\vect{g}(\vect{\eta})$ & Restoring (gravity and buoyancy) vector & \unit{\newton}, \unit{\newton\meter} \\
+$\vect{J}(\vect{\eta})$, $\vect{R}$ & Kinematic transformation, rotation matrix body $\to$ world & -- \\
+$m$ & Dry (rigid-body) mass & \unit{\kilogram} \\
+$\mtot = m - \Xud$ & Total surge inertia (mass plus added mass) & \unit{\kilogram} \\
+$I_{xx}, I_{yy}, I_{zz}$ & Principal moments of inertia & \unit{\kilogram\meter\squared} \\
+$\Xud, Y_{\dot v}, Z_{\dot w}, K_{\dot p}, M_{\dot q}, N_{\dot r}$ & Added-mass derivatives (negative by convention) & \unit{\kilogram}, \unit{\kilogram\meter\squared} \\
+$X_u, Y_v, Z_w, K_p, M_q, N_r$ & Linear damping magnitudes (positive in the code) & \unit{\newton\second\per\meter}, \unit{\newton\meter\second\per\radian} \\
+$\Xuu, Y_{v|v|}, Z_{w|w|}, K_{p|p|}, \dots$ & Quadratic damping magnitudes (\code{X_uu}, \code{Y_vv}, \code{Z_ww} etc.\ in the code) & \unit{\newton\second\squared\per\meter\squared}, \unit{\newton\meter\second\squared\per\radian\squared} \\
+$K_\phi, M_\theta$ & Small-angle roll and pitch restoring stiffness & \unit{\newton\meter\per\radian} \\
+$\phi_0, \theta_0$ & Trim (equilibrium) roll and pitch & \unit{\radian} \\
+$W, B$ & Weight and buoyancy & \unit{\newton} \\
+$\tau_X, \tau_Y, \tau_Z$ & Thrust force components along $x$, $y$, $z$ & \unit{\newton} \\
+$c_X, c_Y, c_Z$ & Coriolis--centripetal force components & \unit{\newton} \\
+$g_Y$ & Sway component of the restoring force & \unit{\newton} \\
+$\rho$, $A_\mathrm{wp}$ & Water density, waterplane area & \unit{\kilogram\per\meter\cubed}, \unit{\meter\squared} \\
+$m_{11}, m_{22}, m_{33}$ & Translational inertia including added mass, $m - \Xud$ etc. & \unit{\kilogram} \\
+$I_{11}, I_{22}, I_{33}$ & Rotational inertia including added inertia, $I_{xx} - K_{\dot p}$ etc. & \unit{\kilogram\meter\squared} \\
+$\vect{M}_t$, $\vect{I}_t$ & Diagonal translational and rotational inertia matrices & \unit{\kilogram}, \unit{\kilogram\meter\squared} \\
+$\vect{\omega}$, $\vect{v}$ & Angular and linear body velocity, $[p,q,r]^\top$ and $[u,v,w]^\top$ & \unit{\radian\per\second}, \unit{\meter\per\second} \\
+$|\Delta\phi|_{95}$ & 95th percentile of the roll deviation from its median & \unit{\degree} \\
+$f_x$ & Accelerometer specific force along $x$ & \unit{\meter\per\second\squared} \\
+$\mathcal{H}$, $t_\mathrm{w}$ & Smoothing filter and its window length & --, \unit{\second} \\
+$f_\mathrm{grid}$, $f_\mathrm{log}$ & Analysis grid rate, publishing rate of \code{servo_output_raw} & \unit{\hertz} \\
+$\delta\theta$, $\delta\theta_\mathrm{max}$ & Pitch error, its value at the largest thrust & \unit{\degree} \\
+$\overline{BG}$ & Vertical distance of the centre of buoyancy above the centre of gravity & \unit{\meter} \\
+$T$, $F_i$ & Surge thrust, force of thruster $i$ & \unit{\newton} \\
+$p_\mathrm{pwm}$, $p_0$ & Servo PWM pulse width, neutral pulse width (\qty{1500}{\micro\second}) & \unit{\micro\second} \\
+$V_\mathrm{bat}$ & Battery pack voltage & \unit{\volt} \\
+$\taueff$ & Effective (local) surge time constant & \unit{\second} \\
+$h$, $\Delta t$ & Integration step, sample interval & \unit{\second} \\
+$\omega_n$, $\zeta$ & Natural frequency, damping ratio & \unit{\radian\per\second}, -- \\
+$\vect{\Phi}$, $\vect{\theta}$, $\vect{y}$ & Regressor matrix, parameter vector, target vector & -- \\
+$\rho_a(k)$ & Autocorrelation of series $a$ at lag $k$ & -- \\
+$N$, $N_\mathrm{eff}$ & Sample count, effective sample count & -- \\
+$g$ & Gravitational acceleration, \qty{9.80665}{\meter\per\second\squared} & \unit{\meter\per\second\squared} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Indices and sub-/superscripts used in these notes.}
+\label{tab:nom-indices}
+\small
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+Index & Description & Unit \\
+\midrule
+$(\cdot)_\mathrm{RB}$ & Rigid body & -- \\
+$(\cdot)_\mathrm{A}$ & Added (hydrodynamic) mass & -- \\
+$(\cdot)_\mathrm{ss}$ & Steady state & -- \\
+$(\cdot)_0$ & Initial value, or value at the linearisation point & -- \\
+$(\cdot)^b$ & Expressed in the body frame & -- \\
+$X, Y, Z, K, M, N$ & Surge, sway, heave force; roll, pitch, yaw moment (SNAME) & -- \\
+$(\cdot)_{\dot u}$, $(\cdot)_u$, $(\cdot)_{u|u|}$ & Derivative with respect to $\dot u$, $u$, $u|u|$ & -- \\
+$i$ & Thruster or servo channel index & -- \\
+$k$ & Time step or lag index & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Abbreviations used in these notes.}
+\label{tab:nom-abbrev}
+\small
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+Abbreviation & Description & Unit \\
+\midrule
+CoG, CoB, CoM & Centre of gravity, of buoyancy, of mass & -- \\
+DOF & Degree of freedom & -- \\
+DVL & Doppler velocity log & -- \\
+EKF & Extended Kalman filter (\code{robot_localization}, \code{/odometry/filtered/local}) & -- \\
+ENU & East--North--Up world axes & -- \\
+ESC & Electronic speed controller & -- \\
+FLU & Forward--Left--Up body axes (ROS REP-103) & -- \\
+FRD & Forward--Right--Down body axes (Fossen, MAVLink) & -- \\
+IMU & Inertial measurement unit & -- \\
+LS & Least squares & -- \\
+MCAP & Container format of the ROS~2 bags & -- \\
+NED & North--East--Down world axes & -- \\
+PWM & Pulse-width modulation & -- \\
+RK4 & Classical fourth-order Runge--Kutta method & -- \\
+RMS & Root mean square & -- \\
+SG & Savitzky--Golay filter & -- \\
+SNAME & Society of Naval Architects and Marine Engineers (notation) & -- \\
+ZOH & Zero-order hold & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier

@@ -1,0 +1,253 @@
+\chapter{Time alignment and delays}
+\label{ch:timing}
+
+Identification pairs an input (thrust) with an output (motion) sample by sample. If the two
+are shifted in time, the estimator will explain the shift with whatever coefficient fits it
+best, and that is usually the inertia.
+
+\section{Clocks in a rosbag}
+
+Every message in an MCAP file has a \code{log_time}, the moment the recorder received it on
+the Jetson. Messages with a header also carry \code{header.stamp}, set by the publisher.
+\begin{itemize}
+  \item The EKF (\code{/odometry/filtered/local}) is used on its \code{header.stamp}.
+  \item \code{/pixhawk/servo_output_raw} is a bare \code{Int16MultiArray} with \emph{no header},
+        so its \code{log_time} is the only time available. That is when the Jetson
+        recorded it, not when the Pixhawk applied it.
+  \item The BMS voltage on \code{/diagnostics} is also taken on \code{log_time}.
+\end{itemize}
+Pairing servo \code{log_time} with EKF \code{header.stamp} is meaningful only if the EKF stamps
+its messages close to when they are recorded. \code{verify_timestamps()} in \file{bag_io.py}
+therefore reports, before any propagation: the rates and gaps of each stream, backwards or
+duplicate timestamps, the median and 95th percentile of \code{log_time - header.stamp} for
+the EKF (a warning above \qty{1}{\second}), and the overlap window. Problems are reported
+and never silently corrected.
+
+\section{Two different delays}
+
+\Cref{tab:rates} lists the relevant streams. Sample rate is not the bottleneck: the EKF has
+about 44 samples per \qty{1.4}{\second}. The delays are the bottleneck.
+
+\begin{table}[htbp]
+\centering
+\caption{Sample periods of the streams used for identification, measured on
+\code{aut_no_z_surface_big_40_grid_03}.}
+\label{tab:rates}
+\begin{tabular}{@{}l S[table-format=3.0] l@{}}
+\toprule
+Stream & {Period / \unit{\milli\second}} & Note \\
+\midrule
+EKF \code{/odometry/filtered/local} & 33 & \qty{30}{\hertz} \\
+DVL \code{/sensors/dvl/odometry_cov} & 132 & \qty{7.6}{\hertz} \\
+DVL \code{/sensors/dvl/velocity} & 230 & \qty{4.3}{\hertz} \\
+\code{servo_output_raw} & 100 & \qty{10}{\hertz} (\qty{2}{\hertz} in older rectangle bags) \\
+IMU \code{/imu/data} & 12 & about \qty{86}{\hertz} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\paragraph{1. Actuation and transport delay.} This is the time from the PWM being logged to
+the vehicle actually accelerating: MAVLink, bridge and recorder transport (tens of
+\unit{\milli\second}) plus motor and propeller spin-up (\qtyrange{100}{300}{\milli\second}). Transport and
+spin-up cannot be separated without a Pixhawk-side timestamp, and they do not need to be.
+\code{thrust.servo_delay_s} shifts the servo \code{log_time} by the total. It is currently \num{0.0}.
+
+\begin{revised}[title=Revised 14 October 2026: the sign of \code{servo_delay_s}]
+The first edition said that \code{servo_delay_s} shifts the log time ``by the total, which is
+exactly the quantity needed''. That is true in magnitude but hides the sign. The scripts
+\emph{subtract} it from the servo \code{log_time}, so a positive value makes the thrust act
+\emph{before} its log entry. Spin-up makes the thrust act \emph{after} it, so a measured lag
+$L$ (IMU edge minus logged PWM edge) is entered as $\code{servo_delay_s} = -L$. The synthetic
+test bench confirms this numerically through two independent code paths (\cref{tab:synth-prop,tab:synth-comp}).
+\end{revised}
+
+\paragraph{2. Filter lag.} The EKF smooths its inputs. The DVL and the EKF observe the same
+motion, so the delay between them isolates the EKF lag, while the actuation delay is common
+to both and cancels.
+
+\section{How a delay biases the inertia}
+
+A response that appears \emph{later} than it really happened looks \emph{slower}, and a slower
+response is explained by a \emph{heavier} vehicle. The bias always overestimates $\mtot$, and
+therefore $\Xud$. Drag estimates are hardly affected, because they come from steady states or
+from decays lasting many seconds.
+
+A simple model makes this concrete. Suppose $\mtot$ is estimated as $T$ divided by the slope
+of a straight line fitted to $u(t)$ over a window $[0, W]$ after the logged thrust onset. If
+the true motion starts $d$ seconds late, the velocity ramp occupies only $W - d$ of the
+window, and for short windows $\hat m \approx \mtot\,W/(W-d)$. A second error appears even
+without delay: over a window comparable to $\taueff$, drag already bends the curve, and the
+fitted slope is lower than $T/\mtot$.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$t$ / \unit{\second}},ylabel={$u$ / \unit{\meter\per\second}},xmin=0,xmax=1.5,ymin=0]
+\addplot[black] table[x=t,y=true]{data/delay.dat};
+\addplot[red,dashed] table[x=t,y=delayed]{data/delay.dat};
+\legend{true,delayed \qty{0.2}{\second}}
+\end{axis}
+\end{tikzpicture}
+\caption{Step response at \qty{20}{\newton}}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={Fit window $W$ / \unit{\second}},ylabel={$\hat m / \mtot$},xmin=0.25,xmax=1,ymin=0,ymax=6]
+\addplot[black] table[x=W,y=nodelay]{data/delay_bias.dat};
+\addplot[red,dashed] table[x=W,y=delayed]{data/delay_bias.dat};
+\addplot[gray,dotted,forget plot] coordinates {(0.25,1) (1,1)};
+\legend{no delay,delay \qty{0.2}{\second}}
+\end{axis}
+\end{tikzpicture}
+\caption{Inertia from a straight-line slope fit}
+\end{subfigure}
+\caption{Simulated surge step response at \qty{20}{\newton} with and without a
+\qty{0.2}{\second} delay, and the inertia estimate $\hat m = T/\text{slope}$ from a linear fit
+over $[0, W]$ normalised by the true $\mtot$, for the dummy BlueROV2 coefficients.}
+\label{fig:delay}
+\end{figure}
+\FloatBarrier
+
+\Cref{fig:delay} shows both effects for the dummy coefficients. Because $\taueff$ at
+\qty{20}{\newton} is only \qty{0.19}{\second} (\cref{tab:taueff}), no window gives a good
+answer. Short windows are dominated by the delay ($\hat m/\mtot$ above 3 at
+$W = \qty{0.3}{\second}$), and long windows by the drag ($\approx1.7$ even without delay
+at $W = \qty{0.5}{\second}$).
+
+\begin{keyidea}
+Reading the inertia off a slope is fragile when $\taueff$ is short. Two remedies, which can be combined:
+\begin{enumerate}[nosep]
+  \item \textbf{Measure the delay first} (next section) and set \code{servo_delay_s}.
+  \item \textbf{Fit the whole step as a trajectory}: integrate \eqref{eq:surge} with the
+        recorded thrust and adjust $\mtot$, $X_u$, $\Xuu$ (and optionally the delay) until the
+        simulated speed matches the measurement (output error, \cref{sec:output-error}). Drag
+        is then modelled rather than ignored, so the window problem disappears.
+\end{enumerate}
+\end{keyidea}
+
+\section{Measuring the actuation delay with the IMU}
+
+A thrust step is a near-instantaneous step in \emph{acceleration}, but only the start of a
+ramp in \emph{velocity}. The start of a ramp is hard to locate in noise, while an edge is easy.
+The IMU's \code{linear_acceleration.x} is therefore the right instrument for timing. It is
+also sampled about ten times faster than the DVL. The signal is strong: about
+\qty{17}{\newton} on about \qty{20}{\kilogram} is \qty{0.85}{\meter\per\second\squared}, far
+above MEMS noise. The \code{thrust_cut} edge is just as sharp, so every run yields two delay
+measurements.
+
+\paragraph{Specific force.} An accelerometer measures specific force
+$\vect{f} = \vect{a} - \vect{g}^b$, not acceleration. In FLU/ENU,
+$\vect{g}^b = \vect{R}^\top[0,0,-g]^\top$, whose $x$ component for a pure pitch is
+$+g\sin\theta$ (nose-down pitch tilts gravity forward). Hence
+\begin{equation}
+  \dot u \approx a_x = f_x + g\sin\theta .
+\end{equation}
+The trim pitch adds a constant that must be removed before using the magnitude. The pitching
+caused by \code{MOT_1} sitting above the CoM arrives \emph{after} the edge, so it does not
+affect the edge timing.
+
+\paragraph{A bonus.} The accelerometer also gives the inertia without differentiating any velocity:
+$\mtot = T/a_x$ at the instant of the step, while the damping is still close to zero.
+
+\section{Thruster delay: what is measured, and telling it apart from mixer errors}
+\label{sec:thruster-delay}
+
+\begin{revised}[title=Added 30 October 2026,breakable]
+\paragraph{What the IMU onset contains.} Acceleration responds to force without lag
+($a = F/m$); the inertia only slows the velocity. After a step from rest, where the drag is still
+close to zero, the shape of the measured acceleration is therefore the shape of the rising
+thrust. The onset measured against the logged PWM is the sum of the logging and transport delay,
+the ESC response and the motor and propeller spin-up. That sum is the quantity the fit needs,
+because the fit pairs the \emph{logged} PWM with the motion, so it does not have to be split.
+Spin-up is a ramp rather than a pure delay, so a delay plus a first-order lag is fitted to the
+acceleration after each edge: a lag cannot be removed by shifting time stamps. Spin-up,
+spin-down and reversal through neutral are measured separately, since their timings differ.
+
+\paragraph{Isolating the parts.} Where the parts are wanted individually:
+\Cref{tab:delay-parts} lists the measurement for each. Per thruster, the bench is the clean
+route, since one unit is mounted at a time. On the vehicle the mixer commands axes, not motors;
+ArduSub's motor test (\code{MAV_CMD_DO_MOTOR_TEST}) drives a single motor, subject to the
+restrictions of the installed firmware. Since the units of one model share the same ESC, testing
+two or three units on the bench is enough; the model uses one delay per axis group.
+
+\paragraph{Timing mismatch versus static error.} A pure yaw command drives the front and rear
+lateral thrusters (\code{MOT_6}, \code{MOT_2}) in opposite directions, with mixer factors chosen
+so that their sway forces cancel. A mismatch shows up as sway the command should not produce, and
+its time signature tells the cause:
+\begin{itemize}
+  \item a \textbf{timing mismatch} gives a short lateral kick at the start of the step, an
+        opposite kick at its end, and nothing during the hold;
+  \item a \textbf{static error} (mixer ratio, lever arm or unequal thrust) gives a steady lateral
+        force for the whole hold, roughly proportional to the command.
+\end{itemize}
+A step held for several seconds shows both at once. The steps start from rest, so that no drag
+and no speed-dependent coupling are present, and the lateral acceleration is corrected for the
+IMU's offset from the CoM (about \qty{5}{\centi\meter} forward, which adds $\dot r$ times that
+offset in a turn). Pure sway steps cross-check the result: a short yaw-rate kick at their edges
+indicates the same mismatch. Steps in both yaw directions distinguish a slow \emph{unit} (the
+same thruster always leads) from a slow \emph{reverse branch} (the leader changes with the
+direction, because one thruster always runs in reverse). With two thrusters and two axes, the
+allocation can also be inverted to reconstruct each thruster's force from the lateral and yaw
+accelerations; unknown inertias scale these curves but do not shift their onsets.
+
+\paragraph{Which static error.} The logged \code{servo_output_raw} shows what the mixer actually
+sent to each motor, so the mixer's arithmetic is checked from the log alone. With the PWM correct,
+a remaining steady mismatch has three possible causes that look identical on the vehicle: the
+geometry assumed by the mixer differs from the real lever arms, the two units deliver different
+thrust at the same PWM, or the reverse branch is weaker. The bench curves of each unit in both
+directions remove the last two, and whatever steady mismatch then remains measures the geometry.
+
+\paragraph{Refining the allocation and the mixer.} Once the hardware is final and the bench
+curves exist, these steady cross-axis tests give the actual lever ratios. Two things can then be
+corrected, for different reasons. The allocation in \file{model.yaml} is what the model uses; the
+model takes the logged PWM, so its correctness does not depend on the mixer, only on the
+allocation. The mixer factors in the ArduSub custom frame (firmware fork) determine how well a
+pilot or controller command stays on one axis; correcting them improves the vehicle's handling
+and requires a firmware rebuild.
+\end{revised}
+
+\begin{table}[htbp]
+\centering
+\caption{Parts of the delay between the logged PWM and the force on the hull, and how each can be
+measured on its own.}
+\label{tab:delay-parts}
+\begin{tabular}{p{0.3\linewidth}p{0.62\linewidth}}
+\toprule
+Part & Measurement \\
+\midrule
+Logging and transport & Publish time of \code{manual_control} against the matching change in
+\code{servo_output_raw}, or the Pixhawk's own \code{time_usec} (currently dropped by the bridge) \\
+ESC and thruster & Thrust bench with a PWM step, load cell read at full rate (NAU7802: up to
+\qty{320}{\hertz}) \\
+Motor spin-up alone & Onset of the motor vibration in the raw high-rate IMU signal, or RPM from
+ESC telemetry if the ESC provides it \\
+Total, per axis group & IMU acceleration after a step from rest (\cref{sec:thruster-delay}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\section{Measuring the filter lag}
+
+On the same step, the DVL velocity and the EKF velocity are compared. Three outcomes are possible:
+\begin{itemize}[nosep]
+  \item if they rise together, the EKF is used for everything;
+  \item if the EKF visibly trails, inertia is fitted against the DVL and the EKF is kept for slower quantities;
+  \item if both look smeared, the manoeuvre is too slow for the sample rates, and the
+        remedy is a sharper command.
+\end{itemize}
+The DVL is \emph{less} lagged than the EKF, but it is not free of lag. The A50's internal ping
+averaging should be checked before it is treated as the reference.
+
+\begin{questions}
+\begin{enumerate}
+  \item Why does a delay make the vehicle look heavier, but leave the drag almost unchanged?
+  \item Why is the IMU better than the DVL for timing the thrust onset?
+  \item The accelerometer reads $f_x = \qty{-0.17}{\meter\per\second\squared}$ while the vehicle
+        is at rest with $\theta_0 = \qty{1}{\degree}$. Is that consistent?
+\end{enumerate}
+\end{questions}

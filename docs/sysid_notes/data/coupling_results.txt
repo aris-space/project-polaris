@@ -1,0 +1,17 @@
+% coupling k = 0.0
+% fit m_tot [kg]=36.01 X_u [N s/m]=7.921 X_uu [N s^2/m^2]=150.1 offset [N]=2.001 r2=0.99974
+% v*r r0=-0.025 rbest=-0.032 lag=-0.45 neff=6000 thr=0.039 sig=False
+% q r0=-0.022 rbest=-0.024 lag=+0.20 neff=6000 thr=0.039 sig=False
+% w r0=-0.011 rbest=-0.013 lag=-0.50 neff=6000 thr=0.039 sig=False
+% r r0=+0.006 rbest=+0.008 lag=+0.25 neff=6000 thr=0.039 sig=False
+% w*q r0=+0.005 rbest=+0.012 lag=-0.25 neff=6000 thr=0.039 sig=False
+% v r0=-0.004 rbest=-0.007 lag=-0.20 neff=6000 thr=0.039 sig=False
+% coupling k = -20.0
+% fit m_tot [kg]=36.05 X_u [N s/m]=7.946 X_uu [N s^2/m^2]=150 offset [N]=2.008 r2=0.99943
+% v*r r0=-0.732 rbest=-0.732 lag=+0.00 neff=595 thr=0.123 sig=True
+% w*q r0=+0.101 rbest=+0.103 lag=+0.15 neff=587 thr=0.124 sig=False
+% w r0=+0.032 rbest=+0.053 lag=+0.45 neff=506 thr=0.133 sig=False
+% r r0=+0.030 rbest=+0.057 lag=-0.50 neff=490 thr=0.136 sig=False
+% q r0=+0.027 rbest=+0.062 lag=+0.50 neff=502 thr=0.134 sig=False
+% v r0=-0.004 rbest=+0.018 lag=+0.50 neff=506 thr=0.133 sig=False
+% neff white=4000 slow=149

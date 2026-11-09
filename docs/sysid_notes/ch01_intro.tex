@@ -1,0 +1,132 @@
+\chapter{Introduction: what is being built and why}
+\label{ch:intro}
+
+\section{System identification in one paragraph}
+
+System identification is the construction of a mathematical model of a dynamic system from
+measured input and output data \cite{ljung1999}. Three flavours are usually distinguished.
+In a \emph{white-box} model every parameter follows from first principles (CAD inertia, computational fluid dynamics).
+A \emph{black-box} model has no physical structure, for example a neural network or a fitted
+polynomial from PWM to speed. A \emph{grey-box} model takes its \emph{structure} from physics and its
+\emph{parameters} from data. The POLARIS work is grey-box. The structure is Fossen's
+manoeuvring equation \cite{fossen2011}, and the unknown coefficients (added mass, damping,
+restoring stiffness) are estimated from rosbag recordings of deliberately designed manoeuvres.
+
+A grey-box model is preferred here for three reasons:
+\begin{enumerate}
+  \item Its parameters have physical meaning, so they can be checked against intuition
+        and literature (a negative drag coefficient or a total inertia below the dry
+        mass is an obvious error).
+  \item It extrapolates sensibly. A model with the right structure predicts the response to
+        an input profile that was never recorded, which a lookup table cannot.
+  \item It can be used inside a controller or an estimator. The deployed dead-reckoning
+        fallback (\file{thruster_velocity_estimator.py}) is a static black-box map
+        $u = 0.780\,\mathrm{sign}(c)\,|c|^{0.964}$ that has no dynamics. It assumes the vehicle is
+        always at the steady-state speed of the current command.
+\end{enumerate}
+
+\section{The pipeline}
+
+The code in \file{scripts/sysid} is a pipeline. Each stage has its own file, and the
+stages communicate through rosbags and through the single model file \file{model.yaml}.
+\Cref{fig:pipeline} shows the stages and \cref{tab:status} their state on the
+\file{feature/sysid} branch at the time of writing.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=6mm and 11mm,
+  box/.style={draw,rounded corners,align=center,font=\small,minimum width=34mm,minimum height=11mm,fill=#1},
+  box/.default=white,
+  arr/.style={-{Stealth[length=2.5mm]},thick}]
+\node[box=blue!8] (design) {Experiment design\\\file{maneuvers.md}};
+\node[box=blue!8,right=of design] (cmd) {Command scripts\\\file{command_scripts/*.py}};
+\node[box=orange!10,right=of cmd] (bag) {Rosbag (MCAP)\\servo, EKF, IMU,\\DVL, BMS, events};
+\node[box=green!8,below=12mm of bag] (io) {Bag reading and\\time checks \file{bag_io.py}};
+\node[box=green!8,left=of io] (act) {Thrust from PWM, V\\\file{actuation.py}\\\file{thruster_map.py}};
+\node[box=green!8,left=of act] (fit) {Estimation\\\file{fitting/*.py}};
+\node[box=yellow!15,below=12mm of fit] (yaml) {Model store\\\file{model.yaml}\\\file{model_io.py}};
+\node[box=green!8,right=of yaml] (dyn) {Dynamics + RK4\\\file{dynamics.py}};
+\node[box=red!8,right=of dyn] (val) {Validation\\\file{propagate_model.py}\\$\to$ Foxglove};
+\draw[arr] (design) -- (cmd);
+\draw[arr] (cmd) -- node[below,font=\scriptsize]{MANUAL} (bag);
+\draw[arr] (bag) -- (io);
+\draw[arr] (io) -- (act);
+\draw[arr] (act) -- (fit);
+\draw[arr] (fit) -- node[left,font=\scriptsize]{\code{update_parameters}} (yaml);
+\draw[arr] (yaml) -- (dyn);
+\draw[arr] (dyn) -- (val);
+\draw[arr] (io.south) -- (val.north);
+\draw[arr,dashed] (val.east) -- ++(6mm,0) |- node[right,pos=0.25,font=\scriptsize,align=left]{new\\manoeuvres} (bag.east);
+\end{tikzpicture}
+\caption{Stages of the system identification pipeline in \file{scripts/sysid} and the files
+that implement them. Arrows indicate data flow; the dashed arrow indicates the iteration
+from validation back to new experiments.}
+\label{fig:pipeline}
+\end{figure}
+\FloatBarrier
+
+\begin{table}[htbp]
+\centering
+\caption{Implementation status of each pipeline stage on \file{feature/sysid}.}
+\label{tab:status}
+\small
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+Stage & File(s) & Status \\
+\midrule
+Manoeuvre catalogue & \file{maneuvers.md} & Written; locations and bags still to be added \\
+Command scripts & \file{command_scripts/} & Surge steps (200--500) and coast-down (400) with event markers \\
+Model store & \file{model.yaml}, \file{model_io.py} & Diagonal schema for surge, sway, heave, pitch and yaw (sway, heave and $B$ added, roll removed 15 Oct); every coefficient still \code{null} \\
+Surge dynamics & \file{dynamics.py} & 1-DOF surge, RK4, steady state; tested against closed forms \\
+Thrust map & \file{thruster_map.py}, \file{actuation.py} & T500 PWM $\times$ voltage table on the surge channel; other channels NaN \\
+Bag I/O & \file{bag_io.py} & Reads EKF, servo, BMS voltage; timestamp checks; augmented-bag writer \\
+Validation & \file{validation/propagate_model.py} & Free-run and re-init propagation, baseline, summary, NavSatFix \\
+Estimation & \file{fitting/coupling_check.py} & Equation-error surge fit plus coupling screen; the \code{fit_*.py} scripts are placeholders \\
+Synthetic test bench & \file{simulation/synth_bag.py} & Ground-truth bags with known coefficients, delays and noise (added 14 Oct) \\
+Tests & \file{tests/} & 32 tests, all passing (24 in the first edition) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\begin{revised}[title=Revised 14 October 2026]
+The rows ``Synthetic test bench'' and ``Tests'' of \cref{tab:status} were updated. The synthetic
+test bench is described in \cref{ch:synthetic}.
+
+\textbf{15 October 2026.} The row ``Model store'' said ``schema complete'' in the first edition.
+That was not true: sway, heave and buoyancy had no slots. They were added (\cref{sec:model-schema}),
+and roll was removed from the model (\cref{sec:no-roll}).
+\end{revised}
+
+\section{How these notes are organised}
+
+The chapters follow the logical dependency order rather than the order in which the code
+was written:
+\begin{itemize}
+  \item \Cref{ch:frames,ch:fossen,ch:symmetry} cover the physics: frames, the 6-DOF equation, and why the
+        vehicle's symmetry allows one axis to be identified at a time.
+  \item \Cref{ch:surge,ch:actuation,ch:integration} cover the model as implemented: the surge equation,
+        the thrust map, and the integrator.
+  \item \Cref{ch:maneuvers,ch:timing} cover how good data is obtained: manoeuvre design and timing.
+  \item \Cref{ch:estimation,ch:coupling} cover how parameters are extracted from data.
+  \item \Cref{ch:validation} covers how a model is judged, and \cref{ch:status} lists what is open.
+\end{itemize}
+Each chapter ends with a few questions. The answers are in \cref{app:answers}.
+\Cref{app:codemap} is a file-by-file reference.
+
+\begin{keyidea}
+The single most important idea in the whole pipeline is \emph{error attribution}. Every design
+decision (one axis at a time, open-loop commands, measured delays, free-run validation, a
+coupling check) exists so that, when the model disagrees with the data, it can be told
+\emph{which} coefficient is wrong and \emph{why}.
+\end{keyidea}
+
+\begin{questions}
+\begin{enumerate}
+  \item Why is the deployed power law $u = 0.780\,\mathrm{sign}(c)|c|^{0.964}$ a black-box
+        model, and which physical effect can it not represent?
+  \item Name one advantage of a grey-box model over a black-box model for a vehicle that
+        will later be operated outside the conditions it was tested in.
+\end{enumerate}
+\end{questions}

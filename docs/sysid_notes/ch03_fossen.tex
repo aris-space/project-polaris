@@ -1,0 +1,373 @@
+\chapter{Fossen's six-degree-of-freedom model}
+\label{ch:fossen}
+
+The starting point of \file{maneuvers.md} is the manoeuvring model of Fossen
+\cite[ch.~6--7]{fossen2011}, written with the velocity relative to the water
+$\vect{\nu}_r = \vect{\nu} - \vect{\nu}_c$:
+\begin{equation}
+  \underbrace{(\vect{M}_\mathrm{RB} + \vect{M}_\mathrm{A})\,\dot{\vect{\nu}}_r}_{\text{inertia}}
+  + \underbrace{\vect{C}_\mathrm{RB}(\vect{\nu})\vect{\nu} + \vect{C}_\mathrm{A}(\vect{\nu}_r)\vect{\nu}_r}_{\text{Coriolis--centripetal}}
+  + \underbrace{\vect{D}(\vect{\nu}_r)\,\vect{\nu}_r}_{\text{damping}}
+  + \underbrace{\vect{g}(\vect{\eta})}_{\text{restoring}}
+  = \vect{\tau}_\mathrm{thrust} + \vect{\tau}_\mathrm{dist}.
+  \label{eq:fossen}
+\end{equation}
+This chapter takes the terms one at a time and explains what physical effect each
+represents, how big it is, and which coefficient in \file{model.yaml} belongs to it.
+
+\section{Rigid-body dynamics}
+
+Newton's and Euler's laws about the centre of mass, written in a rotating body frame, read
+\begin{align}
+  m\,(\dot{\vect{v}} + \vect{\omega}\times\vect{v}) &= \vect{f}, \label{eq:newton}\\
+  \vect{I}\,\dot{\vect{\omega}} + \vect{\omega}\times(\vect{I}\vect{\omega}) &= \vect{m}, \label{eq:euler}
+\end{align}
+with $\vect{v} = [u,v,w]^\top$ and $\vect{\omega} = [p,q,r]^\top$. The cross products are
+not forces. They appear because the frame in which $\dot{\vect{v}}$ is measured rotates
+with the vehicle. In matrix form, \cref{eq:newton,eq:euler} become
+$\vect{M}_\mathrm{RB}\dot{\vect{\nu}} + \vect{C}_\mathrm{RB}(\vect{\nu})\vect{\nu}$. The surge
+row of \eqref{eq:newton} is
+\begin{equation}
+  m\,(\dot u - v r + w q) = X .
+  \label{eq:surge-rb}
+\end{equation}
+Both $v r$ and $w q$ are products of two components that flip together under the FRD/FLU
+reflection, so \eqref{eq:surge-rb} reads identically in both conventions. The origin of
+\code{base_link} lies at the centre of mass (per the DVL launch file), so the lever-arm terms
+that Fossen carries for an offset centre of gravity vanish.
+
+\section{Added mass}
+\label{sec:addedmass}
+
+When a body accelerates through a fluid, it must also accelerate some of the surrounding
+fluid. The fluid's kinetic energy is a quadratic form of the body velocity,
+$T_\mathrm{A} = \tfrac12\vect{\nu}^\top\vect{M}_\mathrm{A}\vect{\nu}$, and the energy needed to
+build it up appears to the body as extra inertia \cite{newman1977}. For a sphere the added
+mass is exactly half the displaced fluid mass. For an ROV-shaped body it is typically
+\SIrange{30}{100}{\percent} of the dry mass in translation. In the BlueROV2 data,
+$-\Xud = \qty{6.36}{\kilogram}$ against $m = \qty{13.5}{\kilogram}$.
+
+The SNAME notation writes added mass as a \emph{hydrodynamic derivative}:
+$\Xud = \partial X/\partial\dot u$, the change of hydrodynamic surge force per unit surge
+acceleration. Accelerating forward causes the fluid to push \emph{back}, so $\Xud < 0$, and
+moving it to the left-hand side gives
+\begin{equation}
+  (m - \Xud)\,\dot u = \dots, \qquad \mtot \coloneqq m - \Xud > m.
+  \label{eq:mtot}
+\end{equation}
+
+\begin{caution}
+Sign conventions differ between the code and much of the literature.
+\begin{itemize}[nosep]
+  \item \textbf{Added mass} is stored with Fossen's sign: \code{X_udot} is \emph{negative}.
+        Tables that list a positive magnitude (as von Benzon et al.\ \cite{vonbenzon2022} do)
+        must be negated when entered.
+  \item \textbf{Damping} is stored as a positive \emph{magnitude}: \code{X_u} $> 0$, and the
+        force is $-X_u u$. Fossen writes the force as $+X_u u$ with $X_u < 0$.
+\end{itemize}
+\code{SurgeParams.__post_init__} in \file{dynamics.py} rejects $\mtot \le 0$. That catches a
+wrongly signed added mass that is large enough to make the inertia non-positive. A smaller
+sign error does not violate the check: it gives a valid but wrong $\mtot < m$.
+\end{caution}
+
+\subsection{Added-mass Coriolis terms}
+
+The added mass also contributes Coriolis-like terms. The fluid momentum
+$\vect{p}_\mathrm{A} = \vect{M}_\mathrm{A}\vect{\nu}$ is carried along by the rotating frame
+in the same way as the body momentum (Kirchhoff's equations \cite{newman1977}). For a diagonal
+$\vect{M}_\mathrm{A} = -\mathrm{diag}(\Xud, Y_{\dot v}, Z_{\dot w}, \dots)$ the translational
+part of the fluid's reaction is $-\vect{\omega}\times\vect{p}_\mathrm{A}$, whose $x$
+component is
+\begin{equation}
+  -\bigl(q\,(-Z_{\dot w}w) - r\,(-Y_{\dot v}v)\bigr) = Z_{\dot w}\,wq - Y_{\dot v}\,vr .
+\end{equation}
+Adding this to \eqref{eq:surge-rb} gives the classical surge equation with its two
+velocity-product terms:
+\begin{equation}
+  \boxed{\;(m - \Xud)\,\dot u \;-\; (m - Y_{\dot v})\,v r \;+\; (m - Z_{\dot w})\,w q \;=\; X_\mathrm{hydro} + X_\mathrm{thrust}\;}
+  \label{eq:surge-full}
+\end{equation}
+With the BlueROV2 numbers $m - Y_{\dot v} = 13.5 + 7.12 = \qty{20.6}{\kilogram}$. A vehicle
+that turns at $r = \qty{0.5}{\radian\per\second}$ while side-slipping at
+$v = \qty{0.1}{\meter\per\second}$ therefore experiences about \qty{1}{\newton} of apparent
+surge force. That is small but not negligible against a thrust of a few newtons. These are
+exactly the \code{v*r} and \code{w*q} candidates in the coupling check (\cref{ch:coupling}),
+and the synthetic test in \file{tests/test_coupling_check.py} injects $k\,vr$ with
+$k = -20$ for this reason.
+
+\section{Damping}
+
+Hydrodynamic damping has several physical sources: skin friction, pressure (form) drag from
+flow separation, vortex shedding, and lift on appendages. For manoeuvring at low speed it is
+modelled as the sum of a linear and a quadratic part \cite[sec.~6.4]{fossen2011}:
+\begin{equation}
+  \vect{D}(\vect{\nu})\vect{\nu} = \vect{D}_l\,\vect{\nu} + \vect{D}_n(\vect{\nu})\,\vect{\nu},
+  \qquad
+  \text{surge: } \; X_\mathrm{hydro} = -X_u\,u - \Xuu\,|u|\,u .
+  \label{eq:damping}
+\end{equation}
+\begin{itemize}
+  \item The \emph{quadratic} term is the familiar drag law $F = \tfrac12\rho C_D A\,|u|u$
+        at high Reynolds number. The form $|u|u$ rather than $u^2$ makes the force odd in
+        $u$, so drag always opposes the motion.
+  \item The \emph{linear} term dominates at very low speed (laminar skin friction, and
+        effects such as wave radiation at the surface). Its absolute size is small. It
+        matters mainly because it sets the decay rate near zero speed.
+\end{itemize}
+Off-diagonal damping terms are neglected by assumption. Their absence is part of what the
+coupling check tests.
+
+\section{Restoring forces}
+\label{sec:restoring}
+
+Gravity $W = mg$ acts at the centre of gravity $\vect{r}_g$ and buoyancy
+$B = \rho g\nabla$ at the centre of buoyancy $\vect{r}_b$. In the ENU world frame gravity
+points along $-z$. Building the restoring vector from vectors rather than from Fossen's NED
+table gives the correct signs automatically:
+\begin{equation}
+  \vect{f}_g = \vect{R}^\top\begin{bmatrix}0\\0\\-W\end{bmatrix}, \quad
+  \vect{f}_b = \vect{R}^\top\begin{bmatrix}0\\0\\B\end{bmatrix}, \quad
+  \vect{g}(\vect{\eta}) = -\begin{bmatrix} \vect{f}_g + \vect{f}_b \\
+     \vect{r}_g\times\vect{f}_g + \vect{r}_b\times\vect{f}_b \end{bmatrix}.
+  \label{eq:restoring}
+\end{equation}
+
+\paragraph{Small-angle pitch stiffness.} Take $\vect{r}_g = \vect{0}$,
+$\vect{r}_b = [0, 0, \overline{BG}]^\top$ (buoyancy \emph{above} gravity, so $z_b > 0$ in FLU,
+whereas Fossen's NED tables have it negative) and a pure pitch $\vect{R} = \vect{R}_y(\theta)$.
+Then $\vect{f}_b = [-B\sin\theta,\;0,\;B\cos\theta]^\top$ and
+\begin{equation}
+  \vect{r}_b\times\vect{f}_b = [\,0,\; -B\,\overline{BG}\sin\theta,\; 0\,]^\top
+  \;\;\Rightarrow\;\;
+  g_\theta = B\,\overline{BG}\sin\theta \approx M_\theta\,\theta,
+  \quad M_\theta = B\,\overline{BG}.
+  \label{eq:pitch-stiffness}
+\end{equation}
+The moment opposes the tilt, so the vehicle is statically stable. Roll gives the same result,
+$K_\phi = B\,\overline{BG}$ (for $W = B$). The dummy file derives $K_\phi = M_\theta =
+\qty{131.6}{\newton}\times\qty{0.01}{\meter} = \qty{1.316}{\newton\meter\per\radian}$ in
+exactly this way.
+
+\paragraph{Trim angles.} If the centre of buoyancy is not exactly above the centre of
+gravity, the vehicle floats tilted at $\phi_0, \theta_0$, and the restoring torque pulls
+towards that attitude rather than towards level: $g_\theta \approx M_\theta(\theta-\theta_0)$.
+This is why \file{model.yaml} carries \code{phi_0} and \code{theta_0}, to be measured from
+a still, powered-down float. (Since 15 October 2026 only \code{theta_0}; roll is not
+modelled, \cref{sec:no-roll}.)
+
+\paragraph{Yaw.} No restoring moment exists in yaw, because buoyancy and gravity are both
+vertical. Yaw is a pure integrator with damping and never oscillates back. This is why the
+static tests in \file{maneuvers.md} cover roll and pitch only.
+
+\paragraph{Net buoyancy in surge.} If $W \ne B$, the translational part of
+\eqref{eq:restoring} gives a surge component $(W - B)\sin\theta$ whenever the vehicle is
+pitched. This is the \code{sin(pitch)} candidate of the coupling check.
+
+\section{The model schema in \file{model.yaml}}
+\label{sec:model-schema}
+
+\begin{revised}[title={New section, added 15 October 2026}]
+Until this revision \file{model.yaml} had slots for surge, roll, pitch and yaw only. The sway
+and heave coefficients $Y_{\dot v}$, $Y_v$, $Y_{v|v|}$, $Z_{\dot w}$, $Z_w$, $Z_{w|w|}$ and the
+buoyancy $B$ were added, so that the file now holds the complete diagonal model of
+\eqref{eq:fossen}. No code reads the new entries yet.
+
+\textbf{Later the same day} roll was removed from the model (\cref{sec:no-roll}): the slots
+$I_{xx}$, $K_{\dot p}$, $K_p$, $K_{p|p|}$, $K_\phi$ and $\phi_0$ were deleted, the roll row of
+\cref{tab:model-schema} was changed, and the equations below were written without roll.
+\file{model.yaml} now has 21 parameters.
+\end{revised}
+
+With the port--starboard symmetry of \cref{ch:symmetry} and the off-diagonal terms neglected,
+\eqref{eq:fossen} is fully determined by the parameters in \cref{tab:model-schema}. The
+Coriolis--centripetal matrices $\vect{C}_\mathrm{RB}$ and $\vect{C}_\mathrm{A}$ need no
+parameters of their own: they are built from $m$, the inertias and the same added-mass
+derivatives \cite{fossen2011}. With the abbreviations
+$m_{11} = m - \Xud$, $m_{22} = m - Y_{\dot v}$, $m_{33} = m - Z_{\dot w}$ and the roll
+rate $p$ set to zero (\cref{sec:no-roll}), the translational equations are
+\begin{align}
+  m_{11}\,\dot u &= \tau_X - X_u\,u - \Xuu\,|u|\,u + (W - B)\sin\theta
+                    + m_{22}\,v r - m_{33}\,w q, \label{eq:diag-surge}\\
+  m_{22}\,\dot v &= \tau_Y - Y_v\,v - Y_{v|v|}\,|v|\,v + (B - W)\sin\phi\cos\theta
+                    - m_{11}\,u r, \label{eq:diag-sway}\\
+  m_{33}\,\dot w &= \tau_Z - Z_w\,w - Z_{w|w|}\,|w|\,w + (B - W)\cos\phi\cos\theta
+                    + m_{11}\,u q. \label{eq:diag-heave}
+\end{align}
+The restoring terms follow from \eqref{eq:restoring} in the same way as
+\eqref{eq:pitch-stiffness}: $\vect{R}^\top[0,0,1]^\top = [-\sin\theta,\ \sin\phi\cos\theta,\
+\cos\phi\cos\theta]^\top$, and the net force on the vehicle is $(B-W)$ times this vector.
+The roll angle $\phi$ is taken from the EKF; it is a measured input, not a state. Pitch and
+yaw follow in the same way with $M_\theta(\theta-\theta_0)$ as the pitch restoring moment and
+none in yaw. The Coriolis products in \eqref{eq:diag-surge}--\eqref{eq:diag-heave} are the
+components of $-\vect{\omega}\times(\vect{M}_t\vect{v})$ with
+$\vect{M}_t = \mathrm{diag}(m_{11}, m_{22}, m_{33})$. This form follows from vectors and holds
+in any right-handed body frame, including FLU.
+
+\begin{table}[htbp]
+\centering
+\caption{Parameters of the diagonal model in \file{model.yaml}, grouped by degree of freedom,
+with the inertia, damping and restoring entries of each.}
+\label{tab:model-schema}
+\small
+\begin{tabularx}{\textwidth}{@{}l l X l@{}}
+\toprule
+DOF & Inertia & Damping (\code{damping_linear}, \code{damping_quadratic}) & Restoring \\
+\midrule
+Surge & $m$, $\Xud$ & $X_u$, $\Xuu$ & via $W - B$ \\
+Sway  & $m$, $Y_{\dot v}$ & $Y_v$, $Y_{v|v|}$ & via $W - B$ \\
+Heave & $m$, $Z_{\dot w}$ & $Z_w$, $Z_{w|w|}$ & $B$ (with $W = mg$) \\
+Roll  & \multicolumn{3}{l}{not modelled; $\phi$ and $p$ from the EKF (\cref{sec:no-roll})} \\
+Pitch & $I_{yy}$, $M_{\dot q}$ & $M_q$, $M_{q|q|}$ & $M_\theta$, $\theta_0$ \\
+Yaw   & $I_{zz}$, $N_{\dot r}$ & $N_r$, $N_{r|r|}$ & none \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\paragraph{What the schema deliberately leaves out.}
+\begin{itemize}
+  \item \textbf{Centre of gravity and centre of buoyancy.} They enter only through
+        $M_\theta$ and $\theta_0$, which are lumped and measured directly.
+        Keeping both $\vect{r}_b$ and $M_\theta$ would describe the same physics twice.
+  \item \textbf{Off-diagonal terms} such as $X_{\dot w}$, $M_{\dot u}$ or $Z_q$. They are added
+        only if the combined-axes runs leave a residual the diagonal model cannot explain
+        (\cref{ch:symmetry}).
+  \item \textbf{Water current and tether.} These are treated as disturbances, not model
+        parameters.
+\end{itemize}
+
+\begin{caution}
+$B - W$ is a small difference of two large forces. Weighing the dry vehicle ($m$) and computing
+$B$ from the displaced volume will not give it to useful accuracy. A direct measurement of the
+net buoyancy, for example with a spring scale on the submerged vehicle, is preferable. If
+POLARIS operates at the surface, heave restoring is dominated by the waterplane stiffness
+$\rho g A_\mathrm{wp}$, which has no slot yet.
+\end{caution}
+
+\subsection{Roll is not modelled}
+\label{sec:no-roll}
+
+\begin{revised}[title={New subsection, added 15 October 2026}]
+The decision to drop roll and the evidence from the recorded bags. The roll statistics were
+computed with a throw-away script over the EKF of the existing recordings; they are not
+reproduced by \file{gen_figdata.py}.
+\end{revised}
+
+POLARIS is passively roll-stable: the centre of buoyancy lies above the centre of gravity,
+and the restoring moment $K_\phi\phi$ of \eqref{eq:pitch-stiffness} pulls it back upright.
+Roll is never commanded during identification. The roll equation is therefore dropped, and so
+is every Coriolis product that contains the roll rate $p$. \Cref{tab:roll-terms} lists them.
+As a consequence $I_{xx}$ and $K_{\dot p}$ no longer appear in any remaining equation, and
+the slots $I_{xx}$, $K_{\dot p}$, $K_p$, $K_{p|p|}$, $K_\phi$, $\phi_0$ were removed from
+\file{model.yaml}.
+
+\begin{table}[htbp]
+\centering
+\caption{Coriolis--centripetal products containing the roll rate $p$ that are removed by not
+modelling roll, from $-\vect{\omega}\times(\vect{M}_t\vect{v})$ and
+$-\vect{\omega}\times(\vect{I}_t\vect{\omega}) - \vect{v}\times(\vect{M}_t\vect{v})$, with
+$I_{11} = I_{xx} - K_{\dot p}$, $I_{22} = I_{yy} - M_{\dot q}$, $I_{33} = I_{zz} - N_{\dot r}$.}
+\label{tab:roll-terms}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Equation & Removed term & Physical meaning \\
+\midrule
+Sway  & $+m_{33}\,w p$ & Heave velocity turned into sway by rolling \\
+Heave & $-m_{22}\,v p$ & Sway velocity turned into heave by rolling \\
+Pitch & $-(I_{11} - I_{33})\,p r$ & Gyroscopic pitch moment of combined roll and yaw rates \\
+Yaw   & $-(I_{22} - I_{11})\,p q$ & Gyroscopic yaw moment of combined roll and pitch rates \\
+Roll  & whole equation & Roll inertia, damping and stiffness \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\paragraph{Surge is unaffected.} The diagonal surge equation \eqref{eq:diag-surge} contains no
+$p$ and no $\phi$. Dropping roll changes nothing in the surge work of \cref{ch:surge}.
+
+\paragraph{The roll angle is still used.} Dropping the roll \emph{dynamics} is not the same as
+setting $\phi = 0$. The angle enters the restoring terms of \eqref{eq:diag-sway} and
+\eqref{eq:diag-heave} and the kinematics $\vect{J}(\vect{\eta})$ that turn body velocities into
+world positions. The EKF provides $\phi$ at no cost, so it is replayed there, exactly as
+\code{dofs.roll: measured} already did for the propagation (\cref{ch:symmetry}). Setting
+$\phi = 0$ would discard information without simplifying anything.
+
+\paragraph{Evidence from the recordings.} \Cref{tab:roll-evidence} summarises the EKF roll angle
+of the existing bags, restricted to samples with $|u| > \qty{0.3}{\meter\per\second}$.
+``Straight'' means $|r| < \qty{3}{\degree\per\second}$, ``turning'' means
+$|r| > \qty{10}{\degree\per\second}$.
+
+\begin{table}[htbp]
+\centering
+\caption{EKF roll angle in the existing recordings while moving: median roll, 95th percentile of
+the deviation from the median on straight segments and in turns, and the dominant frequency of
+the roll signal.}
+\label{tab:roll-evidence}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Bag & Median & $|\Delta\phi|_{95}$ straight & $|\Delta\phi|_{95}$ turning & Peak frequency \\
+ & (\unit{\degree}) & (\unit{\degree}) & (\unit{\degree}) & (\unit{\hertz}) \\
+\midrule
+\file{zermatt_rectangle_01} & $-2.0$ & 2.0 & 3.9 & 0.56 \\
+\file{zermatt_rectangle_04} & $-2.2$ & 2.1 & -- & 0.03 \\
+\file{zermatt_rectangle_06} & $-2.1$ & 2.4 & -- & 0.03 \\
+\file{zermatt_rectangle_07} & $-2.2$ & 2.0 & -- & 0.06 \\
+\file{zermatt_rectangle_08} & $-2.0$ & 2.1 & 3.4 & 0.63 \\
+\file{zermatt_grid_01}      & $-0.6$ & 3.1 & -- & 0.03 \\
+\file{zermatt_grid_02}      & $-0.6$ & 6.7 & 88 & 0.03 \\
+\file{aut_no_z_surface_big_40_grid_03} & $-1.1$ & 14.2 & 5.5 & 0.56 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+Three observations follow from \cref{tab:roll-evidence}.
+\begin{enumerate}
+  \item In the Zermatt rectangle runs roll stays within about \qty{2}{\degree} on straight
+        segments and about \qty{4}{\degree} in turns. Turn-induced heel is small, so the
+        removed terms of \cref{tab:roll-terms} are small there as well.
+  \item In the June surface run, roll reaches \qty{14}{\degree} on \emph{straight} segments, with
+        a peak at \qty{0.56}{\hertz}. That is wave-induced roll, not a consequence of
+        manoeuvring. A roll model would not predict it either, because the wave forcing is not
+        measured. The roll rate there reaches about \qty{43}{\degree\per\second} (95th percentile), so the removed
+        sway and heave products are no longer negligible. Such bags should not be used for sway
+        or heave fits.
+  \item The turning value of \file{zermatt_grid_02} (\qty{88}{\degree}) and the large maxima in
+        some bags are almost certainly handling or recovery while the EKF was running, not
+        manoeuvring. This was not checked further. In every bag the vehicle moves faster than
+        \qty{0.3}{\meter\per\second} only \qtyrange{2}{42}{\percent} of the time.
+\end{enumerate}
+The consistent median of about \qty{-2}{\degree} in the rectangle runs is either a real list of
+the vehicle or an IMU mounting offset. It does not matter for the model, because $\phi$ is
+replayed from the EKF.
+
+\begin{caution}
+The decision is sound as long as (i) bags used for sway, heave or yaw fits have small roll, for
+example $|\Delta\phi|_{95} < \qty{5}{\degree}$; (ii) ArduSub is not commanding roll during the
+runs, since the flight mode may stabilise roll actively through the rear vertical pair; and
+(iii) the combined surge--yaw runs of \cref{ch:symmetry} do not leave a residual correlated with
+$p$. If any of these fails, the six slots can be restored from git history.
+\end{caution}
+
+\section{Thrust and disturbances}
+
+$\vect{\tau}_\mathrm{thrust}$ is never measured directly. It is reconstructed from the
+logged PWM through the thruster map (\cref{ch:actuation}) and the allocation matrix.
+$\vect{\tau}_\mathrm{dist}$ collects everything that is not modelled: water current (which
+enters through $\vect{\nu}_c$), tether drag, and waves when at the surface. For the
+identification these are treated as \emph{nuisance} terms. A slowly varying current or
+tether pull looks like a constant force offset, which is why \code{coupling_check.py} fits
+an optional \code{offset [N]} regressor.
+
+\begin{questions}
+\begin{enumerate}
+  \item Show from \eqref{eq:newton} that the surge equation contains $-m\,vr$ and $+m\,wq$.
+  \item A colleague enters $\Xud = +\qty{6.36}{\kilogram}$ from a paper into \file{model.yaml}.
+        What $\mtot$ results for $m = \qty{13.5}{\kilogram}$, and would
+        \code{SurgeParams} reject it?
+  \item Why does the restoring vector contain no yaw stiffness?
+  \item Where in \file{model.yaml} would a measured $\overline{BG}$ end up?
+\end{enumerate}
+\end{questions}

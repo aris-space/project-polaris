@@ -1,0 +1,73 @@
+\chapter{Code map}
+\label{app:codemap}
+
+\begin{table}[htbp]
+\centering
+\caption{Files in \file{scripts/sysid}, their responsibility, and the chapter that explains the theory behind them.}
+\label{tab:codemap}
+\small
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+File & Responsibility and key functions & Chapter \\
+\midrule
+\file{maneuvers.md} & Manoeuvre catalogue, validation reading guide, delay notes & \ref{ch:maneuvers}, \ref{ch:timing} \\
+\file{model.yaml} & The single working model: parameters, \code{thrust:}, \code{allocation:}, \code{dofs:} & \ref{ch:fossen}, \ref{ch:actuation} \\
+\file{model_io.py} & \code{load_model}, \code{Model.get}, \code{missing_for}, \code{version_tag}, \code{update_parameters} & \ref{ch:estimation} \\
+\file{dynamics.py} & \code{SurgeParams}, \code{ThrusterCurve}, \code{surge_accel}, \code{rk4_step}, \code{steady_state_speed}, \code{powerlaw_speed} & \ref{ch:surge}, \ref{ch:integration} \\
+\file{thruster_map.py} & \code{ThrusterMap}: bilinear PWM $\times$ voltage table, clamping; CLI evaluator & \ref{ch:actuation} \\
+\file{actuation.py} & \code{ThrustSource} (per-channel force, NaN if unknown, sign mirroring), \code{forces_on_grid} & \ref{ch:actuation} \\
+\file{results_log.py} & \code{log_fit}, \code{read_log}, \code{bag_fingerprint}; overview CLI (added 16 Oct) & \ref{ch:estimation} \\
+\file{results/fit_log.yaml} & Append-only log of every fit run: bag, window, model, settings, parameters (added 16 Oct) & \ref{ch:estimation} \\
+\file{bag_io.py} & \code{read_tracks}, \code{read_voltage}, \code{verify_timestamps}, \code{fit_geo_anchor}, \code{write_augmented_bag} (registers missing standard types since 14 Oct) & \ref{ch:timing}, \ref{ch:validation} \\
+\file{validation/propagate_model.py} & CLI: propagation, sign check, summary, augmented bag & \ref{ch:validation} \\
+\file{validation/PLAN.md} & Original task specification of the propagation script & \ref{ch:validation} \\
+\file{fitting/coupling_check.py} & \code{smooth} (SG), \code{own_axis_fit}, \code{effective_n}, \code{partial_scan}, \code{surge_terms}, \code{surge_candidates} & \ref{ch:estimation}, \ref{ch:coupling} \\
+\file{command_scripts/_step_common.py} & \code{run_constant_surge}: publish, cap, neutral burst, event markers & \ref{ch:maneuvers} \\
+\file{command_scripts/step_surge_*.py} & Steps at 200, 300, 400, 500 for \qty{10}{\second} & \ref{ch:maneuvers} \\
+\file{command_scripts/coastdown_surge_400.py} & 400 for \qty{20}{\second}, then coast & \ref{ch:maneuvers} \\
+\file{thruster_curves/} & T500 tables (\qtyrange{12}{18}{\volt}), dummy T200 polynomial & \ref{ch:actuation} \\
+\file{dummy_bluerov2_heavy*.yaml} & Literature test fixtures (not POLARIS) & \ref{ch:fossen} \\
+\file{simulation/synth_bag.py} & \code{SynthConfig}, \code{build_program}, \code{simulate}, \code{write_bag}, \code{generate}: synthetic ground-truth bags (added 14 Oct) & \ref{ch:synthetic} \\
+\file{simulation/Dvl.msg} & \code{marine_acoustic_msgs/Dvl} definition, copied from a recorded bag & \ref{ch:synthetic} \\
+\file{tests/} & Closed-form integrator tests, thrust map tests, coupling check on synthetic data, synthetic-bag end-to-end tests & \ref{ch:integration}, \ref{ch:coupling}, \ref{ch:synthetic} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\section*{Running things}
+
+\begin{lstlisting}[language=bash,caption={Common commands, run from the repository root.}]
+# tests
+python -m pytest scripts/sysid/tests -q
+
+# evaluate the thrust map
+python scripts/sysid/thruster_map.py scripts/sysid/thruster_curves/t500_force_vs_voltage.csv 1700 15.2
+
+# propagate (free run) with the dummy model and the real T500 thrust
+python scripts/sysid/validation/propagate_model.py recordings/<bag>.mcap \
+    --model scripts/sysid/dummy_bluerov2_heavy_t500.yaml
+
+# error-vs-horizon diagnostic
+python scripts/sysid/validation/propagate_model.py recordings/<bag>.mcap \
+    --model ... --reinit-s 10
+
+# timestamp checks only
+python scripts/sysid/validation/propagate_model.py recordings/<bag>.mcap --verify-only ...
+
+# coupling check on a cropped window
+python scripts/sysid/fitting/coupling_check.py recordings/<bag>.mcap \
+    --model scripts/sysid/dummy_bluerov2_heavy_t500.yaml --t-start 120 --t-end 600
+
+# fit log overview (one line per fit; --param X_u, --bag rectangle_08, --show fit-0003)
+python scripts/sysid/results_log.py
+
+# synthetic ground-truth bag (all imperfections off with --ideal)
+python scripts/sysid/simulation/synth_bag.py --program suite --seed 0
+
+# regenerate the data behind these notes, then build the PDF
+python docs/sysid_notes/gen_figdata.py
+python docs/sysid_notes/gen_synthdata.py      # synthetic-bench tables, a few minutes
+python docs/sysid_notes/gen_biasstudy.py      # bias study of the surge fit, about ten minutes
+cd docs/sysid_notes && latexmk -pdf sysid_notes.tex
+\end{lstlisting}

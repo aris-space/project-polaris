@@ -1,0 +1,138 @@
+\chapter{Answers to the questions}
+\label{app:answers}
+
+\section*{\Cref{ch:intro}}
+\begin{enumerate}
+  \item It maps PWM straight to speed with fitted constants and no physical structure. It
+        assumes the speed jumps instantly to its steady value, so it cannot represent
+        inertia (acceleration and coasting), nor voltage dependence or a dead band.
+  \item Its structure is physical, so it extrapolates sensibly to unseen inputs, and its
+        parameters can be sanity-checked against physics and literature.
+\end{enumerate}
+
+\section*{\Cref{ch:frames}}
+\begin{enumerate}
+  \item $N$ flips and $v$ flips, so the coefficient is unchanged: $N_v = \qty{-2.0}{\newton\second}$.
+  \item They are diagonal (force index and velocity index belong to the same axis), so both
+        signs flip together, or neither does.
+  \item Drag depends on velocity relative to the body, so it needs the twist in \code{base_link}.
+        Comparing tracks needs the pose in \code{odom}.
+\end{enumerate}
+
+\section*{\Cref{ch:fossen}}
+\begin{enumerate}
+  \item $(\vect{\omega}\times\vect{v})_x = q w - r v$, so $m(\dot u + qw - rv) = X$.
+  \item $\mtot = 13.5 - 6.36 = \qty{7.14}{\kilogram}$. That is positive, so it is \emph{not}
+        rejected, and the model is silently about \qty{64}{\percent} too light. The positivity check only
+        catches extreme cases.
+  \item Weight and buoyancy are both vertical, so rotation about the vertical axis does not change
+        their moment arms. No yaw angle is preferred.
+  \item It enters through $K_\phi = M_\theta = B\,\overline{BG}$, in \code{restoring.K_phi} and
+        \code{restoring.M_theta}. $\overline{BG}$ itself is not stored. (Since 15 October 2026
+        only \code{restoring.M_theta} remains, because roll is not modelled; see \cref{sec:no-roll}.)
+\end{enumerate}
+
+\section*{\Cref{ch:symmetry}}
+\begin{enumerate}
+  \item $X_{vv}v^2$ is even in $v$, so it is allowed. $X_v v$ is odd, so it is forbidden.
+  \item $r$ is odd under the reflection and cannot appear in surge for a symmetric vehicle, while $r^2$
+        is even. Testing $r$ is still useful as a sanity check: a significant $r$ means the
+        vehicle or its thrust is \emph{not} symmetric (e.g.\ a misaligned thruster or tether
+        pulling sideways), or the residual contains a controller artefact.
+  \item Nonlinear cross-group terms such as $ur$ and $vr$ (type 2). Combined surge--yaw also
+        exercises any actuation-level coupling (type 3) between the surge and yaw thrusters.
+\end{enumerate}
+
+\section*{\Cref{ch:surge}}
+\begin{enumerate}
+  \item Set $\dot u = 0$ in \eqref{eq:surge} and solve the quadratic. $\mtot$ multiplies
+        $\dot u$, so it disappears.
+  \item Quadratic: $1/u$ against $t$, with slope $\Xuu/\mtot$. Linear: $\ln u$ against $t$, with
+        slope $-X_u/\mtot$.
+  \item They fit identically: the second is the first scaled by $1.1$, which is exactly the
+        unobservable scale factor.
+\end{enumerate}
+
+\section*{\Cref{ch:actuation}}
+\begin{enumerate}
+  \item As the battery sags the true thrust falls by up to about \qty{25}{\percent}, but a
+        fixed-voltage curve keeps reporting the same force. The fit explains the lower speed for
+        the ``same'' force with more drag.
+  \item The propeller is optimised for one direction. A reversed thruster driven ``forward''
+        runs on the reverse branch of the curve, which mirroring selects and negation does not.
+  \item $0.03 \times 20 = \qty{0.6}{\newton\meter}$, positive about $+y$ in FLU, so nose down.
+\end{enumerate}
+
+\section*{\Cref{ch:integration}}
+\begin{enumerate}
+  \item From $2.7\times10^{-9}$ to $1.7\times10^{-10}$, a factor of about 16, which equals
+        $2^4$. This is consistent with fourth order.
+  \item The ESC itself holds the last pulse width until a new one arrives (ZOH), so holding is
+        the physically correct input model. Interpolating would also use a future sample.
+  \item If $\taueff$ became shorter than about \qty{4}{\milli\second}, i.e.\ with enormous damping or a
+        tiny inertia, such as a wrongly entered coefficient off by orders of magnitude.
+\end{enumerate}
+
+\section*{\Cref{ch:maneuvers}}
+\begin{enumerate}
+  \item One run gives one equation $T = X_u u + \Xuu u^2$ with two unknowns.
+  \item $\delta_1 = \ln(0.30/0.12) = 0.92$, so $\zeta = \delta/\sqrt{4\pi^2 + \delta^2} \approx 0.14$.
+        $\delta_2 = \ln(0.12/0.05) = 0.88$ is slightly smaller at smaller amplitude, which hints at a
+        small quadratic contribution.
+  \item With $T = 0$ there is no thrust term in the equation. It still determines only the
+        ratios $X_u/\mtot$ and $\Xuu/\mtot$, not absolute drag.
+\end{enumerate}
+
+\section*{\Cref{ch:timing}}
+\begin{enumerate}
+  \item Inertia is read from the first second of a transient, where a few hundred
+        milliseconds matter. Drag is read from steady states or slow decays, where they do not.
+  \item A thrust step is an edge in acceleration but only the start of a ramp in velocity, and the
+        IMU samples about ten times faster.
+  \item At rest $a_x = 0$, so $f_x = -g\sin\theta_0 = -9.81\sin\qty{1}{\degree} \approx
+        \qty{-0.17}{\meter\per\second\squared}$. Yes, it is consistent.
+\end{enumerate}
+
+\section*{\Cref{ch:estimation}}
+\begin{enumerate}
+  \item From the normal equations, $\vect{\Phi}^\top(\vect{y} - \vect{\Phi}\hat{\vect{\theta}}) = \vect{0}$.
+  \item A causal filter delays $u$ (and $\dot u$) relative to $T$, and the delay looks like extra
+        inertia (\cref{ch:timing}).
+  \item No differentiation of noisy velocity is needed, and the delay can be estimated as a
+        parameter. Drag build-up during the step is also modelled instead of ignored.
+\end{enumerate}
+
+\section*{\Cref{ch:coupling}}
+\begin{enumerate}
+  \item The least-squares residual is already orthogonal to the own regressors, so projecting it
+        again would change nothing.
+  \item $3/\sqrt{149} \approx 0.25$.
+  \item A closed-loop controller that reacts to both surge and sway errors, a current or tether
+        whose effect changes with heading and drift, or a misaligned thruster.
+\end{enumerate}
+
+\section*{\Cref{ch:validation}}
+\begin{enumerate}
+  \item A free run hides nothing: every coefficient error accumulates. Re-initialisation
+        repeatedly removes accumulated error and only tests short-horizon prediction, although
+        its error shape tells which coefficient is wrong.
+  \item A velocity bias means thrust scale or drag. Steady-state runs at several levels compare
+        $u_\mathrm{ss}$ directly, and a coast-down tests drag without any thrust.
+  \item The sign check would show a negative correlation between $(p - p_0)$ and EKF surge and
+        print \code{INVERTED - consider thrust.sign: -1}. It would not change anything itself.
+\end{enumerate}
+
+\section*{\Cref{ch:synthetic}}
+\begin{enumerate}
+  \item On the ideal bag every deviation from the truth is a bias of the method itself. If that is
+        not zero first, the deviations on imperfect bags mix two causes that can no longer be
+        separated.
+  \item $\code{servo_delay_s} = \qty{-0.12}{\second}$: the scripts subtract the value from the log
+        time, and the thrust acts after the log.
+  \item Two errors happen to cancel: the smoothing bias (about $+\qty{14}{\percent}$) and the thrust
+        scale ($1/1.15$). $X_u$ and $\Xuu$ of the same fit are off, and a different window would
+        break the cancellation.
+  \item A short window passes more of the differentiation noise into $\dot u$. Noise in a
+        regressor attenuates its coefficient toward zero (errors-in-variables), so $\mtot$ is
+        underestimated.
+\end{enumerate}

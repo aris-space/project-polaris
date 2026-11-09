@@ -1,0 +1,245 @@
+\chapter{Experiment design: the manoeuvres}
+\label{ch:maneuvers}
+
+The quality of an identified model is limited by the data it is fitted to. No estimator can
+recover a parameter that the experiment did not excite. This chapter covers the general
+principles and then each manoeuvre in \file{maneuvers.md}.
+
+\section{Principles}
+
+\paragraph{Excitation.} Least-squares estimation (\cref{ch:estimation}) needs the regressors, here
+$\dot u$, $u$ and $|u|u$, to vary \emph{independently} over the data set. If the vehicle only
+ever cruises at one speed, $u$ and $|u|u$ are proportional and $X_u$ cannot be separated
+from $\Xuu$. If it never accelerates, $\mtot$ is invisible. This property is called
+\emph{persistent excitation} \cite{ljung1999}. Different manoeuvres excite different
+regressors:
+\begin{itemize}[nosep]
+  \item steps from rest: large $\dot u$ at small $u$, which isolates $\mtot$;
+  \item steady states at several levels: $\dot u = 0$ at different $u$, which separates $X_u$ from $\Xuu$;
+  \item coast-down: $T = 0$, so no thrust error enters;
+  \item sinusoids: controlled ratio of $\dot u$ to $u$ through the frequency.
+\end{itemize}
+
+\paragraph{Open loop.} The command scripts drive \code{/pixhawk/manual_control} in
+MANUAL mode, never \code{/pixhawk/cmd_vel} in GUIDED mode. In GUIDED mode ArduSub's velocity
+controller would close a loop around the vehicle. The thrust would then react to the
+measured velocity, including its disturbances and noise, and input and noise become
+correlated. Least squares assumes they are not, and the estimates become biased: closed-loop
+data tends to identify the inverse of the controller rather than the plant
+\cite[ch.~13]{ljung1999}. The autonomy bags from Zermatt are closed loop for the same reason,
+which makes them acceptable for validation but not ideal for fitting.
+
+\paragraph{Repeatability and holdout.} Every manoeuvre is repeated, and runs are split into a
+fitting set and a held-out validation set, so that the validation answers ``does the model
+predict data it has not seen?''.
+
+\section{Command interface}
+
+\begin{table}[htbp]
+\centering
+\caption{Axes of the \code{/pixhawk/manual_control} message (\code{Int16MultiArray}).}
+\label{tab:axes}
+\begin{tabular}{@{}c l l c@{}}
+\toprule
+Index & Axis & Range & Neutral \\
+\midrule
+0 & $x$ surge & $-1000 \dots 1000$ & 0 \\
+1 & $y$ sway  & $-1000 \dots 1000$ & 0 \\
+2 & $z$ heave & $0 \dots 1000$ & 500 \\
+3 & $r$ yaw   & $-1000 \dots 1000$ & 0 \\
+4 & $s$ roll  & $-1000 \dots 1000$ & 0 \\
+5 & $t$ pitch & $-1000 \dots 1000$ & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\code{_step_common.run_constant_surge()} publishes \code{[surge, 0, 500, 0, 0, 0]} at
+\qty{20}{\hertz} for the hold time, clamps surge to $\pm500$, and then sends ten neutral
+messages so that a single lost packet cannot leave the thruster running. The vehicle has to
+be armed and in MANUAL mode beforehand; the script deliberately does neither.
+
+\paragraph{Event markers.} Each run publishes JSON markers on \code{/sysid/event}:
+\code{thrust_on} with the first command, \code{thrust_cut} with the first neutral message,
+and \code{done} (or \code{interrupted}). The fit scripts can therefore cut a bag into
+segments without guessing times from the PWM, and every run provides two sharp edges for
+the delay measurement of \cref{ch:timing}. The markers only help if \code{/sysid/event} is
+in the recorder's topic list.
+
+\section{Static tests (pool)}
+
+\subsection{Static tilt}
+
+A known moment $M_\mathrm{app}$ (a weight at a known lever) is applied and the steady tilt is
+measured. From \eqref{eq:pitch-stiffness},
+\begin{equation}
+  M_\theta = \frac{M_\mathrm{app}}{\theta - \theta_0}.
+\end{equation}
+Several weights give several points and a straight-line fit. Curvature would reveal
+large-angle nonlinearity ($\sin\theta$ rather than $\theta$).
+
+\subsection{Free decay}
+
+The vehicle is displaced in pitch (or roll) and released. The rotational equation
+\begin{equation}
+  (I_{yy} - M_{\dot q})\,\ddot\theta + M_q\,\dot\theta + M_{q|q|}|\dot\theta|\dot\theta + M_\theta\,\theta = 0
+  \label{eq:free-decay}
+\end{equation}
+is a damped oscillator. In its linear form the standard quantities are
+\begin{equation}
+  \omega_n = \sqrt{\frac{M_\theta}{I_{yy} - M_{\dot q}}}, \qquad
+  \zeta = \frac{M_q}{2\sqrt{M_\theta\,(I_{yy} - M_{\dot q})}}, \qquad
+  \omega_d = \omega_n\sqrt{1-\zeta^2}.
+\end{equation}
+With $M_\theta$ known from the tilt test, the measured frequency gives the total inertia
+$I_{yy} - M_{\dot q} = M_\theta/\omega_n^2$. The decay of successive peaks gives the damping
+through the logarithmic decrement,
+\begin{equation}
+  \delta = \ln\frac{\theta_k}{\theta_{k+1}} = \frac{2\pi\zeta}{\sqrt{1-\zeta^2}} .
+\end{equation}
+With quadratic damping the decrement depends on amplitude: large swings decay
+proportionally faster. Plotting $\delta$ against amplitude separates the linear from the
+quadratic part. The equivalent linear damping of a quadratic term at amplitude $A$ and
+frequency $\omega$ is $\tfrac{8}{3\pi}M_{q|q|}\,\omega A$ \cite[sec.~6.4]{fossen2011}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}
+\begin{axis}[wide,xlabel={$t$ / \unit{\second}},ylabel={$\theta$ / \unit{\radian}},xmin=0,xmax=8]
+\addplot[black] table[x=t,y=dummy]{data/decay.dat};
+\addplot[blue,dashed] table[x=t,y=lowdamp]{data/decay.dat};
+\legend{dummy coefficients ($\zeta \approx 0.58$),linear damping $\div 10$}
+\end{axis}
+\end{tikzpicture}
+\caption{Simulated pitch free decay from \qty{0.35}{\radian} with the dummy BlueROV2
+coefficients ($I_{yy} - M_{\dot q} = \qty{0.365}{\kilogram\meter\squared}$,
+$M_\theta = \qty{1.316}{\newton\meter\per\radian}$, $M_q = \qty{0.8}{\newton\meter\second\per\radian}$,
+$M_{q|q|} = \qty{0.47}{\newton\meter\second\squared\per\radian\squared}$) and with the linear
+damping reduced tenfold.}
+\label{fig:decay}
+\end{figure}
+\FloatBarrier
+
+\Cref{fig:decay} illustrates a practical limitation. With the dummy coefficients pitch is so
+heavily damped ($\zeta\approx0.58$) that barely one overshoot is visible. Frequency and
+decrement are then poorly determined from peaks. If POLARIS turns out similar, the decay
+should be fitted as a whole trajectory by integrating \eqref{eq:free-decay}
+(output error, \cref{sec:output-error}) rather than read off peak by peak.
+
+\section{Dynamic tests (lake)}
+
+\subsection{Step from rest}
+
+At $t = 0^+$ the vehicle is at rest, so all damping vanishes and \eqref{eq:surge} gives
+$\dot u(0^+) = T/\mtot$. The initial acceleration therefore measures the total inertia
+directly. \Cref{ch:timing} explains why this is harder than it looks.
+
+\subsection{Multi-level steps}
+
+The four scripts \code{step_surge_200} to \code{step_surge_500} hold a constant command for
+\qty{10}{\second}. Averaging the speed over the steady part of each run gives pairs
+$(T_i, u_{\mathrm{ss},i})$ that satisfy
+\begin{equation}
+  T_i = X_u\,u_{\mathrm{ss},i} + \Xuu\,u_{\mathrm{ss},i}^2 .
+  \label{eq:ss-regression}
+\end{equation}
+This is \emph{linear in the unknowns} $X_u$ and $\Xuu$ even though the model is nonlinear in
+$u$, so ordinary least squares applies directly. Two levels determine the two unknowns, and
+more levels give a check that the quadratic law actually fits. The levels should span the
+operating speed range, because the low-speed points carry most of the information about $X_u$.
+
+\subsection{Coast-down}
+
+\code{coastdown_surge_400.py} holds 400 for \qty{20}{\second}, which is long enough to reach steady speed and to
+average DVL noise, and then cuts thrust at the \code{thrust_cut} marker. The decay after the cut follows
+\eqref{eq:decay-both} with no thrust term, so no thrust-curve error enters. The
+linearisations of \cref{sec:closedform} give quick checks: $\ln u$ against $t$ is straight
+for linear damping and $1/u$ against $t$ for quadratic damping (\cref{fig:coast-lin}). In
+practice \eqref{eq:decay-both} is fitted directly, and the result is the pair of ratios
+$X_u/\mtot$ and $\Xuu/\mtot$ (\cref{sec:identifiability}).
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$t$ / \unit{\second}},ylabel={$1/u$ / \unit{\second\per\meter}},xmin=0,xmax=6]
+\addplot[red] table[x=t,y=invquad]{data/coast.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Quadratic only: $1/u$ against $t$}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={$t$ / \unit{\second}},ylabel={$\ln(u / \unit{\meter\per\second})$},xmin=0,xmax=6]
+\addplot[blue] table[x=t,y=lnlin]{data/coast.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Linear only: $\ln u$ against $t$}
+\end{subfigure}
+\caption{Linearising transformations of the simulated coast-down curves of
+\cref{fig:step}: reciprocal speed for purely quadratic damping and logarithm of speed for purely
+linear damping, both against time.}
+\label{fig:coast-lin}
+\end{figure}
+\FloatBarrier
+
+\subsection{Forced oscillation}
+
+A sinusoidal command at frequency $\omega$ keeps the vehicle within a short travel distance.
+For the linearised surge dynamics $\mtot\dot u + d\,u = F$ the frequency response is
+\begin{equation}
+  G(j\omega) = \frac{U}{F} = \frac{1}{d + j\omega\mtot}
+  \quad\Rightarrow\quad
+  \mathrm{Re}\,G^{-1} = d, \qquad \frac{\mathrm{Im}\,G^{-1}}{\omega} = \mtot .
+\end{equation}
+Amplitude and phase at each frequency therefore give damping and inertia \emph{simultaneously}.
+Low frequencies are dominated by damping and high frequencies by inertia, which is why the
+sweep spans a range. With quadratic damping, $d$ is the amplitude-dependent equivalent
+damping $X_u + \tfrac{8}{3\pi}\Xuu U$.
+
+\subsection{Combined axes}
+
+Surge and yaw commanded together excite the products $ur$ and $vr$ that single-axis
+manoeuvres never produce (\cref{ch:symmetry}). These runs test the coupling, see \cref{ch:coupling}.
+
+\section{Summary}
+
+\begin{table}[htbp]
+\centering
+\caption{Manoeuvres of \file{maneuvers.md}, the quantities each one determines, and the
+implementation state of the corresponding scripts.}
+\label{tab:maneuvers}
+\small
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+Manoeuvre & Determines & Scripts \\
+\midrule
+Static tilt & $M_\theta$ and $\theta_0$ (roll part dropped 15 Oct) & fit placeholder \\
+Free decay & $I_{yy} - M_{\dot q}$; pitch damping (roll part dropped 15 Oct) & fit placeholder \\
+Step from rest & $\mtot$ (from $T/\dot u(0^+)$) & command scripts exist \\
+Multi-level steps & $X_u$, $\Xuu$ (in thrust units) & \code{step_surge_200..500} \\
+Coast-down & $X_u/\mtot$, $\Xuu/\mtot$ & \code{coastdown_surge_400} \\
+Forced oscillation & $\mtot$ and damping together & not yet \\
+Combined axes & coupling terms & not yet \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\begin{revised}[title=Revised 15 October 2026]
+Roll is no longer modelled (\cref{sec:no-roll}). The roll parts of the static tilt and the roll
+free decay (section 2.1.3 of \file{maneuvers.md}) are not needed, and \cref{tab:maneuvers} lists
+only the pitch quantities. The theory of this chapter applies to roll unchanged if roll is
+ever re-enabled.
+\end{revised}
+
+\begin{questions}
+\begin{enumerate}
+  \item Why can a single steady-state run not separate $X_u$ from $\Xuu$?
+  \item The pitch free decay of a vehicle shows peaks of \num{0.30}, \num{0.12} and
+        \qty{0.05}{\radian}. Estimate $\zeta$ from the first decrement. Does the damping look linear?
+  \item Why does a coast-down not need the thrust curve, and what can it still not deliver on its own?
+\end{enumerate}
+\end{questions}

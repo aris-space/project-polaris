@@ -1,0 +1,274 @@
+\chapter{Actuation: from PWM to force}
+\label{ch:actuation}
+
+The thrust $T$ in \eqref{eq:surge} is never measured. It is \emph{reconstructed} from the
+logged servo PWM and the battery voltage. Any error in this reconstruction goes straight
+into the identified coefficients (\cref{sec:identifiability}), so this chapter matters as much
+as the hydrodynamics.
+
+\section{The signal chain}
+
+\begin{enumerate}
+  \item A command script publishes \code{Int16MultiArray} $[x, y, z, r, s, t]$ on
+        \code{/pixhawk/manual_control}, with surge $x\in[-1000, 1000]$, capped at $\pm500$.
+  \item The bridge forwards it as a MAVLink \code{MANUAL_CONTROL} message. ArduSub in MANUAL mode passes it
+        through the motor mixer, without any closed-loop controller, to produce one PWM per motor.
+  \item The ESC drives the motor, the propeller produces thrust, and the PWM actually sent is
+        echoed on \code{/pixhawk/servo_output_raw} (6 channels, \unit{\micro\second}, no header).
+\end{enumerate}
+The model starts at step 3. It uses the PWM that was \emph{sent} to the ESC, not the command,
+so the mixer and any ArduSub limits are already accounted for.
+
+\section{Thruster physics and the T500 table}
+
+A propeller's static thrust scales with the square of its rotation rate,
+$T = \rho K_T n^2 D^4$, and the rotation rate an ESC can reach rises with the supply voltage.
+The same PWM therefore produces more thrust from a full battery than from a depleted one.
+Blue Robotics publishes measured T500 thrust against PWM at several voltages. The repository
+keeps four columns (\SIlist{12;14;16;18}{\volt}) in \file{thruster_curves/t500_force_vs_voltage.csv},
+plotted in \cref{fig:t500}.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={PWM / \unit{\micro\second}},ylabel={Thrust / \unit{\newton}},xmin=1100,xmax=1900,
+  xtick={1100,1300,1500,1700,1900}]
+\addplot[blue!35] table[x=pwm,y=f12]{data/t500.dat};
+\addplot[blue!60] table[x=pwm,y=f14]{data/t500.dat};
+\addplot[blue!85!black] table[x=pwm,y=f16]{data/t500.dat};
+\addplot[black] table[x=pwm,y=f18]{data/t500.dat};
+\legend{\qty{12}{\volt},\qty{14}{\volt},\qty{16}{\volt},\qty{18}{\volt}}
+\end{axis}
+\end{tikzpicture}
+\caption{Thrust against PWM}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+\begin{axis}[notes,xlabel={Battery voltage / \unit{\volt}},ylabel={Thrust / \unit{\newton}},xmin=11,xmax=19,ymin=0]
+\addplot[blue!40] table[x=v,y=f1700]{data/t500_volt.dat};
+\addplot[blue!75!black] table[x=v,y=f1800]{data/t500_volt.dat};
+\addplot[black] table[x=v,y=f1900]{data/t500_volt.dat};
+\addplot[gray,dashed,forget plot] coordinates {(14,0) (14,120)};
+\addplot[gray,dashed,forget plot] coordinates {(16.8,0) (16.8,120)};
+\legend{\qty{1700}{\micro\second},\qty{1800}{\micro\second},\qty{1900}{\micro\second}}
+\end{axis}
+\end{tikzpicture}
+\caption{Thrust against voltage (\code{ThrusterMap})}
+\end{subfigure}
+\caption{Blue Robotics T500 thrust from the manufacturer table: against PWM at the four
+tabulated voltages, and against battery voltage at three PWM values as evaluated by
+\code{ThrusterMap.force_n}. Dashed lines mark \qty{14.0}{\volt} (BMS warning threshold) and
+\qty{16.8}{\volt} (full 4S pack). Outside \qtyrange{12}{18}{\volt} the map is clamped.}
+\label{fig:t500}
+\end{figure}
+\FloatBarrier
+
+Four features of the table matter for the model:
+\begin{itemize}
+  \item \textbf{Dead band.} Thrust is zero in a band around the \qty{1500}{\micro\second} neutral (about
+        \qtyrange{1460}{1540}{\micro\second}; the exact edges differ slightly between voltages).
+        Small commands produce no force at all.
+  \item \textbf{Voltage sensitivity.} At \qty{1900}{\micro\second} thrust rises from
+        \qty{58.1}{\newton} at \qty{12}{\volt} to \qty{104.5}{\newton} at \qty{18}{\volt}, roughly
+        $T\propto V^{1.45}$. Over a normal dive (\qty{16.8}{\volt} down to \qty{14}{\volt})
+        full-scale thrust falls by about \qty{25}{\percent}. A model evaluated at a fixed voltage
+        would absorb that drift into its drag coefficients.
+  \item \textbf{Forward/reverse asymmetry.} At \qty{16}{\volt}, \qty{1900}{\micro\second} gives
+        \qty{89.8}{\newton} but \qty{1100}{\micro\second} gives only \qty{-59.8}{\newton}, because
+        propellers are optimised for one direction.
+  \item \textbf{Units.} The table is in kilogram-force. The code multiplies by
+        $g = \qty{9.80665}{\meter\per\second\squared}$ (\code{KGF_TO_N}).
+\end{itemize}
+
+\section{Bilinear interpolation}
+
+\code{ThrusterMap.force_kgf_at(p, V)} first interpolates linearly in PWM inside every voltage
+column, then linearly in voltage between the two bracketing columns. With $V_j \le V \le V_{j+1}$:
+\begin{equation}
+  F(p, V) = (1-\lambda)\,F_j(p) + \lambda\,F_{j+1}(p), \qquad
+  \lambda = \frac{V - V_j}{V_{j+1} - V_j},
+  \label{eq:bilinear}
+\end{equation}
+where $F_j(p)$ is the PWM interpolation in column $j$. For example
+$F(\qty{1700}{\micro\second}, \qty{15.2}{\volt}) = \qty{2.998}{kgf} = \qty{29.4}{\newton}$.
+Inputs outside the table are \emph{clamped} to the nearest edge and never extrapolated, and
+\code{clamped()} reports when that happened. \file{propagate_model.py} prints a warning when
+voltage samples fall outside the \qtyrange{12}{18}{\volt} range.
+
+\section{Thrust direction: mirroring, not negating}
+
+If a thruster turns out to be mounted backwards (\code{thrust.sign: -1}), the code does
+\emph{not} compute $-F(p)$. It mirrors the PWM about neutral instead:
+\begin{equation}
+  F_\mathrm{eff} = F\bigl(p_0 + s\,(p - p_0)\bigr), \qquad s = \pm1 .
+  \label{eq:mirror}
+\end{equation}
+With an asymmetric curve the two are not equivalent. A reversed propeller pushed by a
+``forward'' PWM produces the \emph{reverse} branch of the curve, not the negated forward
+branch. \code{_mirror()} in \file{actuation.py} implements \eqref{eq:mirror}. The same
+mirroring is applied to the baseline power law in \file{propagate_model.py}.
+
+\section{Battery voltage}
+
+The BMS node publishes the pack voltage about once per second as a \code{DiagnosticStatus}
+named \code{"Battery: Voltage"} on \code{/diagnostics}, with the value as text
+(\code{"14.70V"}). \code{read_voltage()} parses it (\code{parse_bms_voltage}) and
+\code{VoltageTrack.at()} holds it constant between samples (zero-order hold). Before the
+first sample the first value is used. That is harmless because pack voltage changes over
+minutes. If a bag has no BMS data, \code{thrust.voltage_fallback_v} or the \code{--voltage}
+flag must provide a fixed voltage. Otherwise the scripts refuse to run.
+
+\section{Unknown is NaN, never zero}
+
+\code{ThrustSource} returns \code{NaN} for every servo channel that has no curve yet. A
+missing curve can therefore never be mistaken for zero thrust, which would silently bias a
+fit. The same policy applies to stale PWM: if the last servo sample is older than
+\code{pwm_stale_s} (three times the median servo interval, at least \qty{0.5}{\second}),
+the thrust over that span is unknown. The propagation then restarts from the EKF instead
+of integrating with a guessed force.
+
+\section{Allocation: from thruster forces to body forces}
+
+Thruster $i$ at position $\vect{r}_i$ (relative to the centre of mass) pushing along unit
+direction $\vect{d}_i$ with force $F_i$ contributes
+\begin{equation}
+  \vect{\tau}_i = \begin{bmatrix} \vect{d}_i \\ \vect{r}_i\times\vect{d}_i \end{bmatrix} F_i,
+  \qquad
+  \vect{\tau} = \sum_i \vect{\tau}_i = \vect{B}\,\vect{F},
+  \label{eq:allocation}
+\end{equation}
+where the columns of the allocation matrix $\vect{B}$ are the per-thruster vectors. The
+\code{allocation:} section of \file{model.yaml} stores one row of $\vect{B}$ per axis as
+\code{(channel, lever_m)} pairs (\cref{tab:allocation}). For translation the ``lever'' is the
+direction cosine, for rotation it is the moment arm in metres.
+
+\begin{table}[htbp]
+\centering
+\caption{Allocation rows stored in \file{model.yaml} (FLU, about the centre of mass).}
+\label{tab:allocation}
+\begin{tabular}{@{}l l S[table-format=-1.4] l@{}}
+\toprule
+Axis & Channel & {Lever} & Note \\
+\midrule
+surge & 0 (\code{MOT_1}) & 1.0 & only thruster with forward authority \\
+pitch & 2 (\code{MOT_3}) & 0.5508 & rear vertical pair \\
+pitch & 3 (\code{MOT_4}) & 0.5508 & rear vertical pair \\
+pitch & 4 (\code{MOT_5}) & -0.6358 & front vertical \\
+pitch & 0 (\code{MOT_1}) & 0.0300 & surge thruster \qty{3}{\centi\meter} above the CoM \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+Only the surge row is used today, since surge is the only modelled DOF. The other channels'
+curves, signs and the remaining axes' rows are still to be added, and the lever arms will
+change when the Pixhawk mixer is updated for the new geometry.
+
+\section{Thrust bench (planned)}
+\label{sec:thrust-bench}
+
+\begin{revised}[title=Added 28 October 2026,breakable]
+The vertical and lateral thrusters (DD2838) have no published curve, and the curve in
+\file{thruster_curves/PLACEHOLDER_dd2838_force_vs_voltage.csv} is a scaled T500 table. A bench
+is planned to measure the static thrust (bollard pull) $F(p, V)$ of one representative unit.
+The concept document is \emph{Thrust-Messstand: Konzept und Messablauf} (28 October 2026). Its
+main points are summarised here, together with corrections from its review.
+
+\paragraph{Set-up.} The thruster is mounted underwater on a lever or pendulum, and the force is
+led out of the water to a dry S-type load cell (\qty{10}{\kilogram} rating, about
+\qty{98}{\newton}), connected at both ends through rod ends so that only axial force reaches it.
+The expected maximum of \qty{3.1}{kgf} (about \qty{30}{\newton}) uses about \qty{31}{\percent} of
+the rating. The cell is read by an Adafruit NAU7802 (24-bit ADC, I\textsuperscript{2}C) on the
+Jetson Orin Nano. The PWM is set from the same computer through a Pixhawk running ArduSub,
+on an output with \code{SERVOn_FUNCTION = 0} so that \code{MAV_CMD_DO_SET_SERVO} drives it
+directly. A fixed-voltage power supply feeds the ESC, and the voltage is measured at the ESC
+and logged, because cable losses under load reach a few hundred \si{\milli\volt}.
+
+\paragraph{Procedure.} One sweep is run per supply voltage, with all raw samples logged with a
+time stamp; averaging and the removal of the settling phase are done afterwards, so that the
+window can be changed later. \Cref{tab:bench-procedure} lists the parameters.
+
+\paragraph{Analysis.} The ADC counts are converted to newtons with a calibration factor from
+reference masses, applied through the lever, so that the lever ratio is part of the calibration.
+The first \qty{5}{\second} of every step are discarded (the settling time is estimated at
+hundreds of milliseconds to a few seconds and is checked by comparing windows that skip 3, 5 and
+\qty{8}{\second}). Further checks: the tare before and after each sweep, up against down
+(hysteresis, heating), repeated sweeps, the logged voltage against the set value, and the logged
+\code{SERVO_OUTPUT_RAW} against the commanded PWM. The result is written in the format of
+\file{t500_force_vs_voltage.csv} (\code{pwm_us}, \code{force_kgf_<V>V}, one common PWM grid for
+all voltages), so that \code{ThrusterMap} reads it without changes.
+
+\paragraph{Corrections from the review.}
+\begin{itemize}
+  \item \textbf{Excitation voltage.} The concept sets the bridge excitation to \qty{4.0}{\volt}.
+        The NAU7802's internal regulator cannot produce more than its own supply minus a dropout,
+        so with the board supplied from \qty{3.3}{\volt} about \qty{3.0}{\volt} is the realistic
+        maximum. At \qty{3.0}{\volt} and \qty{2}{\milli\volt\per\volt} the full-scale signal is
+        \qty{6}{\milli\volt} (\qty{1.8}{\milli\volt} at \qty{30}{\newton}), which is still ample.
+  \item \textbf{Reverse thrust is required, not optional.} The vertical and lateral thrusters run
+        in both directions on the vehicle, and the forward and reverse branches differ
+        (\cref{fig:t500}).
+  \item \textbf{Finer steps near neutral.} The vehicle spends most of its time near
+        \qty{1500}{\micro\second}, where the dead band ends (often \qtyrange{25}{50}{\micro\second}
+        either side). Steps of \qty{10}{\micro\second} within about \qty{\pm 100}{\micro\second}
+        of neutral resolve where the thrust starts.
+  \item \textbf{Voltages.} The sweeps should bracket the operating range of the 4S pack
+        (about \qtyrange{13}{16.8}{\volt}); the interpolation clamps outside the measured range.
+        The concept's scaling $F \propto V^2$ is an upper estimate: the T500 data follow about
+        $V^{1.5}$.
+  \item \textbf{The same ESC as on the vehicle.} The ESC sets the dead band and the mapping from
+        PWM to speed, so the curve is only valid for the ESC model used on the bench.
+  \item \textbf{Measured in water (decided).} The concept left water or air open; the bench is
+        run in water. In air the propeller is unloaded and the motor is not cooled. In a small
+        tank the jet recirculates and lowers the thrust over time; the up/down and repeat
+        comparisons reveal it.
+\end{itemize}
+\end{revised}
+
+\begin{table}[htbp]
+\centering
+\caption{Sweep parameters of the planned thrust bench, from the concept document with the
+corrections of \cref{sec:thrust-bench}.}
+\label{tab:bench-procedure}
+\begin{tabular}{ll}
+\toprule
+Parameter & Value \\
+\midrule
+PWM steps & \qty{20}{\micro\second}; \qty{10}{\micro\second} within \qty{\pm 100}{\micro\second} of neutral \\
+Range & \qtyrange{1500}{1900}{\micro\second} and \qtyrange{1500}{1100}{\micro\second}, each up and down \\
+Hold per step & \qty{15}{\second}, of which the first \qty{5}{\second} are discarded \\
+Ramp between steps & \qty{10}{\micro\second} per \qty{0.1}{\second} \\
+Tare & \qty{10}{\second} at \qty{1500}{\micro\second} before and after each voltage \\
+Pause between voltages & about \qty{60}{\second} \\
+Voltages & bracketing \qtyrange{13}{16.8}{\volt}, measured at the ESC \\
+\bottomrule
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+\section{The deployed baseline}
+
+\file{thruster_velocity_estimator.py} estimates speed as
+\begin{equation}
+  u_\mathrm{pl} = 0.780\,\mathrm{sign}(c)\,|c|^{0.964}, \qquad c = \frac{p - 1500}{500}.
+  \label{eq:powerlaw}
+\end{equation}
+This is a steady-state map fitted directly from PWM to speed. Compared with
+\eqref{eq:surge} it implicitly assumes (i) instantaneous response (no inertia), (ii) a fixed
+voltage, (iii) no dead band, and (iv) symmetric forward/reverse behaviour. It is kept in
+\code{dynamics.powerlaw_speed} solely as a comparison: a dynamic model that cannot beat it
+has not earned its complexity.
+
+\begin{questions}
+\begin{enumerate}
+  \item Why would identifying drag from a fixed-voltage thrust curve make the fitted $\Xuu$
+        drift between the start and end of a battery?
+  \item A thruster is found to be reversed. Why is $F(p_0 - (p - p_0))$ more correct than
+        $-F(p)$?
+  \item With the levers of \cref{tab:allocation}, what pitch moment does \qty{20}{\newton} of
+        surge thrust produce, and in which direction does the nose move?
+\end{enumerate}
+\end{questions}

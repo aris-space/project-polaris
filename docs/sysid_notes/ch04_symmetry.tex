@@ -1,0 +1,99 @@
+\chapter{Symmetry and decoupling}
+\label{ch:symmetry}
+
+Identifying all of \eqref{eq:fossen} at once would mean estimating dozens of coefficients
+from data in which every axis moves at the same time. The plan in \file{maneuvers.md} is to
+identify one axis at a time instead. This chapter explains why that is legitimate and where
+it stops being legitimate.
+
+\section{The reflection argument}
+
+POLARIS is (approximately) mirror-symmetric about its $xz$ plane: port and starboard are
+mirror images. Consider the reflection $y \mapsto -y$. Under it
+\begin{itemize}
+  \item the \textbf{longitudinal} variables $u$, $w$, $q$ and forces $X$, $Z$, $M$ are unchanged;
+  \item the \textbf{lateral} variables $v$, $p$, $r$ and forces $Y$, $K$, $N$ change sign.
+\end{itemize}
+A symmetric vehicle cannot tell a manoeuvre from its mirror image, so its equations must be
+invariant under the reflection. Consequently:
+\begin{keyidea}
+A longitudinal force ($X$, $Z$, $M$) can depend on the lateral variables only through
+\emph{even} combinations such as $v^2$, $r^2$ or $vr$. A lateral force ($Y$, $K$, $N$)
+must be \emph{odd} in the lateral variables, for example $v$, $r$, $ur$ or $uv$.
+\end{keyidea}
+After linearising about straight-line motion ($v = p = r = 0$), every even combination
+vanishes to first order, and the inertia and damping matrices become block-diagonal after
+reordering the states:
+\begin{equation}
+  \vect{M} \;\to\; \begin{bmatrix} \vect{M}_\mathrm{lon} & \vect{0} \\ \vect{0} & \vect{M}_\mathrm{lat} \end{bmatrix},
+  \qquad
+  \text{lon} = (u, w, q), \quad \text{lat} = (v, p, r).
+  \label{eq:blockdiag}
+\end{equation}
+Surge, heave and pitch form one group, and sway, roll and yaw the other. Exciting surge alone
+does not, to first order, produce sway, roll or yaw. Each group can therefore be identified
+from its own manoeuvres.
+
+\section{What survives the symmetry}
+
+The decoupling is only \emph{first-order}. Three kinds of coupling remain.
+\begin{enumerate}
+  \item \textbf{Within a group.} Surge, heave and pitch can still couple to each other, for
+        example through off-diagonal added mass $X_{\dot w}$ or $M_{\dot u}$, or through the
+        restoring term $(W-B)\sin\theta$.
+  \item \textbf{Nonlinear cross-group terms.} The products in \eqref{eq:surge-full} are even in
+        the lateral variables, so they are allowed in surge: $-(m-Y_{\dot v})\,vr$. In the
+        lateral group the products of a longitudinal and a lateral variable survive, for example the
+        sway force $(m-\Xud)\,ur$ and the Munk yaw moment, which is proportional to $(\Xud - Y_{\dot v})\,uv$. This is the
+        ``surge--yaw'' coupling of \file{maneuvers.md} section 2.6: turning while moving
+        forward.
+  \item \textbf{Actuation-level coupling.} Thrusters do not have to respect the hull's symmetry.
+        In POLARIS, \code{MOT_1}, the only surge thruster, sits \qty{3}{\centi\meter} above the
+        centre of mass. Its line of action therefore produces a pitch moment
+        $M = 0.03\,T$, recorded in \file{model.yaml} as the lever \code{0.0300} in the
+        \code{pitch} allocation. Because $M$ and $\theta$ are both measured in FLU, where pitch
+        is positive nose-down, forward thrust pitches the nose down. In steady state that
+        moment is balanced by the restoring torque,
+        $\theta_\mathrm{ss} - \theta_0 = 0.03\,T/M_\theta$, so its size depends on the
+        still unknown stiffness $M_\theta$. With the dummy BlueROV2 stiffness
+        $\qty{1.316}{\newton\meter\per\radian}$ a \qty{20}{\newton} thrust would give
+        \qty{0.46}{\radian}. That shows the lever cannot be dismissed until $M_\theta$ has been measured.
+\end{enumerate}
+
+\section{Consequences for the plan}
+
+The per-axis plan follows directly from the argument:
+\begin{enumerate}
+  \item Identify each axis from manoeuvres that excite only that axis. The other axes are
+        given to the model as \emph{measured} inputs from the EKF (the \code{dofs:} section of
+        \file{model.yaml}).
+  \item Validate the per-axis models on holdout runs.
+  \item Command two axes together (section 2.6 of \file{maneuvers.md}). If the per-axis models still
+        explain the data, coupling is negligible. If a systematic residual remains, fit a
+        correction term while leaving the per-axis coefficients untouched.
+\end{enumerate}
+
+\begin{revised}[title=Revised 15 October 2026]
+Roll is not modelled any more (\cref{sec:no-roll}). The lateral group of the identified model is
+therefore $(v, r)$, with $\phi$ and $p$ replayed from the EKF. The symmetry argument is
+unaffected: it only states which groups may be identified separately.
+\end{revised}
+
+\begin{incode}
+The \code{dofs:} block in \file{model.yaml} switches every DOF between \code{modelled} and
+\code{measured}. Currently only \code{surge: modelled}; heading, sway, depth and attitude are
+replayed from the EKF inside \code{propagate()}. A wrong surge prediction therefore cannot
+be blamed on a wrong yaw model. This is error attribution by construction.
+\end{incode}
+
+\begin{questions}
+\begin{enumerate}
+  \item Is a term $X_{vv}\,v^2$ in the surge equation allowed for a port--starboard symmetric
+        vehicle? Is $X_v\,v$?
+  \item Why does the coupling check include $r^2$ but not $r$ as a natural Fossen term in
+        surge? (The code nevertheless tests $r$ as a generic candidate. Why might that still
+        be useful?)
+  \item Which of the three kinds of surviving coupling would the combined-axes manoeuvre
+        (surge and yaw together) excite?
+\end{enumerate}
+\end{questions}

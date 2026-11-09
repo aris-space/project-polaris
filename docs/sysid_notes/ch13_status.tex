@@ -1,0 +1,150 @@
+\chapter{Status, open issues and next steps}
+\label{ch:status}
+
+\section{What exists}
+
+\begin{table}[htbp]
+\centering
+\caption{Commits on \file{feature/sysid} touching \file{scripts/sysid}, oldest first, and
+uncommitted work at the time of writing.}
+\label{tab:commits}
+\small
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+\toprule
+Commit & Content \\
+\midrule
+\code{1710cba8} & Manoeuvre documentation, first command scripts, model outline \\
+\code{e91ec6d8} & T500 and dummy thruster curves, dummy model \\
+\code{35835403} & Commandable axes, symmetry decoupling, how to read propagation results \\
+\code{c80bc774} & \code{model_io} reads thrust and dofs sections; curve hash in version tag \\
+\code{97a2ff93} & \code{thrust:} section with allocation, trim angles, \code{dofs:} switches \\
+\code{1bd403e8} & Surge dynamics, thruster curve, RK4 step, with tests \\
+\code{fbcb799e} & Offline model propagation into an augmented MCAP for Foxglove \\
+\code{1bb5fc20} & Surge thrust from PWM and BMS battery voltage \\
+\code{4403f1de} & Event markers for the step scripts; coast-down script \\
+uncommitted & \file{actuation.py}, \file{fitting/coupling_check.py} and its tests; edits to \file{bag_io.py}, \file{model.yaml}, \file{maneuvers.md}, \file{propagate_model.py} \\
+uncommitted (14 Oct) & \file{simulation/synth_bag.py}, \file{simulation/Dvl.msg}, \file{tests/test_synth_bag.py}; typestore fix in \file{bag_io.py} (\cref{ch:synthetic}) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+\section{Open items}
+
+\begin{revised}[title=Revised 14 October 2026]
+Items 2, 11 and 12 are new or changed. On 15 October item 13 (roll) was added and item 8
+was reduced to pitch. Item 5 (fit scripts) now has a test bench to work against.
+\end{revised}
+
+\begin{enumerate}
+  \item \textbf{No POLARIS coefficients yet.} Every value in \file{model.yaml} is \code{null}. All
+        propagation so far used the dummy BlueROV2 model.
+  \item \textbf{\code{servo_delay_s} is 0, and its sign is counter-intuitive.} It should be measured
+        from IMU edges (\cref{ch:timing}) before $\mtot$ is fitted. A measured lag $L$ of the
+        thrust behind the logged PWM is entered as $-L$ (\cref{ch:synthetic}). Either the
+        convention is documented in \file{model.yaml} and \file{maneuvers.md}, or it is flipped
+        in \file{propagate_model.py} and \file{coupling_check.py} together. That decision is open.
+  \item \textbf{Short $\taueff$.} If POLARIS resembles the dummy, the effective time constant at
+        cruise is around \qty{0.2}{\second}, not \qty{1.4}{\second}. Delay handling and the
+        output-error fit are then essential rather than optional (\cref{sec:taueff,ch:timing}).
+  \item \textbf{Scale ambiguity.} The absolute values of $\mtot$, $X_u$, $\Xuu$ rest on the T500
+        datasheet. A bollard-pull load-cell test, or at least the weighed dry mass $m$, provides
+        the independent anchor (\cref{sec:identifiability}).
+  \item \textbf{Fit scripts.} \code{fit_static_tilt}, \code{fit_free_decay}, \code{fit_step},
+        \code{fit_damping}, \code{fit_coastdown}, \code{fit_oscillation} and \code{fit_coupling}
+        are placeholders. \code{coupling_check.py} contains a working equation-error surge fit
+        that can serve as their basis.
+  \item \textbf{Only surge is modelled}, and only channel 0 has a thrust curve and a known sign.
+        The other channels return NaN until their curves and signs are added.
+  \item \textbf{Allocation will change} with the new mixer geometry, and the lever arms must be
+        recomputed as FLU cross products.
+  \item \textbf{Trim angle} $\theta_0$ has to be measured from a still, powered-down float
+        ($\phi_0$ is no longer needed, since roll is not modelled).
+  \item \textbf{Comments in \file{model.yaml}} are lost on the first \code{update_parameters()}.
+  \item \textbf{Bag hygiene.} The June grid bag has EKF jumps (\cref{ch:validation}). Bags for fitting
+        need a continuous EKF over the analysed window and must record \code{/sysid/event}.
+  \item \textbf{Smoothing window.} The \qty{1}{\second} Savitzky--Golay default of
+        \file{coupling_check.py} biases coefficient estimates on dummy-like dynamics
+        (\cref{tab:synth-window}). Any fit script that differentiates the speed needs its window
+        tuned on synthetic bags.
+  \item \textbf{Command-to-PWM mapping.} The synthetic bench assumes
+        $p = 1500 + 0.4\,c$. The real ArduSub mapping is to be read off the first lake bag that
+        records both \code{manual_control} and \code{servo_output_raw}.
+  \item \textbf{Roll not modelled} (decided 15 October 2026, \cref{sec:no-roll}). This stays
+        valid only while the bags used for sway, heave and yaw fits show small roll. Wave-induced
+        roll at the surface reached \qty{14}{\degree} in the June bag. The bag QA script (S5)
+        should report $|\Delta\phi|_{95}$.
+  \item \textbf{Log and filter timing} (added 16 October 2026, \cref{sec:bias-study}).
+        \code{servo_output_raw} is logged at \qty{2}{\hertz} in the rectangle bags, which makes
+        $\mtot$ unidentifiable. Its rate should be raised to \qty{50}{\hertz}, or the edges should
+        be reconstructed from \code{manual_control}. \file{fit_surge.py} should filter all terms
+        consistently and use a grid of at least \qty{100}{\hertz}. The \code{/imu/data} header
+        stamps are batch times (bursts with gaps of up to \qty{72}{\milli\second}) and are not
+        usable for timing until that is fixed.
+\end{enumerate}
+
+\section{Remaining scaffolding that needs no data}
+\label{sec:scaffolding}
+
+\begin{revised}[title={New section, added 14 October 2026}]
+A survey of what can still be built before lake data exists, excluding the fit scripts
+themselves. Item S1 was implemented in this revision (\cref{ch:synthetic}). Item S9 followed
+on 15 October as a schema-only change: sway, heave and buoyancy slots in \file{model.yaml}
+(\cref{sec:model-schema}). CoG and CoB were deliberately not added, because they are lumped
+into $K_\phi$, $M_\theta$ and the trim angles.
+\end{revised}
+
+\begin{table}[htbp]
+\centering
+\caption{Scaffolding that can be built without lake data, excluding the fit scripts, with its
+purpose and status.}
+\label{tab:scaffolding}
+\small
+\begin{tabularx}{\textwidth}{@{}l X X l@{}}
+\toprule
+& Item & Why it is needed & Status \\
+\midrule
+S1 & Synthetic ground-truth bags & Verify every fit script against known coefficients and delays before lake data exists & \textbf{done} \\
+S2 & Event reader and segmenter for \code{/sysid/event} & Every fit script must cut runs into hold, cut and coast phases; one shared implementation instead of one per script & open \\
+S3 & IMU and DVL readers in \file{bag_io.py} (DVL rotated through \code{/tf_static}) & Delay measurement from IMU edges, filter lag from DVL against EKF, inertia from the accelerometer & open \\
+S4 & Shared uniform-grid dataset loader & \file{coupling_check.py} and \file{propagate_model.py} each resample on their own; fit scripts would add more copies & open \\
+S5 & Bag QA script for the field & Check topics, rates, event sequences, EKF jumps and voltage range right after recording, while still at the lake & open \\
+S6 & Per-horizon RMS bins in the propagation summary & Requested in \file{validation/PLAN.md} but not implemented; needed to read the error-versus-horizon shape as numbers & open \\
+S7 & Comment-preserving \code{update_parameters} & PyYAML drops the explanatory comments of \file{model.yaml} & open \\
+S8 & Remaining command scripts & Reverse steps, sine sweep (forced oscillation), combined surge and yaw, one programme player & open \\
+S9 & Model schema for sway, heave and restoring geometry & $Y_{\dot v}$, $Z_{\dot w}$, $W$, $B$, CoB had no slot, yet the coupling terms of \eqref{eq:surge-full} need them & \textbf{done} (15 Oct, \cref{sec:model-schema}) \\
+S10 & Run registry (\file{runs.yaml}) & Which bag holds which manoeuvre, which window is clean, and which bags are for fitting or held out & open \\
+S11 & Resolve the \code{servo_delay_s} sign convention & See open item 2 & decision \\
+S12 & Fit log (\file{results/fit_log.yaml}) & Every fit run recorded with bag, window, model, settings and parameters (added 16 Oct) & \textbf{done} (\cref{sec:fit-log}) \\
+S13 & Validation log & The same record for every propagation run & open \\
+S14 & Synthetic thrust following the command & Let \file{synth_bag.py} switch the thrust at the command time, so that the servo log rate becomes testable on the bench (\cref{tab:bias-servo}) & open \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+S2 and S3 are the natural next steps. With them, a fit script receives clean, segmented
+arrays from a synthetic or a real bag in two calls.
+
+\section{A suggested order of work}
+
+\begin{enumerate}
+  \item \textbf{Pool, static.} Float powered-down for $\theta_0$; tilt test for $M_\theta$; pitch
+        free decay for pitch inertia and damping. Weigh the vehicle for $m$, and measure the net
+        buoyancy $B - W$. (Roll tests dropped on 15 October 2026.)
+  \item \textbf{Fit scripts against synthetic bags} (added 14 October 2026). Every surge fit must
+        recover the truth from an ideal bag, and its bias against each imperfection should be known
+        (\cref{ch:synthetic}).
+  \item \textbf{Lake, one clean step} with \code{/sysid/event} and \code{/imu/data} recorded.
+        Measure the actuation delay from both edges and compare DVL with EKF for the filter lag.
+        Set \code{servo_delay_s} (negative for a lag).
+  \item \textbf{Lake, surge set.} Steps at 200--500 (both directions if possible) and coast-downs,
+        each repeated, with some runs held out.
+  \item \textbf{Fit.} Steady states give $X_u$, $\Xuu$. Coast-downs give the ratios. Their
+        quotient is cross-checked against $\mtot$ from the initial acceleration. Finish with an
+        output-error fit over whole runs, including the delay.
+  \item \textbf{Validate} on the held-out runs with \file{propagate_model.py} in free run, and
+        compare with the power law.
+  \item \textbf{Coupling.} Run \code{coupling_check.py} on clean windows, then do the combined-axes manoeuvre.
+  \item \textbf{Next axes:} yaw (needs the yaw allocation and curves for its thrusters), then sway and heave.
+\end{enumerate}
