@@ -11,9 +11,10 @@ Two modes:
     checks on every call to /health_check (std_srvs/srv/Trigger).
     `success` is true when no check FAILed (warnings allowed); `message`
     is a one-line summary, e.g. "2 sensors failed (IMU, Keller pressure)".
-    The full report is printed to the node's output. Each run is also published on /diagnostics
-    as a single `health_check` status (worst level, failing sensors named in
-    the message, per-check results as emoji-badged key/values, worst first).
+    The full report is printed to the node's output. Each run is also
+    published on /diagnostics as a single "Health Check" status (worst
+    level, failing sensors named in the message, one emoji-badged key/value
+    per sensor, worst first).
 
 The service mode is started with the system by start_system.launch.py
 (via launch/launch_health_check.launch.py), so /health_check can be called
@@ -34,7 +35,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -73,17 +74,17 @@ SERVICE_NAME = "/health_check"
 # and is overwritten by the next run. hardware_id is left empty (like the
 # other /diagnostics publishers): Foxglove adds an extra entry per hardware_id.
 DIAGNOSTICS_TOPIC = "/diagnostics"
-DIAGNOSTIC_NAME = "polaris: health_check"
+DIAGNOSTIC_NAME = "Health Check"
 
 # h_acc field is uint32 in 0.1 mm units. 10 m == 100_000 raw.
 H_ACC_MAX_RAW = 100_000
 
 # Device presence checks: (display name, /dev symlink)
 DEVICE_CHECKS: List[Tuple[str, str]] = [
-    ("IMU (Xsens)", "/dev/xsens_imu"),
-    ("Keller sensor", "/dev/keller"),
+    ("IMU", "/dev/xsens_imu"),
+    ("Keller pressure", "/dev/keller"),
     ("Camera front", "/dev/cam_front"),
-    ("Camera tube", "/dev/cam_tube"),
+    # ("Camera tube", "/dev/cam_tube"),
 ]
 
 # Parameter toggle for the ice measurement publisher
@@ -110,7 +111,7 @@ TOPIC_CHECKS: List[Tuple[str, str, Any, str, Any]] = [
     ("SBL waterlinked", "/waterlinked_ugps/navsatfix", NavSatFix, "min_rate", 1.0),
     # ("Ultrasonic front", "/front/ultrasonic/distance", Float32, "min_rate", 5.0),
     ("Ultrasonic top", "/top/ultrasonic/distance", Float32, "min_rate", 5.0),
-    ("Camera front info", "/front/camera/camera_info", CameraInfo, "received", None),
+    ("Camera front", "/front/camera/camera_info", CameraInfo, "received", None),
     (
         "Camera front image",
         "/front/camera/image_raw/compressed",
@@ -190,7 +191,9 @@ def format_report(
     lines += ["", f"{c(BOLD)}[DEVICES]{c(RESET)}"]
     name_w = max(len(r[1]) for r in device_results) + 2
     for status, name, path, detail in device_results:
-        lines.append(f" {badge(status)}  {name:<{name_w}} {c(DIM)}{path}{c(RESET)}  {detail}")
+        lines.append(
+            f" {badge(status)}  {name:<{name_w}} {c(DIM)}{path}{c(RESET)}  {detail}"
+        )
 
     lines += ["", f"{c(BOLD)}[TOPICS  ({window_sec:g}s window)]{c(RESET)}"]
     name_w = max(len(r[1]) for r in topic_results) + 2
@@ -218,10 +221,35 @@ def format_report(
     return "\n".join(lines)
 
 
+# Per-sensor views (service message and diagnostics): Foxglove only colours
+# the overall level, so each check carries a coloured emoji badge.
+STATUS_EMOJI = {"OK": "🟢", "WARN": "🟡", "FAIL": "🔴"}
+STATUS_RANK = {"FAIL": 0, "WARN": 1, "OK": 2}
+
+# (worst_status, display_name, [(status, detail), ...])
+SensorResult = Tuple[str, str, List[Tuple[str, str]]]
+
+
+def merge_by_sensor(results: List[CheckResult]) -> List[SensorResult]:
+    """Group checks that share a display name, so each sensor appears once.
+
+    A sensor with both a device and a topic check (e.g. IMU) becomes one
+    entry whose status is the worst of its checks. Order is first-seen.
+    """
+    grouped: Dict[str, List[Tuple[str, str]]] = {}
+    for status, name, _, detail in results:
+        grouped.setdefault(name, []).append((status, " ".join(detail.split())))
+    return [
+        (min((s for s, _ in checks), key=STATUS_RANK.__getitem__), name, checks)
+        for name, checks in grouped.items()
+    ]
+
+
 def summary_text(results: List[CheckResult]) -> str:
     """One-line result for the service response, e.g. "2 sensors failed (IMU, Keller pressure)"."""
-    fail_names = [r[1] for r in results if r[0] == "FAIL"]
-    warn_names = [r[1] for r in results if r[0] == "WARN"]
+    sensors = merge_by_sensor(results)
+    fail_names = [name for worst, name, _ in sensors if worst == "FAIL"]
+    warn_names = [name for worst, name, _ in sensors if worst == "WARN"]
 
     def counted(names: List[str], what: str) -> str:
         noun = "sensor" if len(names) == 1 else "sensors"
@@ -235,12 +263,6 @@ def summary_text(results: List[CheckResult]) -> str:
     return ", ".join(parts) if parts else "all sensors OK"
 
 
-# Diagnostics rendering: Foxglove only colours the overall level, so the
-# per-check values carry coloured emoji badges and are sorted worst-first.
-STATUS_EMOJI = {"OK": "🟢", "WARN": "🟡", "FAIL": "🔴"}
-STATUS_RANK = {"FAIL": 0, "WARN": 1, "OK": 2}
-
-
 def build_diagnostic_fields(
     device_results: List[CheckResult],
     topic_results: List[CheckResult],
@@ -248,12 +270,14 @@ def build_diagnostic_fields(
 ) -> Tuple[str, str, List[Tuple[str, str]]]:
     """Returns (worst_status, summary_message, [(key, value), ...]).
 
-    The summary names the failing / warning checks so the problem is visible
-    in the Summary panel row without opening the Detail panel.
+    One key per sensor, its checks joined on one line, e.g.
+    "IMU": "🔴 FAIL symlink missing; 🟢 OK 88.0 Hz (min 50)". The summary
+    names the failing / warning sensors so the problem is visible in the
+    Summary panel row without opening the Detail panel.
     """
-    results = device_results + topic_results
-    fail_names = [r[1] for r in results if r[0] == "FAIL"]
-    warn_names = [r[1] for r in results if r[0] == "WARN"]
+    sensors = merge_by_sensor(device_results + topic_results)
+    fail_names = [name for worst, name, _ in sensors if worst == "FAIL"]
+    warn_names = [name for worst, name, _ in sensors if worst == "WARN"]
 
     if fail_names:
         worst = "FAIL"
@@ -271,10 +295,10 @@ def build_diagnostic_fields(
         parts.append(f"{STATUS_EMOJI['OK']} all checks passed")
     message = f"{' | '.join(parts)} (run {run_time})"
 
-    ordered = sorted(results, key=lambda r: STATUS_RANK[r[0]])  # stable sort
+    ordered = sorted(sensors, key=lambda s: STATUS_RANK[s[0]])  # stable sort
     values = [
-        (name, f"{STATUS_EMOJI[status]} {status:<4}  {' '.join(detail.split())}")
-        for status, name, _, detail in ordered
+        (name, "; ".join(f"{STATUS_EMOJI[s]} {s} {detail}" for s, detail in checks))
+        for _, name, checks in ordered
     ]
     return worst, message, values
 
@@ -396,7 +420,9 @@ class HealthCheckNode(Node):
         )
 
         if serve:
-            self._diag_pub = self.create_publisher(DiagnosticArray, DIAGNOSTICS_TOPIC, 10)
+            self._diag_pub = self.create_publisher(
+                DiagnosticArray, DIAGNOSTICS_TOPIC, 10
+            )
             self._srv = self.create_service(
                 Trigger, SERVICE_NAME, self._on_trigger, callback_group=self._cbg
             )
@@ -505,13 +531,22 @@ class HealthCheckNode(Node):
             response.message = "health check already running"
             return response
         try:
-            self.get_logger().info(f"Running health check ({self.window_sec:g}s window) ...")
+            self.get_logger().info(
+                f"Running health check ({self.window_sec:g}s window) ..."
+            )
             device_results, topic_results, _ = self.run_checks()
             fails, warns = count_results(device_results + topic_results)
 
             print(banner_text(sys.stdout.isatty()))
-            print(format_report(device_results, topic_results, self.window_sec,
-                                color=sys.stdout.isatty()), flush=True)
+            print(
+                format_report(
+                    device_results,
+                    topic_results,
+                    self.window_sec,
+                    color=sys.stdout.isatty(),
+                ),
+                flush=True,
+            )
 
             self.publish_diagnostics(device_results, topic_results)
 
