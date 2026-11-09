@@ -14,11 +14,15 @@ Two modes:
     as a single `health_check` status (worst level, failing sensors named in
     the message, per-check results as emoji-badged key/values, worst first).
 
+The service mode is started with the system by start_system.launch.py
+(via launch/launch_health_check.launch.py), so /health_check can be called
+straight from the Foxglove Service Call panel.
+
 Usage:
-    python3 scripts/health_check.py
-    python3 scripts/health_check.py --no-delay
-    python3 scripts/health_check.py --delay 30 --window 10
-    python3 scripts/health_check.py --serve [--window 10]
+    ros2 run config_pkg health_check
+    ros2 run config_pkg health_check --no-delay
+    ros2 run config_pkg health_check --delay 30 --window 10
+    ros2 launch config_pkg launch_health_check.launch.py
     ros2 service call /health_check std_srvs/srv/Trigger
 """
 
