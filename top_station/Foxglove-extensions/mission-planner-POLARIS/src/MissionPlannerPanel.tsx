@@ -18,7 +18,7 @@ import { createRoot } from "react-dom/client";
 
 import "./styles.css";
 import { analyzeMission, distanceM } from "./geo";
-import { HandleKind, MapCallbacks, MapController } from "./map/MapController";
+import { HandleKind, MapCallbacks, MapController, Selection } from "./map/MapController";
 import { extractFix } from "./messages";
 import { buildSettingsNodes } from "./settings";
 import { Config, DEFAULT_CONFIG, EMPTY_MISSION, Fix, LatLon, Mission, Tool } from "./types";
@@ -76,6 +76,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   const mission = config.mission;
   const missionRef = useRef(mission);
   missionRef.current = mission;
+  const [selection, setSelection] = useState<Selection>();
   const past = useRef<Mission[]>([]);
   const future = useRef<Mission[]>([]);
 
@@ -98,6 +99,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       return;
     }
     future.current.push(missionRef.current);
+    setSelection(undefined);
     missionRef.current = prev;
     updateConfig({ mission: prev });
   }, [updateConfig]);
@@ -108,6 +110,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       return;
     }
     past.current.push(missionRef.current);
+    setSelection(undefined);
     missionRef.current = next;
     updateConfig({ mission: next });
   }, [updateConfig]);
@@ -260,8 +263,33 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     }
   }, [gnssFix, now, setStart]);
 
+  /** Delete one point. Returns false if not allowed (closed safe area needs >= 3 vertices). */
+  const deletePoint = useCallback(
+    (kind: HandleKind, index: number): boolean => {
+      const m = missionRef.current;
+      if (kind === "start") {
+        commit({ ...m, start: null });
+        if (tool === "path") {
+          setTool("pan");
+        }
+      } else if (kind === "safe") {
+        if (m.safeClosed && m.safeArea.length <= 3) {
+          return false;
+        }
+        commit({ ...m, safeArea: m.safeArea.filter((_, i) => i !== index) });
+      } else {
+        const path = m.path.filter((_, i) => i !== index);
+        commit({ ...m, path, closed: m.closed && path.length >= 2 });
+      }
+      setSelection(undefined);
+      return true;
+    },
+    [commit, tool],
+  );
+
   const clear = useCallback(
     (target: ClearTarget) => {
+      setSelection(undefined);
       const m = missionRef.current;
       if (target === "safe") {
         commit({ ...m, safeArea: [], safeClosed: false });
@@ -291,6 +319,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
 
   const handlers: MapCallbacks = {
     onMapClick: (p, clickCount) => {
+      setSelection(undefined);
       if (clickCount > 1) {
         return; // second click of a double-click: handled by onMapDblClick
       }
@@ -320,16 +349,18 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       }
     },
     onHandleDelete: (kind, index) => {
+      deletePoint(kind, index);
+    },
+    onHandleClick: (kind, index) => {
+      setSelection((cur) => (cur?.kind === kind && cur.index === index ? undefined : { kind, index }));
+    },
+    onSnapToStart: () => {
       const m = missionRef.current;
-      if (kind === "safe") {
-        if (m.safeClosed && m.safeArea.length <= 3) {
-          return; // a closed safe area needs at least 3 vertices
-        }
-        commit({ ...m, safeArea: m.safeArea.filter((_, i) => i !== index) });
-      } else {
-        const path = m.path.filter((_, i) => i !== index);
-        commit({ ...m, path, closed: m.closed && path.length >= 2 });
+      if (!m.closed) {
+        commit({ ...m, closed: true });
       }
+      setSelection(undefined);
+      setTool("pan");
     },
     onSafeInsert: (index, p) => {
       const m = missionRef.current;
@@ -377,6 +408,12 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       onSafeInsert: (...a) => {
         handlersRef.current.onSafeInsert(...a);
       },
+      onHandleClick: (...a) => {
+        handlersRef.current.onHandleClick(...a);
+      },
+      onSnapToStart: () => {
+        handlersRef.current.onSnapToStart();
+      },
       onCursor: (...a) => {
         handlersRef.current.onCursor(...a);
       },
@@ -394,6 +431,23 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       mapRef.current = undefined;
     };
   }, []);
+
+  // Drop a selection that no longer points at an existing point.
+  const validSelection: Selection =
+    selection == undefined
+      ? undefined
+      : selection.kind === "start"
+        ? mission.start
+          ? selection
+          : undefined
+        : selection.index < (selection.kind === "safe" ? mission.safeArea : mission.path).length
+          ? selection
+          : undefined;
+  const selKey = validSelection ? `${validSelection.kind}:${validSelection.index}` : "";
+  useEffect(() => {
+    mapRef.current?.setSelection(validSelection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey, mission, tool]);
 
   const dark = colorScheme === "dark";
   useEffect(() => {
@@ -550,6 +604,10 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     } else {
       switch (e.key) {
         case "Escape":
+          if (validSelection) {
+            setSelection(undefined);
+            break;
+          }
           // Leave the tool; an unfinished safe area with <3 points stays as a draft.
           if (tool === "safe" && !mission.safeClosed && mission.safeArea.length < 3) {
             setTool("pan");
@@ -562,7 +620,11 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
           break;
         case "Backspace":
         case "Delete":
-          removeLastPoint();
+          if (validSelection) {
+            deletePoint(validSelection.kind, validSelection.index);
+          } else {
+            removeLastPoint();
+          }
           break;
         case "1":
           selectTool(tool === "safe" ? "pan" : "safe");
@@ -653,7 +715,13 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         </button>
       </div>
 
-      <StatusBar tool={tool} mission={mission} analysis={analysis} cursor={cursor} />
+      <StatusBar
+        tool={tool}
+        mission={mission}
+        analysis={analysis}
+        cursor={cursor}
+        selection={validSelection}
+      />
     </div>
   );
 }

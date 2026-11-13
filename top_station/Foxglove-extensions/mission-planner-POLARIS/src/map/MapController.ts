@@ -15,12 +15,16 @@ import { Basemap, Fix, LatLon, MapView, Mission, Tool } from "../types";
 
 export type HandleKind = "safe" | "path" | "start";
 
+export type Selection = { kind: HandleKind; index: number } | undefined;
+
 export type MapCallbacks = {
   onMapClick: (p: LatLon, clickCount: number) => void;
   onMapDblClick: () => void;
   onFirstSafeVertexClick: () => void;
   onHandleMoved: (kind: HandleKind, index: number, p: LatLon) => void;
   onHandleDelete: (kind: "safe" | "path", index: number) => void;
+  onHandleClick: (kind: HandleKind, index: number) => void;
+  onSnapToStart: () => void;
   onSafeInsert: (index: number, p: LatLon) => void;
   onCursor: (p: LatLon | undefined) => void;
   onViewChange: (v: MapView) => void;
@@ -61,6 +65,9 @@ const fromLL = (p: L.LatLng): LatLon => ({ lat: p.lat, lon: p.lng });
 /** Minimum on-screen segment length (px) before a distance label is shown. */
 const LABEL_MIN_PX = 70;
 
+/** Path tool: a click within this many pixels of the start closes the loop. */
+const SNAP_PX = 18;
+
 /**
  * Imperative Leaflet wrapper. React owns the mission state; this class only
  * renders it and reports user gestures back through MapCallbacks.
@@ -83,6 +90,8 @@ export class MapController {
   #vehicleMarker?: L.Marker;
   #vehicleKey = "";
   #gnssMarker?: L.Marker;
+  #startMarker?: L.Marker;
+  #selection: Selection;
 
   #mission?: Mission;
   #tool: Tool = "pan";
@@ -140,6 +149,12 @@ export class MapController {
     }
 
     this.#map.on("click", (e: L.LeafletMouseEvent) => {
+      if (this.#nearStartForSnap(e.latlng)) {
+        if (e.originalEvent.detail <= 1) {
+          this.#cb.onSnapToStart();
+        }
+        return;
+      }
       this.#cb.onMapClick(fromLL(e.latlng), e.originalEvent.detail);
     });
     this.#map.on("dblclick", () => {
@@ -244,8 +259,34 @@ export class MapController {
     const color = this.#tool === "safe" ? COLORS.safe : COLORS.route;
     this.#rubber.setStyle({ color });
     this.#rubberClose.setStyle({ color });
+    const snap = this.#nearStartForSnap(cursor);
+    this.#startMarker?.getElement()?.classList.toggle("mp-snap-target", snap);
+    this.#container.classList.toggle("mp-snapping", snap);
+    if (snap && this.#mission?.start) {
+      this.#rubber.setLatLngs([toLL(from), toLL(this.#mission.start)]);
+      this.#rubberClose.setLatLngs([]);
+      return;
+    }
     this.#rubber.setLatLngs([toLL(from), cursor]);
     this.#rubberClose.setLatLngs(closeTo ? [cursor, toLL(closeTo)] : []);
+  }
+
+  /** Path tool with >= 2 waypoints and the point within SNAP_PX of the start. */
+  #nearStartForSnap(p: L.LatLng): boolean {
+    const m = this.#mission;
+    if (this.#tool !== "path" || !m?.start || m.path.length < 2) {
+      return false;
+    }
+    const a = this.#map.latLngToContainerPoint(p);
+    const b = this.#map.latLngToContainerPoint(toLL(m.start));
+    return a.distanceTo(b) <= SNAP_PX;
+  }
+
+  public setSelection(sel: Selection): void {
+    this.#selection = sel;
+    if (this.#mission) {
+      this.#renderHandles(this.#mission);
+    }
   }
 
   // ---------------------------------------------------------------- mission
@@ -323,12 +364,7 @@ export class MapController {
     // --- safe-area vertices
     m.safeArea.forEach((p, i) => {
       const closable = drawingSafe && i === 0 && m.safeArea.length >= 3;
-      const marker = this.#makeHandle(p, vertexIcon({ first: i === 0 && drawingSafe, closable }), "safe", i);
-      if (closable) {
-        marker.on("click", () => {
-          this.#cb.onFirstSafeVertexClick();
-        });
-      }
+      this.#makeHandle(p, vertexIcon({ first: i === 0 && drawingSafe, closable }), "safe", i);
     });
 
     // --- midpoint "+" insert handles (only while editing a finished safe area)
@@ -388,9 +424,11 @@ export class MapController {
     });
 
     // --- start (on top)
+    this.#startMarker = undefined;
     if (m.start) {
       const marker = this.#makeHandle(m.start, startIcon({ outside: a.startOutside }), "start", 0);
       marker.setZIndexOffset(1000);
+      this.#startMarker = marker;
     }
   }
 
@@ -403,9 +441,26 @@ export class MapController {
       autoPan: true,
     }).addTo(this.#handlesLayer);
 
+    const sel = this.#selection;
+    if (sel?.kind === kind && sel.index === index) {
+      marker.getElement()?.classList.add("mp-selected");
+      marker.setZIndexOffset(2000);
+    }
+
+    marker.on("click", () => {
+      const m = this.#mission;
+      const drawingSafe = this.#tool === "safe" && m != undefined && !m.safeClosed;
+      if (kind === "safe" && index === 0 && drawingSafe && m.safeArea.length >= 3) {
+        this.#cb.onFirstSafeVertexClick();
+      } else if (kind === "start" && this.#tool === "path" && m != undefined && m.path.length >= 2) {
+        this.#cb.onSnapToStart();
+      } else {
+        this.#cb.onHandleClick(kind, index);
+      }
+    });
     marker.on("dragstart", () => {
-          this.#setDragging("on");
-        });
+      this.#setDragging("on");
+    });
     marker.on("drag", () => {
       if (!this.#mission) {
         return;

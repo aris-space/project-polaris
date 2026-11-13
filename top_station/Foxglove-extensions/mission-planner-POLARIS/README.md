@@ -12,10 +12,11 @@ A Foxglove panel for planning a mission on a map. It works like the built-in Map
 | Safe area | `1` | Click to place vertices (≥ 3). Finish by clicking the first vertex, pressing `Enter`, or double-clicking. Everything **outside** the area is tinted translucent red. Once finished: drag vertices to move them, drag or click a **+** midpoint to insert one, right-click to delete one. |
 | Start point | `2` | Click to place the start cross. You can drag it afterwards. |
 | Start from GNSS | `G` | Sets the start point to the latest fix on the GNSS topic (default `/fix`). The dot shows fix health: green = OK, amber = more than 2 m uncertainty, grey = no fix or older than 5 s. |
-| Path | `3` | Click to add waypoints. They connect automatically, starting from the start point. Each segment shows its length. `Enter` or double-click finishes. |
+| Path | `3` | Click to add waypoints. They connect automatically, starting from the start point. Each segment shows its length. `Enter` or double-click finishes. Clicking **on or near the START cross** (once there are ≥ 2 waypoints) snaps to it and closes the loop. |
 | Close loop | `L` | Adds a dashed return leg from the last waypoint back to the start. Needs ≥ 2 waypoints. |
 | Undo / Redo | `⌘/Ctrl Z`, `⌘/Ctrl Shift Z` | Up to 50 steps. |
-| Remove last point | `Backspace` | While drawing a safe area or a path. |
+| Delete a point | click it, then `Delete`/`Backspace` | Works for safe-area vertices, waypoints and the start point. `Esc` deselects. Right-click also deletes. |
+| Remove last point | `Backspace` | While drawing with nothing selected. |
 | Fit mission | `F` | Zooms to the mission and the vehicle. |
 
 **Safe-area check:** segments or waypoints outside the safe area turn red. The status bar shows a ⚠ warning, or ✓ when the whole path is inside.

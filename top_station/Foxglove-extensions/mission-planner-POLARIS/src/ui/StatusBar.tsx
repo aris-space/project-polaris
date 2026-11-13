@@ -1,6 +1,7 @@
 import { ReactElement } from "react";
 
 import { MissionAnalysis, formatArea, formatDistance, formatLatLon } from "../geo";
+import { Selection } from "../map/MapController";
 import { LatLon, Mission, Tool } from "../types";
 
 type Props = {
@@ -8,6 +9,7 @@ type Props = {
   mission: Mission;
   analysis: MissionAnalysis;
   cursor: LatLon | undefined;
+  selection: Selection;
 };
 
 const TOOL_NAMES: Record<Tool, string> = {
@@ -16,6 +18,27 @@ const TOOL_NAMES: Record<Tool, string> = {
   start: "Start",
   path: "Path",
 };
+
+function selectionHint(sel: NonNullable<Selection>, m: Mission): ReactElement {
+  const name =
+    sel.kind === "start"
+      ? "Start point"
+      : sel.kind === "path"
+        ? `Waypoint ${sel.index + 1}`
+        : `Safe-area vertex ${sel.index + 1}`;
+  if (sel.kind === "safe" && m.safeClosed && m.safeArea.length <= 3) {
+    return (
+      <>
+        <b>{name}</b> selected · a safe area needs at least 3 vertices · <kbd>Esc</kbd> deselect
+      </>
+    );
+  }
+  return (
+    <>
+      <b>{name}</b> selected · <kbd>Delete</kbd> remove · drag to move · <kbd>Esc</kbd> deselect
+    </>
+  );
+}
 
 function hint(tool: Tool, m: Mission): ReactElement {
   switch (tool) {
@@ -44,8 +67,13 @@ function hint(tool: Tool, m: Mission): ReactElement {
     case "path":
       return (
         <>
-          Click to add waypoint {m.path.length + 1} · <kbd>Enter</kbd> finish · <kbd>L</kbd> close loop ·{" "}
-          <kbd>⌫</kbd> remove last
+          Click to add waypoint {m.path.length + 1} ·{" "}
+          {m.path.length >= 2 ? (
+            <>
+              click <b>START</b> to close loop ·{" "}
+            </>
+          ) : undefined}
+          <kbd>Enter</kbd> finish · <kbd>⌫</kbd> remove last
         </>
       );
     case "pan":
@@ -70,18 +98,18 @@ function hint(tool: Tool, m: Mission): ReactElement {
           </>
         );
       }
-      return <>Drag points to adjust · right-click a point to delete it</>;
+      return <>Click a point to select it · drag to move · right-click to delete</>;
   }
 }
 
-export function StatusBar({ tool, mission, analysis, cursor }: Props): ReactElement {
+export function StatusBar({ tool, mission, analysis, cursor, selection }: Props): ReactElement {
   const warnStart = analysis.startOutside;
   const warnSegs = analysis.outsideSegments;
   return (
     <div className="mp-status">
       <div className="mp-hint">
         {tool !== "pan" && <span className="mp-hint-tool">{TOOL_NAMES[tool]}</span>}
-        <span>{hint(tool, mission)}</span>
+        <span>{selection ? selectionHint(selection, mission) : hint(tool, mission)}</span>
       </div>
       <div className="mp-stats">
         {mission.safeClosed && (

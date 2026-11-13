@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- Click a point (safe-area vertex, waypoint or start) to select it, then press Delete/Backspace to remove it; Esc deselects
+- Path tool snaps to the start: clicking on or near START (with ≥ 2 waypoints) closes the loop and finishes the path
+
 ## 1.0.0
 
 - Initial mission planner panel (frontend only, mission stored in the layout):

@@ -225,6 +225,41 @@
   background: var(--mp-warn);
 }
 
+/* Selected point (click a point, then Delete) */
+.mp-selected .mp-vertex,
+.mp-selected .mp-wp {
+  transform: scale(1.25);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 5px var(--mp-active),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.mp-selected .mp-start {
+  filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 3px var(--mp-active)) drop-shadow(0 0 6px var(--mp-active));
+}
+.mp-selected .mp-start-ring {
+  stroke: var(--mp-active);
+  stroke-width: 3;
+}
+
+/* Path tool: cursor near START -> click closes the loop */
+.mp-map.mp-snapping,
+.mp-map.mp-snapping .leaflet-interactive {
+  cursor: pointer;
+}
+.mp-snap-target .mp-start {
+  transform: scale(1.35);
+  transition: transform 0.1s ease;
+}
+.mp-snap-target .mp-start-ring {
+  fill: rgba(34, 211, 238, 0.35);
+  stroke: var(--mp-route);
+  stroke-width: 3;
+}
+.mp-snap-target .mp-start-label::after {
+  content: " · CLOSE LOOP";
+}
+
 .mp-seglabel {
   display: inline-block;
   transform: translate(-50%, -50%);
