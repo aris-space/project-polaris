@@ -1,0 +1,26 @@
+{
+  "include": ["./src/**/*"],
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "lib": ["dom", "es2020"],
+    "skipLibCheck": true,
+
+    "composite": false,
+    "declaration": false,
+
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}
