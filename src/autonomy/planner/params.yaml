@@ -1,13 +1,15 @@
 grid:
   size: 100                 # side length of the grid [m]
-  resolution: 20            # spacing between grid points [m]
+  resolution: 10            # spacing between grid points [m]
+  rotation: 0              # [deg], grid rotation around its own center, measured from the x-axis (counter-clockwise)
   boundary_coordinates:     # corners of the allowed area [m]
     - [0, 0]
     - [0, 200]
     - [200, 200]
     - [200, 0]
-  starting_position: [100, 50]  # [x, y] [m]
+  starting_position: [50, 50]  # [x, y] [m]
+  start_offset: -10           # [-10, 10], where the start sits left (-10) to right (+10) of the grid center, seen along the driveout direction
 
 driveout:
-  distance: 20              # [m]
+  distance: 20              # [m], distance from the start to the closest grid point
   direction: 90             # [deg], measured from the x-axis (counter-clockwise)

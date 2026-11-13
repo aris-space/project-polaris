@@ -13,8 +13,10 @@ with open(PARAMS_FILE) as f:
 
 GRID_SIZE = params["grid"]["size"]
 GRID_RESOLUTION = params["grid"]["resolution"]
+GRID_ROTATION = np.deg2rad(params["grid"]["rotation"])
 GRID_BOUNDARY_COORDINATES = [tuple(c) for c in params["grid"]["boundary_coordinates"]]
 GRID_STARTING_POSITION = tuple(params["grid"]["starting_position"])
+GRID_START_OFFSET = params["grid"]["start_offset"]
 DRIVEOUT_DISTANCE = params["driveout"]["distance"]
 DRIVEOUT_DIRECTION = np.deg2rad(params["driveout"]["direction"])
 
@@ -90,32 +92,60 @@ def generate_grid(starting_position=GRID_STARTING_POSITION,
                   driveout_distance=DRIVEOUT_DISTANCE,
                   driveout_direction=DRIVEOUT_DIRECTION,
                   grid_size=GRID_SIZE,
-                  grid_resolution=GRID_RESOLUTION):
+                  grid_resolution=GRID_RESOLUTION,
+                  grid_rotation=GRID_ROTATION,
+                  start_offset=GRID_START_OFFSET):
     """Return a list of (x, y) grid points.
 
-    The grid starts at the end of the driveout (starting_position moved by
-    driveout_distance in driveout_direction) and is aligned with the driveout
-    direction: it extends grid_size forward and is centered left/right.
-    driveout_direction is in radians, measured from the x-axis.
+    The grid lies in front of starting_position, in driveout_direction.
+    It is placed so that the closest grid point is exactly driveout_distance
+    away from the start (for a 45 deg rotated grid that is its near corner).
+    grid_rotation rotates the grid around its own center, measured from the
+    x-axis. start_offset (-10 to 10) sets where the start sits sideways,
+    seen along the driveout direction: -10 = in line with the leftmost grid
+    point, 0 = in line with the center, 10 = in line with the rightmost one.
+    Both angles are in radians, counter-clockwise.
     """
-    # End point of the driveout = grid origin
-    origin_x = starting_position[0] + driveout_distance * np.cos(driveout_direction)
-    origin_y = starting_position[1] + driveout_distance * np.sin(driveout_direction)
+    if not -10 <= start_offset <= 10:
+        raise ValueError(f"start_offset must be between -10 and 10, got {start_offset}")
 
-    # Unit vectors along the driveout direction (forward) and perpendicular to it (lateral)
+    # Driveout direction (forward) and the direction to its right
     forward = np.array([np.cos(driveout_direction), np.sin(driveout_direction)])
-    lateral = np.array([-np.sin(driveout_direction), np.cos(driveout_direction)])
+    right = np.array([np.sin(driveout_direction), -np.cos(driveout_direction)])
 
-    # Local grid coordinates
+    # Grid axes, rotated by grid_rotation
+    x_axis = np.array([np.cos(grid_rotation), np.sin(grid_rotation)])
+    y_axis = np.array([-np.sin(grid_rotation), np.cos(grid_rotation)])
+
+    # Grid points relative to the grid center
     n_points = int(grid_size // grid_resolution) + 1
-    along = np.arange(n_points) * grid_resolution
-    across = np.arange(n_points) * grid_resolution - grid_size / 2
+    offsets = np.arange(n_points) * grid_resolution - grid_size / 2
+    local_points = [u * x_axis + v * y_axis for v in offsets for u in offsets]
+
+    # Each point's position relative to the center: ahead (a) and to the right (b)
+    a = np.array([p @ forward for p in local_points])
+    b = np.array([p @ right for p in local_points])
+
+    # Sideways: put the center so that the start sits at start_offset
+    half_width = np.max(np.abs(b))
+    center_right = -start_offset / 10 * half_width
+
+    # Forward: smallest center distance for which every grid point is at least
+    # driveout_distance from the start, so the closest one is exactly that far
+    lateral = center_right + b
+    reachable = np.abs(lateral) <= driveout_distance
+    if reachable.any():
+        center_ahead = np.max(-a[reachable] + np.sqrt(driveout_distance**2 - lateral[reachable]**2))
+    else:
+        # All points are further sideways than driveout_distance: start the grid level with the start
+        center_ahead = np.max(-a)
+
+    center = np.array(starting_position) + center_ahead * forward + center_right * right
 
     grid_list = []
-    for a in along:
-        for c in across:
-            x, y = np.array([origin_x, origin_y]) + a * forward + c * lateral
-            grid_list.append((float(x), float(y)))
+    for p in local_points:
+        x, y = center + p
+        grid_list.append((float(x), float(y)))
 
     return grid_list
 
@@ -127,10 +157,10 @@ def generate_path(grid_list, traversal_order, starting_position=GRID_STARTING_PO
 
 
 if __name__ == "__main__":
-    from grid_traversal_order import traversal_order_nearest_n
+    from grid_traversal_order import generate_order_nearest_n, generate_order_two_opt
 
     grid_list = generate_grid()
-    traversal_order = traversal_order_nearest_n(grid_list, GRID_STARTING_POSITION)
+    traversal_order = generate_order_two_opt(grid_list, GRID_STARTING_POSITION)
 
     create_map_with_path(grid_list, traversal_order)
     plt.show()
