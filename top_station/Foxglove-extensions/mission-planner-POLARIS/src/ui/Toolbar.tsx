@@ -7,15 +7,16 @@ import {
   IconLoop,
   IconPan,
   IconPath,
+  IconSurvey,
   IconRedo,
   IconSafeArea,
   IconStart,
   IconTrash,
   IconUndo,
 } from "./icons";
-import { Fix, Mission, PanelMode, Tool } from "../types";
+import { Fix, Mission, MissionType, PanelMode, Tool } from "../types";
 
-export type ClearTarget = "safe" | "path" | "all";
+export type ClearTarget = "safe" | "path" | "survey" | "all";
 
 type Props = {
   mode: PanelMode;
@@ -29,6 +30,7 @@ type Props = {
   canUndo: boolean;
   canRedo: boolean;
   onTool: (tool: Tool) => void;
+  onMissionType: (type: MissionType) => void;
   onGnssStart: () => void;
   onToggleLoop: () => void;
   onUndo: () => void;
@@ -141,6 +143,7 @@ export function Toolbar(props: Props): ReactElement {
 
   const safeEmpty = mission.safeArea.length === 0;
   const pathEmpty = mission.start == undefined && mission.path.length === 0;
+  const surveyEmpty = mission.survey.length === 0;
 
   return (
     <div className={`mp-toolbar${compact ? " mp-compact" : ""}`}>
@@ -148,6 +151,28 @@ export function Toolbar(props: Props): ReactElement {
       {props.mode === "plan" && (
         <>
       <div className="mp-group">
+        <div className="mp-typeswitch" role="group" aria-label="Mission type">
+          {(
+            [
+              ["waypoints", "Waypoints", <IconPath key="i" />, "Plan a path of waypoints from the start"],
+              ["survey", "Survey", <IconSurvey key="i" />, "Mark an area to be surveyed"],
+            ] as const
+          ).map(([t, label, icon, tip]) => (
+            <button
+              key={t}
+              className={`mp-seg mp-seg--small${mission.type === t ? " mp-seg--active" : ""}`}
+              onClick={() => {
+                props.onMissionType(t);
+              }}
+              aria-pressed={mission.type === t}
+              data-tip={`${tip} (4 toggles)`}
+            >
+              {icon}
+              {!compact && <span>{label}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="mp-sep" />
         {toolBtn("pan", "Pan", <IconPan />, "Esc", "Move the map and drag existing points")}
         {toolBtn(
           "safe",
@@ -169,16 +194,28 @@ export function Toolbar(props: Props): ReactElement {
           <span className="mp-btn-label">Start from GNSS</span>
           <span className="mp-dot" style={{ background: gnssDotColor(gnssFix, now) }} />
         </button>
-        {toolBtn(
-          "path",
-          "Path",
-          <IconPath />,
-          "3",
-          hasStart
-            ? "Click to add waypoints after the start; Enter or double-click to finish"
-            : "Set a start point first",
-          { disabled: !hasStart },
-        )}
+        {mission.type === "survey" &&
+          toolBtn(
+            "survey",
+            "Survey area",
+            <IconSurvey />,
+            "3",
+            mission.surveyClosed
+              ? "Edit the survey area: drag vertices, drag “+” to insert, right-click to delete"
+              : "Click to place ≥3 vertices around the area to survey; click the first vertex, Enter or double-click to finish",
+          )}
+        {mission.type === "waypoints" &&
+          toolBtn(
+            "path",
+            "Path",
+            <IconPath />,
+            "3",
+            hasStart
+              ? "Click to add waypoints after the start; Enter or double-click to finish"
+              : "Set a start point first",
+            { disabled: !hasStart },
+          )}
+        {mission.type === "waypoints" && (
         <button
           className={`mp-btn${mission.closed ? " mp-btn--on" : ""}`}
           onClick={props.onToggleLoop}
@@ -196,6 +233,7 @@ export function Toolbar(props: Props): ReactElement {
           <span className="mp-btn-label">{mission.closed ? "Loop closed" : "Close loop"}</span>
           <span className="mp-kbd">L</span>
         </button>
+        )}
       </div>
 
       <div className="mp-group" ref={menuRef} style={{ position: "relative" }}>
@@ -217,7 +255,7 @@ export function Toolbar(props: Props): ReactElement {
               setMenuOpen((o) => !o);
               setConfirm(undefined);
             }}
-            disabled={safeEmpty && pathEmpty}
+            disabled={safeEmpty && pathEmpty && surveyEmpty}
             data-tip="Clear…"
           >
             <IconTrash />
@@ -228,8 +266,9 @@ export function Toolbar(props: Props): ReactElement {
             <div className="mp-menu-title">Clear</div>
             {clearItem("safe", "Safe area", { disabled: safeEmpty })}
             {clearItem("path", "Start & path", { disabled: pathEmpty })}
+            {mission.type === "survey" && clearItem("survey", "Survey area", { disabled: surveyEmpty })}
             <div className="mp-sep" />
-            {clearItem("all", "Everything", { disabled: safeEmpty && pathEmpty })}
+            {clearItem("all", "Everything", { disabled: safeEmpty && pathEmpty && surveyEmpty })}
           </div>
         )}
       </div>

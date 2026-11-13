@@ -11,21 +11,21 @@ import {
   waypointIcon,
 } from "./icons";
 import { analyzeMission, bearingDeg, distanceM, formatDistance, routePoints } from "../geo";
-import { Basemap, Fix, LatLon, MapView, Mission, Tool } from "../types";
+import { Basemap, Fix, LatLon, MapView, Mission, PolygonKind, Tool } from "../types";
 
-export type HandleKind = "safe" | "path" | "start";
+export type HandleKind = "safe" | "path" | "start" | "survey";
 
 export type Selection = { kind: HandleKind; index: number } | undefined;
 
 export type MapCallbacks = {
   onMapClick: (p: LatLon, clickCount: number) => void;
   onMapDblClick: () => void;
-  onFirstSafeVertexClick: () => void;
+  onFirstVertexClick: (kind: PolygonKind) => void;
   onHandleMoved: (kind: HandleKind, index: number, p: LatLon) => void;
-  onHandleDelete: (kind: "safe" | "path", index: number) => void;
+  onHandleDelete: (kind: Exclude<HandleKind, "start">, index: number) => void;
   onHandleClick: (kind: HandleKind, index: number) => void;
   onSnapToStart: () => void;
-  onSafeInsert: (index: number, p: LatLon) => void;
+  onPolygonInsert: (kind: PolygonKind, index: number, p: LatLon) => void;
   onCursor: (p: LatLon | undefined) => void;
   onViewChange: (v: MapView) => void;
   onUserPan: () => void;
@@ -33,6 +33,8 @@ export type MapCallbacks = {
 
 const COLORS = {
   safe: "#ff4d4f",
+  survey: "#c084fc",
+  surveyFill: "#a855f7",
   route: "#22d3ee",
   routeOutside: "#ff4d4f",
   casing: "#0b1220",
@@ -265,7 +267,8 @@ export class MapController {
     if (!from || this.#dragging) {
       return;
     }
-    const color = this.#tool === "safe" ? COLORS.safe : COLORS.route;
+    const color =
+      this.#tool === "safe" ? COLORS.safe : this.#tool === "survey" ? COLORS.survey : COLORS.route;
     this.#rubber.setStyle({ color });
     this.#rubberClose.setStyle({ color });
     const snap = this.#editable && this.#nearStartForSnap(cursor);
@@ -352,6 +355,30 @@ export class MapController {
       }
     }
 
+    // Survey area (survey missions): violet translucent fill; red outline if it leaves the safe area.
+    if (m.type === "survey" && m.survey.length > 0) {
+      const ring = m.survey.map(toLL);
+      const color = a.surveyOutside ? COLORS.routeOutside : COLORS.survey;
+      if (m.surveyClosed && m.survey.length >= 3) {
+        L.polygon(ring, {
+          pane: "mp-shapes",
+          interactive: false,
+          color,
+          weight: 2.5,
+          fillColor: COLORS.surveyFill,
+          fillOpacity: 0.22,
+          dashArray: a.surveyOutside ? "8 6" : undefined,
+        }).addTo(this.#shapesLayer);
+      } else {
+        L.polyline(ring, {
+          pane: "mp-shapes",
+          interactive: false,
+          color: COLORS.survey,
+          weight: 2.5,
+        }).addTo(this.#shapesLayer);
+      }
+    }
+
     // Route: start -> wp1 -> ... (-> start when closed). Dark casing for contrast on imagery.
     const route = routePoints(m);
     for (let i = 0; i + 1 < route.length; i++) {
@@ -380,46 +407,9 @@ export class MapController {
   #renderHandles(m: Mission): void {
     this.#handlesLayer.clearLayers();
     const a = analyzeMission(m);
-    const drawingSafe = this.#tool === "safe" && !m.safeClosed;
-
-    // --- safe-area vertices
-    m.safeArea.forEach((p, i) => {
-      const closable = drawingSafe && i === 0 && m.safeArea.length >= 3;
-      this.#makeHandle(p, vertexIcon({ first: i === 0 && drawingSafe, closable }), "safe", i);
-    });
-
-    // --- midpoint "+" insert handles (only while editing a finished safe area)
-    if (m.safeClosed && this.#tool === "safe") {
-      const n = m.safeArea.length;
-      for (let i = 0; i < n; i++) {
-        const p1 = m.safeArea[i]!;
-        const p2 = m.safeArea[(i + 1) % n]!;
-        if (!this.#longEnoughOnScreen(p1, p2, 40)) {
-          continue;
-        }
-        const mid = { lat: (p1.lat + p2.lat) / 2, lon: (p1.lon + p2.lon) / 2 };
-        const marker = L.marker(toLL(mid), {
-          icon: midpointIcon(),
-          draggable: true,
-          keyboard: false,
-          bubblingMouseEvents: false,
-        }).addTo(this.#handlesLayer);
-        marker.on("dragstart", () => {
-          this.#setDragging("on");
-        });
-        marker.on("drag", () => {
-          const live = { ...m, safeArea: [...m.safeArea] };
-          live.safeArea.splice(i + 1, 0, fromLL(marker.getLatLng()));
-          this.#renderShapes(live);
-        });
-        marker.on("dragend", () => {
-          this.#setDragging("off");
-          this.#cb.onSafeInsert(i + 1, fromLL(marker.getLatLng()));
-        });
-        marker.on("click", () => {
-          this.#cb.onSafeInsert(i + 1, mid);
-        });
-      }
+    this.#polygonHandles(m, "safe");
+    if (m.type === "survey") {
+      this.#polygonHandles(m, "survey");
     }
 
     // --- route segment distance labels
@@ -440,9 +430,11 @@ export class MapController {
     }
 
     // --- waypoints
-    m.path.forEach((p, i) => {
-      this.#makeHandle(p, waypointIcon(i + 1, { outside: a.waypointOutside[i] === true }), "path", i);
-    });
+    if (m.type === "waypoints") {
+      m.path.forEach((p, i) => {
+        this.#makeHandle(p, waypointIcon(i + 1, { outside: a.waypointOutside[i] === true }), "path", i);
+      });
+    }
 
     // --- start (on top)
     this.#startMarker = undefined;
@@ -450,6 +442,56 @@ export class MapController {
       const marker = this.#makeHandle(m.start, startIcon({ outside: a.startOutside }), "start", 0);
       marker.setZIndexOffset(1000);
       this.#startMarker = marker;
+    }
+  }
+
+  /** Vertex handles (+ "+" midpoint inserts while editing) for a polygon. */
+  #polygonHandles(m: Mission, kind: PolygonKind): void {
+    const pts = kind === "safe" ? m.safeArea : m.survey;
+    const closed = kind === "safe" ? m.safeClosed : m.surveyClosed;
+    const drawing = this.#tool === kind && !closed;
+    pts.forEach((p, i) => {
+      const closable = drawing && i === 0 && pts.length >= 3;
+      this.#makeHandle(
+        p,
+        vertexIcon({ first: i === 0 && drawing, closable, variant: kind }),
+        kind,
+        i,
+      );
+    });
+
+    if (!closed || this.#tool !== kind || !this.#editable) {
+      return;
+    }
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const p1 = pts[i]!;
+      const p2 = pts[(i + 1) % n]!;
+      if (!this.#longEnoughOnScreen(p1, p2, 40)) {
+        continue;
+      }
+      const mid = { lat: (p1.lat + p2.lat) / 2, lon: (p1.lon + p2.lon) / 2 };
+      const marker = L.marker(toLL(mid), {
+        icon: midpointIcon({ variant: kind }),
+        draggable: true,
+        keyboard: false,
+        bubblingMouseEvents: false,
+      }).addTo(this.#handlesLayer);
+      marker.on("dragstart", () => {
+        this.#setDragging("on");
+      });
+      marker.on("drag", () => {
+        const list = [...pts];
+        list.splice(i + 1, 0, fromLL(marker.getLatLng()));
+        this.#renderShapes(kind === "safe" ? { ...m, safeArea: list } : { ...m, survey: list });
+      });
+      marker.on("dragend", () => {
+        this.#setDragging("off");
+        this.#cb.onPolygonInsert(kind, i + 1, fromLL(marker.getLatLng()));
+      });
+      marker.on("click", () => {
+        this.#cb.onPolygonInsert(kind, i + 1, mid);
+      });
     }
   }
 
@@ -471,9 +513,14 @@ export class MapController {
 
     marker.on("click", () => {
       const m = this.#mission;
-      const drawingSafe = this.#tool === "safe" && m != undefined && !m.safeClosed;
-      if (kind === "safe" && index === 0 && drawingSafe && m.safeArea.length >= 3) {
-        this.#cb.onFirstSafeVertexClick();
+      const polygonDrawing =
+        m != undefined &&
+        (kind === "safe" || kind === "survey") &&
+        this.#tool === kind &&
+        index === 0 &&
+        (kind === "safe" ? !m.safeClosed && m.safeArea.length >= 3 : !m.surveyClosed && m.survey.length >= 3);
+      if (polygonDrawing) {
+        this.#cb.onFirstVertexClick(kind);
       } else if (kind === "start" && this.#tool === "path" && m != undefined && m.path.length >= 2) {
         this.#cb.onSnapToStart();
       } else {
@@ -516,6 +563,11 @@ export class MapController {
         const path = [...m.path];
         path[index] = p;
         return { ...m, path };
+      }
+      case "survey": {
+        const survey = [...m.survey];
+        survey[index] = p;
+        return { ...m, survey };
       }
     }
   }

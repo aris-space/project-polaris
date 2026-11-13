@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+- Mission type switch in Plan mode: **Waypoints** (path planner) or **Survey**
+- Survey: draw the area to be surveyed like the safe area (≥ 3 vertices, close on first vertex /
+  Enter / double-click), violet fill; drag / "+" insert / select + Delete / right-click to edit
+- Survey area size in the status bar; warning (red dashed outline) when it reaches outside the safe area
+- Switching type keeps both the path and the survey area (undoable); key `4` toggles the type
+- Mission files and saved missions carry `type`, `survey`, `surveyClosed` (older files load as waypoints)
+
 ## 1.4.0
 
 - Export / import missions as JSON files (independent of the Foxglove layout, e.g. for git):

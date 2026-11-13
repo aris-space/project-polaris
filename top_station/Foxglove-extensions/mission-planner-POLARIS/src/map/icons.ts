@@ -1,8 +1,15 @@
 import * as L from "leaflet";
 
-/** Safe-area vertex handle. `first` highlights the vertex that closes the polygon. */
-export function vertexIcon(opts: { first?: boolean; closable?: boolean }): L.DivIcon {
+/** Polygon vertex handle. `first` highlights the vertex that closes the polygon. */
+export function vertexIcon(opts: {
+  first?: boolean;
+  closable?: boolean;
+  variant?: "safe" | "survey";
+}): L.DivIcon {
   const cls = ["mp-vertex"];
+  if (opts.variant === "survey") {
+    cls.push("mp-vertex--survey");
+  }
   if (opts.first === true) {
     cls.push("mp-vertex--first");
   }
@@ -18,10 +25,10 @@ export function vertexIcon(opts: { first?: boolean; closable?: boolean }): L.Div
 }
 
 /** Ghost "+" handle on an edge midpoint, drag it to insert a vertex. */
-export function midpointIcon(): L.DivIcon {
+export function midpointIcon(opts: { variant?: "safe" | "survey" } = {}): L.DivIcon {
   return L.divIcon({
     className: "mp-icon",
-    html: `<div class="mp-midpoint">+</div>`,
+    html: `<div class="mp-midpoint${opts.variant === "survey" ? " mp-midpoint--survey" : ""}">+</div>`,
     iconSize: [14, 14],
     iconAnchor: [7, 7],
   });

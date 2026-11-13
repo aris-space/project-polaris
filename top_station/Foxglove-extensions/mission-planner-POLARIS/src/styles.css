@@ -873,6 +873,47 @@
   cursor: default;
 }
 
+/* ---------- Survey ---------- */
+
+.mp-root {
+  --mp-survey: #c084fc;
+}
+.mp-vertex--survey {
+  border-color: var(--mp-survey);
+}
+.mp-vertex--survey.mp-vertex--first {
+  background: var(--mp-survey);
+}
+.mp-vertex--survey.mp-vertex--closable {
+  animation-name: mp-pulse-ring-survey;
+}
+@keyframes mp-pulse-ring-survey {
+  0% {
+    box-shadow: 0 0 0 0 rgba(192, 132, 252, 0.75);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(192, 132, 252, 0);
+  }
+}
+.mp-midpoint--survey {
+  border-color: var(--mp-survey);
+  color: #9333ea;
+}
+
+/* Mission type switch (Waypoints / Survey) inside the tool group */
+.mp-typeswitch {
+  display: flex;
+  gap: 2px;
+}
+.mp-seg--small {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.mp-compact .mp-typeswitch {
+  flex-direction: column;
+}
+
 /* ---------- Toast ---------- */
 
 .mp-toast {

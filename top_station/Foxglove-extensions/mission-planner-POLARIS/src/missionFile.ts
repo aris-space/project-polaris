@@ -8,7 +8,9 @@
  *   { "format": "polaris-mission-library", "version": 1, "exportedAt": "...",
  *     "missions": [ { "name": "...", "savedAt": "...", "mission": {...} }, ... ] }
  *
- * `mission` = { safeArea: [{lat, lon}], safeClosed, start: {lat, lon} | null, path: [{lat, lon}], closed }
+ * `mission` = { type: "waypoints" | "survey", safeArea: [{lat, lon}], safeClosed,
+ *               start: {lat, lon} | null, path: [{lat, lon}], closed,
+ *               survey: [{lat, lon}], surveyClosed }
  * Coordinates are WGS84 degrees.
  */
 import { LatLon, Mission, SavedMission } from "./types";
@@ -35,14 +37,20 @@ const cleanPoint = (p: LatLon): LatLon => ({ lat: p.lat, lon: p.lon });
 export function normalizeMission(raw: unknown): Mission {
   const sm = (raw ?? {}) as Partial<Mission>;
   const mission: Mission = {
+    type: sm.type === "survey" ? "survey" : "waypoints",
     safeArea: Array.isArray(sm.safeArea) ? sm.safeArea.filter(isLatLon).map(cleanPoint) : [],
     safeClosed: sm.safeClosed === true,
     start: isLatLon(sm.start) ? cleanPoint(sm.start) : null,
     path: Array.isArray(sm.path) ? sm.path.filter(isLatLon).map(cleanPoint) : [],
     closed: sm.closed === true,
+    survey: Array.isArray(sm.survey) ? sm.survey.filter(isLatLon).map(cleanPoint) : [],
+    surveyClosed: sm.surveyClosed === true,
   };
   if (mission.safeArea.length < 3) {
     mission.safeClosed = false;
+  }
+  if (mission.survey.length < 3) {
+    mission.surveyClosed = false;
   }
   if (mission.path.length < 2) {
     mission.closed = false;
@@ -80,7 +88,7 @@ function looksLikeMission(o: unknown): boolean {
     return false;
   }
   const m = o as Record<string, unknown>;
-  return Array.isArray(m.safeArea) || Array.isArray(m.path) || "start" in m;
+  return Array.isArray(m.safeArea) || Array.isArray(m.path) || Array.isArray(m.survey) || "start" in m;
 }
 
 /** Parse a mission or library file. Throws an Error with a user-facing message. */

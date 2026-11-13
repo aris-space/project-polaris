@@ -31,6 +31,15 @@ The chip at the top centre of the map shows the current mission's name. An amber
 
 Saved missions are stored in the **Foxglove layout** (panel state). They survive restarts and travel with the layout if you export or share it.
 
+## Mission type: Waypoints or Survey
+
+In Plan mode the switch at the top of the tool palette chooses what the mission is (key `4` toggles):
+
+- **Waypoints**: the path planner. Click waypoints from the start, close the loop, and so on.
+- **Survey**: mark the **area to be surveyed**. Press `3` (Survey area), click ≥ 3 vertices and close the polygon like the safe area. It's drawn in violet and edited the same way (drag, **+** to insert, select + `Delete`, right-click). The status bar shows its size. If it reaches outside the safe area, the outline turns red and dashed and a ⚠ warning appears.
+
+Switching type never deletes anything: the path and the survey area are both kept with the mission (and in exported files), and the switch can be undone.
+
 ## Plan / Watch mode
 
 The switch at the top left toggles between:
@@ -62,7 +71,10 @@ Desktop Foxglove shows a native *Save as* dialog; elsewhere the file is download
     "safeClosed": true,
     "start": { "lat": 47.2561, "lon": 8.6903 },
     "path": [{ "lat": 47.2572, "lon": 8.6909 }, …],
-    "closed": true
+    "closed": true,
+    "type": "waypoints",
+    "survey": [],
+    "surveyClosed": false
   }
 }
 ```

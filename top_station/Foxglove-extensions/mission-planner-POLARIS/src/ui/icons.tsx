@@ -156,3 +156,10 @@ export const IconEye = (): ReactElement => (
     <circle cx="12" cy="12" r="3" />
   </Svg>
 );
+
+export const IconSurvey = (): ReactElement => (
+  <Svg>
+    <path d="M4 6l7-2 9 4-2 11-12 1z" fill="currentColor" fillOpacity={0.15} />
+    <path d="M7 8v10M10.5 6.5v12.8M14 6.5v12.5M17.5 9v9.5" strokeWidth={1.2} strokeDasharray="1.5 1.5" />
+  </Svg>
+);

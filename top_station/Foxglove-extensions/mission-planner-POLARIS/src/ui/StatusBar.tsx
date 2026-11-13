@@ -18,6 +18,7 @@ const TOOL_NAMES: Record<Tool, string> = {
   safe: "Safe area",
   start: "Start",
   path: "Path",
+  survey: "Survey area",
 };
 
 function selectionHint(sel: NonNullable<Selection>, m: Mission): ReactElement {
@@ -26,11 +27,16 @@ function selectionHint(sel: NonNullable<Selection>, m: Mission): ReactElement {
       ? "Start point"
       : sel.kind === "path"
         ? `Waypoint ${sel.index + 1}`
-        : `Safe-area vertex ${sel.index + 1}`;
-  if (sel.kind === "safe" && m.safeClosed && m.safeArea.length <= 3) {
+        : sel.kind === "survey"
+          ? `Survey vertex ${sel.index + 1}`
+          : `Safe-area vertex ${sel.index + 1}`;
+  const atMinimum =
+    (sel.kind === "safe" && m.safeClosed && m.safeArea.length <= 3) ||
+    (sel.kind === "survey" && m.surveyClosed && m.survey.length <= 3);
+  if (atMinimum) {
     return (
       <>
-        <b>{name}</b> selected · a safe area needs at least 3 vertices · <kbd>Esc</kbd> deselect
+        <b>{name}</b> selected · an area needs at least 3 vertices · <kbd>Esc</kbd> deselect
       </>
     );
   }
@@ -65,6 +71,26 @@ function hint(tool: Tool, m: Mission): ReactElement {
       );
     case "start":
       return <>Click on the map to place the start point</>;
+    case "survey":
+      if (m.surveyClosed) {
+        return (
+          <>
+            Drag vertices · drag <b>+</b> to insert · right-click to delete
+          </>
+        );
+      }
+      if (m.survey.length < 3) {
+        return (
+          <>
+            Click around the area to survey — {3 - m.survey.length} more needed · <kbd>⌫</kbd> remove last
+          </>
+        );
+      }
+      return (
+        <>
+          Click first vertex, <kbd>Enter</kbd> or double-click to close · <kbd>⌫</kbd> remove last
+        </>
+      );
     case "path":
       return (
         <>
@@ -92,7 +118,14 @@ function hint(tool: Tool, m: Mission): ReactElement {
           </>
         );
       }
-      if (m.path.length === 0) {
+      if (m.type === "survey" && !m.surveyClosed) {
+        return (
+          <>
+            Mark the survey area — press <kbd>3</kbd>
+          </>
+        );
+      }
+      if (m.type === "waypoints" && m.path.length === 0) {
         return (
           <>
             Plan the path — press <kbd>3</kbd>
@@ -127,19 +160,32 @@ export function StatusBar({ tool, mission, analysis, cursor, selection, watch }:
             Safe <b>{formatArea(analysis.safeAreaM2)}</b>
           </span>
         )}
-        {mission.start && (
+        {mission.type === "waypoints" && mission.start && (
           <span className="mp-stat">
             <b>{mission.path.length}</b> wp · <b>{formatDistance(analysis.routeLengthM)}</b>
             {mission.closed ? " loop" : ""}
           </span>
         )}
+        {mission.type === "survey" && mission.surveyClosed && (
+          <span className="mp-stat">
+            Survey <b>{formatArea(analysis.surveyAreaM2)}</b>
+          </span>
+        )}
+        {analysis.surveyOutside && (
+          <span className="mp-stat mp-stat--warn">⚠ Survey area outside safe area</span>
+        )}
+        {mission.type === "survey" &&
+          mission.safeClosed &&
+          mission.surveyClosed &&
+          !analysis.surveyOutside &&
+          !warnStart && <span className="mp-stat mp-stat--ok">✓ Survey inside safe area</span>}
         {warnStart && <span className="mp-stat mp-stat--warn">⚠ Start outside safe area</span>}
         {warnSegs > 0 && (
           <span className="mp-stat mp-stat--warn">
             ⚠ <b>{warnSegs}</b> segment{warnSegs === 1 ? "" : "s"} outside safe area
           </span>
         )}
-        {mission.safeClosed && mission.path.length > 0 && !warnStart && warnSegs === 0 && (
+        {mission.type === "waypoints" && mission.safeClosed && mission.path.length > 0 && !warnStart && warnSegs === 0 && (
           <span className="mp-stat mp-stat--ok">✓ Path inside safe area</span>
         )}
       </div>

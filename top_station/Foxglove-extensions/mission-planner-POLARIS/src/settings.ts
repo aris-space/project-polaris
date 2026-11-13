@@ -162,6 +162,15 @@ export function buildSettingsNodes(config: Config, topics: readonly Topic[]): Se
           readonly: true,
           value: m.start ? formatLatLon(m.start) : "not set",
         },
+        type: {
+          label: "Type",
+          input: "string",
+          readonly: true,
+          value:
+            m.type === "survey"
+              ? `Survey · ${m.surveyClosed ? formatArea(a.surveyAreaM2) : "area not set"}`
+              : "Waypoints",
+        },
         path: {
           label: "Path",
           input: "string",

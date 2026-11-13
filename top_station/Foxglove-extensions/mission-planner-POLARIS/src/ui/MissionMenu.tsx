@@ -9,7 +9,7 @@ import {
   IconTrash,
   IconUpload,
 } from "./icons";
-import { analyzeMission, formatDistance } from "../geo";
+import { analyzeMission, formatArea, formatDistance } from "../geo";
 import { Mission, SavedMission } from "../types";
 
 type Props = {
@@ -38,7 +38,9 @@ function summary(m: Mission): string {
   if (m.safeClosed) {
     parts.push("safe area");
   }
-  if (m.start) {
+  if (m.type === "survey") {
+    parts.push(m.surveyClosed ? `survey ${formatArea(analyzeMission(m).surveyAreaM2)}` : "survey (no area)");
+  } else if (m.start) {
     const a = analyzeMission(m);
     parts.push(`${m.path.length} wp`, formatDistance(a.routeLengthM));
     if (m.closed) {

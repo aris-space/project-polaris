@@ -1,6 +1,10 @@
 export type LatLon = { lat: number; lon: number };
 
+/** waypoints = click-to-add path from the start; survey = an area to be surveyed. */
+export type MissionType = "waypoints" | "survey";
+
 export type Mission = {
+  type: MissionType;
   /** Safe-area polygon vertices (open ring, no repeated first point). */
   safeArea: LatLon[];
   /** True once the operator finished drawing the polygon (>= 3 vertices). */
@@ -11,14 +15,21 @@ export type Mission = {
   path: LatLon[];
   /** Close the loop: last waypoint connects back to the start. */
   closed: boolean;
+  /** Survey-area polygon vertices (survey missions). */
+  survey: LatLon[];
+  /** True once the survey polygon is finished (>= 3 vertices). */
+  surveyClosed: boolean;
 };
 
 export const EMPTY_MISSION: Mission = {
+  type: "waypoints",
   safeArea: [],
   safeClosed: false,
   start: null,
   path: [],
   closed: false,
+  survey: [],
+  surveyClosed: false,
 };
 
 /** A named mission stored in the layout. */
@@ -30,7 +41,10 @@ export type SavedMission = {
   savedAt: number;
 };
 
-export type Tool = "pan" | "safe" | "start" | "path";
+export type Tool = "pan" | "safe" | "start" | "path" | "survey";
+
+/** Polygons drawn vertex by vertex. */
+export type PolygonKind = "safe" | "survey";
 
 /** plan = edit the mission, watch = view only. */
 export type PanelMode = "plan" | "watch";

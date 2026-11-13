@@ -38,6 +38,8 @@ import {
   Fix,
   LatLon,
   Mission,
+  MissionType,
+  PolygonKind,
   SavedMission,
   Tool,
 } from "./types";
@@ -289,6 +291,14 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       }
       return;
     }
+    if (tool === "survey" && !m.surveyClosed) {
+      const survey = dedupe(m.survey);
+      if (survey.length >= 3) {
+        commit({ ...m, survey, surveyClosed: true });
+        setTool("pan");
+      }
+      return;
+    }
     if (tool === "path") {
       const path = dedupe(m.path);
       if (path.length !== m.path.length) {
@@ -302,6 +312,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     const m = missionRef.current;
     if (tool === "safe" && !m.safeClosed && m.safeArea.length > 0) {
       commit({ ...m, safeArea: m.safeArea.slice(0, -1) });
+    } else if (tool === "survey" && !m.surveyClosed && m.survey.length > 0) {
+      commit({ ...m, survey: m.survey.slice(0, -1) });
     } else if (tool === "path" && m.path.length > 0) {
       const path = m.path.slice(0, -1);
       commit({ ...m, path, closed: m.closed && path.length >= 2 });
@@ -312,14 +324,18 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     (p: LatLon) => {
       const m = missionRef.current;
       commit({ ...m, start: p });
-      setTool(m.path.length === 0 ? "path" : "pan");
+      if (m.type === "survey") {
+        setTool(m.survey.length === 0 ? "survey" : "pan");
+      } else {
+        setTool(m.path.length === 0 ? "path" : "pan");
+      }
     },
     [commit],
   );
 
   const toggleLoop = useCallback(() => {
     const m = missionRef.current;
-    if (m.start && m.path.length >= 2) {
+    if (m.type === "waypoints" && m.start && m.path.length >= 2) {
       commit({ ...m, closed: !m.closed });
     }
   }, [commit]);
@@ -346,6 +362,11 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
           return false;
         }
         commit({ ...m, safeArea: m.safeArea.filter((_, i) => i !== index) });
+      } else if (kind === "survey") {
+        if (m.surveyClosed && m.survey.length <= 3) {
+          return false;
+        }
+        commit({ ...m, survey: m.survey.filter((_, i) => i !== index) });
       } else {
         const path = m.path.filter((_, i) => i !== index);
         commit({ ...m, path, closed: m.closed && path.length >= 2 });
@@ -534,6 +555,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         if (tool === "path") {
           setTool("pan");
         }
+      } else if (target === "survey") {
+        commit({ ...m, survey: [], surveyClosed: false });
       } else {
         commit(EMPTY_MISSION);
         setTool("pan");
@@ -543,11 +566,28 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   );
 
   const selectTool = useCallback((t: Tool) => {
-    if (t === "path" && !missionRef.current.start) {
+    const m = missionRef.current;
+    if (t === "path" && (!m.start || m.type !== "waypoints")) {
+      return;
+    }
+    if (t === "survey" && m.type !== "survey") {
       return;
     }
     setTool(t);
   }, []);
+
+  /** Switch the mission between waypoint path and survey area (both are kept). */
+  const setMissionType = useCallback(
+    (type: MissionType) => {
+      const m = missionRef.current;
+      if (m.type !== type) {
+        commit({ ...m, type });
+      }
+      setSelection(undefined);
+      setTool("pan");
+    },
+    [commit],
+  );
 
   // ------------------------------------------------------------------ map
   const mapDivRef = useRef<HTMLDivElement>(null);
@@ -566,10 +606,12 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         setStart(p);
       } else if (tool === "path" && m.start) {
         commit({ ...m, path: [...m.path, p] });
+      } else if (tool === "survey" && !m.surveyClosed) {
+        commit({ ...m, survey: [...m.survey, p] });
       }
     },
     onMapDblClick: finishDrawing,
-    onFirstSafeVertexClick: finishDrawing,
+    onFirstVertexClick: finishDrawing,
     onHandleMoved: (kind: HandleKind, index, p) => {
       const m = missionRef.current;
       if (kind === "start") {
@@ -578,6 +620,10 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         const safeArea = [...m.safeArea];
         safeArea[index] = p;
         commit({ ...m, safeArea });
+      } else if (kind === "survey") {
+        const survey = [...m.survey];
+        survey[index] = p;
+        commit({ ...m, survey });
       } else {
         const path = [...m.path];
         path[index] = p;
@@ -598,11 +644,11 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       setSelection(undefined);
       setTool("pan");
     },
-    onSafeInsert: (index, p) => {
+    onPolygonInsert: (kind: PolygonKind, index: number, p: LatLon) => {
       const m = missionRef.current;
-      const safeArea = [...m.safeArea];
-      safeArea.splice(index, 0, p);
-      commit({ ...m, safeArea });
+      const list = [...(kind === "safe" ? m.safeArea : m.survey)];
+      list.splice(index, 0, p);
+      commit(kind === "safe" ? { ...m, safeArea: list } : { ...m, survey: list });
     },
     onCursor: setCursor,
     onViewChange: (view) => {
@@ -630,8 +676,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       onMapDblClick: () => {
         handlersRef.current.onMapDblClick();
       },
-      onFirstSafeVertexClick: () => {
-        handlersRef.current.onFirstSafeVertexClick();
+      onFirstVertexClick: (...a) => {
+        handlersRef.current.onFirstVertexClick(...a);
       },
       onHandleMoved: (...a) => {
         handlersRef.current.onHandleMoved(...a);
@@ -639,8 +685,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       onHandleDelete: (...a) => {
         handlersRef.current.onHandleDelete(...a);
       },
-      onSafeInsert: (...a) => {
-        handlersRef.current.onSafeInsert(...a);
+      onPolygonInsert: (...a) => {
+        handlersRef.current.onPolygonInsert(...a);
       },
       onHandleClick: (...a) => {
         handlersRef.current.onHandleClick(...a);
@@ -684,7 +730,13 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         ? mission.start
           ? selection
           : undefined
-        : selection.index < (selection.kind === "safe" ? mission.safeArea : mission.path).length
+        : selection.index <
+            (selection.kind === "safe"
+              ? mission.safeArea
+              : selection.kind === "survey"
+                ? mission.survey
+                : mission.path
+            ).length
           ? selection
           : undefined;
   const selKey = validSelection ? `${validSelection.kind}:${validSelection.index}` : "";
@@ -705,7 +757,12 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     }
     ctrl.setTool(tool);
     ctrl.setMission(mission);
-    if (tool === "safe" && !mission.safeClosed && mission.safeArea.length > 0) {
+    if (tool === "survey" && !mission.surveyClosed && mission.survey.length > 0) {
+      ctrl.setRubberAnchors(
+        mission.survey[mission.survey.length - 1],
+        mission.survey.length >= 2 ? mission.survey[0] : undefined,
+      );
+    } else if (tool === "safe" && !mission.safeClosed && mission.safeArea.length > 0) {
       ctrl.setRubberAnchors(
         mission.safeArea[mission.safeArea.length - 1],
         mission.safeArea.length >= 2 ? mission.safeArea[0] : undefined,
@@ -902,8 +959,13 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         case "2":
           selectTool(tool === "start" ? "pan" : "start");
           break;
-        case "3":
-          selectTool(tool === "path" ? "pan" : "path");
+        case "3": {
+          const t: Tool = mission.type === "survey" ? "survey" : "path";
+          selectTool(tool === t ? "pan" : t);
+          break;
+        }
+        case "4":
+          setMissionType(mission.type === "survey" ? "waypoints" : "survey");
           break;
         case "g":
         case "G":
@@ -946,6 +1008,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
           updateConfig({ mode });
         }}
         tool={tool}
+        onMissionType={setMissionType}
         mission={mission}
         gnssFix={gnssFix}
         gnssTopic={config.gnssTopic}

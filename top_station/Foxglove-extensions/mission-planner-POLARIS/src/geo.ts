@@ -92,7 +92,7 @@ export function segmentLeavesPolygon(a: LatLon, b: LatLon, poly: LatLon[]): bool
 
 /** Ordered route points: start, waypoints…, and start again when the loop is closed. */
 export function routePoints(m: Mission): LatLon[] {
-  if (!m.start) {
+  if (!m.start || m.type !== "waypoints") {
     return [];
   }
   const pts = [m.start, ...m.path];
@@ -111,6 +111,10 @@ export type MissionAnalysis = {
   outsideSegments: number;
   routeLengthM: number;
   safeAreaM2: number;
+  /** Closed survey polygon area (survey missions). */
+  surveyAreaM2: number;
+  /** Survey polygon reaches outside the safe area. */
+  surveyOutside: boolean;
 };
 
 export function analyzeMission(m: Mission): MissionAnalysis {
@@ -124,9 +128,20 @@ export function analyzeMission(m: Mission): MissionAnalysis {
     routeLengthM += distanceM(a, b);
     segmentOutside.push(hasSafe ? segmentLeavesPolygon(a, b, m.safeArea) : false);
   }
+  const hasSurvey = m.type === "survey" && m.surveyClosed && m.survey.length >= 3;
+  let surveyOutside = false;
+  if (hasSurvey && hasSafe) {
+    for (let i = 0; i < m.survey.length && !surveyOutside; i++) {
+      surveyOutside = segmentLeavesPolygon(m.survey[i]!, m.survey[(i + 1) % m.survey.length]!, m.safeArea);
+    }
+  }
   return {
+    surveyAreaM2: hasSurvey ? polygonAreaM2(m.survey) : 0,
+    surveyOutside,
     segmentOutside,
-    waypointOutside: m.path.map((p) => (hasSafe ? !pointInPolygon(p, m.safeArea) : false)),
+    waypointOutside: m.path.map((p) =>
+      hasSafe && m.type === "waypoints" ? !pointInPolygon(p, m.safeArea) : false,
+    ),
     startOutside: hasSafe && m.start != undefined ? !pointInPolygon(m.start, m.safeArea) : false,
     outsideSegments: segmentOutside.filter(Boolean).length,
     routeLengthM,
