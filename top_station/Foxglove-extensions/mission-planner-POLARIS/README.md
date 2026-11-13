@@ -28,11 +28,12 @@ A Foxglove panel for planning a mission on a map. It works like the built-in Map
 This works like the stock Map panel. Under **Vehicle position** in the panel settings you set:
 
 - the **Topic**: any `sensor_msgs/NavSatFix` or `foxglove.LocationFix`. The default is `/gps/filtered/global`, the global EKF estimate.
-- **History**: how many past positions to keep as a trail. 0 shows only the marker.
+- **History**: **All points** (default) keeps the whole trail; **Last N points** keeps a sliding window (0 = marker only). A **Clear trail** action resets it.
+- **Min. point spacing**: new trail points closer than this to the previous one are skipped (default 0.2 m), so GNSS jitter while stationary doesn't scribble.
 - the **Color**.
-- **Follow vehicle**: also available as a button. Dragging the map turns follow off.
+- **Follow vehicle**: also available as a button. It centres once, then only re-centres when the vehicle leaves the middle half of the view, so the map doesn't shake with GNSS noise. Dragging the map turns follow off.
 
-The marker becomes a heading arrow (course over ground) once the vehicle moves. The trail is cleared when you seek in a recording.
+The marker becomes a heading arrow (course over ground) once the vehicle has moved 1.5 m; it holds its heading while stationary. The trail is cleared when you seek in a recording.
 
 ## Map
 

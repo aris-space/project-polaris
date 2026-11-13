@@ -32,7 +32,11 @@ export type Config = {
   basemap: Basemap;
   customTileUrl: string;
   vehicleTopic: string;
+  /** "all" keeps every trail point (thinned by vehicleMinSpacing), "last" keeps vehicleHistory points. */
+  vehicleHistoryMode: "all" | "last";
   vehicleHistory: number;
+  /** New trail points closer than this (m) to the previous one are skipped. */
+  vehicleMinSpacing: number;
   vehicleColor: string;
   followVehicle: boolean;
   gnssTopic: string;
@@ -45,7 +49,9 @@ export const DEFAULT_CONFIG: Config = {
   basemap: "osm",
   customTileUrl: "",
   vehicleTopic: "/gps/filtered/global",
+  vehicleHistoryMode: "all",
   vehicleHistory: 500,
+  vehicleMinSpacing: 0.2,
   vehicleColor: "#f5a524",
   followVehicle: false,
   gnssTopic: "/fix",

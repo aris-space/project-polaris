@@ -60,6 +60,7 @@ export function buildSettingsNodes(config: Config, topics: readonly Topic[]): Se
     vehicle: {
       label: "Vehicle position",
       icon: "Points",
+      actions: [{ type: "action", id: "clear-trail", label: "Clear trail", icon: "Clear" }],
       fields: {
         vehicleTopic: {
           label: "Topic",
@@ -70,14 +71,37 @@ export function buildSettingsNodes(config: Config, topics: readonly Topic[]): Se
           help: "sensor_msgs/NavSatFix or foxglove.LocationFix",
           warning: topicWarning(config.vehicleTopic),
         },
-        vehicleHistory: {
-          label: "History (points)",
+        vehicleHistoryMode: {
+          label: "History",
+          input: "select",
+          value: config.vehicleHistoryMode,
+          options: [
+            { label: "All points", value: "all" },
+            { label: "Last N points", value: "last" },
+          ],
+          help: "“All points” keeps the whole trail since the panel started (or since the last seek / Clear trail)",
+        },
+        vehicleHistory:
+          config.vehicleHistoryMode === "last"
+            ? {
+                label: "Points to keep",
+                input: "number",
+                value: config.vehicleHistory,
+                min: 0,
+                max: 100000,
+                step: 100,
+                help: "Number of past positions kept for the trail (0 = marker only)",
+              }
+            : undefined,
+        vehicleMinSpacing: {
+          label: "Min. point spacing (m)",
           input: "number",
-          value: config.vehicleHistory,
+          value: config.vehicleMinSpacing,
           min: 0,
-          max: 100000,
-          step: 100,
-          help: "Number of past positions kept for the trail (0 = marker only)",
+          max: 50,
+          step: 0.1,
+          precision: 2,
+          help: "Skip new trail points closer than this to the previous one — filters GNSS jitter while the vehicle is still",
         },
         vehicleColor: { label: "Color", input: "rgb", value: config.vehicleColor },
         followVehicle: { label: "Follow vehicle", input: "boolean", value: config.followVehicle },

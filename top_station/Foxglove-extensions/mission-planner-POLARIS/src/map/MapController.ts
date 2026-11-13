@@ -84,13 +84,19 @@ export class MapController {
   #maskLayer = L.layerGroup();
   #shapesLayer = L.layerGroup();
   #handlesLayer = L.layerGroup();
-  #trailLayer = L.layerGroup();
   #rubber: L.Polyline;
   #rubberClose: L.Polyline;
   #vehicleMarker?: L.Marker;
   #vehicleKey = "";
   #gnssMarker?: L.Marker;
   #startMarker?: L.Marker;
+  #trail?: L.Polyline;
+  #trailCount = 0;
+  #trailFirst?: LatLon;
+  #trailColor = "";
+  #heading?: number;
+  #headingAnchor?: LatLon;
+  #followWasOn = false;
   #selection: Selection;
 
   #mission?: Mission;
@@ -127,7 +133,6 @@ export class MapController {
     this.#map.getPane("mp-labels")!.style.pointerEvents = "none";
 
     this.#maskLayer.addTo(this.#map);
-    this.#trailLayer.addTo(this.#map);
     this.#shapesLayer.addTo(this.#map);
     this.#handlesLayer.addTo(this.#map);
 
@@ -516,35 +521,67 @@ export class MapController {
 
   // ---------------------------------------------------------------- vehicle
 
-  public setVehicle(track: LatLon[], opts: { color: string; follow: boolean }): void {
+  /**
+   * Draw the vehicle trail (stored points) and marker (latest raw position).
+   * The trail polyline is appended incrementally while the history only grows,
+   * and rebuilt when the window slides, is cleared or the colour changes.
+   */
+  public setVehicle(
+    track: LatLon[],
+    head: LatLon | undefined,
+    opts: { color: string; follow: boolean },
+  ): void {
     const { color, follow } = opts;
-    this.#trailLayer.clearLayers();
-    const last = track[track.length - 1];
+    const last = head ?? track[track.length - 1];
     if (!last) {
+      this.#trail?.remove();
+      this.#trail = undefined;
+      this.#trailCount = 0;
+      this.#trailFirst = undefined;
       this.#vehicleMarker?.remove();
       this.#vehicleMarker = undefined;
       this.#vehicleKey = "";
+      this.#heading = undefined;
+      this.#headingAnchor = undefined;
+      this.#followWasOn = follow;
       return;
     }
-    if (track.length >= 2) {
-      L.polyline(track.map(toLL), {
+
+    // --- trail
+    if (track.length < 2) {
+      this.#trail?.remove();
+      this.#trail = undefined;
+    } else if (!this.#trail || this.#trailColor !== color) {
+      this.#trail?.remove();
+      this.#trail = L.polyline(track.map(toLL), {
         pane: "mp-trail",
         interactive: false,
         color,
         weight: 2.5,
         opacity: 0.85,
-      }).addTo(this.#trailLayer);
-    }
-
-    // Course over ground from the most recent point at least 0.3 m away.
-    let heading: number | undefined;
-    for (let i = track.length - 2; i >= 0; i--) {
-      const prev = track[i]!;
-      if (distanceM(prev, last) >= 0.3) {
-        heading = bearingDeg(prev, last);
-        break;
+      }).addTo(this.#map);
+      this.#trailColor = color;
+    } else if (track[0] === this.#trailFirst && track.length >= this.#trailCount) {
+      for (let i = this.#trailCount; i < track.length; i++) {
+        this.#trail.addLatLng(toLL(track[i]!));
       }
+    } else {
+      this.#trail.setLatLngs(track.map(toLL));
     }
+    this.#trailFirst = track[0];
+    this.#trailCount = track.length;
+
+    // --- heading: course over ground. Only updated once the vehicle has really
+    // moved >= 1.5 m from where the heading was last computed, so GNSS jitter
+    // while (nearly) stationary can never twist the arrow.
+    if (!this.#headingAnchor) {
+      this.#headingAnchor = track[0] ?? last;
+    }
+    if (distanceM(this.#headingAnchor, last) >= 1.5) {
+      this.#heading = bearingDeg(this.#headingAnchor, last);
+      this.#headingAnchor = last;
+    }
+    const heading = this.#heading;
     const key = `${color}|${heading == undefined ? "dot" : heading.toFixed(0)}`;
     if (!this.#vehicleMarker) {
       this.#vehicleMarker = L.marker(toLL(last), {
@@ -561,9 +598,23 @@ export class MapController {
     }
     this.#vehicleKey = key;
 
+    // --- follow: centre once when enabled, afterwards only re-centre when the
+    // vehicle leaves the middle half of the view (no per-fix jitter).
     if (follow && !this.#dragging) {
-      this.#panQuietly(last);
+      if (!this.#followWasOn) {
+        this.#panQuietly(last, { animate: false });
+      } else {
+        const size = this.#map.getSize();
+        const p = this.#map.latLngToContainerPoint(toLL(last));
+        if (
+          Math.abs(p.x - size.x / 2) > size.x * 0.25 ||
+          Math.abs(p.y - size.y / 2) > size.y * 0.25
+        ) {
+          this.#panQuietly(last, { animate: true });
+        }
+      }
     }
+    this.#followWasOn = follow;
   }
 
   public setGnss(fix: Fix | undefined): void {
@@ -586,13 +637,9 @@ export class MapController {
 
   // ------------------------------------------------------------------- view
 
-  #panQuietly(p: LatLon): void {
-    const target = toLL(p);
-    if (this.#map.getCenter().distanceTo(target) < 0.05) {
-      return;
-    }
+  #panQuietly(p: LatLon, opts: { animate: boolean }): void {
     this.#suppressViewEvents = true;
-    this.#map.panTo(target, { animate: false });
+    this.#map.panTo(toLL(p), opts.animate ? { animate: true, duration: 0.5 } : { animate: false });
     this.#suppressViewEvents = false;
   }
 

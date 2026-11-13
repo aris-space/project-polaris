@@ -27,6 +27,8 @@ import { ClearTarget, Toolbar, gnssUsable } from "./ui/Toolbar";
 import { IconFit, IconFollow, IconVehicle } from "./ui/icons";
 
 const UNDO_LIMIT = 50;
+/** Safety cap for "All points" trail history. */
+const TRAIL_CAP = 200_000;
 
 function toMillis(t: Time | undefined): number | undefined {
   return t == undefined ? undefined : t.sec * 1000 + t.nsec / 1e6;
@@ -124,11 +126,25 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   const [topics, setTopics] = useState<readonly Topic[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [gnssFix, setGnssFix] = useState<Fix | undefined>();
+  /** Stored trail points (thinned by min spacing, capped by the history setting). */
   const trackRef = useRef<LatLon[]>([]);
+  /** Latest raw vehicle position (marker), even when not stored in the trail. */
+  const headRef = useRef<LatLon | undefined>();
   const [trackVersion, setTrackVersion] = useState(0);
+  const resetTrack = useCallback(() => {
+    trackRef.current = [];
+    headRef.current = undefined;
+    setTrackVersion((v) => v + 1);
+  }, []);
 
-  const live = useRef({ vehicle: config.vehicleTopic, gnss: config.gnssTopic, history: config.vehicleHistory });
-  live.current = { vehicle: config.vehicleTopic, gnss: config.gnssTopic, history: config.vehicleHistory };
+  const liveValue = {
+    vehicle: config.vehicleTopic,
+    gnss: config.gnssTopic,
+    keep: config.vehicleHistoryMode === "all" ? TRAIL_CAP : Math.max(0, config.vehicleHistory),
+    minSpacing: Math.max(0, config.vehicleMinSpacing),
+  };
+  const live = useRef(liveValue);
+  live.current = liveValue;
 
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
@@ -144,6 +160,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
 
       if (renderState.didSeek === true) {
         trackRef.current = [];
+        headRef.current = undefined;
         setTrackVersion((v) => v + 1);
         setGnssFix(undefined);
       }
@@ -152,7 +169,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       if (!frame || frame.length === 0) {
         return;
       }
-      const { vehicle, gnss, history } = live.current;
+      const { vehicle, gnss, keep, minSpacing } = live.current;
       let trackChanged = false;
       let latestGnss: Fix | undefined;
       for (const ev of frame) {
@@ -160,15 +177,19 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         if (ev.topic === vehicle) {
           const fix = extractFix(ev.message, at);
           if (fix && (fix.status == undefined || fix.status >= 0)) {
-            const track = trackRef.current;
-            const last = track[track.length - 1];
-            if (last?.lat !== fix.lat || last.lon !== fix.lon) {
-              track.push({ lat: fix.lat, lon: fix.lon });
-              const keep = Math.max(1, history);
-              if (track.length > keep) {
-                track.splice(0, track.length - keep);
-              }
+            const p = { lat: fix.lat, lon: fix.lon };
+            const head = headRef.current;
+            if (head?.lat !== p.lat || head.lon !== p.lon) {
+              headRef.current = p;
               trackChanged = true;
+              const track = trackRef.current;
+              const last = track[track.length - 1];
+              if (keep > 0 && (!last || distanceM(last, p) >= Math.max(minSpacing, 1e-6))) {
+                track.push(p);
+                if (track.length > keep) {
+                  track.splice(0, track.length - keep);
+                }
+              }
             }
           }
         }
@@ -201,9 +222,17 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   }, [context, config.vehicleTopic, config.gnssTopic]);
 
   useEffect(() => {
-    trackRef.current = [];
-    setTrackVersion((v) => v + 1);
-  }, [config.vehicleTopic]);
+    resetTrack();
+  }, [config.vehicleTopic, resetTrack]);
+
+  // Shrinking the history applies immediately.
+  useEffect(() => {
+    const keep = live.current.keep;
+    if (trackRef.current.length > keep) {
+      trackRef.current.splice(0, trackRef.current.length - keep);
+      setTrackVersion((v) => v + 1);
+    }
+  }, [config.vehicleHistoryMode, config.vehicleHistory]);
 
   useEffect(() => {
     setGnssFix(undefined);
@@ -477,7 +506,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   }, [mission, tool]);
 
   useEffect(() => {
-    mapRef.current?.setVehicle(trackRef.current, {
+    mapRef.current?.setVehicle(trackRef.current, headRef.current, {
       color: config.vehicleColor,
       follow: config.followVehicle,
     });
@@ -497,14 +526,14 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       fittedRef.current = true;
       return;
     }
-    const first = trackRef.current[trackRef.current.length - 1] ?? gnssFix;
+    const first = headRef.current ?? gnssFix;
     if (first) {
       mapRef.current.centerOn(first, 17);
       fittedRef.current = true;
     }
   }, [mission, trackVersion, gnssFix]);
 
-  const vehiclePos = trackRef.current[trackRef.current.length - 1];
+  const vehiclePos = headRef.current;
   const fitAll = useCallback(() => {
     const extra = vehiclePos ? [vehiclePos] : [];
     mapRef.current?.fitMission(missionRef.current, extra);
@@ -517,6 +546,10 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         if (action.payload.id === "clear-mission") {
           commit(EMPTY_MISSION);
           setTool("pan");
+        } else if (action.payload.id === "clear-trail") {
+          const head = headRef.current;
+          trackRef.current = head ? [head] : [];
+          setTrackVersion((v) => v + 1);
         }
         return;
       }
@@ -538,6 +571,14 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         case "vehicleHistory": {
           const n = Math.round(Number(value));
           updateConfig({ vehicleHistory: Number.isFinite(n) ? Math.min(100000, Math.max(0, n)) : 0 });
+          break;
+        }
+        case "vehicleHistoryMode":
+          updateConfig({ vehicleHistoryMode: value === "last" ? "last" : "all" });
+          break;
+        case "vehicleMinSpacing": {
+          const m = Number(value);
+          updateConfig({ vehicleMinSpacing: Number.isFinite(m) ? Math.min(50, Math.max(0, m)) : 0 });
           break;
         }
         case "vehicleColor":

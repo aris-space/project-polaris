@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- Vehicle trail history: new "All points" mode (default) keeps the whole trail; "Last N points" still available
+- Min. point spacing (default 0.2 m) so GNSS jitter while stationary doesn't pile up trail points
+- "Clear trail" action in the Vehicle position settings
+- Follow vehicle no longer re-centres on every fix: it centres once, then only when the vehicle leaves the middle half of the view (map and planned path stop shaking)
+- Heading arrow only updates after >= 1.5 m of real movement (no twitching while stationary)
+- Trail is appended incrementally (scales to long missions); eslint ignores dist/
+
 ## 1.1.0
 
 - Click a point (safe-area vertex, waypoint or start) to select it, then press Delete/Backspace to remove it; Esc deselects
