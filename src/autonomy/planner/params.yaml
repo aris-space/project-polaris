@@ -1,6 +1,6 @@
 grid:
   size: 100                 # side length of the grid [m]
-  resolution: 10            # spacing between grid points [m]
+  resolution: 20            # spacing between grid points [m]
   boundary_coordinates:     # corners of the allowed area [m]
     - [0, 0]
     - [0, 200]
