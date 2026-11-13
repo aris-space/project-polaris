@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+- Export / import missions as JSON files (independent of the Foxglove layout, e.g. for git):
+  Export current, per-mission export, Export all (library file), Import… (multiple files,
+  validation, duplicate names get " (2)", a single imported mission opens right away)
+- Plan / Watch modes: Watch is view only (editing tools hidden, points locked, map clicks and
+  edit shortcuts ignored) but you can still switch between saved missions and export
+- Mode is also available in the panel settings and saved with the layout
+
 ## 1.3.0
 
 - Saved missions: mission chip at the top of the map with name field, Save (⌘/Ctrl S),

@@ -130,3 +130,29 @@ export const IconChevron = (): ReactElement => (
     <path d="M7 10l5 5 5-5" />
   </Svg>
 );
+
+export const IconDownload = (): ReactElement => (
+  <Svg>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+  </Svg>
+);
+
+export const IconUpload = (): ReactElement => (
+  <Svg>
+    <path d="M12 16V5M7 10l5-5 5 5M5 20h14" />
+  </Svg>
+);
+
+export const IconEdit = (): ReactElement => (
+  <Svg>
+    <path d="M4 20h4L19 9l-4-4L4 16z" />
+    <path d="M13.5 6.5l4 4" />
+  </Svg>
+);
+
+export const IconEye = (): ReactElement => (
+  <Svg>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);

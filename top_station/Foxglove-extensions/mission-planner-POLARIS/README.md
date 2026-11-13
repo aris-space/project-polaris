@@ -31,6 +31,44 @@ The chip at the top centre of the map shows the current mission's name. An amber
 
 Saved missions are stored in the **Foxglove layout** (panel state). They survive restarts and travel with the layout if you export or share it.
 
+## Plan / Watch mode
+
+The switch at the top left toggles between:
+
+- **Plan**: the full editor described above.
+- **Watch**: view only. The editing tools are hidden and points can't be dragged, selected or deleted. You still see the vehicle and trail, can switch between saved missions, and can export. Use this on the operator screen during a run.
+
+The mode is saved with the layout and can also be set in the panel settings (Mission → Mode).
+
+## Mission files (JSON)
+
+Missions can be exported and imported as files, independent of the Foxglove layout, so you can keep them in git next to the autonomy mission CSVs. Use the buttons at the bottom of the mission menu:
+
+- **Export current**: the mission on the map → `<name>.mission.json`
+- **↓ on a saved mission**: that mission
+- **Export all**: every saved mission in one library file → `polaris-missions-YYYY-MM-DD.json`
+- **Import…** (Plan mode): one or more mission or library files. They're added to the saved missions; duplicate names get " (2)". A single imported mission opens straight away unless you have unsaved changes.
+
+Desktop Foxglove shows a native *Save as* dialog; elsewhere the file is downloaded.
+
+```json
+{
+  "format": "polaris-mission",
+  "version": 1,
+  "name": "Goldbach line",
+  "exportedAt": "2026-11-14T00:47:12.000Z",
+  "mission": {
+    "safeArea": [{ "lat": 47.2582, "lon": 8.6891 }, …],
+    "safeClosed": true,
+    "start": { "lat": 47.2561, "lon": 8.6903 },
+    "path": [{ "lat": 47.2572, "lon": 8.6909 }, …],
+    "closed": true
+  }
+}
+```
+
+A library file has `"format": "polaris-mission-library"` and a `missions` array of `{ name, savedAt, mission }`. Coordinates are WGS84 degrees.
+
 **Safe-area check:** segments or waypoints outside the safe area turn red. The status bar shows a ⚠ warning, or ✓ when the whole path is inside.
 
 **Workflow guidance:** finishing the safe area switches to the Start tool, and setting the start switches to the Path tool. The status bar always shows what to do next.

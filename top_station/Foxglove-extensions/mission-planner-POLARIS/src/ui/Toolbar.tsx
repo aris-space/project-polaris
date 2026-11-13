@@ -1,6 +1,8 @@
 import { ReactElement, useEffect, useRef, useState } from "react";
 
 import {
+  IconEdit,
+  IconEye,
   IconGnss,
   IconLoop,
   IconPan,
@@ -11,11 +13,13 @@ import {
   IconTrash,
   IconUndo,
 } from "./icons";
-import { Fix, Mission, Tool } from "../types";
+import { Fix, Mission, PanelMode, Tool } from "../types";
 
 export type ClearTarget = "safe" | "path" | "all";
 
 type Props = {
+  mode: PanelMode;
+  onMode: (mode: PanelMode) => void;
   tool: Tool;
   mission: Mission;
   gnssFix: Fix | undefined;
@@ -140,6 +144,9 @@ export function Toolbar(props: Props): ReactElement {
 
   return (
     <div className={`mp-toolbar${compact ? " mp-compact" : ""}`}>
+      <ModeSwitch mode={props.mode} onMode={props.onMode} compact={compact} />
+      {props.mode === "plan" && (
+        <>
       <div className="mp-group">
         {toolBtn("pan", "Pan", <IconPan />, "Esc", "Move the map and drag existing points")}
         {toolBtn(
@@ -226,6 +233,34 @@ export function Toolbar(props: Props): ReactElement {
           </div>
         )}
       </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ModeSwitch(props: {
+  mode: PanelMode;
+  onMode: (mode: PanelMode) => void;
+  compact: boolean;
+}): ReactElement {
+  const item = (m: PanelMode, label: string, icon: ReactElement, tip: string) => (
+    <button
+      className={`mp-seg${props.mode === m ? " mp-seg--active" : ""}`}
+      onClick={() => {
+        props.onMode(m);
+      }}
+      aria-pressed={props.mode === m}
+      data-tip={tip}
+    >
+      {icon}
+      {!props.compact && <span>{label}</span>}
+    </button>
+  );
+  return (
+    <div className="mp-group mp-modeswitch" role="group" aria-label="Panel mode">
+      {item("plan", "Plan", <IconEdit />, "Plan mode: draw and edit the mission")}
+      {item("watch", "Watch", <IconEye />, "Watch mode: view only — the mission is locked")}
     </div>
   );
 }

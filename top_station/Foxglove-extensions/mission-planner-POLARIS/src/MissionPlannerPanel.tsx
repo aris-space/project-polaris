@@ -20,6 +20,16 @@ import "./styles.css";
 import { analyzeMission, distanceM } from "./geo";
 import { HandleKind, MapCallbacks, MapController, Selection } from "./map/MapController";
 import { extractFix } from "./messages";
+import {
+  ImportedMission,
+  libraryToFile,
+  missionToFile,
+  normalizeMission,
+  parseMissionFile,
+  saveTextFile,
+  slugify,
+  uniqueName,
+} from "./missionFile";
 import { buildSettingsNodes } from "./settings";
 import {
   Config,
@@ -44,27 +54,7 @@ function toMillis(t: Time | undefined): number | undefined {
   return t == undefined ? undefined : t.sec * 1000 + t.nsec / 1e6;
 }
 
-function isLatLon(v: unknown): v is LatLon {
-  const p = v as LatLon | undefined;
-  return p != undefined && Number.isFinite(p.lat) && Number.isFinite(p.lon);
-}
-
 /** Merge persisted layout state with defaults, defensively. */
-function normalizeMission(raw: unknown): Mission {
-  const sm = (raw ?? {}) as Partial<Mission>;
-  const mission: Mission = {
-    safeArea: Array.isArray(sm.safeArea) ? sm.safeArea.filter(isLatLon) : [],
-    safeClosed: sm.safeClosed === true,
-    start: isLatLon(sm.start) ? sm.start : null,
-    path: Array.isArray(sm.path) ? sm.path.filter(isLatLon) : [],
-    closed: sm.closed === true,
-  };
-  if (mission.safeArea.length < 3) {
-    mission.safeClosed = false;
-  }
-  return mission;
-}
-
 function loadConfig(initial: unknown): Config {
   const saved = (initial ?? {}) as Partial<Config>;
   const missions: SavedMission[] = Array.isArray(saved.missions)
@@ -84,6 +74,7 @@ function loadConfig(initial: unknown): Config {
   return {
     ...DEFAULT_CONFIG,
     ...saved,
+    mode: saved.mode === "watch" ? "watch" : "plan",
     mission: normalizeMission(saved.mission),
     missionName: typeof saved.missionName === "string" ? saved.missionName : "",
     activeMissionId,
@@ -370,6 +361,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   const dirty = activeSaved
     ? !sameMission(activeSaved.mission, mission) || activeSaved.name !== (config.missionName.trim() || UNTITLED)
     : !isEmptyMission(mission);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
 
   const saveMission = useCallback(
     (opts: { asCopy: boolean }) => {
@@ -429,6 +422,106 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     updateConfig({ activeMissionId: null, missionName: "" });
     setTool("pan");
   }, [commit, updateConfig]);
+
+  // ------------------------------------------------------------------ toast + file import/export
+  const [toast, setToast] = useState<{ text: string; kind: "ok" | "error" } | undefined>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const showToast = useCallback((text: string, kind: "ok" | "error" = "ok") => {
+    setToast({ text, kind });
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
+    }
+    toastTimer.current = setTimeout(() => {
+      setToast(undefined);
+    }, kind === "error" ? 6000 : 3500);
+  }, []);
+  useEffect(
+    () => () => {
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+    },
+    [],
+  );
+
+  const writeJson = useCallback(
+    (filename: string, data: object, label: string) => {
+      saveTextFile(filename, `${JSON.stringify(data, undefined, 2)}\n`)
+        .then((res) => {
+          if (res === "saved") {
+            showToast(`Exported ${label}`);
+          }
+        })
+        .catch((err: unknown) => {
+          showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+        });
+    },
+    [showToast],
+  );
+
+  const exportCurrent = useCallback(() => {
+    const name = configRef.current.missionName.trim() || UNTITLED;
+    writeJson(`${slugify(name)}.mission.json`, missionToFile(name, missionRef.current), `“${name}”`);
+  }, [writeJson]);
+
+  const exportOne = useCallback(
+    (id: string) => {
+      const sm = configRef.current.missions.find((m) => m.id === id);
+      if (sm) {
+        writeJson(`${slugify(sm.name)}.mission.json`, missionToFile(sm.name, sm.mission), `“${sm.name}”`);
+      }
+    },
+    [writeJson],
+  );
+
+  const exportAll = useCallback(() => {
+    const all = configRef.current.missions;
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    writeJson(`polaris-missions-${day}.json`, libraryToFile(all), `${all.length} missions`);
+  }, [writeJson]);
+
+  const importFiles = useCallback(
+    async (files: File[]) => {
+      const found: ImportedMission[] = [];
+      const errors: string[] = [];
+      for (const f of files) {
+        try {
+          const text = await f.text();
+          found.push(...parseMissionFile(text, f.name.replace(/(\.mission)?\.json$/i, "")));
+        } catch (err) {
+          errors.push(`${f.name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (found.length > 0) {
+        const c = configRef.current;
+        const taken = c.missions.map((m) => m.name);
+        const importedAt = Date.now();
+        const added: SavedMission[] = found.map((m, i) => {
+          const name = uniqueName(m.name, taken);
+          taken.push(name);
+          return { id: newMissionId(), name, mission: m.mission, savedAt: importedAt + i };
+        });
+        updateConfig({ missions: [...c.missions, ...added] });
+        // A single imported mission opens right away unless there is unsaved work.
+        const only = added.length === 1 ? added[0] : undefined;
+        if (only && !dirtyRef.current) {
+          commit(only.mission);
+          updateConfig({ activeMissionId: only.id, missionName: only.name });
+          setTool("pan");
+          mapRef.current?.fitMission(only.mission);
+        }
+        const what = added.length === 1 ? `“${added[0]!.name}”` : `${added.length} missions`;
+        showToast(
+          errors.length > 0 ? `Imported ${what} · ${errors.length} file(s) failed: ${errors.join("; ")}` : `Imported ${what}`,
+          errors.length > 0 ? "error" : "ok",
+        );
+      } else if (errors.length > 0) {
+        showToast(`Import failed — ${errors.join("; ")}`, "error");
+      }
+    },
+    [commit, showToast, updateConfig],
+  );
 
   const clear = useCallback(
     (target: ClearTarget) => {
@@ -573,6 +666,16 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     };
   }, []);
 
+  // Watch mode: lock editing.
+  const watch = config.mode === "watch";
+  useEffect(() => {
+    mapRef.current?.setEditable({ editable: !watch });
+    if (watch) {
+      setTool("pan");
+      setSelection(undefined);
+    }
+  }, [watch]);
+
   // Drop a selection that no longer points at an existing point.
   const validSelection: Selection =
     selection == undefined
@@ -699,6 +802,9 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         case "followVehicle":
           updateConfig({ followVehicle: value === true });
           break;
+        case "mode":
+          updateConfig({ mode: value === "watch" ? "watch" : "plan" });
+          break;
         case "showGnss":
           updateConfig({ showGnss: value === true });
           break;
@@ -743,6 +849,15 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       return;
     }
     const mod = e.metaKey || e.ctrlKey;
+    if (watch) {
+      // View only: just "fit".
+      if (!mod && (e.key === "f" || e.key === "F")) {
+        fitAll();
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
     let handled = true;
     if (mod && e.key.toLowerCase() === "z") {
       if (e.shiftKey) {
@@ -826,6 +941,10 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       <div ref={mapDivRef} className="mp-map" />
 
       <Toolbar
+        mode={config.mode}
+        onMode={(mode) => {
+          updateConfig({ mode });
+        }}
         tool={tool}
         mission={mission}
         gnssFix={gnssFix}
@@ -859,6 +978,13 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         onLoad={loadMission}
         onDelete={deleteMission}
         onNew={newMission}
+        readOnly={watch}
+        onExportCurrent={exportCurrent}
+        onExportOne={exportOne}
+        onExportAll={exportAll}
+        onImportFiles={(files) => {
+          void importFiles(files);
+        }}
       />
 
       <div className="mp-group mp-viewbtns">
@@ -895,7 +1021,10 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         analysis={analysis}
         cursor={cursor}
         selection={validSelection}
+        watch={watch}
       />
+
+      {toast && <div className={`mp-toast mp-toast--${toast.kind}`}>{toast.text}</div>}
     </div>
   );
 }

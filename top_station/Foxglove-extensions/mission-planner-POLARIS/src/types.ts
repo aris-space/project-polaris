@@ -32,11 +32,15 @@ export type SavedMission = {
 
 export type Tool = "pan" | "safe" | "start" | "path";
 
+/** plan = edit the mission, watch = view only. */
+export type PanelMode = "plan" | "watch";
+
 export type Basemap = "osm" | "satellite" | "custom";
 
 export type MapView = { lat: number; lon: number; zoom: number };
 
 export type Config = {
+  mode: PanelMode;
   mission: Mission;
   /** Name of the mission currently being edited ("" = untitled). */
   missionName: string;
@@ -59,6 +63,7 @@ export type Config = {
 };
 
 export const DEFAULT_CONFIG: Config = {
+  mode: "plan",
   mission: EMPTY_MISSION,
   missionName: "",
   activeMissionId: null,

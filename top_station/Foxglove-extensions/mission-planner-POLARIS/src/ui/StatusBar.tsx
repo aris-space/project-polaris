@@ -10,6 +10,7 @@ type Props = {
   analysis: MissionAnalysis;
   cursor: LatLon | undefined;
   selection: Selection;
+  watch: boolean;
 };
 
 const TOOL_NAMES: Record<Tool, string> = {
@@ -102,14 +103,23 @@ function hint(tool: Tool, m: Mission): ReactElement {
   }
 }
 
-export function StatusBar({ tool, mission, analysis, cursor, selection }: Props): ReactElement {
+export function StatusBar({ tool, mission, analysis, cursor, selection, watch }: Props): ReactElement {
   const warnStart = analysis.startOutside;
   const warnSegs = analysis.outsideSegments;
   return (
     <div className="mp-status">
       <div className="mp-hint">
-        {tool !== "pan" && <span className="mp-hint-tool">{TOOL_NAMES[tool]}</span>}
-        <span>{selection ? selectionHint(selection, mission) : hint(tool, mission)}</span>
+        {watch ? (
+          <>
+            <span className="mp-hint-tool mp-hint-tool--watch">Watch</span>
+            <span>View only — switch to Plan to edit the mission</span>
+          </>
+        ) : (
+          <>
+            {tool !== "pan" && <span className="mp-hint-tool">{TOOL_NAMES[tool]}</span>}
+            <span>{selection ? selectionHint(selection, mission) : hint(tool, mission)}</span>
+          </>
+        )}
       </div>
       <div className="mp-stats">
         {mission.safeClosed && (

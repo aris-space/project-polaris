@@ -128,6 +128,16 @@ export function buildSettingsNodes(config: Config, topics: readonly Topic[]): Se
       icon: "Timeline",
       actions: [{ type: "action", id: "clear-mission", label: "Clear mission", icon: "Delete" }],
       fields: {
+        mode: {
+          label: "Mode",
+          input: "toggle",
+          value: config.mode,
+          options: [
+            { label: "Plan", value: "plan" },
+            { label: "Watch", value: "watch" },
+          ],
+          help: "Watch = view only: the mission is locked, the vehicle is still shown",
+        },
         name: {
           label: "Name",
           input: "string",

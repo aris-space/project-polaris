@@ -98,6 +98,7 @@ export class MapController {
   #headingAnchor?: LatLon;
   #followWasOn = false;
   #selection: Selection;
+  #editable = true;
 
   #mission?: Mission;
   #tool: Tool = "pan";
@@ -154,6 +155,9 @@ export class MapController {
     }
 
     this.#map.on("click", (e: L.LeafletMouseEvent) => {
+      if (!this.#editable) {
+        return;
+      }
       if (this.#nearStartForSnap(e.latlng)) {
         if (e.originalEvent.detail <= 1) {
           this.#cb.onSnapToStart();
@@ -264,7 +268,7 @@ export class MapController {
     const color = this.#tool === "safe" ? COLORS.safe : COLORS.route;
     this.#rubber.setStyle({ color });
     this.#rubberClose.setStyle({ color });
-    const snap = this.#nearStartForSnap(cursor);
+    const snap = this.#editable && this.#nearStartForSnap(cursor);
     this.#startMarker?.getElement()?.classList.toggle("mp-snap-target", snap);
     this.#container.classList.toggle("mp-snapping", snap);
     if (snap && this.#mission?.start) {
@@ -285,6 +289,18 @@ export class MapController {
     const a = this.#map.latLngToContainerPoint(p);
     const b = this.#map.latLngToContainerPoint(toLL(m.start));
     return a.distanceTo(b) <= SNAP_PX;
+  }
+
+  /** Watch mode = not editable: handles can't be dragged/clicked, map clicks are ignored. */
+  public setEditable(opts: { editable: boolean }): void {
+    if (this.#editable === opts.editable) {
+      return;
+    }
+    this.#editable = opts.editable;
+    this.#container.classList.toggle("mp-watch", !opts.editable);
+    if (this.#mission) {
+      this.#renderHandles(this.#mission);
+    }
   }
 
   public setSelection(sel: Selection): void {
@@ -440,7 +456,8 @@ export class MapController {
   #makeHandle(p: LatLon, icon: L.DivIcon, kind: HandleKind, index: number): L.Marker {
     const marker = L.marker(toLL(p), {
       icon,
-      draggable: true,
+      draggable: this.#editable,
+      interactive: this.#editable,
       keyboard: false,
       bubblingMouseEvents: false,
       autoPan: true,
