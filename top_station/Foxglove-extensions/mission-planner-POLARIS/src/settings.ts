@@ -128,6 +128,14 @@ export function buildSettingsNodes(config: Config, topics: readonly Topic[]): Se
       icon: "Timeline",
       actions: [{ type: "action", id: "clear-mission", label: "Clear mission", icon: "Delete" }],
       fields: {
+        name: {
+          label: "Name",
+          input: "string",
+          readonly: true,
+          value: `${config.missionName.trim() || "Untitled mission"}${
+            config.activeMissionId == undefined ? " (not saved)" : ""
+          } · ${config.missions.length} saved`,
+        },
         safe: {
           label: "Safe area",
           input: "string",

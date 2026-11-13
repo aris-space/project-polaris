@@ -511,6 +511,260 @@
   right: calc(100% + 10px);
 }
 
+/* ---------- Mission menu (top centre) ---------- */
+
+.mp-mission {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  max-width: calc(100% - 200px);
+}
+.mp-mission-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 34px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--mp-border);
+  border-radius: 999px;
+  background: var(--mp-bg);
+  color: var(--mp-fg);
+  font: inherit;
+  font-weight: 600;
+  box-shadow: var(--mp-shadow);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+.mp-mission-chip:hover,
+.mp-mission-chip--open {
+  background: var(--mp-bg-solid);
+}
+.mp-mission-chip svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--mp-fg-muted);
+}
+.mp-mission-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-unsaved {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.mp-mission-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  background: var(--mp-bg-solid);
+  border: 1px solid var(--mp-border);
+  border-radius: 12px;
+  box-shadow: var(--mp-shadow);
+}
+.mp-mission-section {
+  padding: 8px 8px 10px;
+  border-bottom: 1px solid var(--mp-border);
+  margin-bottom: 4px;
+}
+.mp-field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--mp-fg-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mp-name-row {
+  display: flex;
+  gap: 6px;
+}
+.mp-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--mp-border);
+  border-radius: 8px;
+  background: var(--mp-hover);
+  color: var(--mp-fg);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.mp-input:focus {
+  border-color: var(--mp-active);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+.mp-primary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--mp-active);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mp-primary svg {
+  width: 16px;
+  height: 16px;
+}
+.mp-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.mp-mission-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.mp-mission-state {
+  margin-right: auto;
+  color: var(--mp-fg-muted);
+}
+.mp-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--mp-active);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mp-link svg {
+  width: 13px;
+  height: 13px;
+}
+.mp-link--confirm {
+  color: var(--mp-warn);
+}
+.mp-mission-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.mp-empty {
+  padding: 10px 8px 12px;
+  color: var(--mp-fg-muted);
+  font-size: 11px;
+}
+.mp-mission-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+.mp-mission-row:hover {
+  background: var(--mp-hover);
+}
+.mp-mission-row--active {
+  background: rgba(59, 130, 246, 0.12);
+}
+.mp-mission-load {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 8px;
+  border: none;
+  background: none;
+  color: var(--mp-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mp-mission-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.mp-active-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mp-active);
+}
+.mp-mission-row-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mp-fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.mp-icon-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  margin-right: 4px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--mp-fg-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+}
+.mp-mission-row:hover .mp-icon-btn,
+.mp-icon-btn--confirm {
+  opacity: 1;
+}
+.mp-icon-btn:hover {
+  background: var(--mp-hover);
+  color: var(--mp-warn);
+}
+.mp-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.mp-icon-btn--confirm {
+  background: var(--mp-warn);
+  color: #fff;
+}
+.mp-icon-btn--confirm:hover {
+  background: var(--mp-warn);
+  color: #fff;
+}
+
 /* ---------- Status bar ---------- */
 
 .mp-status {

@@ -19,6 +19,18 @@ A Foxglove panel for planning a mission on a map. It works like the built-in Map
 | Remove last point | `Backspace` | While drawing with nothing selected. |
 | Fit mission | `F` | Zooms to the mission and the vehicle. |
 
+## Saved missions
+
+The chip at the top centre of the map shows the current mission's name. An amber dot means it has unsaved changes. Click the chip to:
+
+- **Name** the mission and **Save** it (or press `⌘/Ctrl S` anywhere in the panel). The first save creates a new saved mission; later saves update it.
+- **Save as copy**: store the current state as a new mission.
+- **New mission**: start from an empty map.
+- **Switch** between saved missions by clicking one in the list. Each entry shows its waypoints, length and when it was saved. If you have unsaved changes, the first click warns you and the second click loads.
+- **Delete** a saved mission with the trash icon (click twice to confirm).
+
+Saved missions are stored in the **Foxglove layout** (panel state). They survive restarts and travel with the layout if you export or share it.
+
 **Safe-area check:** segments or waypoints outside the safe area turn red. The status bar shows a ⚠ warning, or ✓ when the whole path is inside.
 
 **Workflow guidance:** finishing the safe area switches to the Start tool, and setting the start switches to the Path tool. The status bar always shows what to do next.

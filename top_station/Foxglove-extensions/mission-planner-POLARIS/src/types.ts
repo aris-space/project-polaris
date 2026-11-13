@@ -21,6 +21,15 @@ export const EMPTY_MISSION: Mission = {
   closed: false,
 };
 
+/** A named mission stored in the layout. */
+export type SavedMission = {
+  id: string;
+  name: string;
+  mission: Mission;
+  /** ms since epoch */
+  savedAt: number;
+};
+
 export type Tool = "pan" | "safe" | "start" | "path";
 
 export type Basemap = "osm" | "satellite" | "custom";
@@ -29,6 +38,11 @@ export type MapView = { lat: number; lon: number; zoom: number };
 
 export type Config = {
   mission: Mission;
+  /** Name of the mission currently being edited ("" = untitled). */
+  missionName: string;
+  /** Saved mission the current one was loaded from / saved to, if any. */
+  activeMissionId: string | null;
+  missions: SavedMission[];
   basemap: Basemap;
   customTileUrl: string;
   vehicleTopic: string;
@@ -46,6 +60,9 @@ export type Config = {
 
 export const DEFAULT_CONFIG: Config = {
   mission: EMPTY_MISSION,
+  missionName: "",
+  activeMissionId: null,
+  missions: [],
   basemap: "osm",
   customTileUrl: "",
   vehicleTopic: "/gps/filtered/global",

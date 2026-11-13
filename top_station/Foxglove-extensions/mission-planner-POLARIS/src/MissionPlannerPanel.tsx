@@ -21,7 +21,17 @@ import { analyzeMission, distanceM } from "./geo";
 import { HandleKind, MapCallbacks, MapController, Selection } from "./map/MapController";
 import { extractFix } from "./messages";
 import { buildSettingsNodes } from "./settings";
-import { Config, DEFAULT_CONFIG, EMPTY_MISSION, Fix, LatLon, Mission, Tool } from "./types";
+import {
+  Config,
+  DEFAULT_CONFIG,
+  EMPTY_MISSION,
+  Fix,
+  LatLon,
+  Mission,
+  SavedMission,
+  Tool,
+} from "./types";
+import { MissionMenu, UNTITLED } from "./ui/MissionMenu";
 import { StatusBar } from "./ui/StatusBar";
 import { ClearTarget, Toolbar, gnssUsable } from "./ui/Toolbar";
 import { IconFit, IconFollow, IconVehicle } from "./ui/icons";
@@ -40,9 +50,8 @@ function isLatLon(v: unknown): v is LatLon {
 }
 
 /** Merge persisted layout state with defaults, defensively. */
-function loadConfig(initial: unknown): Config {
-  const saved = (initial ?? {}) as Partial<Config>;
-  const sm = (saved.mission ?? {}) as Partial<Mission>;
+function normalizeMission(raw: unknown): Mission {
+  const sm = (raw ?? {}) as Partial<Mission>;
   const mission: Mission = {
     safeArea: Array.isArray(sm.safeArea) ? sm.safeArea.filter(isLatLon) : [],
     safeClosed: sm.safeClosed === true,
@@ -53,7 +62,45 @@ function loadConfig(initial: unknown): Config {
   if (mission.safeArea.length < 3) {
     mission.safeClosed = false;
   }
-  return { ...DEFAULT_CONFIG, ...saved, mission };
+  return mission;
+}
+
+function loadConfig(initial: unknown): Config {
+  const saved = (initial ?? {}) as Partial<Config>;
+  const missions: SavedMission[] = Array.isArray(saved.missions)
+    ? saved.missions
+        .filter((m) => typeof m.id === "string" && typeof m.name === "string")
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          mission: normalizeMission(m.mission),
+          savedAt: Number.isFinite(m.savedAt) ? m.savedAt : 0,
+        }))
+    : [];
+  const activeMissionId =
+    typeof saved.activeMissionId === "string" && missions.some((m) => m.id === saved.activeMissionId)
+      ? saved.activeMissionId
+      : null;
+  return {
+    ...DEFAULT_CONFIG,
+    ...saved,
+    mission: normalizeMission(saved.mission),
+    missionName: typeof saved.missionName === "string" ? saved.missionName : "",
+    activeMissionId,
+    missions,
+  };
+}
+
+function sameMission(a: Mission, b: Mission): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function isEmptyMission(m: Mission): boolean {
+  return m.safeArea.length === 0 && m.start == undefined && m.path.length === 0;
+}
+
+function newMissionId(): string {
+  return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 /** Drop consecutive points closer than 5 cm (double-click artefacts). */
@@ -75,6 +122,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     [context],
   );
 
+  const configRef = useRef(config);
+  configRef.current = config;
   const mission = config.mission;
   const missionRef = useRef(mission);
   missionRef.current = mission;
@@ -316,6 +365,71 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
     [commit, tool],
   );
 
+  // ------------------------------------------------------------------ saved missions
+  const activeSaved = config.missions.find((m) => m.id === config.activeMissionId);
+  const dirty = activeSaved
+    ? !sameMission(activeSaved.mission, mission) || activeSaved.name !== (config.missionName.trim() || UNTITLED)
+    : !isEmptyMission(mission);
+
+  const saveMission = useCallback(
+    (opts: { asCopy: boolean }) => {
+      const c = configRef.current;
+      const savedAt = Date.now();
+      let name = c.missionName.trim() || UNTITLED;
+      const existing = c.missions.find((m) => m.id === c.activeMissionId);
+      if (existing && !opts.asCopy) {
+        updateConfig({
+          missionName: name,
+          missions: c.missions.map((m) =>
+            m.id === existing.id ? { ...m, name, mission: missionRef.current, savedAt } : m,
+          ),
+        });
+        return;
+      }
+      if (opts.asCopy) {
+        name = `${name} (copy)`;
+      }
+      const id = newMissionId();
+      updateConfig({
+        missionName: name,
+        activeMissionId: id,
+        missions: [...c.missions, { id, name, mission: missionRef.current, savedAt }],
+      });
+    },
+    [updateConfig],
+  );
+
+  const loadMission = useCallback(
+    (id: string) => {
+      const sm = configRef.current.missions.find((m) => m.id === id);
+      if (!sm) {
+        return;
+      }
+      commit(sm.mission);
+      updateConfig({ activeMissionId: sm.id, missionName: sm.name });
+      setTool("pan");
+      mapRef.current?.fitMission(sm.mission);
+    },
+    [commit, updateConfig],
+  );
+
+  const deleteMission = useCallback(
+    (id: string) => {
+      const c = configRef.current;
+      updateConfig({
+        missions: c.missions.filter((m) => m.id !== id),
+        activeMissionId: c.activeMissionId === id ? null : c.activeMissionId,
+      });
+    },
+    [updateConfig],
+  );
+
+  const newMission = useCallback(() => {
+    commit(EMPTY_MISSION);
+    updateConfig({ activeMissionId: null, missionName: "" });
+    setTool("pan");
+  }, [commit, updateConfig]);
+
   const clear = useCallback(
     (target: ClearTarget) => {
       setSelection(undefined);
@@ -409,8 +523,6 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
   };
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
-  const configRef = useRef(config);
-  configRef.current = config;
 
   useEffect(() => {
     const el = mapDivRef.current;
@@ -640,6 +752,8 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
       }
     } else if (mod && e.key.toLowerCase() === "y") {
       redo();
+    } else if (mod && e.key.toLowerCase() === "s") {
+      saveMission({ asCopy: false });
     } else if (mod) {
       handled = false;
     } else {
@@ -726,6 +840,25 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         onUndo={undo}
         onRedo={redo}
         onClear={clear}
+      />
+
+      <MissionMenu
+        name={config.missionName}
+        missions={config.missions}
+        activeId={config.activeMissionId}
+        dirty={dirty}
+        onNameChange={(missionName) => {
+          updateConfig({ missionName });
+        }}
+        onSave={() => {
+          saveMission({ asCopy: false });
+        }}
+        onSaveCopy={() => {
+          saveMission({ asCopy: true });
+        }}
+        onLoad={loadMission}
+        onDelete={deleteMission}
+        onNew={newMission}
       />
 
       <div className="mp-group mp-viewbtns">

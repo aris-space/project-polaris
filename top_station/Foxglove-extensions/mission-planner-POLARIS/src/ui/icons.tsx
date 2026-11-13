@@ -105,3 +105,28 @@ export const IconFollow = (): ReactElement => (
     <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
   </Svg>
 );
+
+export const IconFolder = (): ReactElement => (
+  <Svg>
+    <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+  </Svg>
+);
+
+export const IconSave = (): ReactElement => (
+  <Svg>
+    <path d="M5 4h11l3 3v12a1 1 0 01-1 1H6a1 1 0 01-1-1z" />
+    <path d="M8 4v5h7V4M8 20v-6h8v6" />
+  </Svg>
+);
+
+export const IconPlus = (): ReactElement => (
+  <Svg>
+    <path d="M12 5v14M5 12h14" />
+  </Svg>
+);
+
+export const IconChevron = (): ReactElement => (
+  <Svg>
+    <path d="M7 10l5 5 5-5" />
+  </Svg>
+);

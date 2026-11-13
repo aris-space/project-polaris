@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Saved missions: mission chip at the top of the map with name field, Save (⌘/Ctrl S),
+  Save as copy, New mission, and a list of saved missions to switch between or delete
+- Unsaved-changes indicator; loading another mission or starting a new one asks for
+  confirmation when there are unsaved changes; loading is undoable
+- Saved missions are stored in the panel's layout state
+
 ## 1.2.0
 
 - Vehicle trail history: new "All points" mode (default) keeps the whole trail; "Last N points" still available
