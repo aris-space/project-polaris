@@ -1,15 +1,21 @@
+from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch, Polygon
 import numpy as np
+import yaml
 
 
+PARAMS_FILE = Path(__file__).parent / "params.yaml"
 
-GRID_SIZE = 100
-GRID_RESOLUTION = 10
-GRID_BOUNDARY_COORDINATES = [(0,0), (0,200), (200,200), (200,0)]
-GRID_STARTING_POSITION = (100,50)
-DRIVEOUT_DISTANCE = 20
-DRIVEOUT_DIRECTION = np.pi/2
+with open(PARAMS_FILE) as f:
+    params = yaml.safe_load(f)
+
+GRID_SIZE = params["grid"]["size"]
+GRID_RESOLUTION = params["grid"]["resolution"]
+GRID_BOUNDARY_COORDINATES = [tuple(c) for c in params["grid"]["boundary_coordinates"]]
+GRID_STARTING_POSITION = tuple(params["grid"]["starting_position"])
+DRIVEOUT_DISTANCE = params["driveout"]["distance"]
+DRIVEOUT_DIRECTION = np.deg2rad(params["driveout"]["direction"])
 
 
 def create_map(grid_list=None, title="Survey Grid"):

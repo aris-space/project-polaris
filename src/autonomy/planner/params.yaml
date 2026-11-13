@@ -1,0 +1,13 @@
+grid:
+  size: 100                 # side length of the grid [m]
+  resolution: 10            # spacing between grid points [m]
+  boundary_coordinates:     # corners of the allowed area [m]
+    - [0, 0]
+    - [0, 200]
+    - [200, 200]
+    - [200, 0]
+  starting_position: [100, 50]  # [x, y] [m]
+
+driveout:
+  distance: 20              # [m]
+  direction: 90             # [deg], measured from the x-axis (counter-clockwise)
