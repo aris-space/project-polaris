@@ -60,10 +60,22 @@ export function waypointIcon(index: number, { outside }: { outside: boolean }): 
   });
 }
 
-export function segmentLabelIcon(text: string, { outside }: { outside: boolean }): L.DivIcon {
+export function segmentLabelIcon(
+  text: string,
+  { outside, variant }: { outside: boolean; variant?: "route" | "survey" | "live" },
+): L.DivIcon {
+  const cls = ["mp-seglabel"];
+  if (variant === "survey") {
+    cls.push("mp-seglabel--survey");
+  } else if (variant === "live") {
+    cls.push("mp-seglabel--live");
+  }
+  if (outside) {
+    cls.push("mp-seglabel--outside");
+  }
   return L.divIcon({
-    className: "mp-icon mp-label-icon",
-    html: `<div class="mp-seglabel${outside ? " mp-seglabel--outside" : ""}">${text}</div>`,
+    className: `mp-icon mp-label-icon${variant === "live" ? " mp-live-label-icon" : ""}`,
+    html: `<div class="${cls.join(" ")}">${text}</div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });

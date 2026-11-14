@@ -38,15 +38,17 @@ function summary(m: Mission): string {
   if (m.safeClosed) {
     parts.push("safe area");
   }
-  if (m.type === "survey") {
-    parts.push(m.surveyClosed ? `survey ${formatArea(analyzeMission(m).surveyAreaM2)}` : "survey (no area)");
-  } else if (m.start) {
-    const a = analyzeMission(m);
-    parts.push(`${m.path.length} wp`, formatDistance(a.routeLengthM));
-    if (m.closed) {
-      parts.push("loop");
-    }
-  }
+  const a = analyzeMission(m);
+  const wp =
+    m.start && (m.path.length > 0 || m.type === "waypoints")
+      ? [`${m.path.length} wp`, formatDistance(a.routeLengthM), ...(m.closed ? ["loop"] : [])]
+      : [];
+  const sv = m.surveyClosed
+    ? [`survey ${formatArea(a.surveyAreaM2)}`]
+    : m.type === "survey"
+      ? ["survey (no area)"]
+      : [];
+  parts.push(...(m.type === "survey" ? [...sv, ...wp] : [...wp, ...sv]));
   return parts.length > 0 ? parts.join(" · ") : "empty";
 }
 

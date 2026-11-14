@@ -38,7 +38,9 @@ In Plan mode the switch at the top of the tool palette chooses what the mission 
 - **Waypoints**: the path planner. Click waypoints from the start, close the loop, and so on.
 - **Survey**: mark the **area to be surveyed**. Press `3` (Survey area), click ≥ 3 vertices and close the polygon like the safe area. It's drawn in violet and edited the same way (drag, **+** to insert, select + `Delete`, right-click). The status bar shows its size. If it reaches outside the safe area, the outline turns red and dashed and a ⚠ warning appears.
 
-Switching type never deletes anything: the path and the survey area are both kept with the mission (and in exported files), and the switch can be undone.
+Edge lengths are shown on the survey area (and live on the segment you're drawing, for every drawing tool).
+
+Switching type never hides or deletes anything: the path and the survey area both stay on the map, stay editable and are both checked against the safe area. The switch only chooses which drawing tool the palette offers (Path or Survey area) and what the mission's primary type is. It can be undone.
 
 ## Plan / Watch mode
 

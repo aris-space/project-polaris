@@ -266,7 +266,8 @@ export function Toolbar(props: Props): ReactElement {
             <div className="mp-menu-title">Clear</div>
             {clearItem("safe", "Safe area", { disabled: safeEmpty })}
             {clearItem("path", "Start & path", { disabled: pathEmpty })}
-            {mission.type === "survey" && clearItem("survey", "Survey area", { disabled: surveyEmpty })}
+            {(mission.type === "survey" || !surveyEmpty) &&
+              clearItem("survey", "Survey area", { disabled: surveyEmpty })}
             <div className="mp-sep" />
             {clearItem("all", "Everything", { disabled: safeEmpty && pathEmpty && surveyEmpty })}
           </div>

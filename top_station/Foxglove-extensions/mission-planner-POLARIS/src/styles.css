@@ -900,6 +900,26 @@
   color: #9333ea;
 }
 
+.mp-seglabel--survey {
+  background: rgba(59, 7, 100, 0.82);
+  color: #f3e8ff;
+}
+/* Live length of the segment being drawn */
+.mp-seglabel--live {
+  background: #22d3ee;
+  color: #04232b;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.mp-seglabel--live.mp-seglabel--survey {
+  background: var(--mp-survey);
+  color: #2e1065;
+}
+.mp-seglabel--live.mp-seglabel--safe {
+  background: var(--mp-safe);
+  color: #fff;
+}
+
 /* Mission type switch (Waypoints / Survey) inside the tool group */
 .mp-typeswitch {
   display: flex;

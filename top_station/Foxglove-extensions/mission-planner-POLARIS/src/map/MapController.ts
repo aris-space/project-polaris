@@ -88,6 +88,7 @@ export class MapController {
   #handlesLayer = L.layerGroup();
   #rubber: L.Polyline;
   #rubberClose: L.Polyline;
+  #rubberLabel: L.Marker;
   #vehicleMarker?: L.Marker;
   #vehicleKey = "";
   #gnssMarker?: L.Marker;
@@ -148,6 +149,13 @@ export class MapController {
     };
     this.#rubber = L.polyline([], rubberStyle).addTo(this.#map);
     this.#rubberClose = L.polyline([], { ...rubberStyle, opacity: 0.35 }).addTo(this.#map);
+    this.#rubberLabel = L.marker([0, 0], {
+      icon: segmentLabelIcon("", { outside: false, variant: "live" }),
+      interactive: false,
+      keyboard: false,
+      pane: "mp-labels",
+      opacity: 0,
+    }).addTo(this.#map);
 
     if (view) {
       this.#map.setView([view.lat, view.lon], view.zoom);
@@ -179,6 +187,7 @@ export class MapController {
     });
     this.#map.on("mouseout", () => {
       this.#cb.onCursor(undefined);
+      this.#rubberLabel.setOpacity(0);
       this.#rubber.setLatLngs([]);
       this.#rubberClose.setLatLngs([]);
     });
@@ -254,9 +263,26 @@ export class MapController {
   }
 
   /** Where the dashed preview line starts (and optionally where it would close to). */
+  /** Live length of the segment being drawn, at its midpoint. */
+  #showRubberLabel(a: L.LatLng, b: L.LatLng | undefined): void {
+    if (!b) {
+      this.#rubberLabel.setOpacity(0);
+      return;
+    }
+    const el = this.#rubberLabel.getElement()?.querySelector(".mp-seglabel");
+    if (el) {
+      el.textContent = formatDistance(a.distanceTo(b));
+      el.classList.toggle("mp-seglabel--survey", this.#tool === "survey");
+      el.classList.toggle("mp-seglabel--safe", this.#tool === "safe");
+    }
+    this.#rubberLabel.setLatLng(L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2));
+    this.#rubberLabel.setOpacity(1);
+  }
+
   public setRubberAnchors(from: LatLon | undefined, closeTo: LatLon | undefined): void {
     this.#rubberAnchors = { from, closeTo };
     if (!from) {
+      this.#rubberLabel.setOpacity(0);
       this.#rubber.setLatLngs([]);
       this.#rubberClose.setLatLngs([]);
     }
@@ -276,10 +302,12 @@ export class MapController {
     this.#container.classList.toggle("mp-snapping", snap);
     if (snap && this.#mission?.start) {
       this.#rubber.setLatLngs([toLL(from), toLL(this.#mission.start)]);
+      this.#showRubberLabel(toLL(from), toLL(this.#mission.start));
       this.#rubberClose.setLatLngs([]);
       return;
     }
     this.#rubber.setLatLngs([toLL(from), cursor]);
+    this.#showRubberLabel(toLL(from), cursor);
     this.#rubberClose.setLatLngs(closeTo ? [cursor, toLL(closeTo)] : []);
   }
 
@@ -356,7 +384,7 @@ export class MapController {
     }
 
     // Survey area (survey missions): violet translucent fill; red outline if it leaves the safe area.
-    if (m.type === "survey" && m.survey.length > 0) {
+    if (m.survey.length > 0) {
       const ring = m.survey.map(toLL);
       const color = a.surveyOutside ? COLORS.routeOutside : COLORS.survey;
       if (m.surveyClosed && m.survey.length >= 3) {
@@ -408,8 +436,25 @@ export class MapController {
     this.#handlesLayer.clearLayers();
     const a = analyzeMission(m);
     this.#polygonHandles(m, "safe");
-    if (m.type === "survey") {
-      this.#polygonHandles(m, "survey");
+    this.#polygonHandles(m, "survey");
+
+    // --- survey edge lengths (shown while drawing and afterwards)
+    for (let i = 0; i < a.surveyEdgeOutside.length; i++) {
+      const p1 = m.survey[i]!;
+      const p2 = m.survey[(i + 1) % m.survey.length]!;
+      if (!this.#longEnoughOnScreen(p1, p2, LABEL_MIN_PX)) {
+        continue;
+      }
+      const mid = { lat: (p1.lat + p2.lat) / 2, lon: (p1.lon + p2.lon) / 2 };
+      L.marker(toLL(mid), {
+        icon: segmentLabelIcon(formatDistance(distanceM(p1, p2)), {
+          outside: a.surveyEdgeOutside[i] === true,
+          variant: "survey",
+        }),
+        interactive: false,
+        keyboard: false,
+        pane: "mp-labels",
+      }).addTo(this.#handlesLayer);
     }
 
     // --- route segment distance labels
@@ -430,11 +475,9 @@ export class MapController {
     }
 
     // --- waypoints
-    if (m.type === "waypoints") {
-      m.path.forEach((p, i) => {
-        this.#makeHandle(p, waypointIcon(i + 1, { outside: a.waypointOutside[i] === true }), "path", i);
-      });
-    }
+    m.path.forEach((p, i) => {
+      this.#makeHandle(p, waypointIcon(i + 1, { outside: a.waypointOutside[i] === true }), "path", i);
+    });
 
     // --- start (on top)
     this.#startMarker = undefined;
@@ -575,6 +618,9 @@ export class MapController {
   #setDragging(state: "on" | "off"): void {
     const on = state === "on";
     this.#dragging = on;
+    if (on) {
+      this.#rubberLabel.setOpacity(0);
+    }
     this.#container.classList.toggle("mp-handle-dragging", on);
     if (on) {
       this.#rubber.setLatLngs([]);

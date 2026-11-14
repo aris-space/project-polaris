@@ -160,13 +160,13 @@ export function StatusBar({ tool, mission, analysis, cursor, selection, watch }:
             Safe <b>{formatArea(analysis.safeAreaM2)}</b>
           </span>
         )}
-        {mission.type === "waypoints" && mission.start && (
+        {mission.start && (mission.type === "waypoints" || mission.path.length > 0) && (
           <span className="mp-stat">
             <b>{mission.path.length}</b> wp · <b>{formatDistance(analysis.routeLengthM)}</b>
             {mission.closed ? " loop" : ""}
           </span>
         )}
-        {mission.type === "survey" && mission.surveyClosed && (
+        {mission.surveyClosed && (
           <span className="mp-stat">
             Survey <b>{formatArea(analysis.surveyAreaM2)}</b>
           </span>
@@ -174,8 +174,7 @@ export function StatusBar({ tool, mission, analysis, cursor, selection, watch }:
         {analysis.surveyOutside && (
           <span className="mp-stat mp-stat--warn">⚠ Survey area outside safe area</span>
         )}
-        {mission.type === "survey" &&
-          mission.safeClosed &&
+        {mission.safeClosed &&
           mission.surveyClosed &&
           !analysis.surveyOutside &&
           !warnStart && <span className="mp-stat mp-stat--ok">✓ Survey inside safe area</span>}
@@ -185,7 +184,7 @@ export function StatusBar({ tool, mission, analysis, cursor, selection, watch }:
             ⚠ <b>{warnSegs}</b> segment{warnSegs === 1 ? "" : "s"} outside safe area
           </span>
         )}
-        {mission.type === "waypoints" && mission.safeClosed && mission.path.length > 0 && !warnStart && warnSegs === 0 && (
+        {mission.safeClosed && mission.path.length > 0 && !warnStart && warnSegs === 0 && (
           <span className="mp-stat mp-stat--ok">✓ Path inside safe area</span>
         )}
       </div>

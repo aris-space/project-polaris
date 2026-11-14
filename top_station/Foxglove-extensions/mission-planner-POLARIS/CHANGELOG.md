@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1
+
+- Survey area edges show their length (violet labels), also while drawing
+- Live length label on the segment being drawn (safe area, survey area and path)
+- Path and survey area both stay visible and editable when switching between Waypoints and Survey;
+  the type switch only selects the drawing tool. Status bar and mission list show both.
+
 ## 1.5.0
 
 - Mission type switch in Plan mode: **Waypoints** (path planner) or **Survey**

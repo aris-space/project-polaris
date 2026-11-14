@@ -92,7 +92,7 @@ export function segmentLeavesPolygon(a: LatLon, b: LatLon, poly: LatLon[]): bool
 
 /** Ordered route points: start, waypoints…, and start again when the loop is closed. */
 export function routePoints(m: Mission): LatLon[] {
-  if (!m.start || m.type !== "waypoints") {
+  if (!m.start) {
     return [];
   }
   const pts = [m.start, ...m.path];
@@ -115,6 +115,8 @@ export type MissionAnalysis = {
   surveyAreaM2: number;
   /** Survey polygon reaches outside the safe area. */
   surveyOutside: boolean;
+  /** Per survey edge: leaves the safe area? */
+  surveyEdgeOutside: boolean[];
 };
 
 export function analyzeMission(m: Mission): MissionAnalysis {
@@ -128,19 +130,23 @@ export function analyzeMission(m: Mission): MissionAnalysis {
     routeLengthM += distanceM(a, b);
     segmentOutside.push(hasSafe ? segmentLeavesPolygon(a, b, m.safeArea) : false);
   }
-  const hasSurvey = m.type === "survey" && m.surveyClosed && m.survey.length >= 3;
-  let surveyOutside = false;
-  if (hasSurvey && hasSafe) {
-    for (let i = 0; i < m.survey.length && !surveyOutside; i++) {
-      surveyOutside = segmentLeavesPolygon(m.survey[i]!, m.survey[(i + 1) % m.survey.length]!, m.safeArea);
-    }
+  const hasSurvey = m.surveyClosed && m.survey.length >= 3;
+  // Per survey edge (closed polygon: n edges, while drawing: n - 1).
+  const surveyEdges = hasSurvey ? m.survey.length : Math.max(0, m.survey.length - 1);
+  const surveyEdgeOutside: boolean[] = [];
+  for (let i = 0; i < surveyEdges; i++) {
+    surveyEdgeOutside.push(
+      hasSafe && segmentLeavesPolygon(m.survey[i]!, m.survey[(i + 1) % m.survey.length]!, m.safeArea),
+    );
   }
+  const surveyOutside = hasSurvey && surveyEdgeOutside.some(Boolean);
   return {
     surveyAreaM2: hasSurvey ? polygonAreaM2(m.survey) : 0,
     surveyOutside,
+    surveyEdgeOutside,
     segmentOutside,
     waypointOutside: m.path.map((p) =>
-      hasSafe && m.type === "waypoints" ? !pointInPolygon(p, m.safeArea) : false,
+      hasSafe ? !pointInPolygon(p, m.safeArea) : false,
     ),
     startOutside: hasSafe && m.start != undefined ? !pointInPolygon(m.start, m.safeArea) : false,
     outsideSegments: segmentOutside.filter(Boolean).length,
