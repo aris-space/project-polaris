@@ -36,6 +36,7 @@ setup(
             'sbl_heading_calibration = uwgpsg2_ros2_interface.sbl_heading_calibration:main',
             'sbl_heading_set = uwgpsg2_ros2_interface.sbl_heading_set:main',
             'sbl_position_calibration = uwgpsg2_ros2_interface.sbl_position_calibration:main',
+            'sbl_quick_check = uwgpsg2_ros2_interface.sbl_quick_check:main',
         ],
     },
 )
