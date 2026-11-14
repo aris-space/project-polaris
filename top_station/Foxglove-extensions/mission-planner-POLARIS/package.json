@@ -9,7 +9,7 @@
     "url": "https://github.com/BitCurious/project-polaris.git",
     "directory": "top_station/Foxglove-extensions/mission-planner-POLARIS"
   },
-  "version": "1.5.1",
+  "version": "1.6.0",
   "license": "MIT",
   "main": "./dist/extension.js",
   "keywords": [

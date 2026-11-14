@@ -117,6 +117,9 @@ export type MissionAnalysis = {
   surveyOutside: boolean;
   /** Per survey edge: leaves the safe area? */
   surveyEdgeOutside: boolean[];
+  /** Waypoints with a stop & wait / surface action. */
+  waits: number;
+  surfaces: number;
 };
 
 export function analyzeMission(m: Mission): MissionAnalysis {
@@ -144,6 +147,8 @@ export function analyzeMission(m: Mission): MissionAnalysis {
     surveyAreaM2: hasSurvey ? polygonAreaM2(m.survey) : 0,
     surveyOutside,
     surveyEdgeOutside,
+    waits: m.path.filter((w) => w.action === "wait").length,
+    surfaces: m.path.filter((w) => w.action === "surface").length,
     segmentOutside,
     waypointOutside: m.path.map((p) =>
       hasSafe ? !pointInPolygon(p, m.safeArea) : false,

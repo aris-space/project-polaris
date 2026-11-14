@@ -163,3 +163,23 @@ export const IconSurvey = (): ReactElement => (
     <path d="M7 8v10M10.5 6.5v12.8M14 6.5v12.5M17.5 9v9.5" strokeWidth={1.2} strokeDasharray="1.5 1.5" />
   </Svg>
 );
+
+export const IconPass = (): ReactElement => (
+  <Svg>
+    <path d="M4 12h13M13 7l5 5-5 5" />
+  </Svg>
+);
+
+export const IconWait = (): ReactElement => (
+  <Svg>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </Svg>
+);
+
+export const IconSurface = (): ReactElement => (
+  <Svg>
+    <path d="M4 4.5h16" />
+    <path d="M12 20V9M8 13l4-4 4 4" />
+  </Svg>
+);

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.0
+
+- Waypoint actions: **Pass** (no stopping, default), **Stop & wait** (hold time) and
+  **Surface** (rise to the surface / ice, optional hold at the top)
+- Click a waypoint to open its card: pick the action, set the time (± 5 s or type it),
+  "Apply to all waypoints", Delete
+- Map badges on waypoints (⏸ 30s / ⤒ 10s); status bar counts waits / surfaces
+- Actions survive drag, undo, save, export/import (`path[i].action`, `path[i].holdS`)
+
 ## 1.5.1
 
 - Survey area edges show their length (violet labels), also while drawing

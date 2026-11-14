@@ -39,6 +39,7 @@ import {
   LatLon,
   Mission,
   MissionType,
+  WaypointAction,
   PolygonKind,
   SavedMission,
   Tool,
@@ -46,6 +47,7 @@ import {
 import { MissionMenu, UNTITLED } from "./ui/MissionMenu";
 import { StatusBar } from "./ui/StatusBar";
 import { ClearTarget, Toolbar, gnssUsable } from "./ui/Toolbar";
+import { WaypointInspector } from "./ui/WaypointInspector";
 import { IconFit, IconFollow, IconVehicle } from "./ui/icons";
 
 const UNDO_LIMIT = 50;
@@ -626,7 +628,7 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
         commit({ ...m, survey });
       } else {
         const path = [...m.path];
-        path[index] = p;
+        path[index] = { ...path[index], lat: p.lat, lon: p.lon };
         commit({ ...m, path });
       }
     },
@@ -1077,6 +1079,40 @@ function MissionPlannerPanel({ context }: { context: PanelExtensionContext }): R
           <IconFollow />
         </button>
       </div>
+
+      {!watch && validSelection?.kind === "path" && mission.path[validSelection.index] && (
+        <WaypointInspector
+          index={validSelection.index}
+          waypoint={mission.path[validSelection.index]!}
+          count={mission.path.length}
+          onChange={(action: WaypointAction, holdS: number) => {
+            const m = missionRef.current;
+            const path = [...m.path];
+            const i = validSelection.index;
+            path[i] = action === "pass" ? { lat: path[i]!.lat, lon: path[i]!.lon } : { ...path[i]!, action, holdS };
+            commit({ ...m, path });
+            setSelection({ kind: "path", index: i });
+          }}
+          onApplyAll={() => {
+            const m = missionRef.current;
+            const src = m.path[validSelection.index]!;
+            const path = m.path.map((w) =>
+              src.action == undefined || src.action === "pass"
+                ? { lat: w.lat, lon: w.lon }
+                : { ...w, action: src.action, holdS: src.holdS },
+            );
+            commit({ ...m, path });
+            setSelection({ kind: "path", index: validSelection.index });
+            showToast(`Applied to all ${path.length} waypoints`);
+          }}
+          onDelete={() => {
+            deletePoint("path", validSelection.index);
+          }}
+          onClose={() => {
+            setSelection(undefined);
+          }}
+        />
+      )}
 
       <StatusBar
         tool={tool}

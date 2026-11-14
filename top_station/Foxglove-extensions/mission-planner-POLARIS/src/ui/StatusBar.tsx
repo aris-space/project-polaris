@@ -42,7 +42,8 @@ function selectionHint(sel: NonNullable<Selection>, m: Mission): ReactElement {
   }
   return (
     <>
-      <b>{name}</b> selected · <kbd>Delete</kbd> remove · drag to move · <kbd>Esc</kbd> deselect
+      <b>{name}</b> selected · {sel.kind === "path" ? "choose its action in the card · " : ""}
+      <kbd>Delete</kbd> remove · drag to move · <kbd>Esc</kbd> deselect
     </>
   );
 }
@@ -164,6 +165,18 @@ export function StatusBar({ tool, mission, analysis, cursor, selection, watch }:
           <span className="mp-stat">
             <b>{mission.path.length}</b> wp · <b>{formatDistance(analysis.routeLengthM)}</b>
             {mission.closed ? " loop" : ""}
+            {analysis.waits > 0 && (
+              <>
+                {" "}
+                · <b>{analysis.waits}</b> wait
+              </>
+            )}
+            {analysis.surfaces > 0 && (
+              <>
+                {" "}
+                · <b>{analysis.surfaces}</b> surface
+              </>
+            )}
           </span>
         )}
         {mission.surveyClosed && (

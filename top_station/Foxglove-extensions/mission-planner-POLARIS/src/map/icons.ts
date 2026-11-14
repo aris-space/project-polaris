@@ -51,10 +51,31 @@ export function startIcon({ outside }: { outside: boolean }): L.DivIcon {
   });
 }
 
-export function waypointIcon(index: number, { outside }: { outside: boolean }): L.DivIcon {
+const SURFACE_SVG =
+  '<svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M1.5 1.5h9M6 10.5V4.2M3.4 6.6 6 4l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const WAIT_SVG =
+  '<svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M4 2.5v7M8 2.5v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+export function waypointIcon(
+  index: number,
+  { outside, action, holdS }: { outside: boolean; action?: "pass" | "wait" | "surface"; holdS?: number },
+): L.DivIcon {
+  const cls = ["mp-wp"];
+  if (outside) {
+    cls.push("mp-wp--outside");
+  }
+  let badge = "";
+  if (action === "wait") {
+    cls.push("mp-wp--wait");
+    badge = `<span class="mp-wp-badge mp-wp-badge--wait">${WAIT_SVG}${holdS ?? 0}s</span>`;
+  } else if (action === "surface") {
+    cls.push("mp-wp--surface");
+    const h = holdS != undefined && holdS > 0 ? `${holdS}s` : "";
+    badge = `<span class="mp-wp-badge mp-wp-badge--surface">${SURFACE_SVG}${h}</span>`;
+  }
   return L.divIcon({
     className: "mp-icon",
-    html: `<div class="mp-wp${outside ? " mp-wp--outside" : ""}">${index}</div>`,
+    html: `<div class="${cls.join(" ")}">${index}${badge}</div>`,
     iconSize: [22, 22],
     iconAnchor: [11, 11],
   });

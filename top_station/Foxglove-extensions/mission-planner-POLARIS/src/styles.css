@@ -934,6 +934,209 @@
   flex-direction: column;
 }
 
+/* ---------- Waypoint actions ---------- */
+
+.mp-root {
+  --mp-wait: #f59e0b;
+  --mp-surface: #38bdf8;
+}
+.mp-wp {
+  position: relative;
+}
+.mp-wp--wait {
+  background: #b45309;
+}
+.mp-wp--surface {
+  background: #0369a1;
+}
+.mp-wp--outside {
+  background: var(--mp-warn);
+}
+.mp-wp-badge {
+  position: absolute;
+  top: -11px;
+  left: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 15px;
+  padding: 0 5px 0 4px;
+  border-radius: 999px;
+  border: 1.5px solid #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.mp-wp-badge--wait {
+  background: var(--mp-wait);
+  color: #422006;
+}
+.mp-wp-badge--surface {
+  background: var(--mp-surface);
+  color: #082f49;
+}
+
+/* Waypoint card (selected waypoint) */
+.mp-inspector {
+  position: absolute;
+  left: 10px;
+  bottom: 40px;
+  z-index: 1001;
+  width: 300px;
+  max-width: calc(100% - 20px);
+  padding: 10px 12px 10px;
+  background: var(--mp-bg-solid);
+  border: 1px solid var(--mp-border);
+  border-radius: 12px;
+  box-shadow: var(--mp-shadow);
+  animation: mp-toast-in 0.15s ease-out;
+}
+.mp-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mp-inspector-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0e7490;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mp-inspector-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.mp-inspector-of {
+  color: var(--mp-fg-muted);
+}
+.mp-inspector-x {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--mp-fg-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mp-inspector-x:hover {
+  background: var(--mp-hover);
+  color: var(--mp-fg);
+}
+.mp-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.mp-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px 7px;
+  border: 1.5px solid var(--mp-border);
+  border-radius: 9px;
+  background: none;
+  color: var(--mp-fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.mp-action svg {
+  width: 20px;
+  height: 20px;
+  color: var(--mp-fg-muted);
+}
+.mp-action:hover {
+  background: var(--mp-hover);
+}
+.mp-action-label {
+  font-size: 11px;
+  font-weight: 700;
+}
+.mp-action-sub {
+  color: var(--mp-fg-muted);
+  font-size: 9.5px;
+  line-height: 1.2;
+}
+.mp-action--active.mp-action--pass {
+  border-color: var(--mp-route);
+  background: rgba(34, 211, 238, 0.12);
+}
+.mp-action--active.mp-action--pass svg {
+  color: var(--mp-route);
+}
+.mp-action--active.mp-action--wait {
+  border-color: var(--mp-wait);
+  background: rgba(245, 158, 11, 0.14);
+}
+.mp-action--active.mp-action--wait svg {
+  color: var(--mp-wait);
+}
+.mp-action--active.mp-action--surface {
+  border-color: var(--mp-surface);
+  background: rgba(56, 189, 248, 0.14);
+}
+.mp-action--active.mp-action--surface svg {
+  color: var(--mp-surface);
+}
+.mp-hold {
+  margin-bottom: 10px;
+}
+.mp-hold-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mp-hold-input {
+  flex: none;
+  width: 72px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.mp-hold-unit {
+  color: var(--mp-fg-muted);
+}
+.mp-step {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--mp-border);
+  border-radius: 8px;
+  background: none;
+  color: var(--mp-fg);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.mp-step:hover {
+  background: var(--mp-hover);
+}
+.mp-inspector-foot {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--mp-border);
+  font-size: 11px;
+}
+.mp-link:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ---------- Toast ---------- */
 
 .mp-toast {

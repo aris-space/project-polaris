@@ -31,6 +31,18 @@ The chip at the top centre of the map shows the current mission's name. An amber
 
 Saved missions are stored in the **Foxglove layout** (panel state). They survive restarts and travel with the layout if you export or share it.
 
+## Waypoint actions
+
+Click a waypoint to open its card (bottom left) and choose what the vehicle does there:
+
+| Action | Meaning | Time |
+|---|---|---|
+| **Pass** (default) | Drive through, no stopping | – |
+| **Stop & wait** | Stop and hold position | Wait time (s) |
+| **Surface** | Stop and rise to the surface / ice | Hold at the top (s, 0 = none) |
+
+Set the time with **−/+** (5 s steps) or type it and press Enter. **Apply to all waypoints** copies the action to every waypoint. Waypoints with an action get a badge on the map (⏸ 30s amber for wait, ⤒ 10s blue for surface), and the status bar counts them. Actions are kept when you drag a waypoint, and are included in undo, saved missions and exported files (`"action": "wait" | "surface"`, `"holdS": seconds`; pass waypoints have no extra fields).
+
 ## Mission type: Waypoints or Survey
 
 In Plan mode the switch at the top of the tool palette chooses what the mission is (key `4` toggles):

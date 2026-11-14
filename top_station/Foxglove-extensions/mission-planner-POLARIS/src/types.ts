@@ -1,5 +1,14 @@
 export type LatLon = { lat: number; lon: number };
 
+/** What the vehicle does when it reaches a waypoint. */
+export type WaypointAction = "pass" | "wait" | "surface";
+
+/** A path waypoint. `action` defaults to "pass"; `holdS` is used by wait / surface. */
+export type Waypoint = LatLon & { action?: WaypointAction; holdS?: number };
+
+export const DEFAULT_HOLD_S = 10;
+export const MAX_HOLD_S = 3600;
+
 /** waypoints = click-to-add path from the start; survey = an area to be surveyed. */
 export type MissionType = "waypoints" | "survey";
 
@@ -12,7 +21,7 @@ export type Mission = {
   /** Mission start; the path is anchored here. */
   start: LatLon | null;
   /** Waypoints after the start point, in order. */
-  path: LatLon[];
+  path: Waypoint[];
   /** Close the loop: last waypoint connects back to the start. */
   closed: boolean;
   /** Survey-area polygon vertices (survey missions). */

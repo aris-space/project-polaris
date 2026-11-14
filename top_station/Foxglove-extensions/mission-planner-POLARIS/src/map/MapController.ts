@@ -476,7 +476,12 @@ export class MapController {
 
     // --- waypoints
     m.path.forEach((p, i) => {
-      this.#makeHandle(p, waypointIcon(i + 1, { outside: a.waypointOutside[i] === true }), "path", i);
+      this.#makeHandle(
+        p,
+        waypointIcon(i + 1, { outside: a.waypointOutside[i] === true, action: p.action, holdS: p.holdS }),
+        "path",
+        i,
+      );
     });
 
     // --- start (on top)
@@ -604,7 +609,7 @@ export class MapController {
       }
       case "path": {
         const path = [...m.path];
-        path[index] = p;
+        path[index] = { ...path[index], lat: p.lat, lon: p.lon };
         return { ...m, path };
       }
       case "survey": {

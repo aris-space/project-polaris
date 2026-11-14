@@ -9,11 +9,12 @@
  *     "missions": [ { "name": "...", "savedAt": "...", "mission": {...} }, ... ] }
  *
  * `mission` = { type: "waypoints" | "survey", safeArea: [{lat, lon}], safeClosed,
- *               start: {lat, lon} | null, path: [{lat, lon}], closed,
+ *               start: {lat, lon} | null,
+ *               path: [{lat, lon, action?: "pass" | "wait" | "surface", holdS?: seconds}], closed,
  *               survey: [{lat, lon}], surveyClosed }
  * Coordinates are WGS84 degrees.
  */
-import { LatLon, Mission, SavedMission } from "./types";
+import { LatLon, MAX_HOLD_S, Mission, SavedMission, Waypoint } from "./types";
 
 export const MISSION_FORMAT = "polaris-mission";
 export const LIBRARY_FORMAT = "polaris-mission-library";
@@ -33,6 +34,17 @@ export function isLatLon(v: unknown): v is LatLon {
 
 const cleanPoint = (p: LatLon): LatLon => ({ lat: p.lat, lon: p.lon });
 
+/** Waypoint with a valid action; "pass" is stored implicitly (no fields). */
+function cleanWaypoint(p: Waypoint): Waypoint {
+  const wp: Waypoint = { lat: p.lat, lon: p.lon };
+  if (p.action === "wait" || p.action === "surface") {
+    wp.action = p.action;
+    const h = Number(p.holdS);
+    wp.holdS = Number.isFinite(h) ? Math.min(MAX_HOLD_S, Math.max(0, Math.round(h))) : 10;
+  }
+  return wp;
+}
+
 /** Coerce anything mission-shaped into a valid Mission (drops invalid points). */
 export function normalizeMission(raw: unknown): Mission {
   const sm = (raw ?? {}) as Partial<Mission>;
@@ -41,7 +53,7 @@ export function normalizeMission(raw: unknown): Mission {
     safeArea: Array.isArray(sm.safeArea) ? sm.safeArea.filter(isLatLon).map(cleanPoint) : [],
     safeClosed: sm.safeClosed === true,
     start: isLatLon(sm.start) ? cleanPoint(sm.start) : null,
-    path: Array.isArray(sm.path) ? sm.path.filter(isLatLon).map(cleanPoint) : [],
+    path: Array.isArray(sm.path) ? sm.path.filter(isLatLon).map(cleanWaypoint) : [],
     closed: sm.closed === true,
     survey: Array.isArray(sm.survey) ? sm.survey.filter(isLatLon).map(cleanPoint) : [],
     surveyClosed: sm.surveyClosed === true,
