@@ -31,7 +31,7 @@ from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
 
@@ -120,8 +120,11 @@ def generate_launch_description():
     # Default to the SBL range-sweep line for the pool/lake trial. Override at runtime with
     #   ros2 param set /mission_waypoints_publisher mission_csv <path>
     # and point it at a captured single-waypoint .json (from capture_waypoint) for pool tests.
-    # SHORT line (3..15 m) for the 20 m cable; the long-cable line is sbl_line_goldbach.csv (10..50 m).
-    sbl_line_csv = os.path.join(orca_bringup_dir, 'missions', 'sbl_line_goldbach_short.csv')
+    # Which line: launch argument sbl_line_file (a file name in missions/). Default = the long line
+    # sbl_line_goldbach.csv (stations 10..50 m + off-axis waypoints 6 and 7). For the 20 m cable use
+    #   sbl_line_file:=sbl_line_goldbach_short.csv   (3..15 m)
+    sbl_line_csv = PathJoinSubstitution(
+        [orca_bringup_dir, 'missions', LaunchConfiguration('sbl_line_file')])
 
     mission_waypoints_publisher = Node(
         package='autonomy_bringup_pkg',
@@ -210,6 +213,13 @@ def generate_launch_description():
         #     default_value='False',
         #     description='Record interesting topics to a rosbag?',
         # ),
+        DeclareLaunchArgument(
+            'sbl_line_file',
+            default_value='sbl_line_goldbach.csv',
+            description='Mission CSV in missions/ for the map points and go_to_waypoint --index: '
+                        'sbl_line_goldbach.csv (10..50 m + off-axis 6, 7; default) or '
+                        'sbl_line_goldbach_short.csv (3..15 m, 20 m cable).',
+        ),
         DeclareLaunchArgument(
             'respawn',
             default_value='true',
