@@ -6,8 +6,14 @@ lat,lon,alt,up_down,delta_z_m,hold_s
 # delta_z_m/hold_s are parsed but NOT executed (leave blank).
 # Regenerate from the measured antenna RTK position:
 #   python scripts/make_sbl_line.py --antenna <lat> <lon>
+# Waypoints 6 and 7 (2026-11-14): two OFF-AXIS points, both 30 m from the antenna, 45 deg to
+# either side of the line (6 at 146 deg ENU, 7 at 236 deg ENU). Use: off-axis station hold (6);
+# across dive / across surface mission 6 -> 3 -> 7 (two 23 m legs across the line of sight,
+# turn of about 45 deg at station 3).
 47.3288821,8.5726119,453.0,0,,
 47.3288649,8.5724818,453.0,0,,
 47.3288478,8.5723517,453.0,0,,
 47.3288307,8.5722216,453.0,0,,
 47.3288135,8.5720915,453.0,0,,
+47.3290499,8.5724124,453.0,0,,
+47.3286758,8.5725197,453.0,0,,
