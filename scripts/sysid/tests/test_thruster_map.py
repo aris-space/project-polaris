@@ -25,7 +25,7 @@ def tmap() -> ThrusterMap:
 
 
 def test_table_shape(tmap):
-    assert tmap.volts == [12.0, 14.0, 16.0, 18.0]
+    assert tmap.volts == [12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0]
     assert tmap.pwm_us[0] == 1100 and tmap.pwm_us[-1] == 1900 and len(tmap.pwm_us) == 201
 
 
@@ -33,10 +33,13 @@ def test_grid_points_reproduce_the_datasheet(tmap):
     assert tmap.force_kgf_at(1900, 12) == 5.92
     assert tmap.force_kgf_at(1900, 14) == 7.31
     assert tmap.force_kgf_at(1100, 18) == -7.26
+    assert tmap.force_kgf_at(1900, 20) == 12.74
+    assert tmap.force_kgf_at(1100, 24) == -10.31
+    assert tmap.force_kgf_at(1900, 24) == 16.44
 
 
 def test_neutral_and_deadband_give_zero(tmap):
-    for v in (12.0, 15.2, 18.0):
+    for v in (12.0, 15.2, 18.0, 24.0):
         assert tmap.force_n(1500, v) == 0.0
         assert tmap.force_n(1480, v) == 0.0  # inside the tabulated zero band (1456-1544 us)
 
@@ -57,7 +60,9 @@ def test_newtons_are_kgf_times_g(tmap):
 def test_out_of_range_is_clamped_and_flagged(tmap):
     assert tmap.force_n(1950, 15.0) == tmap.force_n(1900, 15.0)
     assert tmap.force_n(1700, 11.0) == tmap.force_n(1700, 12.0)
-    assert tmap.clamped(1950, 15.0) and tmap.clamped(1700, 19.0)
+    assert tmap.force_n(1700, 25.0) == tmap.force_n(1700, 24.0)
+    assert tmap.clamped(1950, 15.0) and tmap.clamped(1700, 25.0)
+    assert not tmap.clamped(1700, 19.0)
     assert not tmap.clamped(1700, 15.0)
 
 

@@ -150,7 +150,7 @@ dominate it. Compare a few bags rather than trusting one long number.
 
 ## 4. Important Points
 
-The T500 thrust curves are from the T500 documentation. Interpolation was used between the curves at voltages 12, 14, 16 and 18V. The force reconstruction hence uses both pwm and the current voltage readings. 
+The T500 thrust curves are from the T500 documentation. Interpolation was used between the curves at voltages 12, 14, 16, 18, 20, 22 and 24V. The force reconstruction hence uses both pwm and the current voltage readings. 
 
 How the model is stepped forwared in time: Runge Kutta 4th order method. Here instead of using a method like euler forward u_next = u + dt*f(u), we rather use the rk4 function that projects forward according to the following schema:
 k1 = f(u)                    # slope at the start

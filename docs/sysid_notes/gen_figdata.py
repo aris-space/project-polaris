@@ -47,9 +47,9 @@ def roll(u0, thrust_fn, p, t_end, dt=0.01):
 # 1. T500 thrust table ------------------------------------------------------------------
 tmap = ThrusterMap.from_csv(SYSID / "thruster_curves" / "t500_force_vs_voltage.csv")
 pwm = np.array(tmap.pwm_us)
-save("t500.dat", "pwm f12 f14 f16 f18",
+save("t500.dat", "pwm " + " ".join(f"f{v:g}" for v in tmap.volts),
      [pwm] + [np.array([tmap.force_n(x, v) for x in pwm]) for v in tmap.volts])
-v_sweep = np.linspace(11, 19, 81)
+v_sweep = np.linspace(tmap.volts[0] - 1, tmap.volts[-1] + 1, 141)
 save("t500_volt.dat", "v f1700 f1800 f1900",
      [v_sweep] + [np.array([tmap.force_n(x, v) for v in v_sweep]) for x in (1700, 1800, 1900)])
 

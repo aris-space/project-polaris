@@ -2,7 +2,7 @@
 # Source: T200-Public-Performance-Data-10-20V-September-2019.xlsx, sheets '12 V' to '18 V' (rounded to 4 decimals;
 # combined from t200_12V.csv ... t200_18V.csv). Force in kilograms-force, negative = reverse.
 # Evaluate with thruster_map.ThrusterMap: linear in PWM within each column, then linear in voltage.
-# Covers 12-18 V, same voltage brackets as t500_force_vs_voltage.csv.
+# Covers 12-18 V (t500_force_vs_voltage.csv covers 12-24 V).
 pwm_us,force_kgf_12V,force_kgf_14V,force_kgf_16V,force_kgf_18V
 1100,-2.9037,-3.5168,-4.0695,-4.5904
 1104,-2.9166,-3.4972,-4.0506,-4.545
