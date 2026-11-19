@@ -1,0 +1,168 @@
+RECOMMENDED USE OF CITATION WITHIN STUDENT REPORTS AT IDSC
+
+IDSC recommends to use the IEEEtran BIBTEX citation style, as distributed under the LaTeX Project Public License (LPPL) version 1.3, and may be freely used, distributed and modified. All corresponding files of the latest distribution can be found at CTAN (http://mirror.ctan.org/macros/latex/contrib/IEEEtran/).
+
+In order to change the appearance of the citation tags and the format of the bibliography, the bibliography style must be chosen appropriately. The following options are available, where the basic IEEEtran is the standard style that should be used whenever possible.
+
+IEEEtran     Citation tags appear as numbers in brackets. The references appear in the order in which they are cited
+IEEEtranS    Citation tags appear as numbers in brackets. The references are sorted such that they appear in the order based on the names of the authors, editors, organizations, etc.
+IEEEtranN    Citation tags appear as author names and year in brackets. The references appear in the order in which they are cited
+IEEEtranSN   Citation tags appear as author names and year in brackets. The references are sorted such that they appear in the order based on the names of the authors, editors, organizations, etc.
+
+The latter two bibliography styles are compatible with Patrick W. Daly’s natbib package, which allows to further define the appearance of the textual citation tags.
+
+Independent of the bibliography style, there are several entry types that are supported by all IEEEtran styles. These are: article, book, inbook, incollection, booklet, manual, inproceedings, conference, proceedings, mastersthesis, phdthesis, techreport, unpublished, electronic, online, internet, webpage, www, patent, periodical, and misc. The supplied document entitled "How to Use the IEEEtran BIBTEX Style" describes each of these entry types in detail. However, the remainder of this document presents these types again in a sorted order with very short explanations of the main idea and the recommended IDSC convention.
+
+The following listing presents the entry types that are supported by the IEEEtran bibliography styles. Most of them are also supported by the basic styles, e.g., plain, unsrt, ieeetr, etc. Others are extensions of the IEEEtran style, e.g., webpage, patent, periodical, etc., and not supported by the basic bibliography styles.
+
+JOURNALS AND MAGAZINES
+@article
+@periodical
+
+BOOKS
+@book
+@booklet
+@inbook
+@incollection
+
+CONFERENCE PROCEEDINGS
+@inproceedings
+@conference
+@proceedings
+
+STUDENT REPORTS
+@mastersthesis
+@phdthesis
+
+TECHNICAL REPORTS
+@manual
+@techreport
+
+WEB PAGES
+@electronic
+@online
+@internet
+@webpage
+@www
+
+OTHER
+@patent
+@standard
+@misc
+
+In order to synchronize the citation style at IDSC, it is recommended to use the following entry types and complete the given fields. The cite key should consist of the last name of the main author (first letter capitalized), and the year of publication, separated by a colon. To avoid ambiguities when the same author has published multiple documents in the same year, two random letters are appended to the cite key. For student reports the appendices som, bt, sp, mt, and diss can be used to indicate studies on mechatronics, bachelor's thesis, semester project, master's thesis, and dissertation, respectively. As an example, Ritter:2014mt is an appropriate cite key for the master's thesis of Ritter, published in 2014.
+
+ARTICLE is used to reference journal articles. The required fields are author, title, journal, and year. Additionally supported fields are language, volume, number, pages, month, note, and url. We recommend to use and complete the following fields:
+@article{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+journal = {<use an abbreviation as defined in IEEEabrv.bib>},
+volume = {},
+number = {},
+pages = {},
+month = {<jan/feb/mar/apr/may/jun/jul/aug/sep/oct/nov/dec>},
+year = {}
+}
+
+BOOK is used to reference entire books that are formally published. The required fields are author and/or editor, title, publisher, and year. Additionally supported fields are language, edition, series, address, month, volume, number, note, and url. We recommend to use and complete the following fields:
+@book{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+editor = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+edition = {},
+address = {},
+publisher = {},
+year = {}
+}
+
+BOOKLET is used to reference complete books that are not formally published (by a publisher). Mostly books available only on the Internet fall into this category. The only required field is title. Additionally supported fields are author, language, howpublished, organization, address, month, year, note, url. We recommend to use and complete the following fields:
+@booklet{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+howpublished = {<similar to publisher, e.g. university press>}
+year = {}
+}
+
+INCOLLECTION is used to reference a chapter of a book that has its own title (and its own author). The required fields are author, title, booktitle, year. Additionally supported fields are language, edition, series, editor, address, publisher, month, volume, number, chapter, type, pages, note, and url. We recommend to use and complete the following fields:
+@incollection{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+editor = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+booktitle = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+edition = {},
+address = {},
+publisher = {},
+year = {}
+}
+
+INPROCEEDINGS is used to reference papers in conference proceedings. The required fields are author, title, booktitle, and year. Additionally supported fields are intype, language, series, editor, volume, number, organization, address, publisher, month, paper, type, pages, note, and url. We recommend to use and complete the following fields:
+@inproceedings{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+booktitle = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+volume = {},
+number = {},
+pages = {},
+month = {<jan/feb/mar/apr/may/jun/jul/aug/sep/oct/nov/dec>},
+year = {}
+}
+
+MASTERSTHESIS is used to reference all kinds of student reports except from dissertations, i.e. studies on mechatronics, bachelor's theses, semester projects, and master's theses. The required fields are author, title, school, and year. Additionally supported fields are  language, type, address, month, note, url. We recommend to use and complete the following fields:
+@mastersthesis{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+type = {<studies on mechatronics/bachelor's thesis/semester projects/master's thesis>},
+school = {ETH Zurich, Institute for Dynamic Systems and Control},
+address = {},
+month = {<jan/feb/mar/apr/may/jun/jul/aug/sep/oct/nov/dec>},
+year = {},
+note = {IDSC-CO-??-??}
+}
+
+PHDTHESIS is used to reference dissertations. The required fields are author, title, school, and year. Additionally supported fields are  language, type, address, month, note, url. We recommend to use and complete the following fields:
+@phdthesis{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+school = {ETH Zurich, Institute for Dynamic Systems and Control},
+address = {},
+month = {<jan/feb/mar/apr/may/jun/jul/aug/sep/oct/nov/dec>},
+year = {},
+note = {Diss. ETH No. ?????}
+}
+
+MANUAL is used to reference technical documentations as they come along with software programs for example. The only required field is title. Additionally supported fields are author, title, language, edition, howpublished, organization, address, month, year, note, and url. We recommend to use and complete the following fields:
+@manual{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+howpublished = {<Version of software or the like>},
+organization = {},
+year = {}
+}
+
+TECHREPORT is used to reference all kinds of technical reports that do not fit to one of the other entry styles. The required fields are author, title, institution, and year. Additionally supported fields are language, howpublished, address, number, type, month, note, and url. We recommend to use and complete the following fields:
+@techreport{Name:YEARxx,
+author = {<[first name] [last name] and [first name] [last name] and ...>},
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+institution = {},
+month = {<jan/feb/mar/apr/may/jun/jul/aug/sep/oct/nov/dec>},
+year = {}
+}
+
+WEBPAGE is used to reference all kinds of content that is only available on the Internet. The are no required fields. However, supported fields are author, month, year, title, language, howpublished, organization, address, note, and url. We recommend to use and complete the following fields:
+@webpage{Name:YEARxx,
+title = {<use {XX} to preserve capitalization of acronyms or german nouns>},
+language = {<english/german/...>},
+organization = {},
+month = {<jan/feb/mar/apr/may/jun/jul/aug/sep/oct/nov/dec>},
+year = {},
+url = {}
+}

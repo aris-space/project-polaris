@@ -1,0 +1,218 @@
+% !TeX spellcheck = en_US
+% !TeX encoding = UTF-8
+% !TeX TXS-program:compile = txs:///latexmk/[-pdf -silent -shell-escape -latexoption="-synctex=1"]
+
+% Workaround for bug, see https://tex.stackexchange.com/questions/575325/options-not-working-if-custom-class-is-in-subfolder
+\makeatletter\def\input@path{{./docstyle/}}\makeatother
+
+% IDSCreport in article mode: generic short document without chapters,
+% table of contents, or information page
+\documentclass[article,notoc]{IDSCreport}
+
+% The class prints the nomenclature with \chapter*, which does not exist in
+% article mode. A proposal needs no nomenclature, so skip it.
+\renewcommand{\typesetnomenclature}{}
+
+% Acronyms: \ac prints "long form (SHORT)" at first use, then only "SHORT"
+\newacronym{auv}{AUV}{autonomous underwater vehicle}
+\newacronym{rmse}{RMSE}{root-mean-square error}
+\newacronym{rtk}{RTK}{real-time kinematic}
+
+\title{Dynamics- and Tether-Aware Mission Planner for the POLARIS AUV}
+\type{Bachelor's Thesis Proposal}
+\author{Noel Bühler}
+\date{November 18, 2026}
+
+\begin{document}
+
+\section{Context and Problem}
+\label{sec:ContextAndProblem}
+
+In Project POLARIS, ARIS Space, IDSC, and D-EAPS at ETH Zurich developed a
+tethered \ac{auv} that measures ice thickness from below. The \ac{auv} is
+deployed through a single hole in the ice and stays connected to the surface by
+a fiber-optic tether up to \qty{300}{\meter} long. The mission objective is to
+cover a \qty{10000}{\meter\squared} area with an upward-facing imaging SONAR,
+take point measurements while touching the ice over a subset of that area, and
+return safely to the hole.
+
+The current autonomy stack plans straight lines between waypoints and tracks
+them with a modified Pure Pursuit controller that switches into a dedicated
+turning mode at corners. With this stack, the \ac{auv} completed a
+\qtyproduct{20 x 20}{\meter} grid at Lake Zurich in \qty{28}{\minute} with a
+cross-track \ac{rmse} of \qty{0.45}{\meter}.
+
+The current planner, however, computes the path from geometry alone and ignores
+how the path affects the vehicle and the mission. This matters in three areas.
+The first is vehicle dynamics. The \ac{auv} accelerates, brakes, and turns
+slowly relative to its cruise speed, so these maneuvers take up a large share
+of the mission time. In the field tests, this caused corner overshoot, missed
+goal tolerances, and replanning at \qty{90}{\degree} turns.
+The second is the tether and the battery. Every turn adds twist to the tether,
+and every meter traveled consumes energy that must stay in reserve for the
+return to the hole.
+The third is localization. Under the ice, the \ac{auv} navigates by dead
+reckoning, and its position and heading estimates drift over time. The vehicle
+can only correct this drift by rising to the ice and obtaining a GNSS fix
+through it with the dual-antenna \ac{rtk} receiver. Between fixes, the heading
+is integrated from the gyroscope alone and drifts more during maneuvers, so yaw
+action directly degrades localization. To keep the drift bounded, the \ac{auv}
+must obtain a fix approximately every \qty{300}{\meter} traveled.
+% Source: POLARIS final report, localization appendix: open-trajectory drift
+% 0.42 m per 100 m (grid_02), L_max = 384 m at the 2 m bound (one-sided 95%),
+% 300 m adopted as the operational dead-reckoning budget.
+
+\paragraph{Problem Statement} The \ac{auv} needs a mission planner that turns a
+set of waypoints or a survey area into a path the vehicle can actually follow,
+and that schedules GNSS fixes often enough to keep the dead-reckoning drift
+within the mission requirement of \qty{\pm 2}{\meter}. The planner should keep
+mission time, energy use, tether twist, and heading drift low, while always
+leaving enough battery to return to the hole.
+
+\paragraph{Research Question} How can an offline mission planner generate
+dynamically feasible, tether- and drift-aware, velocity-stamped paths for
+underwater waypoint missions, and how much does it improve tracking accuracy,
+mission time, energy consumption, tether twist, and localization compared to
+straight-line planning?
+
+\section{Approach}
+\label{sec:Approach}
+
+The thesis develops a 2D, mission-level planner that computes offline a
+dynamically feasible, velocity-stamped path through given waypoints inside a
+specified safe area. The safe area is assumed to be free of obstacles. The
+planner is based on a kinematic vehicle model, i.e.\ a unicycle with velocity,
+yaw-rate, and acceleration limits, and on an empirical model of the electrical
+current drawn for a given acceleration. All limits are parameters. They are
+initialized from the Lake Zurich data and updated as the hardware and the
+path- and velocity-tracking controller developed in the partner thesis by Ridh
+evolve, so the planner stays valid without redesign.
+
+Two waypoint maneuvers are distinguished:
+\begin{description}
+    \item[Stop waypoints:] the vehicle comes to rest and may turn on the
+          spot, so the segments between them are straight lines.
+    \item[Continuous waypoints:] the vehicle passes without stopping, so
+          the path must respect forward motion with bounded yaw rate and yaw
+          acceleration.
+\end{description}
+
+The planner minimizes mission time, energy use, and two distinct yaw
+measures. \emph{Net yaw} sets the tether twist. Turns in opposite directions
+cancel, so the goal is zero net yaw. \emph{Total absolute yaw} drives the
+gyroscope drift and never cancels: a path that turns \qty{+360}{\degree} and
+then \qty{-360}{\degree} has no tether twist but a lot of accumulated heading motion. The
+planner is constrained by the safe area, the velocity and acceleration limits
+of the vehicle, the maximum electrical current, and the deployed tether length.
+It is built in stages, each of which is usable on its own:
+\begin{enumerate}
+    \item \textbf{Waypoint generator:} continuous waypoints for boustrophedon
+          SONAR coverage of the survey area, and stop waypoints for the point
+          measurements.
+    \item \textbf{Waypoint ordering:} a traveling-salesman-type ordering of the
+          waypoints that trades off path length, net yaw, and total yaw, with
+          nearest neighbor and 2-opt as reference heuristics.
+    \item \textbf{Corner smoothing:} curvature-continuous transitions at
+          continuous waypoints that respect the yaw-rate and yaw-acceleration
+          limits and stay inside the safe area.
+    \item \textbf{Velocity profile:} a speed for every point of the path under
+          the acceleration and current limits, trading mission time against
+          energy. The controller receives a velocity-stamped path, and the
+          planner integrates the profile only internally to estimate the
+          mission time.
+    \item \textbf{Return planner and battery watchdog:} a path back to the hole
+          that avoids the area already covered by the tether, and a continuous
+          check that this return still fits within the remaining battery
+          capacity.
+    \item \textbf{Fix scheduling:} using the same path integration with an
+          assumed drift rate, the planner predicts the localization drift along
+          the path and inserts ice-touch fix maneuvers as stop waypoints before
+          the localization budget is exceeded. The existing behavior tree
+          executes the maneuver, while the planner schedules it and accounts for
+          its time and energy.
+    \item \textbf{Online fallback (optional):} a lightweight version of the
+          planner for replanning during the mission. It replans after large
+          deviations in position or velocity, or when the localization
+          uncertainty tracked by the state estimator calls for an earlier fix
+          maneuver. In addition, it compares the measured remaining battery
+          capacity with the energy estimated for a safe return to the hole along
+          a path that avoids the area covered by the tether, and it triggers the
+          return before this margin is used up.
+\end{enumerate}
+
+\paragraph{Evaluation} The main comparison keeps the controller fixed and
+swaps only the planner, so differences can be attributed to the planner, as
+listed in \cref{tab:Configurations}. Pure Pursuit cannot follow a velocity
+profile, so pairing it with the new planner would understate the benefit of
+the planner. If this tracking controller is not ready in time, a simple
+path-tracking controller with velocity feedforward replaces it in simulation.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Planner and Controller Configurations Compared in the Evaluation}
+    \label{tab:Configurations}
+    \begin{tabular}{ll}
+        \toprule
+        Configuration                        & Role \\
+        \midrule
+        Straight-line planner + Pure Pursuit & Reference: current validated stack \\
+        Straight-line planner + tracking controller & Baseline: isolates the controller \\
+        New planner + tracking controller           & Proposed system \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The metrics are grouped by the aspects the planner aims to improve:
+\begin{description}
+    \item[Tracking accuracy:] cross-track \ac{rmse} and corner overshoot.
+    \item[Mission time:] total mission time.
+    \item[Energy:] total energy drawn from the battery, i.e.\ battery life, and
+          peak current.
+    \item[Tether:] net yaw, i.e.\ tether twist, and maximum distance to the hole.
+    \item[Localization:] total absolute yaw and number of fix maneuvers.
+\end{description}
+The configurations are compared in simulation and, if possible, in field tests
+on the vehicle. The test missions are defined during the thesis.
+
+\section{Scope and Plan}
+\label{sec:ScopeAndPlan}
+
+\paragraph{In Scope} Offline 2D planning at constant depth in an obstacle-free
+safe area, stages~1 to~6 above, integration into the existing ROS~2 and
+\texttt{nav2} stack, and validation in the Gazebo and ArduSub simulation against
+the current stack. If time runs short, fix scheduling (stage~6) is the first
+item to move to the extensions.
+
+\paragraph{Out of Scope} Obstacle avoidance, tether entanglement around
+obstacles, 3D planning, and the design of the path-tracking controller
+itself.
+
+\paragraph{Optional Extensions} The online fallback (stage~7), including
+uncertainty-triggered fix maneuvers based on the covariance of the state
+estimator, field tests on the vehicle, a tether map that estimates where the
+tether lies and feeds the return planner, and SONAR lane spacing derived from
+the operating depth and the beam angle of the imaging SONAR.
+
+\paragraph{Plan} \Cref{tab:Plan} shows the planned schedule.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Planned Schedule}
+    \label{tab:Plan}
+    \begin{tabular}{lp{0.75\textwidth}}
+        \toprule
+        Weeks  & Work package \\
+        \midrule
+        1--2   & Literature review, waypoint generator and waypoint ordering (stages~1 and~2) \\
+        3--4   & System identification: kinematic limits and current model from field tests \\
+        5--6   & Corner smoothing (stage~3) \\
+        7--8   & Velocity profile with acceleration and current limits (stage~4) \\
+        9      & Return planner and battery watchdog (stage~5) \\
+        10     & Fix scheduling (stage~6) \\
+        11--12 & Simulation evaluation against the reference and the baseline, and a field test if possible \\
+        13--14 & Thesis writing and buffer \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\end{document}

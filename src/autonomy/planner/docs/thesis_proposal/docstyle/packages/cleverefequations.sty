@@ -1,0 +1,54 @@
+% cleverefequations.sty Parentheses reference style for equations with cleveref
+% Copyright (C) 2018  Andreas Ritter
+
+% This program is free software: you can redistribute it and/or modify
+% it under the terms of the GNU General Public License as published by
+% the Free Software Foundation, either version 3 of the License, or
+% (at your option) any later version.
+% 
+% This program is distributed in the hope that it will be useful,
+% but WITHOUT ANY WARRANTY; without even the implied warranty of
+% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+% GNU General Public License for more details.
+% 
+% You should have received a copy of the GNU General Public License
+% along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+
+
+% ==============================================================================
+% Main class definition of cleverefequations.sty
+% ==============================================================================
+\ProvidesPackage{cleverefequations}[2016/23/12 by Andreas Ritter (ETH Zurich)]
+\NeedsTeXFormat{LaTeX2e}
+
+\typeout{-- cleverefequations.sty Parentheses reference style for equations with cleveref}
+\typeout{cleverefequations.sty Copyright (C) 2018  Andreas Ritter, ETH Zurich}
+\typeout{This program comes with ABSOLUTELY NO WARRANTY; for details see license.txt.}
+\typeout{This is free software, and you are welcome to redistribute it}
+\typeout{under certain conditions; see license.txt for details. ---}
+
+
+
+
+% ==============================================================================
+% Load packages
+% ==============================================================================
+\RequirePackage[noabbrev]{cleveref} % simplifies cross-referencing
+
+
+
+
+% ==============================================================================
+% Change the equation format to only number in brackets
+% ==============================================================================
+\crefformat{equation}{(#2#1#3)}
+\crefrangeformat{equation}{(#3#1#4)--(#5#2#6)}
+\crefmultiformat{equation}{(#2#1#3)}{, (#2#1#3)}{, (#2#1#3)}{ and~(#2#1#3)}
+\crefrangemultiformat{equation}{(#3#1#4)--(#5#2#6)}{, (#3#1#4)--(#5#2#6)}{, (#3#1#4)--(#5#2#6)}{ and~(#3#1#4)--(#5#2#6)}
+
+\Crefformat{equation}{Equation~(#2#1#3)}
+\Crefrangeformat{equation}{Equations~(#3#1#4)--(#5#2#6)}
+\Crefmultiformat{equation}{Equations~(#2#1#3)}{, (#2#1#3)}{, (#2#1#3)}{ and~(#2#1#3)}
+\Crefrangemultiformat{equation}{Equations~(#3#1#4)--(#5#2#6)}{, (#3#1#4)--(#5#2#6)}{, (#3#1#4)--(#5#2#6)}{ and~(#3#1#4)--(#5#2#6)}

@@ -1,0 +1,79 @@
+% sourcecode.sty Style definitions for printing source code with listings
+% Copyright (C) 2018  Andreas Ritter
+
+% This program is free software: you can redistribute it and/or modify
+% it under the terms of the GNU General Public License as published by
+% the Free Software Foundation, either version 3 of the License, or
+% (at your option) any later version.
+% 
+% This program is distributed in the hope that it will be useful,
+% but WITHOUT ANY WARRANTY; without even the implied warranty of
+% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+% GNU General Public License for more details.
+% 
+% You should have received a copy of the GNU General Public License
+% along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+
+
+% ==============================================================================
+% Main class definition of sourcecode.sty
+% ==============================================================================
+\ProvidesPackage{sourcecode}[2016/23/12 by Andreas Ritter (ETH Zurich)]
+\NeedsTeXFormat{LaTeX2e}
+
+\typeout{-- sourcecode.sty Style definitions for printing source code with listings}
+\typeout{sourcecode.sty Copyright (C) 2018  Andreas Ritter, ETH Zurich}
+\typeout{This program comes with ABSOLUTELY NO WARRANTY; for details see license.txt.}
+\typeout{This is free software, and you are welcome to redistribute it}
+\typeout{under certain conditions; see license.txt for details. ---}
+
+
+
+
+% ==============================================================================
+% Load packages
+% ==============================================================================
+\RequirePackage{mathabx} % required to include extended list of math symbols
+\RequirePackage{listings} % required for all kinds of source code typesetting
+\RequirePackage{matlab-prettifier} % extends the listings for pretty matlab code
+
+
+
+% ==============================================================================
+% New code languages
+% ==============================================================================
+\lstdefinelanguage{none}{
+	basicstyle=\ttfamily, 
+	columns=fullflexible,
+	literate={ö}{{\"o}}1 {ä}{{\"a}}1 {ü}{{\"u}}1
+}
+
+\lstdefinestyle{plaincode}{
+	language=none,
+	breaklines=true,
+	prebreak={\space\mbox{\small$\dlsh$}},
+	breakindent=0pt,
+}
+
+\lstdefinestyle{matlabcode}{
+	language=Matlab, 
+	style=Matlab-editor,
+	breaklines=true,
+	prebreak={\space\mbox{\small$\dlsh$}},
+	columns=fullflexible,
+	breakindent=0pt,
+	literate={ö}{{\"o}}1 {ä}{{\"a}}1 {ü}{{\"u}}1
+}
+
+\lstset{style=plaincode}
+
+
+
+
+% ==============================================================================
+% New code environments
+% ==============================================================================
+\lstnewenvironment{plaincode}[1][] {\lstset{#1, style=plaincode}} {}
+\lstnewenvironment{matlabcode}[1][] {\lstset{#1, style=matlabcode}} {}

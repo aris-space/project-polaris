@@ -1,0 +1,173 @@
+% specialgraphics.sty Command for convenient inclusion of inkscape graphics
+% Copyright (C) 2018  Andreas Ritter
+
+% This program is free software: you can redistribute it and/or modify
+% it under the terms of the GNU General Public License as published by
+% the Free Software Foundation, either version 3 of the License, or
+% (at your option) any later version.
+%
+% This program is distributed in the hope that it will be useful,
+% but WITHOUT ANY WARRANTY; without even the implied warranty of
+% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+% GNU General Public License for more details.
+%
+% You should have received a copy of the GNU General Public License
+% along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+
+
+% ==============================================================================
+% Main class definition of specialgraphics.sty
+% ==============================================================================
+\ProvidesPackage{specialgraphics}[2018/04/09 by Andreas Ritter (ETH Zurich)]
+\NeedsTeXFormat{LaTeX2e}
+
+\typeout{-- specialgraphics.sty Command for convenient inclusion of inkscape graphics}
+\typeout{specialgraphics.sty Copyright (C) 2018  Andreas Ritter, ETH Zurich}
+\typeout{This program comes with ABSOLUTELY NO WARRANTY; for details see license.txt.}
+\typeout{This is free software, and you are welcome to redistribute it}
+\typeout{under certain conditions; see license.txt for details. ---}
+
+
+
+
+% ==============================================================================
+% Load packages
+% ==============================================================================
+\RequirePackage{import} % required to include inkskape graphics from subfolders
+\RequirePackage{xstring} % provides macros manipulating strings of tokens
+
+
+
+
+% ==============================================================================
+% Commands \providecounter and \providelength similar to \providecommand
+% ==============================================================================
+\newcommand*\providecounter[1]{%
+\@ifundefined{c@#1}%
+{\@definecounter{#1}}%
+{}%
+}
+
+\newcommand*\providelength[1]{%
+\begingroup
+\escapechar\m@ne
+\xdef\@gtempa{\string#1}%
+\endgroup
+\@ifundefined{\@gtempa}%
+{\newskip#1}%
+{}%
+}
+
+\newtoks\externalizepsfrag % Allows to define output
+\externalizepsfrag{./} % (argument must be identical to ouput-directory of main pdflatex call)
+
+
+% ==============================================================================
+% Command \includeinkscape
+% ==============================================================================
+\newcommand{\includeinkscape}[2][]{%
+% Process the file name (separate the directory from the file name)
+\StrCount{#2}{/}[\@numberOfSlashes]%
+\StrCut[\@numberOfSlashes]{#2}{/}{\@thisgraphicspath}{\@thisgraphicsname}%
+%
+% Process the options
+\ifx#1""\else% if not empty
+\providecommand{\@remainingoptions}{}% save the yet unprocessed options string
+\renewcommand{\@remainingoptions}{#1}% add entire string as unprocessed options string
+\providecommand{\@thiscasenum}{}% save the number of the current case
+\renewcommand{\@thiscasenum}{-1}% invalid case (choses otherwise...)
+%
+\loop % for until all options are processed
+\StrCount{\@remainingoptions}{,}[\@numberOfCommas]%
+\StrCut[1]{\@remainingoptions}{,}{\@thisoption}{\@remainingoptions}%
+\StrCut[1]{\@thisoption}{=}{\@thisargument}{\@thisvalue}%
+%
+% Identify the case for each option
+\renewcommand{\@thiscasenum}{-1}% reset case number in each iteration
+\IfStrEq{\@thisargument}{width}{\renewcommand{\@thiscasenum}{0}}{}%
+%\IfStrEq{\@thisargument}{scale}{\renewcommand{\@thiscasenum}{1}}{}
+%
+% switch over cases 0, 1, ...
+\ifcase\@thiscasenum% case \@thiscasenum = 0
+\providelength{\@thiswidth}%
+\setlength{\@thiswidth}{\@thisvalue}%
+\def\svgwidth{\@thiswidth} % you cannot define \svgwidth directly since in a successive iteration \@thisvalue might become a invalid length and thus \svgwidth gets invalid as well. Using the intermediate step with \@thiswidth circumvents this problem.
+\or % case \@thiscasenum = 1
+\providelength{\@thisscale}%
+\setlength{\@thisscale}{\@thisvalue}%
+\def\svgscale{\@thisscale}%
+\else% otherwise
+\ClassWarning{IDSCreport}{Cannot process option "\@thisargument" with argument "\@thisvalue"}%
+\fi% end cases
+\ifnum\@numberOfCommas>0% end the loop if no options are left
+\repeat% or continue otherwise
+\fi% end of processing options (end of \ifx#1""\else)
+%
+% Call the regular routine to include .eps_tex or .pdf_tex graphics
+\IfEndWith{\@thisgraphicsname}{.pdf}%
+{\import{\@thisgraphicspath/}{\@thisgraphicsname_tex}}% true
+{ % false, check if eps or assume eps
+\IfEndWith{\@thisgraphicsname}{.eps}%
+{\import{\@thisgraphicspath/}{\@thisgraphicsname_tex}}% true
+{\import{\@thisgraphicspath/}{\@thisgraphicsname.eps_tex}}% false (if no extension, assume eps)
+}%
+}% end of command \includeinkscape
+
+
+
+
+
+% ==============================================================================
+% Command \includepsfrageps
+% ==============================================================================
+
+\newcommand{\includelabeledeps}[3][]{%
+% Process the file name (separate the directory from the file name and from the extension)
+\StrCount{#2}{/}[\@numberOfSlashes]%
+\StrCut[\@numberOfSlashes]{#2}{/}{\@thisgraphicspath}{\@thisgraphicsname}%
+\StrBefore{\@thisgraphicsname}{.eps}[\@thispurename]%
+%
+% Write the tex file that compiles the eps and pdf graphic
+\newwrite\epstexfile%
+\immediate\openout\epstexfile=\@thispurename-eps-converted-to.tex%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\pdfoutput=0\relax}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\documentclass{article}}}%
+%
+% Copy the geometry of the original document to the document for processing the image.
+% Cannot set oddsidemargin=\the\oddsidemargin, evensidemargin=\the\evensidemargin, topskip=\the\topskip
+\immediate\write\epstexfile\expandafter{\string\usepackage[dvipdfm, paperwidth=\the\paperwidth, paperheight=\the\paperheight, textwidth=\the\textwidth, textheight=\the\textheight, tmargin=\the\topmargin, headheight=\the\headheight, headsep=\the\headsep, footskip=\the\footskip, marginparwidth=\the\marginparwidth, marginparsep=\the\marginparsep, columnsep=\the\columnsep, hoffset=\the\hoffset, voffset=\the\voffset]{geometry}}%
+%
+% Get font size (must do this after getting the geometry
+\let\myfontsizeforgraphics\relax % let \myfontsizeforgraphics to \relax
+\newlength\myfontsizeforgraphics % now it's safe to "re-issue" it as a length 
+\makeatletter\setlength{\myfontsizeforgraphics}{\f@size pt}\makeatother%
+%
+% Add remainig packages
+\immediate\write\epstexfile{\detokenize\expandafter{\string\usepackage[active,tightpage]{preview}}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\usepackage{graphicx}}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\usepackage{psfrag}}}%
+%
+% Write main content of document
+\immediate\write\epstexfile{\detokenize\expandafter{\string\pagestyle{empty}}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\begin{document}}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\centering \null \vfill}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\begin{preview}}}%
+%
+% Set font size to the one of the original document at that point
+\immediate\write\epstexfile\expandafter{\string\fontsize{\the\myfontsizeforgraphics}{\the\baselineskip}\string\selectfont}%
+\let\myfontsizeforgraphics\relax % required for redefining length in sucessive call of this function
+\immediate\write\epstexfile{\detokenize\expandafter{#3}}%
+\immediate\write\epstexfile\expandafter{\string\includegraphics[#1]{#2}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\end{preview}}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\vfill}}%
+\immediate\write\epstexfile{\detokenize\expandafter{\string\end{document}}}%
+\immediate\closeout\epstexfile%
+%
+% Compile the eps document
+\immediate\write18{latexmk -silent -dvi -ps -pdfps \the\externalizepsfrag/\@thispurename-eps-converted-to.tex -output-directory=\the\externalizepsfrag}%
+%
+% Add the resulting pdf document
+\includegraphics[#1]{\the\externalizepsfrag/\@thispurename-eps-converted-to.pdf}%
+}% end of command \includelabeledeps
