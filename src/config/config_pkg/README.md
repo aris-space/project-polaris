@@ -65,12 +65,13 @@ Controlled via `recording_options.mode` in the command payload:
 
 The default output directory is `/ros2_ws/recordings/`, which is mounted as a volume outside the Docker container so recordings persist after the container stops.
 
-Each recording produces a folder named `<name>__<testname>__<location>__<timestamp>`:
+Each recording produces a folder named `<name>__<location>__<timestamp>`; the bag inside it
+is named `<name>__<location>__<testname>__<timestamp>`:
 
 ```
 /ros2_ws/recordings/
-└── flight_test__hover_stability__teststand_1__20260424_120000/
-    ├── bag/                      # rosbag files
+└── flight_test__teststand_1__20260424_120000/
+    ├── flight_test__teststand_1__hover_stability__20260424_120000/   # rosbag files
     ├── recording_metadata.json   # name, testname, location, created_at
     └── events.jsonl              # append-only log of events
 ```
@@ -93,7 +94,7 @@ ros2 launch config_pkg start_system.launch.py autonomy:=true odom_local_start:=t
 That starts the autonomy process but nav2 is not active yet. When ready, activate it:
 
 ```bash
-ros2 run orca_bringup nav2_activate.py
+ros2 run autonomy_bringup_pkg nav2_activate
 ```
 or manually
 
@@ -102,7 +103,7 @@ ros2 service call /lifecycle_manager_navigation/manage_nodes nav2_msgs/srv/Manag
 ```
 run actually the mission:
 ```bash
-ros2 run orca_bringup WSG84_mission_starter.py
+ros2 run autonomy_bringup_pkg wgs84_mission_starter
 ```
 We need both!
 ```bash

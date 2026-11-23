@@ -1,14 +1,47 @@
-## Start simulation (for rosbag see below)
+# autonomy_bringup_pkg
+
+> **Note on this file.** Most of it was written for the simulation setup, where this
+> package was called `orca_bringup`. In this repository the package is
+> `autonomy_bringup_pkg`, the executables have no `.py` suffix (see `setup.py`), and
+> `sim_launch.py` and `current_vector_node.py` do not exist here. The commands in the
+> next section are the ones that work on the vehicle; the sections further down that
+> mention `sim_launch.py` or the Orca4 Docker paths describe the simulation setup.
+
+## On the vehicle
+
+```bash
+# Nav2 stack (not activated yet), as part of the whole system:
+ros2 launch config_pkg start_system.launch.py autonomy:=true
+
+# Activate / deactivate Nav2
+ros2 run autonomy_bringup_pkg nav2_activate
+ros2 run autonomy_bringup_pkg nav2_deactivate
+
+# Whole mission from the loaded waypoint file
+ros2 run autonomy_bringup_pkg wgs84_mission_starter
+
+# One waypoint, then hold on station (armed + GUIDED)
+ros2 run autonomy_bringup_pkg go_to_waypoint --index 1
+
+# Capture the current position as a waypoint (surface, RTK)
+ros2 run autonomy_bringup_pkg capture_waypoint --out <file>.json
+```
+
+Both mission tools report when Nav2 gave up on a waypoint ("NOT reached"): the
+waypoint follower runs with `stop_on_failure: False`, so the action itself still ends
+as "succeeded" in that case.
+
+## Start simulation (for rosbag see below) — simulation setup only
 ```bash
 ros2 launch orca_bringup sim_launch.py (bag:=True)
 ```
 
 ## Start mission
 ```bash
-ros2 run orca_bringup WSG84_mission_starter.py
+ros2 run autonomy_bringup_pkg wgs84_mission_starter
 ```
 
-## Start current in m/s
+## Start current in m/s — simulation setup only
 `/orca_bringup/scripts/current_vector_node.py`
 ```bash
 ros2 run orca_bringup current_vector_node.py --ros-args -p direction:="x, con_xy, ramp_xyz" -p amplitude:=0.8 -p period:=15.0
@@ -57,7 +90,7 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
 
 2. **Run a mission** (second terminal **inside the same container**, with workspace sourced):
    ```bash
-   ros2 run orca_bringup WSG84_mission_starter.py
+   ros2 run autonomy_bringup_pkg wgs84_mission_starter
    ```
 
 4. **Stop cleanly:** Ctrl+C in the launch terminal; wait for `ros2 bag record` to exit.
@@ -70,11 +103,11 @@ Toggle with `publish_tracking_error` in [`params/nav2_params.yaml`](params/nav2_
 
 8. **Export to CSV** (still **inside** the container):
    ```bash
-   ros2 run orca_bringup export_tracking_bag_csv.py ~/colcon_ws/rosbag2_YYYY_MM_DD-HH_MM_SS
+   ros2 run autonomy_bringup_pkg export_tracking_bag_csv ~/colcon_ws/rosbag2_YYYY_MM_DD-HH_MM_SS
    ```
    Optional output directory:
    ```bash
-   ros2 run orca_bringup export_tracking_bag_csv.py ~/colcon_ws/rosbag2_YYYY_MM_DD-HH_MM_SS \
+   ros2 run autonomy_bringup_pkg export_tracking_bag_csv ~/colcon_ws/rosbag2_YYYY_MM_DD-HH_MM_SS \
      -o ~/colcon_ws/exports/my_run
    ```
 

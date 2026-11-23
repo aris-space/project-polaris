@@ -12,11 +12,11 @@ supporting nodes, and a thruster-based DVL fallback for extended DVL outages.
 IMU ──[imu_yaw_correction]──┐
 DVL ──────────────────────────┤──> ekf_local (30 Hz) ──> /odometry/filtered/local
 Pressure ─────────────────────┘         │
-                                 [odometry_validator]
-                                         │
-GPS ──[datum_watchdog]──> navsat_transform ──┤
-                                         │
-                              ekf_global (20 Hz) ──> /odometry/filtered/global
+                                 [odometry_validator] ──> datum watchdog (odom anchor)
+
+GPS ──[datum_watchdog]──> /gps/validated ──[gps_to_map_position]──┐
+IMU (corrected), DVL, pressure (map frame) ───────────────────────┤
+                                                                   └──> ekf_global (20 Hz) ──> /odometry/filtered/global
 
 TF:  map → odom → base_link
 
@@ -33,22 +33,27 @@ Fuses IMU + DVL + pressure. Produces the `odom → base_link` TF and
 
 | Sensor | Topic | States fused |
 |--------|-------|--------------|
-| IMU (XSens MTi 600) | `/imu/data` | Orientation (roll, pitch, yaw), angular velocity |
+| IMU (XSens MTi 600) | `/imu/data_corrected` (from `imu_yaw_correction`) | Orientation (roll, pitch, yaw), angular velocity |
 | DVL (WaterLinked A50) | `/sensors/dvl/odometry_cov` | Linear velocity (vx, vy, vz) |
 | Pressure sensor | `/sensors/pressure/pose_enu` | Z-position (depth) |
 | Thruster fallback *(optional)* | `/sensors/thruster/odometry_cov` | Linear velocity — only when DVL absent |
 
 ### Global EKF — spawned on first quality GNSS fix, 20 Hz
 
-Fuses local EKF output + GPS. Produces the `map → odom` TF and
-`/odometry/filtered/global`. Started by `gnss_datum_watchdog` once h_acc ≤ 0.5 m.
+Fuses the same raw sensors as the local EKF plus the GNSS position; the local EKF's output
+is not fed into it. Produces the `map → odom` TF and `/odometry/filtered/global`. Started by
+`gnss_datum_watchdog` once h_acc ≤ 0.5 m.
 
 | Sensor | Topic | States fused |
 |--------|-------|--------------|
-| Local EKF (validated) | `/odometry/filtered/local_validated` | Orientation, velocity |
-| GPS via navsat_transform | `/odometry/gps` | X, Y position (ENU) |
+| IMU | `/imu/data_corrected` | Orientation, angular velocity |
+| DVL | `/sensors/dvl/odometry_cov` | Linear velocity (vx, vy, vz) |
+| Pressure (map frame, via `pressure_pose_frame_fix`) | `/sensors/pressure/pose_enu_map` | Z-position (depth) |
+| GNSS via `gps_to_map_position` | `/odometry/gps_map` | X, Y position (true ENU, map frame) |
 
 Z-position is deliberately excluded from GPS fusion; pressure handles depth.
+`navsat_transform_node` is still launched, but the global EKF does not fuse its output
+(`/odometry/gps`); see the comments in `config/ekf_global.yaml`.
 
 ---
 
@@ -59,9 +64,11 @@ Z-position is deliberately excluded from GPS fusion; pressure handles depth.
 Standard `robot_localization::ekf_node` instances. Config files:
 `config/ekf_local.yaml`, `config/ekf_global.yaml`.
 
-Key tuning decision — `sensor_timeout: 999999`: the EKF only advances on
-real measurements and never falls back to predict-to-wall-clock, preventing
-multi-day `dt` during rosbag replay clock gaps.
+Timing: both configs use `sensor_timeout: 0.05` together with
+`predict_to_current_time: true`, so on every timer tick (`frequency`: 30 Hz local,
+20 Hz global) the filter predicts to the current time and publishes. An earlier
+setting, `sensor_timeout: 999999`, kept the filter from predicting between
+measurements; the comments in `config/ekf_global.yaml` give the history.
 
 ---
 
@@ -90,7 +97,8 @@ UBX-NAV-HPPOSLLH).
 
 Forwards `/odometry/filtered/local` → `/odometry/filtered/local_validated`
 while dropping messages whose `header.stamp` jumps forward by more than
-`max_forward_jump_s`. Guards the global EKF against wall-clock stamp glitches
+`max_forward_jump_s`. Guards its consumers (the datum watchdog and
+`navsat_transform`) against wall-clock stamp glitches
 that occur during offline rosbag replay when `/clock` is briefly unavailable,
 which would otherwise produce `dt ≈ 3 days` and blow up the predict step.
 
@@ -104,9 +112,12 @@ which would otherwise produce `dt ≈ 3 days` and blow up the predict step.
 ### `imu_yaw_correction`
 
 Pre-EKF heading correction. Rotates `/imu/data` orientation about +Z by
-`yaw_offset_deg` and republishes on `/imu/data_corrected`. Used by the
-anchored launch to calibrate IMU heading against GNSS bearing via a
-service-triggered forward-drive maneuver.
+`yaw_offset_deg` and republishes on `/imu/data_corrected`, which both EKFs
+fuse. On the vehicle it is started by `config_pkg`'s `sensors.launch.py`, not by
+`ekf_localization.launch.py`; `ekf_anchored.launch.py` and the offline replay
+launches start their own instance. The heading is calibrated against the GNSS
+course via a service-triggered straight forward drive. The offset is not stored:
+after a restart of the node it is 0 again.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -256,8 +267,10 @@ cov_vy = 0.0027 (m/s)²    # assume-zero uncertainty
 cov_vz = 0.0009 (m/s)²    # assume-zero uncertainty (depth hold)
 ```
 
-DVL covariance diagonal is ~1 × 10⁻⁸ (m/s)². The ratio of ~600 000× ensures
-the EKF ignores the thrust model completely the moment DVL recovers — no manual
+The DVL covariance diagonal is at least 4.4 × 10⁻⁶ (m/s)² for vx (the stationary
+floor in `dvl_a50_pkg`; it was ~1 × 10⁻⁸ when this section was first written), so
+the ratio is about 1300× or less. That is still enough for the EKF to follow the
+DVL once it recovers, and the node stops publishing then anyway — no manual
 switching or parameter changes needed.
 
 ### Integration
@@ -267,6 +280,16 @@ The node is included unconditionally in `ekf_localization.launch.py` and
 wired to `/sensors/thruster/odometry_cov`. The node is silent until DVL has
 been absent for `dvl_timeout_s` (default 3 s), so it has zero effect during
 normal operation.
+
+Two details of "absent":
+
+- A DVL sample counts as present here with 3 or more good beams
+  (`dvl_min_good_beams`, default 3), while `dvl_a50_pkg` marks samples with fewer
+  than 4 beams as no-lock. In a stretch of 3-beam samples the EKF gets neither
+  source. This is not aligned on purpose; the comment at that parameter in the
+  node gives the replay result behind it.
+- From node start until the first valid DVL sample the fallback is active at once,
+  without the `dvl_timeout_s` wait.
 
 ### Limitations
 
@@ -294,7 +317,9 @@ Local EKF inputs:
   Pressure       → z                                            (always, ~50 Hz)
   Thruster model → vx, vy, vz  (high covariance)               (DVL absent only)
 
-Global EKF inputs:
-  Local EKF      → roll, pitch, yaw, vx, vy, vz                (always)
-  navsat_transform → x, y  (GPS ENU)                           (GPS present)
+Global EKF inputs (same raw sensors, not the local EKF's output):
+  IMU            → roll, pitch, yaw, droll, dpitch, dyaw        (always)
+  DVL            → vx, vy, vz                                   (always, ~9 Hz)
+  Pressure       → z  (map frame)                               (always, ~50 Hz)
+  gps_to_map_position → x, y  (GNSS, true ENU)                  (GNSS gate open)
 ```

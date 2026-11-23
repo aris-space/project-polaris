@@ -2,6 +2,11 @@
 
 Branch: `fix/ekf/see_test_glitch`
 
+> **State on `dev` (2026-11):** Fix 1 and Fix 3 are active. The speed-dependent covariance of
+> Fix 2 is **not** active any more: `launch_dvl.launch.py` selects `reported_fom` (Fix 3), and
+> `speed_sigma_scale` / `dvl_variant` in that launch file have no effect in that mode.
+> Two later changes are summarised under [Later changes](#later-changes-after-this-branch).
+
 ## Summary
 
 This branch makes two changes to how DVL velocity reaches the EKF:
@@ -193,3 +198,101 @@ The value 0.0055 is the arithmetic midpoint of the two datasheet accuracies (0.1
 
 To return to the previous behaviour, set `"twist_linear_covariance_model": "stationary_tep"` in
 `launch_dvl.launch.py`. The stationary model has not been changed.
+
+## Fix 3: Outlier Rejection (FOM covariance + beam-count gate + EKF Mahalanobis backstop)
+
+Commit `01f4041b` on this branch. This is the part that actually catches the lake glitch, which
+Fix 2 alone cannot: the glitch was a **wrong velocity with a small covariance**, so scaling the
+covariance by (reported) speed does not help. The root cause was that only **3 DVL beams** were
+valid, and a 3-beam velocity solve has **zero redundancy** (3 equations, 3 unknowns, exact fit),
+so a single bad beam produces a wild velocity (~27 m/s) that the sensor still reports as valid
+with a low figure-of-merit. Three independent layers now guard against this.
+
+### Layer 1 — `reported_fom` covariance model
+
+`odometry_covariance_node.py` gains a third model, now the active one:
+
+```
+cov_i = max( reported_var_i , stationary_floor_i )     i in {vx, vy, vz}
+```
+
+- `reported_var` is the diagonal of `Dvl.velocity_covar`, which the driver fills from the Water
+  Linked 3x3 covariance, else from `diag(fom^2)`.
+- Flooring at the stationary variances means a deceptively small FOM can never make the EKF trust
+  the DVL *more* than it would a stationary measurement. When the DVL is healthy the FOM is tiny,
+  so the floor dominates and the covariance looks constant — this is expected, not a bug.
+
+### Layer 2 — beam-count gate (`min_good_beams`, default 4)
+
+If `Dvl.num_good_beams < min_good_beams`, the update is treated as **no-lock**
+(`no_lock_variance`, 1e6), so the EKF effectively ignores it — regardless of what the FOM or
+`beam_velocities_valid` claims. This is the layer that kills the 27 m/s glitch: 3 beams give no
+residual to check, so the only safe response is to distrust the solve.
+
+### Layer 3 — EKF Mahalanobis backstop
+
+`ekf_local.yaml` and `ekf_global.yaml` add:
+
+```yaml
+odom0_twist_rejection_threshold: 8.0
+```
+
+An independent, filter-side check: a twist update whose Mahalanobis distance from the filter
+prediction exceeds the threshold is rejected. 8.0 is conservative (3-DOF chi-sq_0.99 => sqrt ~ 3.4);
+tune it down later from the NIS of good runs.
+
+### Launch change
+
+`launch/launch_dvl.launch.py` now selects the new model. This **supersedes** the Fix 2 launch
+setting documented above:
+
+```python
+"twist_linear_covariance_model": "reported_fom",   # was "speed_dependent"
+"min_good_beams": 4,
+```
+
+`speed_dependent` and `stationary_tep` remain available as parameter values.
+
+### Verification status
+
+Validated offline on pool bag `dvl_fix_01_2026_10_20`:
+
+- All **28** sub-4-beam velocity samples were forced to no-lock (1e6) in
+  `/sensors/dvl/odometry_cov`, including **6 "3-beam, valid, ~0 FOM"** samples — the exact glitch
+  mechanism. A join of every sub-4-beam sample to its nearest `odometry_cov` output showed **zero
+  leaks** in both directions.
+- The `reported_fom` model is confirmed live (locked variance rises above the floor on a few
+  samples, so the FOM path is active — a `stationary_tep` build would be dead-flat).
+- The **Mahalanobis layer was not exercised** (no velocity spike occurred; max speed 0.45 m/s).
+  To test it, replay the **lake glitch bag** through the EKF and confirm the twist update is
+  rejected and `/odometry/filtered/local` no longer jumps.
+- Needs a rebuild on the Jetson: `git submodule update --init` + `colcon build` of `dvl_a50`,
+  `dvl_a50_pkg`, `ekf_localization_pkg`.
+
+### Reverting
+
+Set `"twist_linear_covariance_model"` back to `"speed_dependent"` (or `"stationary_tep"`) and/or
+`"min_good_beams"` to `3` in `launch_dvl.launch.py`, and remove `odom0_twist_rejection_threshold`
+from the two EKF YAMLs. Each layer is independent and can be reverted on its own.
+
+## Later changes (after this branch)
+
+These are not part of the branch above; they are listed so this file matches what runs on `dev`.
+
+- **DVL speed cap and jump gate (PR #29).** `odometry_covariance_node` also marks a sample as
+  no-lock when it is implausible on its own, whatever the beam count and FOM say
+  (`velocity_jump_gate.py`, values in `launch_dvl.launch.py`): speed above `max_speed` 0.9 m/s,
+  or a jump from the last accepted sample above `min(max_velocity_jump + max_acceleration · dt,
+  max_velocity_jump_limit)` = `min(0.5 + 2.0 · dt, 1.0)` m/s. After `jump_reaccept_samples` = 5
+  consistent rejected samples the gate accepts again. This catches 4-beam glitches (1.95 m/s with
+  a small FOM in a June recording) that Layer 2 cannot see.
+- **EKF velocity process noise (PR #29, PR #30).** In `ekf_local.yaml` and `ekf_global.yaml` the
+  process noise is now 0.005 for vx / vy and 0.05 for vz (was 0.0005 / 0.001 / 0.0001). With the
+  old values and the Layer 3 threshold of 8, real heave in lake waves and real acceleration after
+  a short DVL gap were rejected as outliers (EKF vertical speed lagging by 1.75 s; velocity
+  lockout). The threshold itself is unchanged.
+- **Thruster fallback and the beam gate.** `thruster_velocity_estimator` (`ekf_localization_pkg`)
+  still counts a DVL sample with 3 beams as "DVL present", while Layer 2 needs 4. In a stretch
+  of 3-beam samples the EKF therefore gets neither. This is left as it is on purpose: a replay of
+  the lake recording of 2026-10-22 with a 4-beam rule there made the EKF vertical speed worse
+  (see the comment at `dvl_min_good_beams` in that node).
