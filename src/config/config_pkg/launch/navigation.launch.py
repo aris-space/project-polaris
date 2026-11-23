@@ -111,10 +111,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "gps_fix_topic",
-                default_value="/gps/selected",
+                default_value="/fix",
                 description=(
-                    "NavSatFix topic remapped to navsat_transform gps/fix (selector: GNSS + SBL). "
-                    "Override e.g. /fix if your stack publishes fixes only there."
+                    "NavSatFix topic for the GNSS datum watchdog (raw receiver fixes). "
+                    "The watchdog's accuracy gate needs the receiver's own messages of the "
+                    "same epoch, so /gps/selected (selector: GNSS + SBL) is not the default."
                 ),
             ),
             DeclareLaunchArgument(

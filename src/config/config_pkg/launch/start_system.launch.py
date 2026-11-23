@@ -109,10 +109,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "gps_fix_topic",
-                default_value="/gps/selected",
+                default_value="/fix",
                 description=(
-                    "NavSatFix topic remapped to navsat_transform gps/fix (selector: GNSS + SBL). "
-                    "Override e.g. /fix if your stack publishes fixes only there."
+                    "NavSatFix topic for the GNSS datum watchdog (raw receiver fixes). "
+                    "The watchdog's accuracy gate needs the receiver's own messages of the "
+                    "same epoch, so /gps/selected (selector: GNSS + SBL) is not the default."
                 ),
             ),
             DeclareLaunchArgument(
@@ -131,8 +132,8 @@ def generate_launch_description():
                     "Default false so the IMU (VRU mode) and pressure can settle on land with "
                     "the boat aligned to true East before the EKF starts in water. "
                     "Launch the EKF separately once in water with: "
-                    "`ros2 launch ekf_localization_pkg ekf_localization.launch.py "
-                    "gps_fix_topic:=/gps/selected`."
+                    "`ros2 launch ekf_localization_pkg ekf_localization.launch.py` "
+                    "(its gps_fix_topic default is /fix as well)."
                 ),
             ),
             manual_control_launch,

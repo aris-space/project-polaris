@@ -82,7 +82,7 @@ class GnssDatumWatchdog(Node):
 
     Parameters
     ----------
-    fix_topic            NavSatFix topic                      (default /gps/selected)
+    fix_topic            NavSatFix topic                      (default /fix)
     h_acc_topic          UBXNavHPPosLLH accuracy topic        (default /ubx_nav_hp_pos_llh)
     h_acc_max_m          Max acceptable horizontal accuracy   (default 0.50 m)
     h_acc_fallback_max_m Widened h_acc gate after the timeout (default 5.0 m)
@@ -116,7 +116,7 @@ class GnssDatumWatchdog(Node):
     def __init__(self) -> None:
         super().__init__("gnss_datum_watchdog")
 
-        self.declare_parameter("fix_topic", "/gps/selected")
+        self.declare_parameter("fix_topic", "/fix")
         self.declare_parameter("h_acc_topic", "/ubx_nav_hp_pos_llh")
         self.declare_parameter("h_acc_max_m", 0.50)
         self.declare_parameter("h_acc_fallback_max_m", 5.0)

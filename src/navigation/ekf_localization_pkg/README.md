@@ -78,7 +78,7 @@ UBX-NAV-HPPOSLLH).
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `fix_topic` | `/gps/selected` | Raw NavSatFix input |
+| `fix_topic` | `/fix` | Raw NavSatFix input |
 | `h_acc_topic` | `/ubx_nav_hp_pos_llh` | UBX accuracy source (empty = disable gate) |
 | `h_acc_max_m` | `0.50` | Maximum acceptable horizontal accuracy |
 | `max_fix_distance_m` | `100000` | Reject fixes > this distance from datum |
