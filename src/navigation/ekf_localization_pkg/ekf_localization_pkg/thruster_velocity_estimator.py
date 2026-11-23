@@ -23,9 +23,13 @@ Dropout simulation results vs IMU-only integration:
 The node publishes ONLY when DVL has been absent for dvl_timeout_s seconds
 so the EKF subscribes unconditionally:
 
-    DVL covariance diagonal:  ~1e-8 (m/s)²
+    DVL covariance diagonal:  >= 4.4e-6 (m/s)² for vx (stationary floor of
+                              dvl_a50_pkg; was ~1e-8 when this node was written)
     Thrust model covariance:   0.006 (m/s)² for vx
-    Ratio: ~600 000×  →  EKF immediately switches back to DVL on recovery
+    Ratio: ~1300× or less  →  the EKF still follows the DVL on recovery
+
+"Absent" also holds from node start until the first valid DVL sample: the fallback is then
+active at once (without the dvl_timeout_s wait) and reports vx from the PWM, vy = vz = 0.
 
 Parameters
 ----------
@@ -39,6 +43,7 @@ surge_a               Model coefficient a                 (0.780)
 surge_b               Model exponent b                    (0.964)
 surge_deadzone        |u| below which vx is forced 0      (0.01)
 dvl_timeout_s         Seconds without valid DVL to activate  (3.0)
+dvl_min_good_beams    Beams a DVL sample needs to count as valid here (3)
 publish_rate_hz       Timer rate while active             (10.0)
 cov_vx                Velocity covariance, surge axis     (0.0057)
 cov_vy                Velocity covariance, lateral axis   (0.0027)
@@ -81,6 +86,17 @@ class ThrusterVelocityEstimator(Node):
         self.declare_parameter("surge_b", 0.964)
         self.declare_parameter("surge_deadzone", 0.01)
         self.declare_parameter("dvl_timeout_s", 3.0)
+        # Beams a DVL sample needs to count as "DVL present" here. Note the mismatch with
+        # dvl_a50_pkg's odometry_covariance_node, which marks samples with fewer than
+        # min_good_beams = 4 as no-lock: with 3 here, a stretch of 3-beam samples gives the
+        # EKF neither the DVL nor this fallback.
+        # The default deliberately stays 3. Replay of the lake bag 2026-10-22 through the
+        # local EKF with 3 vs 4: with 4 the fallback switches on three times (0.1 s, 0.5 s,
+        # 3.0 s; with 3 never), two of them inside the depth oscillation. There its vz = 0
+        # (variance 0.0009, no rejection threshold on odom1) made the EKF vertical speed worse
+        # against the pressure depth rate (rms error 0.029 -> 0.050 m/s in the 3 s episode)
+        # and moved the horizontal position by 0.5 m. Coasting was better than the fallback.
+        self.declare_parameter("dvl_min_good_beams", 3)
         self.declare_parameter("force_publish", False)
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("cov_vx", 0.0057)
@@ -99,6 +115,7 @@ class ThrusterVelocityEstimator(Node):
         self._surge_b: float = self.get_parameter("surge_b").value
         self._surge_deadzone: float = self.get_parameter("surge_deadzone").value
         self._dvl_timeout_s: float = self.get_parameter("dvl_timeout_s").value
+        self._dvl_min_good_beams: int = int(self.get_parameter("dvl_min_good_beams").value)
         self._force_publish: bool = bool(self.get_parameter("force_publish").value)
         self._publish_rate_hz: float = self.get_parameter("publish_rate_hz").value
         self._cov_vx: float = self.get_parameter("cov_vx").value
@@ -167,7 +184,7 @@ class ThrusterVelocityEstimator(Node):
         self._last_servo_wall_s = time.monotonic()
 
     def _on_dvl(self, msg: "_Dvl") -> None:
-        valid = msg.beam_velocities_valid and msg.num_good_beams >= 3
+        valid = msg.beam_velocities_valid and msg.num_good_beams >= self._dvl_min_good_beams
         if valid:
             self._last_dvl_wall_s = time.monotonic()
 
@@ -194,8 +211,15 @@ class ThrusterVelocityEstimator(Node):
         # DVL absent — publish thrust model
         if not self._node_active:
             self._node_active = True
+            # Before the first valid DVL sample the "age" is only the time since boot of the
+            # monotonic clock; do not print it as a DVL outage.
+            absent = (
+                "no valid DVL sample since this node started"
+                if self._last_dvl_wall_s == 0.0
+                else f"DVL absent for {dvl_age_s:.1f}s"
+            )
             self.get_logger().warn(
-                f"DVL absent for {dvl_age_s:.1f}s — activating thruster velocity fallback "
+                f"{absent} — activating thruster velocity fallback "
                 f"(cov_vx={self._cov_vx:.4f})"
             )
 
