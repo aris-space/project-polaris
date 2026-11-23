@@ -214,9 +214,16 @@ def main() -> None:
         result = send_goal(executor, follow_waypoints, goal, node, mode_pub, arm_pub,
                            status_pub=status_pub, total_waypoints=1, poses=[target], hb_state=hb_state)
 
-        if result == SendGoalResult.SUCCESS and rclpy.ok():
+        # MISSED = FollowWaypoints ended as "succeeded" but Nav2 gave up on the waypoint
+        # (stop_on_failure: False). The vehicle is handled exactly as on arrival -- it stays
+        # armed + GUIDED and holds -- only the report says that the waypoint was not reached.
+        missed = result == SendGoalResult.MISSED
+        if result in (SendGoalResult.SUCCESS, SendGoalResult.MISSED) and rclpy.ok():
             if args.no_hold:
-                print('>>> Arrived; --no-hold set: disarming + MANUAL <<<')
+                if missed:
+                    print('>>> Waypoint NOT reached; --no-hold set: disarming + MANUAL <<<')
+                else:
+                    print('>>> Arrived; --no-hold set: disarming + MANUAL <<<')
                 arm_pub.publish(Bool(data=False))
                 time.sleep(0.5)
                 mode_pub.publish(String(data='MANUAL'))
@@ -248,7 +255,11 @@ def main() -> None:
                             executor.spin_once(timeout_sec=0.05)
                         print(f'>>> Hold shifted onto the waypoint: offset E{de:+.2f} N{dn:+.2f} m '
                               f'({(de * de + dn * dn) ** 0.5:.2f} m; bridge refuses > hold_offset_max_m)')
-                print('>>> Arrived. HOLDING on station (armed + GUIDED). <<<')
+                if missed:
+                    print('>>> Waypoint NOT reached: Nav2 gave up on it (see above). '
+                          'HOLDING where the vehicle is (armed + GUIDED). <<<')
+                else:
+                    print('>>> Arrived. HOLDING on station (armed + GUIDED). <<<')
                 if args.index is not None:
                     # Line/index mission: hint the next station. (In --waypoint-file mode
                     # args.index is None, so this hint is skipped — the earlier crash here

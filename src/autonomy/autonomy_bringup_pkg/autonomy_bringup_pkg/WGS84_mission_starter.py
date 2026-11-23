@@ -51,6 +51,19 @@ class SendGoalResult(Enum):
     SUCCESS = 0
     FAILURE = 1
     CANCELED = 2
+    # The action ended as "succeeded", but Nav2 gave up on at least one waypoint.
+    MISSED = 3
+
+
+def missed_waypoint_indices(action_result) -> list:
+    """0-based indices of the waypoints Nav2 did not reach.
+
+    waypoint_follower runs with stop_on_failure: False (nav2_params.yaml). A waypoint whose
+    navigation fails then does not abort FollowWaypoints: the action still ends with status
+    SUCCEEDED and names the failed waypoints in result.missed_waypoints. The status alone
+    therefore cannot tell "arrived" from "gave up".
+    """
+    return [int(i) for i in (getattr(action_result, 'missed_waypoints', None) or [])]
 
 
 def publish_manual_and_spin(executor, node, mode_pub, spins: int = 40) -> None:
@@ -269,6 +282,12 @@ def send_goal(executor, action_client, send_goal_msg, node, mode_pub, arm_pub,
 
         status = result.status
         if status == GoalStatus.STATUS_SUCCEEDED:
+            missed = missed_waypoint_indices(result.result)
+            if missed:
+                names = ', '.join(str(i + 1) for i in missed)
+                print(f'Goal ended, but Nav2 did NOT reach waypoint(s) {names} of {total_waypoints} '
+                      '(navigation to them failed, e.g. no progress).')
+                return SendGoalResult.MISSED
             print('Goal completed')
             return SendGoalResult.SUCCESS
         elif status == GoalStatus.STATUS_CANCELED:
@@ -439,7 +458,11 @@ def main() -> None:
                                    status_pub=status_pub, total_waypoints=len(goal.poses),
                                    poses=poses, hb_state=hb_state)
 
-        if mission_result == SendGoalResult.SUCCESS and rclpy.ok():
+        # MISSED = the mission ran to its end but skipped waypoints. The vehicle is handled
+        # exactly as after a complete mission (disarm + MANUAL); only the report differs.
+        if mission_result in (SendGoalResult.SUCCESS, SendGoalResult.MISSED) and rclpy.ok():
+            if mission_result == SendGoalResult.MISSED:
+                print('>>> Mission ended WITH MISSED WAYPOINTS (see above) <<<')
             print('>>> Disarming <<<')
             arm_pub.publish(Bool(data=False))
             time.sleep(0.5)
@@ -457,7 +480,10 @@ def main() -> None:
             publish_manual_and_spin(executor, node, mode_pub, spins=15)
             publish_disarm_and_spin(executor, node, arm_pub, spins=20)
 
-        print('>>> Mission complete <<<')
+        if mission_result == SendGoalResult.MISSED:
+            print('>>> Mission ended; NOT all waypoints were reached <<<')
+        else:
+            print('>>> Mission complete <<<')
 
     except KeyboardInterrupt:
         # Interrupt before goal accepted, or re-raised from send_goal - MANUAL then disarm.
