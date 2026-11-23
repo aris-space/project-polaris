@@ -53,7 +53,8 @@ ekf_local_node:
     # via use_odometry_yaw, ekf_global_node) runs off the same calibrated
     # heading so map-frame projections, set_pose bootstrap, and GPS fusion
     # all live in a consistent rotational frame. Live system: imu_yaw_
-    # correction is in bringup; offline replay: bag carries
+    # correction is started by config_pkg sensors.launch.py (next to the
+    # Xsens driver, not by the EKF launch); offline replay: bag carries
     # /imu/data_corrected from the live system unless use_imu_yaw_correction
     # is enabled to recompute from raw /imu/data.
     imu0: /imu/data_corrected

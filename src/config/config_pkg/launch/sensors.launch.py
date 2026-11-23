@@ -21,6 +21,9 @@ def generate_launch_description():
     #     "temperature_respawn", default="true"
     # )
     xsens_respawn_arg_value = LaunchConfiguration("xsens_respawn", default="true")
+    start_imu_yaw_correction_arg_value = LaunchConfiguration(
+        "start_imu_yaw_correction", default="true"
+    )
     dvl_respawn_arg_value = LaunchConfiguration("dvl_respawn", default="true")
     keller_respawn_arg_value = LaunchConfiguration("keller_respawn", default="true")
     usb_cam_respawn_arg_value = LaunchConfiguration("usb_cam_respawn", default="false")
@@ -113,6 +116,27 @@ def generate_launch_description():
             "respawn": xsens_respawn_arg_value,
             "respawn_delay": respawn_delay_arg_value,
         }.items(),
+    )
+
+    # Heading correction between the Xsens driver and the EKF: rotates /imu/data by the
+    # calibrated yaw offset and republishes it on /imu/data_corrected, which both EKFs,
+    # navsat_transform and the mavlink_bridge external-navigation gate read.
+    # Started here (with the IMU driver) and not in the EKF launch, because the yaw offset
+    # only lives in this node: it must be running before the EKF so the heading can be
+    # calibrated first, and it must survive an EKF restart.
+    # No respawn: a restarted node would come back with yaw_offset_deg = 0 (uncalibrated).
+    imu_yaw_correction_node = Node(
+        package="ekf_localization_pkg",
+        executable="imu_yaw_correction",
+        name="imu_yaw_correction",
+        output="screen",
+        parameters=[
+            {
+                "input_topic": "/imu/data",
+                "output_topic": "/imu/data_corrected",
+            }
+        ],
+        condition=IfCondition(start_imu_yaw_correction_arg_value),
     )
 
     dvl_launch = IncludeLaunchDescription(
@@ -217,6 +241,15 @@ def generate_launch_description():
                 description="Respawn Xsens IMU nodes if they exit/crash.",
             ),
             DeclareLaunchArgument(
+                "start_imu_yaw_correction",
+                default_value="true",
+                description=(
+                    "Start imu_yaw_correction (/imu/data -> /imu/data_corrected). "
+                    "Set false only if the node is started by hand; two instances "
+                    "would both publish /imu/data_corrected."
+                ),
+            ),
+            DeclareLaunchArgument(
                 "dvl_respawn",
                 default_value="true",
                 description="Respawn DVL nodes if they exit/crash.",
@@ -311,6 +344,7 @@ def generate_launch_description():
             ultrasonic_launch,
             # temperature_launch,
             xsens_launch,
+            imu_yaw_correction_node,
             dvl_launch,
             keller_launch,
             usb_cam_launch,
