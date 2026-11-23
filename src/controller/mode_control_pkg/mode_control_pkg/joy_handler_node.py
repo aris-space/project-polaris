@@ -21,6 +21,20 @@ with a neutral last message stays active for DELTA_T seconds after reception
 on key state changes (not continuously) to keep buttons held.
 Neutral values: 0.0 for stick axes, -1.0 for L2/R2 triggers.
 
+Controller age limit: the controller source (/joy_controller) sends continuously while it
+is alive, so its last message is only used while it is younger than controller_timeout_s
+(default 2.0 s, by receive time on this machine). An older message is treated like "no
+controller message yet": nothing from it reaches /joy, and the manual control nodes fall
+back to neutral through their own /joy timeout. Without this, a lost controller or
+Foxglove connection left the last stick position on /joy forever.
+The value must stay above the largest gap of a working stream. In the lake session of
+2026-10-22 the stream ran at about one message per second for whole stretches (gaps up to
+1.4 s, also in MANUAL with a deflected stick; cause not established, possibly the browser
+throttling the panel), so a shorter limit would cut into real manual control.
+Set controller_timeout_s <= 0 to disable.
+The keyboard and mode sources have no age limit: they publish only on key / button changes,
+so a held key cannot be told from a lost connection here.
+
 The output message always has exactly NUM_AXES axes and NUM_BUTTONS buttons,
 regardless of the source message sizes, so downstream nodes can safely index
 into the arrays.
@@ -76,6 +90,9 @@ class JoyHandlerNode(Node):
         self.declare_parameter("keyboard_source_frame_id", "keyboard")
         self.declare_parameter("controller_source_frame_id", "controller")
         self.declare_parameter("mode_only_source_frame_id", "mode")
+        # Maximum age of the last /joy_controller message that is still used (see module docstring).
+        self.declare_parameter("controller_timeout_s", 2.0)
+        self._controller_stale = False
 
         self.last_controller_msg = None
         self.last_keyboard_msg = None
@@ -118,6 +135,7 @@ class JoyHandlerNode(Node):
             self.last_keyboard_msg, self.last_keyboard_time
         )
         mode_active = self._is_active(self.last_mode_msg, self.last_mode_time)
+        controller_msg = self._fresh_controller_msg(now)
 
         output = None
 
@@ -131,17 +149,17 @@ class JoyHandlerNode(Node):
                 self._zero_mode_buttons(output)
             self._set_source_frame_id(output, "keyboard")
         elif mode_active:
-            if self.last_controller_msg is not None:
+            if controller_msg is not None:
                 output = self._fuse_mode_and_controller(
-                    self.last_mode_msg, self.last_controller_msg
+                    self.last_mode_msg, controller_msg
                 )
                 self._set_source_frame_id(output, "controller")
             else:
                 output = self._mode_only(self.last_mode_msg)
                 self._set_source_frame_id(output, "mode_only")
         else:
-            if self.last_controller_msg is not None:
-                output = self._normalize(self.last_controller_msg)
+            if controller_msg is not None:
+                output = self._normalize(controller_msg)
                 self._set_source_frame_id(output, "controller")
 
         if output is None:
@@ -149,6 +167,32 @@ class JoyHandlerNode(Node):
 
         output.header.stamp = now.to_msg()
         self.joy_publisher.publish(output)
+
+    # ---- Controller age limit --------------------------------------------------
+
+    def _fresh_controller_msg(self, now):
+        """Last controller message, or None if there is none or it is older than
+        controller_timeout_s (then it is handled like "no controller message yet")."""
+        if self.last_controller_msg is None or self.last_controller_time is None:
+            return None
+        timeout_s = (
+            self.get_parameter("controller_timeout_s").get_parameter_value().double_value
+        )
+        if timeout_s <= 0.0:
+            return self.last_controller_msg
+        age_s = (now - self.last_controller_time).nanoseconds / 1e9
+        if age_s > timeout_s:
+            if not self._controller_stale:
+                self._controller_stale = True
+                self.get_logger().warn(
+                    f"No /joy_controller message for {age_s:.1f} s (limit {timeout_s:.1f} s): "
+                    "controller input is ignored until new messages arrive"
+                )
+            return None
+        if self._controller_stale:
+            self._controller_stale = False
+            self.get_logger().info("/joy_controller messages are back: controller input is used again")
+        return self.last_controller_msg
 
     # ---- Activity detection ----------------------------------------------------
 
