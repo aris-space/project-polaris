@@ -8,5 +8,6 @@ foxglove_bridge:
       - assets
       - services
       - parameters
+      - parametersSubscribe
     send_buffer_limit: 10000000
     use_compression: false

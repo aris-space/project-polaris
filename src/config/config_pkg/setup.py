@@ -12,6 +12,8 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", glob("launch/*.py")),
+        # start_system.launch.py loads config/foxglove.yaml from the share directory.
+        ("share/" + package_name + "/config", glob("config/*.yaml")),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
