@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 
@@ -23,6 +24,7 @@ from std_msgs.msg import Header
 
 import math
 import sys
+import traceback
 
 # import os
 # import inputs
@@ -51,8 +53,13 @@ class WaterLinkedUWGPSG2Interface(Node):
 
     # WaterLinked API methods
     def get_data(self, url):
+        # Never without a timeout: this node has one thread, and a topside unit that accepts
+        # the connection but does not answer would otherwise block it for good.
+        # _http_timeout_s is the startup value during __init__ (one-shot fetches) and the
+        # shorter polling value afterwards.
+        timeout_s = getattr(self, "_http_timeout_s", 2.0)
         try:
-            r = requests.get(url)
+            r = requests.get(url, timeout=timeout_s)
         except requests.exceptions.RequestException as exc:
             print(colored("Exception occured {}".format(exc), "red"))
             return None
@@ -116,6 +123,12 @@ class WaterLinkedUWGPSG2Interface(Node):
         # self.declare_parameter('external_locator_relative_position_topic', '')
         # Thesis: opt-in raw per-receiver SBL telemetry (default off; deployed stack unaffected).
         self.declare_parameter("publish_sbl_raw", False)
+        # Timeouts (s) of the HTTP GET requests to the topside unit. Each tick sends up to
+        # three of them, so a hanging unit costs at most 3 x http_timeout_s per tick.
+        # The startup value covers the one-shot fetches in __init__ (antenna marker, latched
+        # receiver config), which are not repeated if they fail.
+        self.declare_parameter("http_timeout_s", 2.0)
+        self.declare_parameter("http_startup_timeout_s", 10.0)
 
     def get_ros_params(self):
         # Setting ROS parameters
@@ -198,6 +211,16 @@ class WaterLinkedUWGPSG2Interface(Node):
         self.PUBLISH_SBL_RAW = (
             self.get_parameter("publish_sbl_raw").get_parameter_value().bool_value
         )
+        self.HTTP_TIMEOUT_S = (
+            self.get_parameter("http_timeout_s").get_parameter_value().double_value
+        )
+        self.HTTP_STARTUP_TIMEOUT_S = (
+            self.get_parameter("http_startup_timeout_s")
+            .get_parameter_value()
+            .double_value
+        )
+        # Startup value first; __init__ switches to HTTP_TIMEOUT_S after its one-shot fetches.
+        self._http_timeout_s = self.HTTP_STARTUP_TIMEOUT_S
         # self.EXTERNAL_LOCATOR_RELATIVE_POSITION_TOPIC = self.get_parameter(
         #     'external_locator_relative_position_topic').get_parameter_value().string_value
 
@@ -235,12 +258,13 @@ class WaterLinkedUWGPSG2Interface(Node):
         self.fake_heading_pub.publish(msg)"""
 
     def get_waterlinked_measuremets_relative(self):
-        time_ = time.time()
-        time_nanosec, time_sec = math.modf(time_)
-        self.locator_rel_pos_time_new = time_sec + time_nanosec
-
         data = self.get_acoustic_position(self.WATERLINKED_URL)
         if data:
+            # Time of the last SUCCESSFUL poll. publish_all_waterlinked_variables() stops
+            # publishing the solved position when this gets older than 3 / ros_rate. It used
+            # to be set before the request, whatever its result, so that check never fired
+            # and a failed request re-published the last position with a fresh stamp.
+            self.locator_rel_pos_time_new = time.time()
             self.locator_wrt_base_relative_x = data["x"]
             self.locator_wrt_base_relative_y = data["y"]
             self.locator_wrt_base_relative_z = data["z"]
@@ -1016,6 +1040,9 @@ class WaterLinkedUWGPSG2Interface(Node):
         if getattr(self, "PUBLISH_SBL_RAW", False):
             self.publish_sbl_receiver_config()
 
+        # One-shot startup fetches are done: the periodic polls use the shorter timeout.
+        self._http_timeout_s = self.HTTP_TIMEOUT_S
+
         debug = False
         if debug:
             self.run_tests()
@@ -1025,18 +1052,27 @@ def main(args=None):
     print("Started")
     rclpy.init(args=args)
 
+    interface = None
+    exit_code = 0
     try:
         interface = WaterLinkedUWGPSG2Interface()
         rclpy.spin(interface)
         # interface.run()
-    except:
-        print(colored("Exception caught!", "red"))
-        e = sys.exc_info()[0]
-        write_to_page("<p>Error: %s</p>" % e)
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
-
-    interface.destroy_node()
-    rclpy.shutdown()
+    except Exception:
+        # Was: a bare except calling an undefined function, then destroy_node() on a node
+        # that may never have been created. Show the real error and exit non-zero.
+        print(colored("Exception caught!", "red"))
+        traceback.print_exc()
+        exit_code = 1
+    finally:
+        if interface is not None:
+            interface.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+    if exit_code:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":
