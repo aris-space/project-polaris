@@ -1,10 +1,19 @@
 ekf_global_node:
   ros__parameters:
-    # 10 Hz. We tried 30 in v11-v13 to chase the publish-rate throttle;
-    # rate didn't change because the actual ceiling is /gps/selected at
-    # 2 Hz, not the timer. 10 Hz gives the EKF enough headroom for
-    # measurement processing without wasting CPU on noop ticks.
-    frequency: 10.0
+    # Output rate of /odometry/filtered/global and map->odom: 20 Hz (was 10).
+    # `frequency` only sets the period of the output timer: each tick the filter
+    # works through the queued measurements, predicts to "now"
+    # (predict_to_current_time) and publishes. Every sensor message is fused one
+    # by one whatever this value is, and the process noise is scaled by the time
+    # step, so Q and the rejection thresholds do not depend on it.
+    # The output follows this value exactly (lake bag 2026-10-22: 10.00 Hz with
+    # frequency 10; local EKF 30.00 Hz on the same Jetson) -- the earlier note
+    # here about a ~2 Hz ceiling dated from the stacked setup and no longer holds.
+    # Replay of that bag with 10 / 20 / 30 Hz: 20.00 Hz reached, estimate equal to
+    # the 10 Hz one within ~3 cm / 0.15 deg, node CPU about +10 %.
+    # Not yet measured on the Jetson: check `ros2 topic hz /odometry/filtered/global`
+    # and the node log for "Failed to meet update rate".
+    frequency: 20.0
     # sensor_timeout: amount of time without a measurement before the EKF
     # falls back to integrating its state forward at each frequency cycle.
     # Critical pairing with predict_to_current_time:

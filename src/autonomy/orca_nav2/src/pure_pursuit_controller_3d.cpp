@@ -213,6 +213,8 @@ namespace orca_nav2
     // chain would not block, but resolves to the map→odom stamp and so returns
     // a robot pose up to 100 ms old. map→odom itself changes slowly, so using
     // its latest sample costs nothing measurable.
+    // (Numbers above were measured with the global EKF at 10 Hz; it is now
+    // configured for 20 Hz in ekf_global.yaml. The reasoning does not change.)
     bool robot_pose_in_plan_frame(const geometry_msgs::msg::PoseStamped &pose_f_odom,
                                   geometry_msgs::msg::PoseStamped &pose_f_map) const
     {

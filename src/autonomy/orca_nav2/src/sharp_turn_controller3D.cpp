@@ -112,7 +112,8 @@ class SharpTurnController3D : public nav2_core::Controller
   // Return the first pose in the plan > lookahead distance away, or the last pose in the plan
   // Robot pose (odom) → plan frame (map). Same approach as PurePursuitController3D:
   // only map→odom comes from TF, at its latest sample, composed by hand with the
-  // given pose. A stamped lookup would block until the next 10 Hz map→odom.
+  // given pose. A stamped lookup would block until the next map→odom from the
+  // global EKF (20 Hz, ekf_global.yaml).
   bool robot_pose_in_plan_frame(
     const geometry_msgs::msg::PoseStamped &pose_f_odom,
     geometry_msgs::msg::PoseStamped &pose_f_map) const

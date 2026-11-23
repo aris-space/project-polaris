@@ -16,7 +16,7 @@ Pressure ─────────────────────┘     
                                          │
 GPS ──[datum_watchdog]──> navsat_transform ──┤
                                          │
-                              ekf_global (10 Hz) ──> /odometry/filtered/global
+                              ekf_global (20 Hz) ──> /odometry/filtered/global
 
 TF:  map → odom → base_link
 
@@ -38,7 +38,7 @@ Fuses IMU + DVL + pressure. Produces the `odom → base_link` TF and
 | Pressure sensor | `/sensors/pressure/pose_enu` | Z-position (depth) |
 | Thruster fallback *(optional)* | `/sensors/thruster/odometry_cov` | Linear velocity — only when DVL absent |
 
-### Global EKF — spawned on first quality GNSS fix, 10 Hz
+### Global EKF — spawned on first quality GNSS fix, 20 Hz
 
 Fuses local EKF output + GPS. Produces the `map → odom` TF and
 `/odometry/filtered/global`. Started by `gnss_datum_watchdog` once h_acc ≤ 0.5 m.
