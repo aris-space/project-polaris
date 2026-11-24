@@ -95,14 +95,23 @@ ekf_local_node:
     # Thruster-model DVL fallback: body-frame velocity estimated from surge PWM.
     # Published by thruster_velocity_estimator ONLY when DVL has been absent for
     # dvl_timeout_s seconds (default 3 s), so this slot is silent during normal
-    # DVL operation. Covariance ratio vs DVL: ~600 000×, so DVL completely
+    # DVL operation. Its variances are ~1000x those of the DVL, so the DVL
     # dominates whenever it returns — no manual switching needed.
     # Simulation: 60s DVL dropout → 16.8 m IMU-only vs 1.0 m with this source.
+    #
+    # Only vx and vy are fused, NOT vz (2026-11-24). The node reports vz = 0 with
+    # sigma 3 cm/s, but during an outage this filter still gets vz from the
+    # pressure depth (pose0), and that is better: replays of real outages (June
+    # surface grid) and injected ones (lake 2026-10-22) gave a vz error of
+    # 0.047 / 0.046 m/s with vz fused against 0.036 / 0.020 without, and this
+    # vz goes to the Pixhawk as external-navigation velocity. vx / vy have no
+    # other source in an outage; fusing them halved the 30 s dead-reckoning
+    # error against RTK in the real outages (5.4 m -> 2.0 m median).
     odom1: /sensors/thruster/odometry_cov
     odom1_config: [
       false, false, false,
       false, false, false,
-      true,  true,  true,
+      true,  true,  false,
       false, false, false,
       false, false, false
     ]

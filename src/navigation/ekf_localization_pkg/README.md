@@ -36,7 +36,7 @@ Fuses IMU + DVL + pressure. Produces the `odom → base_link` TF and
 | IMU (XSens MTi 600) | `/imu/data_corrected` (from `imu_yaw_correction`) | Orientation (roll, pitch, yaw), angular velocity |
 | DVL (WaterLinked A50) | `/sensors/dvl/odometry_cov` | Linear velocity (vx, vy, vz) |
 | Pressure sensor | `/sensors/pressure/pose_enu` | Z-position (depth) |
-| Thruster fallback *(optional)* | `/sensors/thruster/odometry_cov` | Linear velocity — only when DVL absent |
+| Thruster fallback *(optional)* | `/sensors/thruster/odometry_cov` | vx, vy — only when DVL absent (its vz is not fused) |
 
 ### Global EKF — spawned on first quality GNSS fix, 20 Hz
 
@@ -299,9 +299,12 @@ Two details of "absent":
   not captured; the model outputs `vy = 0` during those periods.
 - The servo topic is published at ~2 Hz by MAVLink. Between updates the node
   holds the last known command (zero-order hold).
-- Validity is conditional on depth-hold being active (vz ≈ 0). If the AUV is
-  ascending or descending under thruster control during a DVL dropout, the
-  vz = 0 assumption will introduce depth error.
+- The node still publishes `vz = 0`, but the local EKF does not fuse it
+  (`odom1_config` in `ekf_local.yaml`, since 2026-11-24): during an outage the
+  filter keeps getting vertical speed from the pressure depth, and replays showed
+  that the `vz = 0` claim made it worse (real outages 0.047 vs 0.036 m/s error,
+  injected ones 0.046 vs 0.020). `vx` and `vy` are fused; they have no other
+  source in an outage.
 
 ---
 
@@ -315,7 +318,7 @@ Local EKF inputs:
   IMU            → roll, pitch, yaw, droll, dpitch, dyaw        (always)
   DVL            → vx, vy, vz                                   (always, ~9 Hz)
   Pressure       → z                                            (always, ~50 Hz)
-  Thruster model → vx, vy, vz  (high covariance)               (DVL absent only)
+  Thruster model → vx, vy  (high covariance; vz not fused)     (DVL absent only)
 
 Global EKF inputs (same raw sensors, not the local EKF's output):
   IMU            → roll, pitch, yaw, droll, dpitch, dyaw        (always)
