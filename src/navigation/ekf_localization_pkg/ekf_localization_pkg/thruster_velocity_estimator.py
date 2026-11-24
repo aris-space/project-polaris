@@ -43,7 +43,7 @@ surge_a               Model coefficient a                 (0.780)
 surge_b               Model exponent b                    (0.964)
 surge_deadzone        |u| below which vx is forced 0      (0.01)
 dvl_timeout_s         Seconds without valid DVL to activate  (3.0)
-dvl_min_good_beams    Beams a DVL sample needs to count as valid here (3)
+dvl_min_good_beams    Beams a DVL sample needs to count as valid here (4)
 publish_rate_hz       Timer rate while active             (10.0)
 cov_vx                Velocity covariance, surge axis     (0.0057)
 cov_vy                Velocity covariance, lateral axis   (0.0027)
@@ -86,17 +86,18 @@ class ThrusterVelocityEstimator(Node):
         self.declare_parameter("surge_b", 0.964)
         self.declare_parameter("surge_deadzone", 0.01)
         self.declare_parameter("dvl_timeout_s", 3.0)
-        # Beams a DVL sample needs to count as "DVL present" here. Note the mismatch with
-        # dvl_a50_pkg's odometry_covariance_node, which marks samples with fewer than
-        # min_good_beams = 4 as no-lock: with 3 here, a stretch of 3-beam samples gives the
-        # EKF neither the DVL nor this fallback.
-        # The default deliberately stays 3. Replay of the lake bag 2026-10-22 through the
-        # local EKF with 3 vs 4: with 4 the fallback switches on three times (0.1 s, 0.5 s,
-        # 3.0 s; with 3 never), two of them inside the depth oscillation. There its vz = 0
-        # (variance 0.0009, no rejection threshold on odom1) made the EKF vertical speed worse
-        # against the pressure depth rate (rms error 0.029 -> 0.050 m/s in the 3 s episode)
-        # and moved the horizontal position by 0.5 m. Coasting was better than the fallback.
-        self.declare_parameter("dvl_min_good_beams", 3)
+        # Beams a DVL sample needs to count as "DVL present" here. 4 = the same rule as
+        # dvl_a50_pkg's odometry_covariance_node (min_good_beams), which marks samples with
+        # fewer beams as no-lock. With the earlier value 3, a stretch of 3-beam samples gave
+        # the EKF neither the DVL nor this fallback; in the June surface grid recording the
+        # fallback then covered only 30 % of the time without a usable DVL.
+        # Replays through the local EKF, 3 vs 4 (vz of this node not fused, see ekf_local.yaml):
+        # June surface grid, 20 real outages: fallback covers 80 % instead of 30 % of the
+        # outage time, displacement error per outage against RTK 1.86 -> 0.69 m (mean),
+        # 30 s dead-reckoning error (95 %) 10.8 -> 3.8 m. Lake 2026-10-22 (3-beam stretches
+        # inside the depth oscillation) and an under-ice recording: vz error unchanged.
+        # Keep this equal to min_good_beams of the DVL covariance node.
+        self.declare_parameter("dvl_min_good_beams", 4)
         self.declare_parameter("force_publish", False)
         self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("cov_vx", 0.0057)

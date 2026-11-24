@@ -292,7 +292,8 @@ These are not part of the branch above; they are listed so this file matches wha
   a short DVL gap were rejected as outliers (EKF vertical speed lagging by 1.75 s; velocity
   lockout). The threshold itself is unchanged.
 - **Thruster fallback and the beam gate.** `thruster_velocity_estimator` (`ekf_localization_pkg`)
-  still counts a DVL sample with 3 beams as "DVL present", while Layer 2 needs 4. In a stretch
-  of 3-beam samples the EKF therefore gets neither. This is left as it is on purpose: a replay of
-  the lake recording of 2026-10-22 with a 4-beam rule there made the EKF vertical speed worse
-  (see the comment at `dvl_min_good_beams` in that node).
+  used to count a DVL sample with 3 beams as "DVL present", while Layer 2 needs 4, so in a
+  stretch of 3-beam samples the EKF got neither. Two changes (2026-11-24) close that gap:
+  the local EKF no longer fuses the fallback's `vz = 0` (only `vx`, `vy`; `odom1_config` in
+  `ekf_local.yaml`), and the fallback now uses the same 4-beam rule (`dvl_min_good_beams`,
+  default 4). The replay results are in the comments at those two places.

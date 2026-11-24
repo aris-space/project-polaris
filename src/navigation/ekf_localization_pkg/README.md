@@ -283,11 +283,11 @@ normal operation.
 
 Two details of "absent":
 
-- A DVL sample counts as present here with 3 or more good beams
-  (`dvl_min_good_beams`, default 3), while `dvl_a50_pkg` marks samples with fewer
-  than 4 beams as no-lock. In a stretch of 3-beam samples the EKF gets neither
-  source. This is not aligned on purpose; the comment at that parameter in the
-  node gives the replay result behind it.
+- A DVL sample counts as present here with 4 good beams (`dvl_min_good_beams`,
+  default 4) — the same rule as `min_good_beams` in `dvl_a50_pkg`, which marks
+  samples with fewer beams as no-lock. Keep the two equal: with 3 here, a stretch
+  of 3-beam samples gave the EKF neither source. The comment at that parameter in
+  the node gives the replay results behind the value.
 - From node start until the first valid DVL sample the fallback is active at once,
   without the `dvl_timeout_s` wait.
 
